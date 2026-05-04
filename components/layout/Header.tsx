@@ -150,7 +150,7 @@ export default function Header() {
           ${isVisible ? "translate-y-0" : "-translate-y-full"}
         `}
       >
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-3 md:py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-1.5 md:py-2">
           <nav
             ref={navRef}
             className="relative mx-auto max-w-6xl rounded-2xl md:rounded-full transition-all duration-500 overflow-hidden"
@@ -176,7 +176,7 @@ export default function Header() {
             <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
             {/* Content */}
-            <div className="relative px-3 md:px-5 py-2">
+            <div className="relative px-3 md:px-5 py-1.5">
               <div className="flex items-center justify-between gap-3">
                 {/* Logo */}
                 <div className="flex-shrink-0">
@@ -184,9 +184,9 @@ export default function Header() {
                     <Image
                       src="/Logo.png"
                       alt="MisterFiber Logo"
-                      width={120}
-                      height={40}
-                      className="object-contain"
+                      width={100}
+                      height={35}
+                      className="object-contain w-auto h-8 md:h-9"
                       priority
                     />
                   </Link>
@@ -206,7 +206,7 @@ export default function Header() {
                         onMouseEnter={() => setHoveredItem(item.name)}
                         onMouseLeave={() => setHoveredItem(null)}
                         className={`
-                          relative px-4 py-2 rounded-full text-sm font-medium
+                          relative px-3 py-1.5 rounded-full text-sm font-medium
                           transition-all duration-200 flex items-center gap-2
                           ${
                             active
@@ -236,7 +236,7 @@ export default function Header() {
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="Search..."
-                          className="w-56 md:w-72 pl-10 pr-4 py-2 text-sm
+                          className="w-56 md:w-72 pl-10 pr-4 py-1.5 text-sm
                             bg-white/95 backdrop-blur-xl
                             border border-gray-200 rounded-full
                             text-gray-900 placeholder-gray-400
@@ -249,18 +249,18 @@ export default function Header() {
                     ) : (
                       <button
                         onClick={() => setIsSearchOpen(true)}
-                        className="p-2 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
+                        className="p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
                       >
-                        <FiSearch className="w-5 h-5" />
+                        <FiSearch className="w-4 h-4" />
                       </button>
                     )}
                   </div>
 
                   {/* Notification */}
                   {isAuthenticated && (
-                    <button className="relative p-2 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200">
-                      <FiBell className="w-5 h-5" />
-                      <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent-500 rounded-full" />
+                    <button className="relative p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200">
+                      <FiBell className="w-4 h-4" />
+                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-accent-500 rounded-full" />
                     </button>
                   )}
 
@@ -269,13 +269,13 @@ export default function Header() {
                     <div className="relative dropdown-container">
                       <button
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                        className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full
+                        className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full
                           bg-white/40 hover:bg-white/60 transition-all duration-200"
                       >
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-r from-accent-500 to-accent-600 flex items-center justify-center">
-                          <FiUser className="w-3.5 h-3.5 text-white" />
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-accent-500 to-accent-600 flex items-center justify-center">
+                          <FiUser className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-sm font-medium text-gray-700 hidden md:inline">
+                        <span className="text-xs font-medium text-gray-700 hidden md:inline">
                           Account
                         </span>
                         <FiChevronDown
@@ -290,7 +290,7 @@ export default function Header() {
                             bg-white/95 backdrop-blur-xl rounded-xl shadow-xl
                             border border-gray-100 py-1 z-30"
                         >
-                          <div className="px-3 py-2.5 border-b border-gray-100">
+                          <div className="px-3 py-2 border-b border-gray-100">
                             <p className="text-sm font-semibold text-gray-900">
                               {user?.firstName || "User"}
                             </p>
@@ -341,7 +341,7 @@ export default function Header() {
                   ) : (
                     <Link
                       href="/login"
-                      className="px-4 py-1.5 text-sm font-medium text-gray-700 hover:text-accent-600 rounded-full hover:bg-white/40 transition-all duration-200"
+                      className="px-3 py-1 text-sm font-medium text-gray-700 hover:text-accent-600 rounded-full hover:bg-white/40 transition-all duration-200"
                     >
                       Sign In
                     </Link>
@@ -350,16 +350,16 @@ export default function Header() {
                   {/* Mobile Menu Button */}
                   <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="lg:hidden p-2 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
+                    className="lg:hidden p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
                   >
-                    {isMenuOpen ? <FiX size={20} /> : <FiMenu size={20} />}
+                    {isMenuOpen ? <FiX size={18} /> : <FiMenu size={18} />}
                   </button>
                 </div>
               </div>
 
               {/* Mobile Menu */}
               {isMenuOpen && (
-                <div className="lg:hidden mt-3 pt-3 border-t border-gray-200/50">
+                <div className="lg:hidden mt-2 pt-2 border-t border-gray-200/50">
                   <div className="flex flex-col gap-1">
                     {navigation.map((item) => {
                       const Icon = item.icon;
@@ -368,8 +368,8 @@ export default function Header() {
                           key={item.name}
                           href={item.href}
                           className={`
-                            flex items-center gap-3 px-4 py-3 rounded-xl
-                            text-base font-medium transition-all duration-200
+                            flex items-center gap-3 px-4 py-2.5 rounded-xl
+                            text-sm font-medium transition-all duration-200
                             ${
                               isActive(item.href)
                                 ? "bg-white/50 text-accent-700"
@@ -378,17 +378,17 @@ export default function Header() {
                           `}
                           onClick={() => setIsMenuOpen(false)}
                         >
-                          <Icon className="w-5 h-5" />
+                          <Icon className="w-4 h-4" />
                           {item.name}
                         </Link>
                       );
                     })}
 
                     {!isAuthenticated && (
-                      <div className="mt-2 pt-2 border-t border-gray-200/50">
+                      <div className="mt-1 pt-1 border-t border-gray-200/50">
                         <Link
                           href="/login"
-                          className="flex items-center px-4 py-3 text-base font-medium text-gray-700 hover:text-accent-600 hover:bg-white/30 rounded-xl transition-all duration-200"
+                          className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-accent-600 hover:bg-white/30 rounded-xl transition-all duration-200"
                           onClick={() => setIsMenuOpen(false)}
                         >
                           Sign In

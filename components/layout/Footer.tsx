@@ -4,6 +4,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
+  FiFacebook,
+  FiTwitter,
+  FiInstagram,
   FiMail,
   FiPhone,
   FiMapPin,
@@ -112,9 +115,9 @@ export default function Footer() {
                 <Image
                   src="/Logo.png"
                   alt="MisterFiber Logo"
-                  width={140}
-                  height={46}
-                  className="object-contain brightness-0 invert"
+                  width={130}
+                  height={42}
+                  className="object-contain"
                 />
               </Link>
               <p className="text-gray-300 mb-5 leading-relaxed">
@@ -251,6 +254,42 @@ export default function Footer() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Social Media Links */}
+          <div className="flex justify-center gap-4 mt-12 pt-6 border-t border-white/10">
+            <a
+              href="https://facebook.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-accent-500 transition-all duration-300 hover:scale-110 group"
+            >
+              <FiFacebook className="w-5 h-5 text-gray-300 group-hover:text-white transition" />
+            </a>
+            <a
+              href="https://twitter.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-accent-500 transition-all duration-300 hover:scale-110 group"
+            >
+              <FiTwitter className="w-5 h-5 text-gray-300 group-hover:text-white transition" />
+            </a>
+            <a
+              href="https://instagram.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-accent-500 transition-all duration-300 hover:scale-110 group"
+            >
+              <FiInstagram className="w-5 h-5 text-gray-300 group-hover:text-white transition" />
+            </a>
+            <a
+              href="https://linkedin.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-accent-500 transition-all duration-300 hover:scale-110 group"
+            >
+              <FiLinkedin className="w-5 h-5 text-gray-300 group-hover:text-white transition" />
+            </a>
           </div>
 
           {/* Bottom Bar */}
