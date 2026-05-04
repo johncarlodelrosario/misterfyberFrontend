@@ -25,6 +25,22 @@ export default function ApplicationsPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
+  // PRODUCTION BASE URL - ITO ANG GAMITIN!
+  const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
+  const LOCAL_URL = "http://localhost:5000";
+
+  // Get the correct base URL based on environment
+  const getBaseUrl = () => {
+    if (typeof window !== "undefined") {
+      // Check if we're in production (Vercel frontend)
+      if (window.location.hostname.includes("vercel.app")) {
+        return PRODUCTION_URL;
+      }
+    }
+    // Default to production URL for API calls
+    return process.env.NEXT_PUBLIC_API_URL || PRODUCTION_URL;
+  };
+
   useEffect(() => {
     loadApplications();
   }, []);
@@ -65,39 +81,38 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Function to get the full image URL
+  // FIXED: Get the full image URL for production!
   const getImageUrl = (imagePath: string) => {
     if (!imagePath) return null;
 
     console.log("Original image path:", imagePath);
 
+    // If it's already a full URL (Cloudinary or other), return as is
     if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
       console.log("Using full URL:", imagePath);
       return imagePath;
     }
 
+    // If it's base64, return as is
     if (imagePath.startsWith("data:image")) {
       console.log("Using base64 image");
       return imagePath;
     }
 
-    const possibleBaseUrls = [
-      process.env.NEXT_PUBLIC_API_URL,
-      "http://localhost:5000",
-      "http://localhost:3001",
-      "http://localhost:8080",
-      window.location.origin,
-    ].filter(Boolean);
+    // FIXED: Always use production URL for images in production!
+    const baseUrl = PRODUCTION_URL;
 
-    const cleanPath = imagePath.replace(/^\/+/, "");
+    // Clean the path - remove leading slashes
+    let cleanPath = imagePath.replace(/^\/+/, "");
 
-    for (const baseUrl of possibleBaseUrls) {
-      const fullUrl = `${baseUrl}/${cleanPath}`;
-      console.log("Trying URL:", fullUrl);
-      return fullUrl;
+    // If path doesn't start with uploads, add it
+    if (!cleanPath.startsWith("uploads/")) {
+      cleanPath = `uploads/${cleanPath}`;
     }
 
-    return null;
+    const fullUrl = `${baseUrl}/${cleanPath}`;
+    console.log("Generated image URL:", fullUrl);
+    return fullUrl;
   };
 
   const filteredApplications = applications.filter((app: any) => {
@@ -253,7 +268,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Review/View Modal - Shows for all statuses */}
+      {/* Review/View Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -317,17 +332,6 @@ export default function ApplicationsPage() {
                       <span className="text-gray-500">Unit Number:</span>{" "}
                       {selectedApp.unitNumber || "N/A"}
                     </p>
-                    <p>
-                      <span className="text-gray-500">Full Address:</span>{" "}
-                      {selectedApp.address?.street &&
-                        `${selectedApp.address.street}, `}
-                      {selectedApp.address?.city &&
-                        `${selectedApp.address.city}, `}
-                      {selectedApp.address?.province &&
-                        `${selectedApp.address.province}, `}
-                      {selectedApp.address?.zipCode &&
-                        `${selectedApp.address.zipCode}`}
-                    </p>
                   </div>
                 </div>
 
@@ -386,18 +390,22 @@ export default function ApplicationsPage() {
                     </p>
                   </div>
 
-                  {/* Display image with direct backend URL */}
-                  {selectedApp.idImage && (
+                  {/* FIXED: Use the API returned idImageUrl instead of constructing URL */}
+                  {selectedApp.idImageUrl && (
                     <div className="mt-3">
                       <div className="relative w-full h-48 bg-gray-200 rounded-lg overflow-hidden">
                         <img
-                          src={`http://localhost:5000/${selectedApp.idImage}`}
+                          src={selectedApp.idImageUrl}
                           alt="ID Document"
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-contain cursor-pointer"
+                          onClick={() => {
+                            setImagePreview(selectedApp.idImageUrl);
+                            setShowImageModal(true);
+                          }}
                           onError={(e) => {
                             console.error(
                               "Failed to load image from:",
-                              `http://localhost:5000/${selectedApp.idImage}`,
+                              selectedApp.idImageUrl,
                             );
                             const target = e.target as HTMLImageElement;
                             target.style.display = "none";
@@ -412,18 +420,11 @@ export default function ApplicationsPage() {
                                 </svg>
                                 <p class="text-sm">Failed to load image</p>
                                 <p class="text-xs mt-1">Path: ${selectedApp.idImage}</p>
-                                <p class="text-xs">Make sure backend is running on port 5000</p>
+                                <p class="text-xs">Backend URL: ${PRODUCTION_URL}</p>
                               `;
                               parent.appendChild(errorDiv);
                             }
                           }}
-                          onClick={() => {
-                            const imageUrl = `http://localhost:5000/${selectedApp.idImage}`;
-                            console.log("Opening full image:", imageUrl);
-                            setImagePreview(imageUrl);
-                            setShowImageModal(true);
-                          }}
-                          style={{ cursor: "pointer" }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition flex items-center justify-center pointer-events-none">
                           <span className="bg-white bg-opacity-75 px-3 py-1 rounded-full text-sm">
@@ -434,7 +435,6 @@ export default function ApplicationsPage() {
                     </div>
                   )}
 
-                  {/* Show admin notes if they exist */}
                   {selectedApp.adminNotes && (
                     <div className="mt-3 p-3 bg-blue-50 rounded-lg">
                       <p className="text-sm font-semibold text-blue-800 mb-1">
@@ -445,36 +445,8 @@ export default function ApplicationsPage() {
                       </p>
                     </div>
                   )}
-
-                  {/* Debug information - only show in development */}
-                  {process.env.NODE_ENV === "development" && (
-                    <div className="mt-4 p-3 bg-yellow-50 rounded-lg text-xs">
-                      <p className="font-semibold text-yellow-800 mb-2">
-                        Debug Information:
-                      </p>
-                      <p className="font-mono text-yellow-700">
-                        Image path: {selectedApp.idImage || "null"}
-                      </p>
-                      <p className="font-mono text-yellow-700">
-                        Full URL: http://localhost:5000/{selectedApp.idImage}
-                      </p>
-                      <p className="font-mono text-yellow-700">
-                        Application ID: {selectedApp._id}
-                      </p>
-                      <p className="font-mono text-yellow-700">
-                        Status: {selectedApp.status}
-                      </p>
-                      <p className="font-mono text-yellow-700">
-                        Processed At:{" "}
-                        {selectedApp.processedAt
-                          ? new Date(selectedApp.processedAt).toLocaleString()
-                          : "N/A"}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
-                {/* Only show admin notes input and action buttons for pending applications */}
                 {selectedApp.status === "pending" && (
                   <>
                     <div>
@@ -528,7 +500,6 @@ export default function ApplicationsPage() {
                   </>
                 )}
 
-                {/* For approved/rejected applications, just show a close button */}
                 {selectedApp.status !== "pending" && (
                   <div className="flex justify-end pt-4">
                     <button
@@ -571,9 +542,7 @@ export default function ApplicationsPage() {
               onClick={(e) => e.stopPropagation()}
               onError={(e) => {
                 console.error("Failed to load full-size image:", imagePreview);
-                toast.error(
-                  "Failed to load image. Check if backend is running.",
-                );
+                toast.error("Failed to load image");
                 setShowImageModal(false);
               }}
             />
