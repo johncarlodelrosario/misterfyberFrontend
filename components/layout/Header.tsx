@@ -18,7 +18,7 @@ import {
   FiHeadphones,
   FiInfo,
 } from "react-icons/fi";
-import Logo from "./Logo";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
 // User type definition
@@ -180,7 +180,16 @@ export default function Header() {
               <div className="flex items-center justify-between gap-3">
                 {/* Logo */}
                 <div className="flex-shrink-0">
-                  <Logo className="scale-150 ml-2" />
+                  <Link href="/" className="block">
+                    <Image
+                      src="/Logo.png"
+                      alt="MisterFiber Logo"
+                      width={120}
+                      height={40}
+                      className="object-contain"
+                      priority
+                    />
+                  </Link>
                 </div>
 
                 {/* Desktop Navigation */}

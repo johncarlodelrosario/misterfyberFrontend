@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   FiFacebook,
   FiTwitter,
@@ -18,7 +19,6 @@ import {
   FiUsers,
 } from "react-icons/fi";
 import { useState, useEffect } from "react";
-import Logo from "./Logo";
 
 export default function Footer() {
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -111,7 +111,15 @@ export default function Footer() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
             {/* Company Info */}
             <div>
-              <Logo className="mb-5 scale-110" />
+              <Link href="/" className="block mb-5">
+                <Image
+                  src="/Logo.png"
+                  alt="MisterFiber Logo"
+                  width={140}
+                  height={46}
+                  className="object-contain brightness-0 invert"
+                />
+              </Link>
               <p className="text-gray-300 mb-5 leading-relaxed">
                 Providing lightning-fast and reliable internet service to homes
                 and businesses since 2026.
