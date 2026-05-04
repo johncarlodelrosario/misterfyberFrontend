@@ -54,7 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log("User data from API:", userData);
 
       // Determine if user is admin based on role or isAdmin flag
-      const isAdmin = userData.role !== undefined || userData.isAdmin === true;
+      const isAdmin =
+        (userData as any).role !== undefined ||
+        (userData as any).isAdmin === true;
 
       setUser({
         id: userData._id || userData.id,

@@ -126,7 +126,10 @@ export default function AdminBillingPage() {
         };
       });
 
-      usersWithBalance.sort((a, b) => b.currentBalance - a.currentBalance);
+      usersWithBalance.sort(
+        (a: UserWithBalance, b: UserWithBalance) =>
+          b.currentBalance - a.currentBalance,
+      );
       setUsers(usersWithBalance);
     } catch (error) {
       console.error("Failed to load billing data:", error);

@@ -19,11 +19,12 @@ import {
   Barangay,
 } from "@/services/application";
 import toast from "react-hot-toast";
-import { FiPlus, FiEdit2, FiTrash2, FiX } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiAlertCircle } from "react-icons/fi";
 
 export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
 
@@ -46,7 +47,7 @@ export default function BuildingsPage() {
   const [isNCR, setIsNCR] = useState(false);
 
   // Hardcoded NCR cities as fallback
-  const ncrCitiesFallback = [
+  const ncrCitiesFallback: City[] = [
     { code: "1374010000", name: "Manila" },
     { code: "1374020000", name: "Quezon City" },
     { code: "1374030000", name: "Caloocan" },
@@ -123,11 +124,24 @@ export default function BuildingsPage() {
   const loadBuildings = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await getAllBuildings({ limit: 100 });
       setBuildings(data.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to load buildings:", error);
-      toast.error("Failed to load buildings");
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to load buildings";
+      setError(errorMessage);
+
+      if (error.response?.status === 403) {
+        toast.error(
+          "Access denied: You don't have permission to manage buildings. Please contact your administrator.",
+        );
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -139,6 +153,7 @@ export default function BuildingsPage() {
       setRegions(data);
     } catch (error) {
       console.error("Failed to load regions:", error);
+      toast.error("Failed to load regions");
     }
   };
 
@@ -149,6 +164,7 @@ export default function BuildingsPage() {
       setProvinces(data);
     } catch (error) {
       console.error("Failed to load provinces:", error);
+      toast.error("Failed to load provinces");
     } finally {
       setLoadingAddress(false);
     }
@@ -162,6 +178,7 @@ export default function BuildingsPage() {
     } catch (error) {
       console.error("Failed to load cities:", error);
       setCities([]);
+      toast.error("Failed to load cities");
     } finally {
       setLoadingAddress(false);
     }
@@ -172,7 +189,7 @@ export default function BuildingsPage() {
       setLoadingAddress(true);
 
       // Try multiple approaches to get NCR cities
-      let citiesData = [];
+      let citiesData: City[] = [];
 
       // Approach 1: Try getting provinces first then cities
       try {
@@ -230,14 +247,14 @@ export default function BuildingsPage() {
       return;
     }
 
-    const submitData = {
+    const submitData: Partial<Building> = {
       buildingName: formData.buildingName,
       region: formData.region,
-      province: isNCR ? null : formData.province,
+      province: isNCR ? undefined : formData.province,
       city: formData.city,
       barangay: formData.barangay,
       streetAddress: formData.streetAddress,
-      zipCode: formData.zipCode,
+      zipCode: formData.zipCode || undefined,
       isActive: formData.isActive,
     };
 
@@ -254,7 +271,16 @@ export default function BuildingsPage() {
       loadBuildings();
     } catch (error: any) {
       console.error("Failed to save building:", error);
-      toast.error(error.response?.data?.message || "Failed to save building");
+      const errorMessage =
+        error.response?.data?.message || "Failed to save building";
+
+      if (error.response?.status === 403) {
+        toast.error(
+          "Access denied: You don't have permission to manage buildings.",
+        );
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -264,9 +290,18 @@ export default function BuildingsPage() {
       await deleteBuilding(id);
       toast.success("Building deleted successfully");
       loadBuildings();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete building:", error);
-      toast.error("Failed to delete building");
+      const errorMessage =
+        error.response?.data?.message || "Failed to delete building";
+
+      if (error.response?.status === 403) {
+        toast.error(
+          "Access denied: You don't have permission to delete buildings.",
+        );
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -334,6 +369,34 @@ export default function BuildingsPage() {
     );
   }
 
+  if ((error && error.includes("No role assigned")) || error?.includes("403")) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FiAlertCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            Access Denied
+          </h2>
+          <p className="text-gray-600 mb-4">
+            You don't have permission to access the Buildings Management page.
+          </p>
+          <p className="text-sm text-gray-500">
+            Please contact your administrator to request access or assign you
+            the appropriate role.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -377,47 +440,58 @@ export default function BuildingsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {buildings.map((building) => (
-                <tr key={building._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {building.buildingName}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    <div>{building.streetAddress}</div>
-                    <div className="text-xs text-gray-400">
-                      {building.barangay}, {building.city}
-                      {building.province && `, ${building.province}`}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        building.isActive
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {building.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-3">
-                      <button
-                        onClick={() => handleEdit(building)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        <FiEdit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(building._id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <FiTrash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+              {buildings.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-6 py-12 text-center text-gray-500"
+                  >
+                    No buildings found. Click "Add Building" to create one.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                buildings.map((building) => (
+                  <tr key={building._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {building.buildingName}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      <div>{building.streetAddress}</div>
+                      <div className="text-xs text-gray-400">
+                        {building.barangay}, {building.city}
+                        {building.province && `, ${building.province}`}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          building.isActive
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {building.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => handleEdit(building)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <FiEdit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(building._id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <FiTrash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

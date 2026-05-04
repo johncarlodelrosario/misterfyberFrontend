@@ -9,17 +9,13 @@ import { getUserProfile, updateUserProfile } from "@/services/user";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiSave, FiRefreshCw } from "react-icons/fi";
 import UserLayout from "@/components/User/UserLayout";
+import { getActiveBuildings, Building } from "@/services/building";
 
 const schema = yup.object({
   firstName: yup.string().required("First name is required"),
   lastName: yup.string().required("Last name is required"),
   phoneNumber: yup.string().required("Phone number is required"),
-  address: yup.object({
-    street: yup.string(),
-    city: yup.string(),
-    province: yup.string(),
-    zipCode: yup.string(),
-  }),
+  buildingId: yup.string().required("Please select a building"),
 });
 
 type FormData = yup.InferType<typeof schema>;
@@ -28,11 +24,17 @@ export default function UserProfilePage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(
+    null,
+  );
+  const [loadingBuildings, setLoadingBuildings] = useState(true);
 
   const {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -40,26 +42,69 @@ export default function UserProfilePage() {
       firstName: "",
       lastName: "",
       phoneNumber: "",
-      address: {
-        street: "",
-        city: "",
-        province: "",
-        zipCode: "",
-      },
+      buildingId: "",
     },
   });
+
+  const buildingId = watch("buildingId");
+
+  // Load buildings when component mounts
+  useEffect(() => {
+    const loadBuildings = async () => {
+      try {
+        const activeBuildings = await getActiveBuildings();
+        setBuildings(activeBuildings);
+      } catch (error: any) {
+        console.error("Failed to load buildings:", error);
+        toast.error("Failed to load building list");
+      } finally {
+        setLoadingBuildings(false);
+      }
+    };
+    loadBuildings();
+  }, []);
+
+  // Update selected building when buildingId changes
+  useEffect(() => {
+    if (buildingId) {
+      const building = buildings.find((b) => b._id === buildingId);
+      setSelectedBuilding(building || null);
+    } else {
+      setSelectedBuilding(null);
+    }
+  }, [buildingId, buildings]);
 
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const data = await getUserProfile();
+      const data = (await getUserProfile()) as any; // Temporary fix
+
       setValue("firstName", data.firstName || "");
       setValue("lastName", data.lastName || "");
       setValue("phoneNumber", data.phoneNumber || "");
-      setValue("address.street", data.address?.street || "");
-      setValue("address.city", data.address?.city || "");
-      setValue("address.province", data.address?.province || "");
-      setValue("address.zipCode", data.address?.zipCode || "");
+
+      // Try to get buildingId from different possible locations
+      let userBuildingId = "";
+
+      // Check if buildingId exists directly
+      if (data.buildingId) {
+        userBuildingId = data.buildingId;
+      }
+      // Check if building object exists with _id
+      else if (data.building && data.building._id) {
+        userBuildingId = data.building._id;
+      }
+      // Check if it's in application data
+      else if (data.application && data.application.buildingId) {
+        userBuildingId = data.application.buildingId;
+      }
+      // Check if it's in selectedBuilding field
+      else if (data.selectedBuilding) {
+        userBuildingId = data.selectedBuilding;
+      }
+
+      console.log("Loaded building ID:", userBuildingId); // Debug log
+      setValue("buildingId", userBuildingId);
     } catch (error: any) {
       console.error("Failed to load profile:", error);
       toast.error(error.response?.data?.message || "Failed to load profile");
@@ -84,7 +129,7 @@ export default function UserProfilePage() {
     }
   };
 
-  if (loading) {
+  if (loading || loadingBuildings) {
     return (
       <UserLayout>
         <div className="flex items-center justify-center h-64">
@@ -166,34 +211,67 @@ export default function UserProfilePage() {
               </div>
 
               <div>
-                <h3 className="font-semibold mb-3 text-gray-900">Address</h3>
-                <div className="space-y-4">
-                  <div>
-                    <input
-                      {...register("address.street")}
-                      placeholder="Street Address"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input
-                      {...register("address.city")}
-                      placeholder="City"
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <input
-                      {...register("address.province")}
-                      placeholder="Province"
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <input
-                      {...register("address.zipCode")}
-                      placeholder="Zip Code"
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned Building *
+                </label>
+                <select
+                  {...register("buildingId")}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                  value={buildingId || ""}
+                >
+                  <option value="">Select a building</option>
+                  {buildings.map((building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.buildingName} - {building.streetAddress},{" "}
+                      {building.city}
+                    </option>
+                  ))}
+                </select>
+                {errors.buildingId && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {errors.buildingId.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Display selected building details */}
+              {selectedBuilding && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <span>🏢</span> Your Selected Building
+                  </h3>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <p>
+                      <span className="font-medium">Building:</span>{" "}
+                      {selectedBuilding.buildingName}
+                    </p>
+                    <p>
+                      <span className="font-medium">Address:</span>{" "}
+                      {selectedBuilding.streetAddress}
+                    </p>
+                    <p>
+                      <span className="font-medium">Barangay:</span>{" "}
+                      {selectedBuilding.barangay}
+                    </p>
+                    <p>
+                      <span className="font-medium">City:</span>{" "}
+                      {selectedBuilding.city}
+                    </p>
+                    <p>
+                      <span className="font-medium">Province:</span>{" "}
+                      {selectedBuilding.province}
+                    </p>
+                    <p>
+                      <span className="font-medium">Region:</span>{" "}
+                      {selectedBuilding.region}
+                    </p>
+                    <p>
+                      <span className="font-medium">Zip Code:</span>{" "}
+                      {selectedBuilding.zipCode}
+                    </p>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button

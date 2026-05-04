@@ -21,9 +21,16 @@ import {
 import Logo from "./Logo";
 import { motion, AnimatePresence } from "framer-motion";
 
+// User type definition
+interface User {
+  firstName: string;
+  email: string;
+  lastName?: string;
+}
+
 // Temporary mock auth - replace with real auth later
 const useMockAuth = () => {
-  const [user] = useState(null);
+  const [user] = useState<User | null>(null);
   const isAuthenticated = false;
   const logout = () => {};
   return { user, isAuthenticated, logout };
