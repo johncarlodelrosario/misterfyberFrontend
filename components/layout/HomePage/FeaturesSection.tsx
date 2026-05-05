@@ -88,23 +88,28 @@ function FeatureCard({ feature }: { feature: (typeof features)[0] }) {
         scale: 1.02,
         transition: { duration: 0.2 },
       }}
-      className="group relative bg-gray-800 rounded-2xl p-8 shadow-lg hover:shadow-2xl transition-shadow duration-500 border border-gray-700 overflow-hidden"
+      className="group relative bg-gray-800/80 backdrop-blur-sm rounded-2xl p-5 md:p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-blue-500/30 hover:border-blue-500/60 overflow-hidden"
     >
+      {/* Blue glow effect */}
+      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
+
       <div
         className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-500`}
       />
       <div className="relative z-10">
         <motion.div
-          className={`w-16 h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mb-6 shadow-lg`}
+          className={`w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mb-3 md:mb-6 shadow-lg`}
           whileHover={{ scale: 1.1, rotate: 5 }}
           transition={{ type: "spring", stiffness: 300 }}
         >
-          <feature.icon className="w-8 h-8 text-white" />
+          <feature.icon className="w-6 h-6 md:w-8 md:h-8 text-white" />
         </motion.div>
-        <h3 className="text-xl font-bold mb-3 text-white group-hover:text-cyan-400 transition-colors">
+        <h3 className="text-base md:text-xl font-bold mb-2 md:mb-3 text-white group-hover:text-cyan-400 transition-colors">
           {feature.title}
         </h3>
-        <p className="text-gray-300 leading-relaxed">{feature.description}</p>
+        <p className="text-xs md:text-base text-gray-300 leading-relaxed">
+          {feature.description}
+        </p>
       </div>
     </motion.div>
   );
@@ -130,7 +135,10 @@ export default function FeaturesSection() {
   );
 
   return (
-    <section className="py-24 bg-gray-900 relative overflow-hidden">
+    <section
+      className="py-12 md:py-24 relative overflow-hidden"
+      style={{ backgroundColor: "#080616" }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         <motion.div
           ref={headerRef}
@@ -138,21 +146,22 @@ export default function FeaturesSection() {
             y: headerY,
             opacity: headerOpacity,
           }}
-          className="text-center mb-16"
+          className="text-center mb-8 md:mb-16"
         >
-          <h2 className="text-4xl lg:text-5xl font-bold mb-4 text-white">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4 text-white">
             Quality{" "}
             <span className="bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
               Internet Service
             </span>
           </h2>
-          <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+          <p className="text-sm md:text-base lg:text-xl text-gray-300 max-w-3xl mx-auto px-4">
             We provide reliable internet connection with affordable plans and
             dedicated customer support
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {/* 4 cards visible on mobile - grid with wrap */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 md:gap-8">
           {features.map((feature, index) => (
             <FeatureCard key={index} feature={feature} />
           ))}

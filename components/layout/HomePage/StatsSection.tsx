@@ -109,7 +109,7 @@ function StatCard({
       className="text-center group"
     >
       <motion.div
-        className="mb-4 inline-flex p-4 bg-gray-800 rounded-2xl group-hover:shadow-xl transition-all duration-300 border border-gray-700"
+        className="mb-4 inline-flex p-4 bg-gray-800/80 backdrop-blur-sm rounded-2xl group-hover:shadow-xl transition-all duration-300 border border-blue-500/30 group-hover:border-blue-500/60"
         whileHover={{ rotate: 360 }}
         transition={{ duration: 0.6 }}
       >
@@ -150,7 +150,10 @@ export default function StatsSection({ stats }: StatsSectionProps) {
   );
 
   return (
-    <section className="py-20 bg-gray-900 relative overflow-hidden">
+    <section
+      className="py-20 relative overflow-hidden"
+      style={{ backgroundColor: "#080616" }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         {/* Optional Header - maaaring gusto mong maglagay ng title */}
         <motion.div

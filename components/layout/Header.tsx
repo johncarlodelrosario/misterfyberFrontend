@@ -8,7 +8,6 @@ import {
   FiMenu,
   FiX,
   FiUser,
-  FiSearch,
   FiBell,
   FiChevronDown,
   FiLogOut,
@@ -39,8 +38,6 @@ const useMockAuth = () => {
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [lastScrollY, setLastScrollY] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -48,7 +45,6 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout } = useMockAuth();
-  const searchRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
   const navigation = [
@@ -109,12 +105,6 @@ export default function Header() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        searchRef.current &&
-        !searchRef.current.contains(event.target as Node)
-      ) {
-        setIsSearchOpen(false);
-      }
-      if (
         isDropdownOpen &&
         !(event.target as Element).closest(".dropdown-container")
       ) {
@@ -132,15 +122,6 @@ export default function Header() {
 
   const isActive = (href: string) => pathname === href;
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
-      setIsSearchOpen(false);
-      setSearchQuery("");
-    }
-  };
-
   return (
     <>
       <header
@@ -155,38 +136,48 @@ export default function Header() {
             ref={navRef}
             className="relative mx-auto max-w-6xl rounded-2xl md:rounded-full transition-all duration-500 overflow-hidden"
           >
-            {/* Glass background */}
-            <div className="absolute inset-0 bg-white/70 backdrop-blur-xl" />
+            {/* Glass background - dark theme */}
+            <div className="absolute inset-0 bg-[#080616]/80 backdrop-blur-xl" />
 
-            {/* Gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-r from-white/30 via-white/10 to-white/30" />
+            {/* Clear border around the nav */}
+            <div className="absolute inset-0 rounded-2xl md:rounded-full border border-blue-500/60 shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
 
-            {/* Mouse follow spotlight */}
+            {/* Gradient overlay - blue accent */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-transparent to-blue-500/10" />
+
+            {/* Mouse follow spotlight - blue glow */}
             <div
               className="absolute inset-0 transition-opacity duration-150 pointer-events-none"
               style={{
-                background: `radial-gradient(circle 400px at ${mousePosition.x}px ${mousePosition.y}px, rgba(0, 168, 107, 0.06) 0%, transparent 70%)`,
+                background: `radial-gradient(circle 400px at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.12) 0%, transparent 70%)`,
               }}
             />
 
-            {/* Top border highlight */}
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+            {/* Top border highlight - brighter blue */}
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-400/60 to-transparent" />
 
-            {/* Bottom border */}
-            <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+            {/* Bottom border - brighter blue */}
+            <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-400/40 to-transparent" />
+
+            {/* Left border accent */}
+            <div className="absolute left-0 top-1/4 bottom-1/4 w-px bg-gradient-to-b from-transparent via-blue-400/40 to-transparent" />
+
+            {/* Right border accent */}
+            <div className="absolute right-0 top-1/4 bottom-1/4 w-px bg-gradient-to-b from-transparent via-blue-400/40 to-transparent" />
 
             {/* Content */}
             <div className="relative px-3 md:px-5 py-1.5">
               <div className="flex items-center justify-between gap-3">
-                {/* Logo - Made Bigger */}
-                <div className="flex-shrink-0">
-                  <Link href="/" className="block">
+                {/* Logo */}
+                <div className="flex-shrink-0 group/logo">
+                  <Link href="/" className="block relative">
+                    <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-md opacity-0 group-hover/logo:opacity-100 transition-opacity duration-300" />
                     <Image
                       src="/Logo.png"
                       alt="MisterFiber Logo"
                       width={140}
                       height={50}
-                      className="object-contain w-auto h-12 md:h-14"
+                      className="object-contain w-auto h-12 md:h-14 relative"
                       priority
                     />
                   </Link>
@@ -210,13 +201,17 @@ export default function Header() {
                           transition-all duration-200 flex items-center gap-2
                           ${
                             active
-                              ? "text-accent-700 bg-white/50 shadow-sm"
-                              : "text-gray-700 hover:text-accent-600 hover:bg-white/40"
+                              ? "text-blue-400 bg-white/10 shadow-sm border border-blue-500/50 shadow-blue-500/20"
+                              : "text-blue-300 hover:text-blue-400 hover:bg-white/5"
                           }
                         `}
                       >
-                        <Icon className="w-4 h-4" />
-                        <span>{item.name}</span>
+                        {/* Hover glow effect */}
+                        {isHovered && (
+                          <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md" />
+                        )}
+                        <Icon className="w-4 h-4 relative z-10" />
+                        <span className="relative z-10">{item.name}</span>
                       </Link>
                     );
                   })}
@@ -224,43 +219,12 @@ export default function Header() {
 
                 {/* Right Actions */}
                 <div className="flex items-center gap-1 md:gap-2">
-                  {/* Search */}
-                  <div className="relative" ref={searchRef}>
-                    {isSearchOpen ? (
-                      <form
-                        onSubmit={handleSearch}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-20"
-                      >
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search..."
-                          className="w-56 md:w-72 pl-10 pr-4 py-1.5 text-sm
-                            bg-white/95 backdrop-blur-xl
-                            border border-gray-200 rounded-full
-                            text-gray-900 placeholder-gray-400
-                            focus:outline-none focus:ring-2 focus:ring-accent-400/50 focus:border-transparent
-                            shadow-lg"
-                          autoFocus
-                        />
-                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      </form>
-                    ) : (
-                      <button
-                        onClick={() => setIsSearchOpen(true)}
-                        className="p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
-                      >
-                        <FiSearch className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-
                   {/* Notification */}
                   {isAuthenticated && (
-                    <button className="relative p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200">
-                      <FiBell className="w-4 h-4" />
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-accent-500 rounded-full" />
+                    <button className="relative p-1.5 rounded-full text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-all duration-200 group/bell">
+                      <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md opacity-0 group-hover/bell:opacity-100 transition-opacity duration-300" />
+                      <FiBell className="w-4 h-4 relative z-10" />
+                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-lg shadow-blue-500/50" />
                     </button>
                   )}
 
@@ -270,16 +234,18 @@ export default function Header() {
                       <button
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                         className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full
-                          bg-white/40 hover:bg-white/60 transition-all duration-200"
+                          bg-white/10 hover:bg-white/20 transition-all duration-200 border border-blue-500/50
+                          hover:shadow-lg hover:shadow-blue-500/20 group/auth"
                       >
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-accent-500 to-accent-600 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md opacity-0 group-hover/auth:opacity-100 transition-opacity duration-300" />
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center relative z-10 shadow-lg shadow-blue-500/30">
                           <FiUser className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-xs font-medium text-gray-700 hidden md:inline">
+                        <span className="text-xs font-medium text-blue-300 hidden md:inline relative z-10">
                           Account
                         </span>
                         <FiChevronDown
-                          className={`w-3 h-3 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
+                          className={`w-3 h-3 text-blue-400 transition-transform duration-200 relative z-10 ${isDropdownOpen ? "rotate-180" : ""}`}
                         />
                       </button>
 
@@ -287,21 +253,22 @@ export default function Header() {
                       {isDropdownOpen && (
                         <div
                           className="absolute right-0 mt-2 w-52
-                            bg-white/95 backdrop-blur-xl rounded-xl shadow-xl
-                            border border-gray-100 py-1 z-30"
+                            bg-[#080616]/95 backdrop-blur-xl rounded-xl shadow-xl
+                            border border-blue-500/40 py-1 z-30
+                            shadow-blue-500/20"
                         >
-                          <div className="px-3 py-2 border-b border-gray-100">
-                            <p className="text-sm font-semibold text-gray-900">
+                          <div className="px-3 py-2 border-b border-blue-500/30">
+                            <p className="text-sm font-semibold text-white">
                               {user?.firstName || "User"}
                             </p>
-                            <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            <p className="text-xs text-blue-300 mt-0.5 truncate">
                               {user?.email || "user@example.com"}
                             </p>
                           </div>
                           <div className="py-1">
                             <Link
                               href="/user/dashboard"
-                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:text-accent-600 hover:bg-gray-50 transition-colors"
+                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-blue-300 hover:text-blue-400 hover:bg-white/5 transition-colors"
                               onClick={() => setIsDropdownOpen(false)}
                             >
                               <FiHome className="w-4 h-4" />
@@ -309,7 +276,7 @@ export default function Header() {
                             </Link>
                             <Link
                               href="/user/profile"
-                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:text-accent-600 hover:bg-gray-50 transition-colors"
+                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-blue-300 hover:text-blue-400 hover:bg-white/5 transition-colors"
                               onClick={() => setIsDropdownOpen(false)}
                             >
                               <FiUserCheck className="w-4 h-4" />
@@ -317,20 +284,20 @@ export default function Header() {
                             </Link>
                             <Link
                               href="/user/billing"
-                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:text-accent-600 hover:bg-gray-50 transition-colors"
+                              className="flex items-center gap-2.5 px-3 py-2 text-sm text-blue-300 hover:text-blue-400 hover:bg-white/5 transition-colors"
                               onClick={() => setIsDropdownOpen(false)}
                             >
                               <FiCreditCard className="w-4 h-4" />
                               Billing
                             </Link>
                           </div>
-                          <hr className="my-1 border-gray-100" />
+                          <hr className="my-1 border-blue-500/30" />
                           <button
                             onClick={() => {
                               logout();
                               setIsDropdownOpen(false);
                             }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors"
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
                           >
                             <FiLogOut className="w-4 h-4" />
                             Logout
@@ -341,63 +308,77 @@ export default function Header() {
                   ) : (
                     <Link
                       href="/login"
-                      className="px-3 py-1 text-sm font-medium text-gray-700 hover:text-accent-600 rounded-full hover:bg-white/40 transition-all duration-200"
+                      className="px-3 py-1 text-sm font-medium text-blue-300 hover:text-blue-400 rounded-full hover:bg-white/5 transition-all duration-200 relative group/signin"
                     >
-                      Sign In
+                      <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md opacity-0 group-hover/signin:opacity-100 transition-opacity duration-300" />
+                      <span className="relative z-10">Sign In</span>
                     </Link>
                   )}
 
                   {/* Mobile Menu Button */}
                   <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="lg:hidden p-1.5 rounded-full text-gray-500 hover:text-accent-600 hover:bg-white/40 transition-all duration-200"
+                    className="lg:hidden p-1.5 rounded-full text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-all duration-200 relative group/menu"
                   >
-                    {isMenuOpen ? <FiX size={18} /> : <FiMenu size={18} />}
+                    <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md opacity-0 group-hover/menu:opacity-100 transition-opacity duration-300" />
+                    {isMenuOpen ? (
+                      <FiX size={18} className="relative z-10" />
+                    ) : (
+                      <FiMenu size={18} className="relative z-10" />
+                    )}
                   </button>
                 </div>
               </div>
 
               {/* Mobile Menu */}
-              {isMenuOpen && (
-                <div className="lg:hidden mt-2 pt-2 border-t border-gray-200/50">
-                  <div className="flex flex-col gap-1">
-                    {navigation.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          className={`
-                            flex items-center gap-3 px-4 py-2.5 rounded-xl
-                            text-sm font-medium transition-all duration-200
-                            ${
-                              isActive(item.href)
-                                ? "bg-white/50 text-accent-700"
-                                : "text-gray-700 hover:text-accent-600 hover:bg-white/30"
-                            }
-                          `}
-                          onClick={() => setIsMenuOpen(false)}
-                        >
-                          <Icon className="w-4 h-4" />
-                          {item.name}
-                        </Link>
-                      );
-                    })}
+              <AnimatePresence>
+                {isMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="lg:hidden mt-2 pt-2 border-t border-blue-500/40"
+                  >
+                    <div className="flex flex-col gap-1">
+                      {navigation.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <Link
+                            key={item.name}
+                            href={item.href}
+                            className={`
+                              flex items-center gap-3 px-4 py-2.5 rounded-xl
+                              text-sm font-medium transition-all duration-200
+                              ${
+                                isActive(item.href)
+                                  ? "bg-white/10 text-blue-400 border border-blue-500/40 shadow-blue-500/20"
+                                  : "text-blue-300 hover:text-blue-400 hover:bg-white/5"
+                              }
+                            `}
+                            onClick={() => setIsMenuOpen(false)}
+                          >
+                            <Icon className="w-4 h-4" />
+                            {item.name}
+                          </Link>
+                        );
+                      })}
 
-                    {!isAuthenticated && (
-                      <div className="mt-1 pt-1 border-t border-gray-200/50">
-                        <Link
-                          href="/login"
-                          className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-accent-600 hover:bg-white/30 rounded-xl transition-all duration-200"
-                          onClick={() => setIsMenuOpen(false)}
-                        >
-                          Sign In
-                        </Link>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                      {!isAuthenticated && (
+                        <div className="mt-1 pt-1 border-t border-blue-500/40">
+                          <Link
+                            href="/login"
+                            className="flex items-center px-4 py-2.5 text-sm font-medium text-blue-300 hover:text-blue-400 hover:bg-white/5 rounded-xl transition-all duration-200"
+                            onClick={() => setIsMenuOpen(false)}
+                          >
+                            Sign In
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </nav>
         </div>

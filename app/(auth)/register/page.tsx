@@ -135,20 +135,23 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div
+      className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"
+      style={{ backgroundColor: "#080616" }}
+    >
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="text-center">
             <span className="text-4xl">🌐</span>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-gray-400">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="font-medium text-primary-600 hover:text-primary-500"
+              className="font-medium text-primary-400 hover:text-primary-300"
             >
               Sign in
             </Link>
@@ -161,7 +164,7 @@ export default function RegisterPage() {
             <div>
               <label
                 htmlFor="applicationId"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-300"
               >
                 Application ID *
               </label>
@@ -173,46 +176,46 @@ export default function RegisterPage() {
                   id="applicationId"
                   {...register("applicationId")}
                   type="text"
-                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm ${
+                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white ${
                     applicationValid === true
                       ? "border-green-500"
                       : applicationValid === false
                         ? "border-red-500"
-                        : "border-gray-300"
+                        : "border-gray-700"
                   }`}
                   placeholder="Enter your Application ID (e.g., SLK2603123456)"
                 />
                 {checkingApp && (
                   <div className="absolute right-3 top-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-600"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-400"></div>
                   </div>
                 )}
               </div>
               {applicationValid === true && appStatus && (
-                <p className="mt-1 text-sm text-green-600">
+                <p className="mt-1 text-sm text-green-400">
                   ✓ Application approved! You can now register.
                 </p>
               )}
               {applicationValid === false &&
                 appStatus?.status === "pending" && (
-                  <p className="mt-1 text-sm text-yellow-600">
+                  <p className="mt-1 text-sm text-yellow-400">
                     ⏳ Your application is still pending approval. Please wait
                     for admin approval.
                   </p>
                 )}
               {applicationValid === false &&
                 appStatus?.status === "rejected" && (
-                  <p className="mt-1 text-sm text-red-600">
+                  <p className="mt-1 text-sm text-red-400">
                     ✗ Your application was rejected. Please contact support.
                   </p>
                 )}
               {applicationValid === false && !appStatus && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   Invalid Application ID. Please check and try again.
                 </p>
               )}
               {errors.applicationId && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   {errors.applicationId.message}
                 </p>
               )}
@@ -222,7 +225,7 @@ export default function RegisterPage() {
             <div>
               <label
                 htmlFor="username"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-300"
               >
                 Username *
               </label>
@@ -234,12 +237,12 @@ export default function RegisterPage() {
                   id="username"
                   {...register("username")}
                   type="text"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="Choose a username"
                 />
               </div>
               {errors.username && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   {errors.username.message}
                 </p>
               )}
@@ -249,7 +252,7 @@ export default function RegisterPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-300"
               >
                 Email Address *
               </label>
@@ -261,15 +264,15 @@ export default function RegisterPage() {
                   id="email"
                   {...register("email")}
                   type="email"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-50"
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-800 text-white"
                   placeholder="your@email.com"
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-400">
                 Email is auto-filled from your application
               </p>
               {errors.email && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   {errors.email.message}
                 </p>
               )}
@@ -279,7 +282,7 @@ export default function RegisterPage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-300"
               >
                 Password *
               </label>
@@ -291,7 +294,7 @@ export default function RegisterPage() {
                   id="password"
                   {...register("password")}
                   type={showPassword ? "text" : "password"}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="••••••••"
                 />
                 <button
@@ -307,7 +310,7 @@ export default function RegisterPage() {
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   {errors.password.message}
                 </p>
               )}
@@ -317,7 +320,7 @@ export default function RegisterPage() {
             <div>
               <label
                 htmlFor="confirmPassword"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-300"
               >
                 Confirm Password *
               </label>
@@ -329,7 +332,7 @@ export default function RegisterPage() {
                   id="confirmPassword"
                   {...register("confirmPassword")}
                   type={showConfirmPassword ? "text" : "password"}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="••••••••"
                 />
                 <button
@@ -345,7 +348,7 @@ export default function RegisterPage() {
                 </button>
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-400">
                   {errors.confirmPassword.message}
                 </p>
               )}
@@ -362,11 +365,11 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          <div className="text-center text-sm text-gray-500">
+          <div className="text-center text-sm text-gray-400">
             <p>Don't have an Application ID?</p>
             <Link
               href="/apply"
-              className="text-primary-600 hover:text-primary-500 font-medium"
+              className="text-primary-400 hover:text-primary-300 font-medium"
             >
               Apply for internet connection first →
             </Link>

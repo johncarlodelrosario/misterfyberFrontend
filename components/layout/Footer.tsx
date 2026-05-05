@@ -44,10 +44,17 @@ export default function Footer() {
         className="relative text-white bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: "url('/footer/mountainFiberNight.png')",
+          backgroundAttachment: "fixed",
         }}
       >
         {/* Dark overlay for text readability - NO BLUR, just dark overlay */}
         <div className="absolute inset-0 bg-black/70" />
+
+        {/* Top dim effect with #080616 */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#080616] via-transparent to-transparent" />
+
+        {/* Bottom gradient with #080616 */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#080616] via-transparent to-transparent" />
 
         {/* Subtle gradient overlay for depth */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/40" />

@@ -221,7 +221,7 @@ export default function PlansSection() {
         className="fixed top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 via-emerald-500 to-blue-600 z-50 origin-left"
         style={{ scaleX }}
       />
-      <div className="relative min-h-screen bg-gray-900">
+      <div className="relative min-h-screen bg-[#080616]">
         {/* Header - positioned absolutely to overlay on banner */}
         <div className="absolute top-0 left-0 right-0 z-20">
           <Header />
@@ -243,9 +243,9 @@ export default function PlansSection() {
           <div className="absolute inset-0 bg-gradient-to-br from-blue-900/40 via-black/30 to-emerald-900/40" />
 
           {/* Smooth blur overlay at the bottom of banner - multiple layers for smoother transition */}
-          <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-gray-900 via-gray-900/95 to-transparent backdrop-blur-lg" />
-          <div className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-gray-900 via-gray-900/90 to-transparent backdrop-blur-md" />
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-gray-900 via-gray-900/70 to-transparent backdrop-blur-sm" />
+          <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#080616] via-[#080616]/95 to-transparent backdrop-blur-lg" />
+          <div className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-[#080616] via-[#080616]/90 to-transparent backdrop-blur-md" />
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#080616] via-[#080616]/70 to-transparent backdrop-blur-sm" />
 
           {/* Content - pushed up to allow space for cards */}
           <div className="max-w-5xl mx-auto px-4 text-center relative z-10 w-full">
@@ -281,7 +281,7 @@ export default function PlansSection() {
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                 >
-                  <FiLoader className="w-12 h-12 text-emerald-500" />
+                  <FiLoader className="w-12 h-12 text-blue-500" />
                 </motion.div>
                 <p className="mt-4 text-gray-400">Loading our plans...</p>
               </div>
@@ -293,7 +293,7 @@ export default function PlansSection() {
                 <p className="text-gray-400 text-lg mb-4">{error}</p>
                 <button
                   onClick={fetchPlans}
-                  className="mt-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition"
+                  className="mt-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg font-medium hover:shadow-lg hover:shadow-blue-500/30 transition"
                 >
                   Try Again
                 </button>
@@ -313,13 +313,13 @@ export default function PlansSection() {
                       whileHover={{ y: -8 }}
                       className={`relative bg-gray-800 rounded-2xl transition-all duration-300 ${
                         isPopular
-                          ? "border-2 border-emerald-500 shadow-xl shadow-emerald-500/20"
-                          : "border border-gray-700 shadow-lg hover:shadow-xl"
+                          ? "border-2 border-blue-500 shadow-xl shadow-blue-500/30"
+                          : "border border-blue-500/50 shadow-lg hover:shadow-xl hover:shadow-blue-500/20"
                       }`}
                     >
                       {isPopular && (
                         <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
+                          <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
                             <FiStar className="w-3 h-3" />
                             Most Popular
                           </div>
@@ -340,7 +340,7 @@ export default function PlansSection() {
                             /month
                           </span>
                         </div>
-                        <div className="bg-gray-900 rounded-xl p-4 mb-6 border border-gray-700">
+                        <div className="bg-gray-900 rounded-xl p-4 mb-6 border border-blue-500/30">
                           <div className="flex justify-between items-center">
                             <div className="text-center flex-1">
                               <p className="text-xs text-gray-400 mb-1">
@@ -376,7 +376,7 @@ export default function PlansSection() {
                               transition={{ delay: idx * 0.1 + i * 0.05 }}
                               className="flex items-start gap-2.5 text-sm text-gray-300"
                             >
-                              <FiCheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                              <FiCheckCircle className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                               <span>{feature}</span>
                             </motion.li>
                           ))}
@@ -389,8 +389,8 @@ export default function PlansSection() {
                             href={`/apply?plan=${plan._id}`}
                             className={`block text-center py-3 rounded-xl font-semibold transition-all duration-300 ${
                               isPopular
-                                ? "bg-gradient-to-r from-blue-600 to-emerald-600 text-white hover:shadow-lg hover:opacity-90"
-                                : "bg-gray-700 text-gray-200 hover:bg-gray-600"
+                                ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:shadow-lg hover:shadow-blue-500/30 hover:opacity-90"
+                                : "bg-blue-600/80 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20"
                             }`}
                           >
                             Get Started
@@ -407,7 +407,7 @@ export default function PlansSection() {
         </section>
 
         {/* Features Highlight Section */}
-        <section className="py-20 bg-gray-900">
+        <section className="py-20 bg-[#080616]">
           <div className="max-w-6xl mx-auto px-4">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -437,7 +437,7 @@ export default function PlansSection() {
                   transition={{ delay: idx * 0.1, duration: 0.5 }}
                   viewport={{ once: true }}
                   whileHover={{ y: -5 }}
-                  className="text-center p-6 rounded-2xl bg-gray-800 border border-gray-700 hover:shadow-lg transition-all duration-300"
+                  className="text-center p-6 rounded-2xl bg-gray-800 border border-blue-500/30 hover:border-blue-500/60 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300"
                 >
                   <div
                     className={`inline-flex p-3 rounded-xl bg-gradient-to-r ${feature.gradient} mb-4`}

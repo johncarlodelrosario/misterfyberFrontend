@@ -110,7 +110,7 @@ export default function SupportPage() {
         style={{ scaleX }}
       />
       <Header />
-      <main className="min-h-screen bg-gray-900">
+      <main className="min-h-screen bg-[#080616]">
         {/* Hero Section with Custom Banner Image - INCREASED HEIGHT */}
         <section className="relative min-h-[500px] md:min-h-[650px] flex items-center overflow-hidden">
           {/* Background Image */}
@@ -130,7 +130,7 @@ export default function SupportPage() {
           <div className="absolute top-20 left-10 w-72 h-72 bg-white/5 rounded-full filter blur-3xl animate-pulse z-0" />
           <div className="absolute bottom-10 right-10 w-96 h-96 bg-emerald-400/10 rounded-full filter blur-3xl animate-pulse delay-1000 z-0" />
 
-          <div className="container-custom text-center relative z-10 w-full">
+          <div className="container-custom text-center relative z-10 w-full px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -146,7 +146,7 @@ export default function SupportPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.5 }}
-              className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4"
+              className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 px-2"
             >
               How can we{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
@@ -157,7 +157,7 @@ export default function SupportPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="text-xl text-gray-300 max-w-2xl mx-auto"
+              className="text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto px-2"
             >
               We're here to assist you with any questions or concerns you may
               have.
@@ -169,26 +169,26 @@ export default function SupportPage() {
         <ApplicationStatus />
 
         {/* Support Channels */}
-        <section className="py-20 bg-gray-900">
-          <div className="container-custom">
+        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+          <div className="container-custom px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               viewport={{ once: true }}
-              className="text-center mb-12"
+              className="text-center mb-8 sm:mb-12"
             >
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Get in{" "}
                 <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                   Touch
                 </span>
               </h2>
-              <p className="text-gray-400">
+              <p className="text-gray-400 text-sm sm:text-base">
                 Choose your preferred way to contact us
               </p>
             </motion.div>
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
               {supportChannels.map((channel, index) => (
                 <motion.a
                   key={index}
@@ -197,18 +197,22 @@ export default function SupportPage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1, duration: 0.5 }}
                   whileHover={{ y: -5 }}
-                  className="bg-gray-800 rounded-2xl p-8 text-center hover:shadow-xl transition-all duration-300 border border-gray-700 group"
+                  className="bg-gray-800 rounded-2xl p-6 sm:p-8 text-center hover:shadow-xl transition-all duration-300 border border-gray-700 group"
                 >
                   <div
-                    className={`inline-flex p-4 rounded-xl bg-gradient-to-r ${channel.gradient} mb-4 group-hover:scale-110 transition-transform duration-300`}
+                    className={`inline-flex p-3 sm:p-4 rounded-xl bg-gradient-to-r ${channel.gradient} mb-3 sm:mb-4 group-hover:scale-110 transition-transform duration-300`}
                   >
-                    <channel.icon className="w-6 h-6 text-white" />
+                    <channel.icon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">
+                  <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">
                     {channel.title}
                   </h3>
-                  <p className="text-gray-400 mb-1">{channel.info}</p>
-                  <p className="text-sm text-gray-500">{channel.hours}</p>
+                  <p className="text-gray-400 mb-1 text-sm sm:text-base">
+                    {channel.info}
+                  </p>
+                  <p className="text-xs sm:text-sm text-gray-500">
+                    {channel.hours}
+                  </p>
                 </motion.a>
               ))}
             </div>
@@ -216,32 +220,32 @@ export default function SupportPage() {
         </section>
 
         {/* FAQ Section */}
-        <section className="py-20 bg-gray-800">
-          <div className="container-custom">
+        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+          <div className="container-custom px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               viewport={{ once: true }}
-              className="text-center mb-12"
+              className="text-center mb-8 sm:mb-12"
             >
-              <div className="inline-flex items-center gap-2 bg-gray-700 rounded-full px-4 py-1.5 mb-4">
+              <div className="inline-flex items-center gap-2 bg-gray-800 rounded-full px-4 py-1.5 mb-4">
                 <FiHelpCircle className="w-3.5 h-3.5 text-blue-400" />
                 <span className="text-xs font-semibold uppercase text-blue-400 tracking-wider">
                   FAQ
                 </span>
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Frequently Asked{" "}
                 <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                   Questions
                 </span>
               </h2>
-              <p className="text-gray-400">
+              <p className="text-gray-400 text-sm sm:text-base">
                 Find answers to common questions about our service
               </p>
             </motion.div>
-            <div className="max-w-3xl mx-auto space-y-4">
+            <div className="max-w-3xl mx-auto space-y-3 sm:space-y-4">
               {faqs.map((faq, index) => (
                 <motion.div
                   key={index}
@@ -253,13 +257,13 @@ export default function SupportPage() {
                 >
                   <button
                     onClick={() => setOpenFaq(openFaq === index ? null : index)}
-                    className="w-full px-6 py-4 text-left flex justify-between items-center"
+                    className="w-full px-4 sm:px-6 py-3 sm:py-4 text-left flex justify-between items-center gap-2"
                   >
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-white text-sm sm:text-base">
                       {faq.question}
                     </span>
                     <FiHelpCircle
-                      className={`w-5 h-5 text-blue-400 transform transition-transform duration-300 ${openFaq === index ? "rotate-180" : ""}`}
+                      className={`w-5 h-5 text-blue-400 flex-shrink-0 transform transition-transform duration-300 ${openFaq === index ? "rotate-180" : ""}`}
                     />
                   </button>
                   {openFaq === index && (
@@ -268,9 +272,11 @@ export default function SupportPage() {
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
                       transition={{ duration: 0.3 }}
-                      className="px-6 pb-4 border-t border-gray-700 pt-3"
+                      className="px-4 sm:px-6 pb-4 border-t border-gray-700 pt-3"
                     >
-                      <p className="text-gray-400">{faq.answer}</p>
+                      <p className="text-gray-400 text-sm sm:text-base">
+                        {faq.answer}
+                      </p>
                     </motion.div>
                   )}
                 </motion.div>
@@ -280,45 +286,45 @@ export default function SupportPage() {
         </section>
 
         {/* Self-Help Resources */}
-        <section className="py-20 bg-gray-900">
-          <div className="container-custom">
+        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+          <div className="container-custom px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               viewport={{ once: true }}
-              className="text-center mb-12"
+              className="text-center mb-8 sm:mb-12"
             >
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Self-Help{" "}
                 <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                   Resources
                 </span>
               </h2>
-              <p className="text-gray-400">
+              <p className="text-gray-400 text-sm sm:text-base">
                 Access guides and connect with our community
               </p>
             </motion.div>
-            <div className="grid md:grid-cols-2 gap-8">
+            <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
               <Link href="/guides">
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.1, duration: 0.5 }}
                   whileHover={{ y: -5 }}
-                  className="bg-gray-800 rounded-2xl p-8 text-center shadow-lg border border-gray-700 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+                  className="bg-gray-800 rounded-2xl p-6 sm:p-8 text-center shadow-lg border border-gray-700 hover:shadow-xl transition-all duration-300 group cursor-pointer"
                 >
-                  <div className="inline-flex p-4 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 mb-4 group-hover:scale-110 transition-transform duration-300">
-                    <FiBookOpen className="w-6 h-6 text-white" />
+                  <div className="inline-flex p-3 sm:p-4 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 mb-3 sm:mb-4 group-hover:scale-110 transition-transform duration-300">
+                    <FiBookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">
+                  <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">
                     User Guides
                   </h3>
-                  <p className="text-gray-400 mb-4">
+                  <p className="text-gray-400 mb-4 text-sm sm:text-base">
                     Step-by-step guides to help you manage your account,
                     troubleshoot issues, and maximize your internet experience
                   </p>
-                  <span className="text-blue-400 font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  <span className="text-blue-400 font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all text-sm sm:text-base">
                     View Guides
                     <FiArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                   </span>
@@ -330,19 +336,19 @@ export default function SupportPage() {
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2, duration: 0.5 }}
                   whileHover={{ y: -5 }}
-                  className="bg-gray-800 rounded-2xl p-8 text-center shadow-lg border border-gray-700 hover:shadow-xl transition-all duration-300 group cursor-pointer"
+                  className="bg-gray-800 rounded-2xl p-6 sm:p-8 text-center shadow-lg border border-gray-700 hover:shadow-xl transition-all duration-300 group cursor-pointer"
                 >
-                  <div className="inline-flex p-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 mb-4 group-hover:scale-110 transition-transform duration-300">
-                    <FiUsers className="w-6 h-6 text-white" />
+                  <div className="inline-flex p-3 sm:p-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 mb-3 sm:mb-4 group-hover:scale-110 transition-transform duration-300">
+                    <FiUsers className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">
+                  <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">
                     Community Forum
                   </h3>
-                  <p className="text-gray-400 mb-4">
+                  <p className="text-gray-400 mb-4 text-sm sm:text-base">
                     Connect with other users, share experiences, get tips, and
                     find answers from our knowledgeable community members
                   </p>
-                  <span className="text-blue-400 font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  <span className="text-blue-400 font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all text-sm sm:text-base">
                     Join Community
                     <FiArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                   </span>

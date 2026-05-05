@@ -5,8 +5,12 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import Hero from "@/components/layout/Hero";
-import StatsSection from "./StatsSection";
-import FeaturesSection from "./FeaturesSection";
+import {
+  StatsSection,
+  FeaturesSection,
+  PlansSection,
+  JoinFamilySection,
+} from "./index"; // or from "." since it's in the same folder
 
 export default function HomePageWrapper() {
   const [stats, setStats] = useState({ users: 0, speed: 0, uptime: 0 });
@@ -14,7 +18,6 @@ export default function HomePageWrapper() {
   const scaleX = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
   useEffect(() => {
-    // Realistic stats for a new company
     setStats({ users: 128, speed: 200, uptime: 99.5 });
   }, []);
 
@@ -26,14 +29,11 @@ export default function HomePageWrapper() {
       />
       <Header />
       <main className="overflow-hidden">
-        {/* Hero Section */}
         <Hero stats={stats} />
-
-        {/* Features Section */}
+        <PlansSection />
         <FeaturesSection />
-
-        {/* Stats Section with Animation */}
         <StatsSection stats={stats} />
+        <JoinFamilySection />
       </main>
       <Footer />
     </>

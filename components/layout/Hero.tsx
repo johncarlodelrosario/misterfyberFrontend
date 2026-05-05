@@ -90,7 +90,7 @@ export default function Hero({ stats }: HeroProps) {
 
   return (
     <section className="relative overflow-hidden min-h-screen">
-      {/* DESKTOP BACKGROUND - NO ANIMATION, INSTANT CHANGE */}
+      {/* DESKTOP BACKGROUND - WITH FIXED ATTACHMENT */}
       <div
         className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat hidden md:block"
         style={{
@@ -98,12 +98,15 @@ export default function Hero({ stats }: HeroProps) {
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
         }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent"></div>
+        {/* Bottom gradient dim to #080616 */}
+        <div className="absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t from-[#080616] via-[#080616]/80 to-transparent"></div>
       </div>
 
-      {/* MOBILE BACKGROUND - NO ANIMATION, INSTANT CHANGE */}
+      {/* MOBILE BACKGROUND - WITH FIXED ATTACHMENT */}
       <div
         className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat md:hidden"
         style={{
@@ -111,9 +114,12 @@ export default function Hero({ stats }: HeroProps) {
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
         }}
       >
         <div className="absolute inset-0 bg-black/60"></div>
+        {/* Bottom gradient dim to #080616 for mobile */}
+        <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-[#080616] via-[#080616]/80 to-transparent"></div>
       </div>
 
       {/* Navigation Arrows */}
