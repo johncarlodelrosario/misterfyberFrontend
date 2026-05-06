@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import Link from "next/link";
 import {
   FiCheckCircle,
   FiLoader,
@@ -101,7 +100,6 @@ export default function PlansSection() {
       className="py-12 md:py-20 relative overflow-hidden"
       style={{ backgroundColor: "#080616" }}
     >
-      {/* Dark blue wave pattern */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
       </div>
@@ -126,7 +124,6 @@ export default function PlansSection() {
           </p>
         </motion.div>
 
-        {/* 2 columns on mobile/tablet, 3 columns on desktop */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
           {plans.map((plan, idx) => {
             const isPopular = idx === 1;
@@ -144,15 +141,6 @@ export default function PlansSection() {
                     : "border border-blue-500/30 shadow-lg hover:shadow-xl hover:border-blue-500/50"
                 }`}
               >
-                {/* Glow effect */}
-                <div
-                  className={`absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
-                    isPopular
-                      ? "shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                      : "shadow-[0_0_10px_rgba(59,130,246,0.3)]"
-                  }`}
-                />
-
                 {isPopular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                     <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-[10px] md:text-xs font-bold px-3 md:px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
@@ -218,22 +206,17 @@ export default function PlansSection() {
                       </motion.li>
                     ))}
                   </ul>
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  <a
+                    href={`/apply?plan=${plan._id}`}
+                    className={`block w-full text-center py-2 md:py-3 rounded-xl font-semibold transition-all duration-300 text-xs md:text-base ${
+                      isPopular
+                        ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg hover:opacity-90"
+                        : "bg-blue-900/50 text-blue-200 hover:bg-blue-900/70"
+                    }`}
                   >
-                    <Link
-                      href={`/apply?plan=${plan._id}`}
-                      className={`block text-center py-2 md:py-3 rounded-xl font-semibold transition-all duration-300 text-xs md:text-base ${
-                        isPopular
-                          ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg hover:opacity-90"
-                          : "bg-blue-900/50 text-blue-200 hover:bg-blue-900/70"
-                      }`}
-                    >
-                      Get Started
-                      <FiArrowRight className="inline ml-1.5 md:ml-2 w-3 h-3 md:w-4 md:h-4" />
-                    </Link>
-                  </motion.div>
+                    Get Started
+                    <FiArrowRight className="inline ml-1.5 md:ml-2 w-3 h-3 md:w-4 md:h-4" />
+                  </a>
                 </div>
               </motion.div>
             );
