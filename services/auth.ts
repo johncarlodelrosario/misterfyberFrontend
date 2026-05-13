@@ -54,6 +54,20 @@ export const login = async (
 ): Promise<LoginResponse> => {
   try {
     console.log("[Auth] Attempting login for:", email);
+    console.log("[Auth] API URL:", api.defaults.baseURL);
+
+    // Test if server is reachable first
+    try {
+      const testResponse = await fetch(`${api.defaults.baseURL}/health`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      console.log("[Auth] Health check response:", testResponse.status);
+    } catch (healthError) {
+      console.error("[Auth] Server health check failed:", healthError);
+    }
 
     const response = await api.post("/auth/login", {
       email: email.trim(),
@@ -67,11 +81,9 @@ export const login = async (
     let userData: any;
 
     if (response.data.data) {
-      // Response wrapped in data property
       token = response.data.data.token;
       userData = response.data.data.user;
     } else if (response.data.token) {
-      // Direct response
       token = response.data.token;
       userData = response.data.user;
     } else {
@@ -82,12 +94,10 @@ export const login = async (
       throw new Error("Missing token or user data in response");
     }
 
-    // Store token immediately
     if (typeof window !== "undefined") {
       localStorage.setItem("token", token);
     }
 
-    // FIXED: Ensure role is properly set - if no role, default to "user"
     const userRole = userData.role || "user";
 
     return {
@@ -106,11 +116,29 @@ export const login = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Login error:", error.response?.data || error.message);
+    console.error("[Auth] Login error details:", {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
 
-    // Throw a user-friendly error
+    // Handle timeout error specifically
+    if (error.code === "ECONNABORTED" || error.message.includes("timeout")) {
+      throw new Error("Server is not responding. Please try again later.");
+    }
+
+    // Handle network errors
+    if (error.message === "Network Error") {
+      throw new Error(
+        "Cannot connect to server. Please check your internet connection.",
+      );
+    }
+
     const errorMessage =
-      error.response?.data?.message || "Invalid email or password";
+      error.response?.data?.message ||
+      error.message ||
+      "Invalid email or password";
     throw new Error(errorMessage);
   }
 };
@@ -140,7 +168,6 @@ export const getCurrentUser = async (): Promise<User> => {
       userData = response.data;
     }
 
-    // FIXED: Ensure role is properly set
     const userRole = userData.role || "user";
 
     return {

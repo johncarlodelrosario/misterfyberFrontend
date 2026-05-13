@@ -8,7 +8,8 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 30000,
+  timeout: 120000, // Increased to 60 seconds
+  withCredentials: false, // Important: set to false for CORS
 });
 
 // Request interceptor - attaches token to every request
@@ -29,6 +30,9 @@ api.interceptors.request.use(
       );
     }
 
+    // Log full URL for debugging
+    console.log(`[API Request] Full URL: ${config.baseURL}${config.url}`);
+
     return config;
   },
   (error) => {
@@ -46,6 +50,10 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    if (error.code === "ECONNABORTED") {
+      console.error("[API] Request timeout - server may be slow or down");
+    }
+
     if (error.response) {
       console.error(
         `[API Error] ${error.response.config.url} - Status: ${error.response.status}`,
@@ -72,6 +80,7 @@ api.interceptors.response.use(
       }
     } else if (error.request) {
       console.error("[API] No response received:", error.request);
+      console.error("[API] This might be a CORS issue or the server is down");
     } else {
       console.error("[API] Request error:", error.message);
     }
