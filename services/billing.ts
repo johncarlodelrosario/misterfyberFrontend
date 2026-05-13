@@ -180,7 +180,7 @@ export const requestUserPlanChange = async (
       newPlanId,
       effectiveDate,
     });
-    clearBillingCache(); // Clear cache on state change
+    clearBillingCache();
     return response.data;
   } catch (error) {
     console.error("Error requesting plan change:", error);
@@ -202,7 +202,6 @@ export const getAllBillingCycles = async (params?: {
   total: number;
 }> => {
   try {
-    // Check cache first
     if (!params?.forceRefresh) {
       const cached = getCachedData<{
         data: BillingCycle[];
@@ -237,7 +236,6 @@ export const getAllBills = async (params?: {
   total: number;
 }> => {
   try {
-    // Check cache first
     if (!params?.forceRefresh) {
       const cached = getCachedData<{
         data: Bill[];
@@ -366,7 +364,6 @@ export const getBillingSettings = async (
   data: BillingSettings;
 }> => {
   try {
-    // Check cache first
     if (!forceRefresh) {
       const cached = getCachedData<{ data: BillingSettings }>(
         CACHE_KEYS.SETTINGS,
@@ -443,7 +440,6 @@ export const getBillingStats = async (
   activeBillingCycles: number;
 }> => {
   try {
-    // Check cache first
     if (!forceRefresh) {
       const cached = getCachedData<{
         totalRevenue: number;
