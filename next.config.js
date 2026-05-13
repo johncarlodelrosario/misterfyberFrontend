@@ -2,25 +2,37 @@
 const nextConfig = {
   // Image optimization
   images: {
-    domains: [
-      "localhost",
-      "misterfyberbackend.onrender.com",
-      "your-backend-domain.com",
-    ],
+    domains: ["localhost", "your-backend-domain.com", "www.misterfyber.com"],
     unoptimized: process.env.NODE_ENV === "development",
     formats: ["image/avif", "image/webp"],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 60,
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256],
+    minimumCacheTTL: 60 * 60 * 24, // 24 hours
   },
 
-  // Compression and optimization
+  // Enable compression for faster loading
   compress: true,
-  swcMinify: true,
-  reactStrictMode: false, // Set to false for better performance in production
 
-  // Production optimizations
+  // Use SWC for faster minification (2-3x faster than Babel)
+  swcMinify: true,
+
+  // Disable React strict mode in production for performance
+  reactStrictMode: false,
+
+  // Disable source maps in production (reduces bundle size)
   productionBrowserSourceMaps: false,
+
+  // Powering the Next.js build (remove for security)
+  poweredByHeader: false,
+
+  // Generate ETags for better caching
+  generateEtags: true,
+
+  // Performance optimizations
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000, // 60 seconds
+    pagesBufferLength: 2,
+  },
 
   // Experimental features for better performance
   experimental: {
@@ -39,55 +51,23 @@ const nextConfig = {
     ],
     swcTraceProfiling: false,
     legacyBrowsers: false,
-    modularizeImports: {
-      "react-icons/fi": {
-        transform: "react-icons/fi/{{member}}",
-      },
-      "react-icons/fa": {
-        transform: "react-icons/fa/{{member}}",
-      },
-      "react-icons/ai": {
-        transform: "react-icons/ai/{{member}}",
-      },
-    },
+    optimizeCss: true, // Optimize CSS for faster loading
   },
 
   // Compiler optimizations
   compiler: {
+    // Remove console.log in production (keep errors and warnings)
     removeConsole:
       process.env.NODE_ENV === "production"
         ? {
             exclude: ["error", "warn"],
           }
         : false,
-    styledComponents: false,
-    emotion: false,
   },
 
   // Headers for caching and security
   async headers() {
     return [
-      {
-        source: "/(.*)",
-        headers: [
-          {
-            key: "X-DNS-Prefetch-Control",
-            value: "on",
-          },
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "SAMEORIGIN",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-        ],
-      },
       {
         source: "/_next/static/(.*)",
         headers: [
@@ -116,52 +96,61 @@ const nextConfig = {
         ],
       },
       {
-        source: "/api/(.*)",
+        source: "/favicon.ico",
         headers: [
           {
             key: "Cache-Control",
-            value: "no-cache, no-store, must-revalidate",
+            value: "public, max-age=86400, immutable",
+          },
+        ],
+      },
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "X-DNS-Prefetch-Control",
+            value: "on",
+          },
+          {
+            key: "X-XSS-Protection",
+            value: "1; mode=block",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "SAMEORIGIN",
+          },
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "origin-when-cross-origin",
           },
         ],
       },
     ];
   },
 
-  // Proxy rewrites for development (avoid CORS)
+  // Rewrites for API (para iwas CORS)
   async rewrites() {
-    const isDev = process.env.NODE_ENV === "development";
-    const backendUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend.onrender.com";
+    // Use the correct destination: www.misterfyber.com
+    const apiDestination = "https://www.misterfyber.com/api/:path*";
 
-    const rewrites = [];
-
-    if (isDev) {
-      // Development rewrites (to local backend)
-      rewrites.push({
+    return [
+      {
         source: "/api/:path*",
-        destination: "http://localhost:5000/api/:path*",
-      });
-      rewrites.push({
+        destination: apiDestination,
+      },
+      // Para sa uploads/images
+      {
         source: "/uploads/:path*",
-        destination: "http://localhost:5000/uploads/:path*",
-      });
-    } else {
-      // Production rewrites (optional - you might not need this if using direct API calls)
-      rewrites.push({
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
-      });
-      rewrites.push({
-        source: "/uploads/:path*",
-        destination: `${backendUrl}/uploads/:path*`,
-      });
-    }
-
-    return rewrites;
+        destination: "https://www.misterfyber.com/uploads/:path*",
+      },
+    ];
   },
 
-  // Redirects for SEO and UX
+  // Redirects para sa SEO at better UX
   async redirects() {
     return [
       {
@@ -179,7 +168,7 @@ const nextConfig = {
 
   // Webpack optimizations
   webpack: (config, { isServer, dev }) => {
-    // Optimize bundle size
+    // Optimize bundle size (only in production)
     if (!dev && !isServer) {
       config.optimization = {
         ...config.optimization,
@@ -191,6 +180,7 @@ const nextConfig = {
           maxAsyncRequests: 30,
           maxInitialRequests: 30,
           cacheGroups: {
+            // Separate vendor chunks
             defaultVendors: {
               test: /[\\/]node_modules[\\/]/,
               priority: -10,
@@ -202,14 +192,14 @@ const nextConfig = {
               priority: -20,
               reuseExistingChunk: true,
             },
-            // Separate react-icons into its own chunk
+            // Separate react-icons
             reactIcons: {
               test: /[\\/]node_modules[\\/]react-icons[\\/]/,
               name: "react-icons",
               chunks: "all",
               priority: 10,
             },
-            // Separate chart.js into its own chunk
+            // Separate chart.js
             chartjs: {
               test: /[\\/]node_modules[\\/](chart.js|react-chartjs-2)[\\/]/,
               name: "chartjs",
@@ -230,22 +220,10 @@ const nextConfig = {
     return config;
   },
 
-  // On-Demand Entries (for faster development)
-  onDemandEntries: {
-    maxInactiveAge: 60 * 1000,
-    pagesBufferLength: 2,
-  },
-
-  // Powering the Next.js build
-  poweredByHeader: false,
-
-  // Generate ETags for caching
-  generateEtags: true,
-
-  // Trailing slashes
+  // Trailing slash configuration
   trailingSlash: false,
 
-  // skipMiddlewareUrlNormalize for performance
+  // Skip middleware for better performance
   skipMiddlewareUrlNormalize: true,
   skipTrailingSlashRedirect: true,
 };
