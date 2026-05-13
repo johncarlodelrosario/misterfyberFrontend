@@ -1,4 +1,3 @@
-// contexts/AuthContext.tsx - COMPLETE FIXED FILE
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
@@ -53,10 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = await getCurrentUser();
       console.log("User data from API:", userData);
 
-      // Determine if user is admin based on role or isAdmin flag
+      // FIXED: Properly determine if user is admin
+      // Check for role === 'admin' OR isAdmin === true
       const isAdmin =
-        (userData as any).role !== undefined ||
-        (userData as any).isAdmin === true;
+        userData.role === "admin" || (userData as any).isAdmin === true;
+
+      // FIXED: Ensure role is set correctly
+      const userRole = isAdmin ? "admin" : userData.role || "user";
 
       setUser({
         id: userData._id || userData.id,
@@ -64,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: userData.email,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role || (isAdmin ? "admin" : "user"),
+        role: userRole,
         status: userData.status,
         profilePicture: userData.profilePicture,
         isAdmin: isAdmin,
@@ -83,31 +85,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("token", response.token);
 
       const userData = response.user;
-      const isAdmin = userData.role !== undefined || userData.isAdmin === true;
 
-      setUser({
+      // FIXED: Properly determine if user is admin
+      // Check for role === 'admin' in the response
+      const isAdmin = userData.role === "admin" || userData.isAdmin === true;
+
+      // FIXED: Set role correctly - use the role from response if available
+      const userRole = isAdmin ? "admin" : userData.role || "user";
+
+      const newUser = {
         id: userData.id,
         username: userData.username,
         email: userData.email,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role || (isAdmin ? "admin" : "user"),
+        role: userRole,
         status: userData.status,
         isAdmin: isAdmin,
-      });
+      };
+
+      setUser(newUser);
 
       toast.success(
         `Welcome back, ${userData.firstName || userData.username}!`,
       );
 
-      // Redirect based on role or admin status
-      if (isAdmin || userData.role) {
+      // FIXED: Redirect based on actual role
+      if (isAdmin || userRole === "admin") {
         router.push("/admin");
       } else {
         router.push("/user/dashboard");
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Login failed");
+      toast.error(error.message || "Login failed");
       throw error;
     }
   };

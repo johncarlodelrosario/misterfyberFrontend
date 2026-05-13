@@ -87,6 +87,9 @@ export const login = async (
       localStorage.setItem("token", token);
     }
 
+    // FIXED: Ensure role is properly set - if no role, default to "user"
+    const userRole = userData.role || "user";
+
     return {
       token,
       user: {
@@ -96,9 +99,9 @@ export const login = async (
         email: userData.email,
         firstName: userData.firstName || "",
         lastName: userData.lastName || "",
-        role: userData.role || "user",
+        role: userRole,
         status: userData.status || "active",
-        isAdmin: userData.role === "admin" || userData.isAdmin === true,
+        isAdmin: userRole === "admin" || userData.isAdmin === true,
         profilePicture: userData.profilePicture,
       },
     };
@@ -137,6 +140,9 @@ export const getCurrentUser = async (): Promise<User> => {
       userData = response.data;
     }
 
+    // FIXED: Ensure role is properly set
+    const userRole = userData.role || "user";
+
     return {
       _id: userData._id || userData.id,
       id: userData._id || userData.id,
@@ -144,7 +150,7 @@ export const getCurrentUser = async (): Promise<User> => {
       email: userData.email || "",
       firstName: userData.firstName || "",
       lastName: userData.lastName || "",
-      role: userData.role || "user",
+      role: userRole,
       status: userData.status || "active",
       profilePicture: userData.profilePicture,
     };
@@ -177,6 +183,8 @@ export const register = async (userData: {
       throw new Error("Invalid response structure");
     }
 
+    const userRole = data.role || "user";
+
     return {
       token,
       user: {
@@ -186,7 +194,7 @@ export const register = async (userData: {
         email: data.email,
         firstName: data.firstName,
         lastName: data.lastName,
-        role: "user",
+        role: userRole,
         status: "active",
       },
     };
@@ -228,6 +236,8 @@ export const registerWithApplication = async (
       localStorage.setItem("token", token);
     }
 
+    const userRole = userData.role || "user";
+
     return {
       token,
       user: {
@@ -237,7 +247,7 @@ export const registerWithApplication = async (
         email: userData.email || data.email,
         firstName: userData.firstName || "",
         lastName: userData.lastName || "",
-        role: "user",
+        role: userRole,
         status: "active",
       },
     };
