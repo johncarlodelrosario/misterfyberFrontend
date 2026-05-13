@@ -1,3 +1,4 @@
+// components/User/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
@@ -8,6 +9,7 @@ import {
   FiUser,
   FiCreditCard,
   FiWifi,
+  FiHelpCircle,
   FiLogOut,
   FiBell,
   FiSettings,
