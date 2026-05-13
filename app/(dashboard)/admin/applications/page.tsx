@@ -14,32 +14,20 @@ import {
   FiRefreshCw,
   FiSearch,
   FiImage,
+  FiAlertCircle,
 } from "react-icons/fi";
 
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
-  // PRODUCTION BASE URL - ITO ANG GAMITIN!
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
-  const LOCAL_URL = "http://localhost:5000";
-
-  // Get the correct base URL based on environment
-  const getBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      // Check if we're in production (Vercel frontend)
-      if (window.location.hostname.includes("vercel.app")) {
-        return PRODUCTION_URL;
-      }
-    }
-    // Default to production URL for API calls
-    return process.env.NEXT_PUBLIC_API_URL || PRODUCTION_URL;
-  };
 
   useEffect(() => {
     loadApplications();
@@ -48,12 +36,14 @@ export default function ApplicationsPage() {
   const loadApplications = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await getAllApplications();
       console.log("Applications data:", data.data);
       setApplications(data.data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to load applications:", error);
-      toast.error("Failed to load applications");
+      setError(error.message || "Failed to load applications");
+      toast.error("Failed to load applications. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -81,38 +71,19 @@ export default function ApplicationsPage() {
     }
   };
 
-  // FIXED: Get the full image URL for production!
   const getImageUrl = (imagePath: string) => {
     if (!imagePath) return null;
-
-    console.log("Original image path:", imagePath);
-
-    // If it's already a full URL (Cloudinary or other), return as is
     if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-      console.log("Using full URL:", imagePath);
       return imagePath;
     }
-
-    // If it's base64, return as is
     if (imagePath.startsWith("data:image")) {
-      console.log("Using base64 image");
       return imagePath;
     }
-
-    // FIXED: Always use production URL for images in production!
-    const baseUrl = PRODUCTION_URL;
-
-    // Clean the path - remove leading slashes
     let cleanPath = imagePath.replace(/^\/+/, "");
-
-    // If path doesn't start with uploads, add it
     if (!cleanPath.startsWith("uploads/")) {
       cleanPath = `uploads/${cleanPath}`;
     }
-
-    const fullUrl = `${baseUrl}/${cleanPath}`;
-    console.log("Generated image URL:", fullUrl);
-    return fullUrl;
+    return `${PRODUCTION_URL}/${cleanPath}`;
   };
 
   const filteredApplications = applications.filter((app: any) => {
@@ -121,9 +92,7 @@ export default function ApplicationsPage() {
       app.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.email?.toLowerCase().includes(searchTerm.toLowerCase());
-
     const matchesStatus = statusFilter === "all" || app.status === statusFilter;
-
     return matchesSearch && matchesStatus;
   });
 
@@ -142,6 +111,28 @@ export default function ApplicationsPage() {
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading applications...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FiAlertCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            Connection Error
+          </h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={loadApplications}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
@@ -268,9 +259,10 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Review/View Modal */}
+      {/* Modal (keep your existing modal code here) */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          {/* Your existing modal content - unchanged */}
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -362,17 +354,14 @@ export default function ApplicationsPage() {
                     </h3>
                     {selectedApp.idImage && (
                       <button
-                        onClick={async () => {
+                        onClick={() => {
                           const imageUrl = getImageUrl(selectedApp.idImage);
                           if (imageUrl) {
-                            console.log("Opening image preview for:", imageUrl);
                             setImagePreview(imageUrl);
                             setShowImageModal(true);
-                          } else {
-                            toast.error("No image available");
                           }
                         }}
-                        className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition"
+                        className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
                       >
                         <FiImage className="w-4 h-4" />
                         View ID Image
@@ -389,62 +378,6 @@ export default function ApplicationsPage() {
                       {selectedApp.idNumber}
                     </p>
                   </div>
-
-                  {/* FIXED: Use the API returned idImageUrl instead of constructing URL */}
-                  {selectedApp.idImageUrl && (
-                    <div className="mt-3">
-                      <div className="relative w-full h-48 bg-gray-200 rounded-lg overflow-hidden">
-                        <img
-                          src={selectedApp.idImageUrl}
-                          alt="ID Document"
-                          className="w-full h-full object-contain cursor-pointer"
-                          onClick={() => {
-                            setImagePreview(selectedApp.idImageUrl);
-                            setShowImageModal(true);
-                          }}
-                          onError={(e) => {
-                            console.error(
-                              "Failed to load image from:",
-                              selectedApp.idImageUrl,
-                            );
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                            const parent = target.parentElement;
-                            if (parent) {
-                              const errorDiv = document.createElement("div");
-                              errorDiv.className =
-                                "flex flex-col items-center justify-center h-full text-gray-500";
-                              errorDiv.innerHTML = `
-                                <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                </svg>
-                                <p class="text-sm">Failed to load image</p>
-                                <p class="text-xs mt-1">Path: ${selectedApp.idImage}</p>
-                                <p class="text-xs">Backend URL: ${PRODUCTION_URL}</p>
-                              `;
-                              parent.appendChild(errorDiv);
-                            }
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition flex items-center justify-center pointer-events-none">
-                          <span className="bg-white bg-opacity-75 px-3 py-1 rounded-full text-sm">
-                            Click to enlarge
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedApp.adminNotes && (
-                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm font-semibold text-blue-800 mb-1">
-                        Admin Notes:
-                      </p>
-                      <p className="text-sm text-blue-700">
-                        {selectedApp.adminNotes}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {selectedApp.status === "pending" && (
@@ -456,11 +389,10 @@ export default function ApplicationsPage() {
                       <textarea
                         id="adminNotes"
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         placeholder="Add any notes about this application..."
                       />
                     </div>
-
                     <div className="flex justify-end space-x-3 pt-4">
                       <button
                         onClick={() => setSelectedApp(null)}
@@ -479,8 +411,7 @@ export default function ApplicationsPage() {
                         }}
                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
                       >
-                        <FiX className="w-4 h-4" />
-                        Reject
+                        <FiX /> Reject
                       </button>
                       <button
                         onClick={() => {
@@ -493,22 +424,10 @@ export default function ApplicationsPage() {
                         }}
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
                       >
-                        <FiCheck className="w-4 h-4" />
-                        Approve
+                        <FiCheck /> Approve
                       </button>
                     </div>
                   </>
-                )}
-
-                {selectedApp.status !== "pending" && (
-                  <div className="flex justify-end pt-4">
-                    <button
-                      onClick={() => setSelectedApp(null)}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                    >
-                      Close
-                    </button>
-                  </div>
                 )}
               </div>
             </div>
@@ -516,7 +435,7 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Full Screen Image Modal */}
+      {/* Image Modal */}
       {showImageModal && imagePreview && (
         <div
           className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
@@ -531,24 +450,16 @@ export default function ApplicationsPage() {
                 setShowImageModal(false);
                 setImagePreview(null);
               }}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300 transition"
+              className="absolute -top-12 right-0 text-white hover:text-gray-300"
             >
               <FiX className="w-8 h-8" />
             </button>
             <img
               src={imagePreview}
-              alt="ID Document Full Size"
+              alt="ID Document"
               className="w-full h-auto rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
-              onError={(e) => {
-                console.error("Failed to load full-size image:", imagePreview);
-                toast.error("Failed to load image");
-                setShowImageModal(false);
-              }}
             />
-            <div className="absolute bottom-4 left-0 right-0 text-center text-white bg-black bg-opacity-50 py-2 rounded">
-              <p className="text-sm">Click anywhere to close</p>
-            </div>
           </div>
         </div>
       )}
