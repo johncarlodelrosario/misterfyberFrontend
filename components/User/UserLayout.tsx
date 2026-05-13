@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Sidebar from "./Sidebar";
+import Sidebar from "./Sidebar"; // This imports the correct user sidebar
 import { FiMenu, FiBell } from "react-icons/fi";
 
 interface UserLayoutProps {
