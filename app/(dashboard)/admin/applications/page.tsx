@@ -31,6 +31,68 @@ interface FilterState {
   statusFilter: string;
 }
 
+// Safe storage wrapper
+const safeStorage = {
+  setItem: (key: string, value: any): boolean => {
+    try {
+      const serialized = JSON.stringify(value);
+      const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
+
+      if (sizeInMB > 4) {
+        console.warn(
+          `Data too large (${sizeInMB.toFixed(2)}MB) for cache, skipping`,
+        );
+        return false;
+      }
+
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e: any) {
+      if (e.name === "QuotaExceededError") {
+        console.error("Storage quota exceeded");
+
+        // Try to clear old cache
+        try {
+          localStorage.removeItem(CACHE_KEY);
+          localStorage.removeItem("old_applications_cache");
+
+          // Try one more time with smaller data
+          const smallerData = {
+            applications: value.applications.slice(0, 50),
+            timestamp: value.timestamp,
+          };
+          const smallerSerialized = JSON.stringify(smallerData);
+          localStorage.setItem(key, smallerSerialized);
+          console.log("Saved truncated cache (50 items only)");
+          return true;
+        } catch (retryError) {
+          console.error("Still cannot save to storage");
+          return false;
+        }
+      }
+      return false;
+    }
+  },
+
+  getItem: (key: string): any => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      console.error("Failed to read from storage:", e);
+      return null;
+    }
+  },
+
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.error("Failed to remove from storage:", e);
+    }
+  },
+};
+
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,24 +105,33 @@ export default function ApplicationsPage() {
     searchTerm: "",
     statusFilter: "all",
   });
+  const [retryCount, setRetryCount] = useState(0);
 
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount with error handling
   useEffect(() => {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    if (cachedData) {
-      try {
-        const parsed: CacheData = JSON.parse(cachedData);
-        const isExpired = Date.now() - parsed.timestamp > CACHE_DURATION;
+    try {
+      const cachedData = safeStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const isExpired = Date.now() - cachedData.timestamp > CACHE_DURATION;
 
-        if (!isExpired && parsed.applications.length > 0) {
-          setApplications(parsed.applications);
+        if (
+          !isExpired &&
+          cachedData.applications &&
+          cachedData.applications.length > 0
+        ) {
+          setApplications(cachedData.applications);
           setLoading(false);
+          console.log(
+            `Loaded ${cachedData.applications.length} applications from cache`,
+          );
         }
-      } catch (err) {
-        console.error("Failed to parse cached data:", err);
       }
+    } catch (err) {
+      console.error("Failed to parse cached data:", err);
+      // Clear corrupted cache
+      safeStorage.removeItem(CACHE_KEY);
     }
 
     loadApplications();
@@ -68,11 +139,13 @@ export default function ApplicationsPage() {
 
   // Save to localStorage whenever applications update
   const saveToCache = useCallback((apps: any[]) => {
+    if (!apps || apps.length === 0) return;
+
     const cacheData: CacheData = {
       applications: apps,
       timestamp: Date.now(),
     };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    safeStorage.setItem(CACHE_KEY, cacheData);
   }, []);
 
   const loadApplications = async (forceRefresh = false) => {
@@ -80,33 +153,62 @@ export default function ApplicationsPage() {
       setLoading(true);
       setError(null);
 
+      console.log("Fetching applications from API...");
       const data = await getAllApplications();
       const applicationsList = data.data || [];
 
+      console.log(`Received ${applicationsList.length} applications`);
       setApplications(applicationsList);
 
       // Save to cache only if not forcing refresh or if we have data
       if (!forceRefresh || applicationsList.length > 0) {
         saveToCache(applicationsList);
       }
+
+      setRetryCount(0);
     } catch (error: any) {
       console.error("Failed to load applications:", error);
-      setError(error.message || "Failed to load applications");
-      toast.error("Failed to load applications. Please check your connection.");
+
+      let errorMessage = "Failed to load applications. ";
+
+      if (error.code === "ERR_NETWORK_IO_SUSPENDED") {
+        errorMessage += "Network connection was interrupted. ";
+      } else if (error.message?.includes("Network Error")) {
+        errorMessage += "Please check your internet connection. ";
+      } else if (error.code === "ECONNABORTED") {
+        errorMessage += "Request timed out. The server might be busy. ";
+      } else {
+        errorMessage += error.message || "Please check your connection.";
+      }
+
+      errorMessage += " Retrying...";
+      setError(errorMessage);
+      toast.error("Failed to load applications. Retrying...");
 
       // Try to load from cache as fallback
-      const cachedData = localStorage.getItem(CACHE_KEY);
-      if (cachedData) {
-        try {
-          const parsed: CacheData = JSON.parse(cachedData);
-          if (parsed.applications.length > 0) {
-            setApplications(parsed.applications);
-            toast.success("Loaded applications from cache");
-            setError(null);
-          }
-        } catch (err) {
-          console.error("Failed to load fallback cache:", err);
-        }
+      const cachedData = safeStorage.getItem(CACHE_KEY);
+      if (
+        cachedData &&
+        cachedData.applications &&
+        cachedData.applications.length > 0
+      ) {
+        setApplications(cachedData.applications);
+        toast.success(
+          `Loaded ${cachedData.applications.length} applications from cache`,
+        );
+        setError(null);
+      }
+
+      // Auto retry up to 3 times with exponential backoff
+      if (retryCount < 3) {
+        const delay = Math.pow(2, retryCount) * 2000;
+        console.log(
+          `Auto-retrying in ${delay / 1000} seconds... (Attempt ${retryCount + 1}/3)`,
+        );
+        setTimeout(() => {
+          setRetryCount((prev) => prev + 1);
+          loadApplications(forceRefresh);
+        }, delay);
       }
     } finally {
       setLoading(false);
@@ -120,9 +222,11 @@ export default function ApplicationsPage() {
       toast.success("Application approved successfully");
       await loadApplications(true); // Force refresh after action
       setSelectedApp(null);
-    } catch (error) {
-      toast.error("Failed to approve application");
+    } catch (error: any) {
       console.error("Approve error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to approve application",
+      );
     } finally {
       setProcessingId(null);
     }
@@ -135,9 +239,11 @@ export default function ApplicationsPage() {
       toast.success("Application rejected");
       await loadApplications(true); // Force refresh after action
       setSelectedApp(null);
-    } catch (error) {
-      toast.error("Failed to reject application");
+    } catch (error: any) {
       console.error("Reject error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to reject application",
+      );
     } finally {
       setProcessingId(null);
     }
@@ -163,6 +269,8 @@ export default function ApplicationsPage() {
 
   // Memoized filtered applications for better performance
   const filteredApplications = useMemo(() => {
+    if (!applications || applications.length === 0) return [];
+
     return applications.filter((app: any) => {
       const matchesSearch =
         app.applicationId
@@ -180,18 +288,19 @@ export default function ApplicationsPage() {
   }, [applications, filter.searchTerm, filter.statusFilter]);
 
   const getStatusBadge = useCallback((status: string) => {
-    const styles = {
+    const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
       approved: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
     };
-    return styles[status as keyof typeof styles] || "bg-gray-100 text-gray-800";
+    return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
 
   // Clear cache function
   const clearCache = useCallback(() => {
-    localStorage.removeItem(CACHE_KEY);
+    safeStorage.removeItem(CACHE_KEY);
     toast.success("Cache cleared");
+    setApplications([]);
     loadApplications(true);
   }, []);
 
@@ -201,6 +310,11 @@ export default function ApplicationsPage() {
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading applications...</p>
+          {retryCount > 0 && (
+            <p className="text-sm text-gray-500 mt-2">
+              Retry attempt {retryCount}/3...
+            </p>
+          )}
         </div>
       </div>
     );
@@ -217,12 +331,20 @@ export default function ApplicationsPage() {
             Connection Error
           </h2>
           <p className="text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={() => loadApplications(true)}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-          >
-            Try Again
-          </button>
+          <div className="space-x-3">
+            <button
+              onClick={() => loadApplications(true)}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={clearCache}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            >
+              Clear Cache & Retry
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -264,7 +386,7 @@ export default function ApplicationsPage() {
           </select>
           <button
             onClick={() => loadApplications(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
             disabled={loading}
           >
             <FiRefreshCw
