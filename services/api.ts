@@ -1,5 +1,9 @@
-// services/api.ts - COMPLETE API CLIENT WITH DEBUGGING
 import axios from "axios";
+
+// Cache for pending requests (deduplication)
+const pendingRequests = new Map();
+const responseCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 const api = axios.create({
   baseURL:
@@ -8,81 +12,78 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 120000, // Increased to 60 seconds
-  withCredentials: false, // Important: set to false for CORS
+  timeout: 30000, // Reduced to 30 seconds
+  withCredentials: false,
 });
 
-// Request interceptor - attaches token to every request
-api.interceptors.request.use(
-  (config) => {
-    // Get token from localStorage
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+// Request interceptor - deduplicate identical requests
+api.interceptors.request.use(async (config) => {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log(
-        `[API Request] ${config.method?.toUpperCase()} ${config.url} - Token attached`,
-      );
+  // Create a unique key for the request
+  const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}-${JSON.stringify(config.data)}`;
+
+  // Check if same request is already in progress
+  if (pendingRequests.has(requestKey)) {
+    console.log(`🔄 Deduplicating request: ${requestKey}`);
+    return pendingRequests.get(requestKey);
+  }
+
+  // For GET requests, check cache first
+  if (config.method === "get" && responseCache.has(requestKey)) {
+    const cached = responseCache.get(requestKey);
+    if (Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log(`📦 Cache hit: ${requestKey}`);
+      // Cancel the actual request and return cached data
+      return Promise.reject({ __cached: true, data: cached.data });
     } else {
-      console.log(
-        `[API Request] ${config.method?.toUpperCase()} ${config.url} - No token`,
-      );
+      responseCache.delete(requestKey);
     }
+  }
 
-    // Log full URL for debugging
-    console.log(`[API Request] Full URL: ${config.baseURL}${config.url}`);
+  return config;
+});
 
-    return config;
-  },
-  (error) => {
-    console.error("[API Request Error]", error);
-    return Promise.reject(error);
-  },
-);
-
-// Response interceptor - handles errors globally
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log(
-      `[API Response] ${response.config.url} - Status: ${response.status}`,
-    );
+    // Cache GET requests
+    if (response.config.method === "get") {
+      const requestKey = `${response.config.method}-${response.config.url}-${JSON.stringify(response.config.params)}`;
+      responseCache.set(requestKey, {
+        data: response,
+        timestamp: Date.now(),
+      });
+      // Clear old cache entries
+      setTimeout(() => {
+        responseCache.delete(requestKey);
+      }, CACHE_DURATION);
+    }
     return response;
   },
   (error) => {
+    // Handle deduplication error
+    if (error?.__cached) {
+      return Promise.resolve(error.data);
+    }
+
     if (error.code === "ECONNABORTED") {
-      console.error("[API] Request timeout - server may be slow or down");
+      console.error("[API] Request timeout");
     }
 
     if (error.response) {
-      console.error(
-        `[API Error] ${error.response.config.url} - Status: ${error.response.status}`,
-      );
-      console.error(`[API Error] Message:`, error.response.data);
-
-      // Handle 401 Unauthorized - token expired or invalid
       if (error.response.status === 401) {
         if (typeof window !== "undefined") {
           localStorage.removeItem("token");
-          // Only redirect if not already on login page
           if (!window.location.pathname.includes("/login")) {
-            console.log("[API] Token expired, redirecting to login");
             window.location.href = "/login";
           }
         }
       }
-
-      // Handle 403 Forbidden - insufficient permissions
-      if (error.response.status === 403) {
-        console.error(
-          "[API] Forbidden: User does not have required permissions",
-        );
-      }
-    } else if (error.request) {
-      console.error("[API] No response received:", error.request);
-      console.error("[API] This might be a CORS issue or the server is down");
-    } else {
-      console.error("[API] Request error:", error.message);
     }
 
     return Promise.reject(error);
