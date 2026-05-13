@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   getAllApplications,
   approveApplication,
@@ -17,33 +17,97 @@ import {
   FiAlertCircle,
 } from "react-icons/fi";
 
+// Cache configuration
+const CACHE_KEY = "applications_cache";
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+interface CacheData {
+  applications: any[];
+  timestamp: number;
+}
+
+interface FilterState {
+  searchTerm: string;
+  statusFilter: string;
+}
+
 export default function ApplicationsPage() {
-  const [applications, setApplications] = useState([]);
+  const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterState>({
+    searchTerm: "",
+    statusFilter: "all",
+  });
 
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
+  // Load from localStorage on mount
   useEffect(() => {
+    const cachedData = localStorage.getItem(CACHE_KEY);
+    if (cachedData) {
+      try {
+        const parsed: CacheData = JSON.parse(cachedData);
+        const isExpired = Date.now() - parsed.timestamp > CACHE_DURATION;
+
+        if (!isExpired && parsed.applications.length > 0) {
+          setApplications(parsed.applications);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Failed to parse cached data:", err);
+      }
+    }
+
     loadApplications();
   }, []);
 
-  const loadApplications = async () => {
+  // Save to localStorage whenever applications update
+  const saveToCache = useCallback((apps: any[]) => {
+    const cacheData: CacheData = {
+      applications: apps,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+  }, []);
+
+  const loadApplications = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError(null);
+
       const data = await getAllApplications();
-      console.log("Applications data:", data.data);
-      setApplications(data.data || []);
+      const applicationsList = data.data || [];
+
+      setApplications(applicationsList);
+
+      // Save to cache only if not forcing refresh or if we have data
+      if (!forceRefresh || applicationsList.length > 0) {
+        saveToCache(applicationsList);
+      }
     } catch (error: any) {
       console.error("Failed to load applications:", error);
       setError(error.message || "Failed to load applications");
       toast.error("Failed to load applications. Please check your connection.");
+
+      // Try to load from cache as fallback
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        try {
+          const parsed: CacheData = JSON.parse(cachedData);
+          if (parsed.applications.length > 0) {
+            setApplications(parsed.applications);
+            toast.success("Loaded applications from cache");
+            setError(null);
+          }
+        } catch (err) {
+          console.error("Failed to load fallback cache:", err);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -51,61 +115,87 @@ export default function ApplicationsPage() {
 
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
+      setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      loadApplications();
+      await loadApplications(true); // Force refresh after action
       setSelectedApp(null);
     } catch (error) {
       toast.error("Failed to approve application");
+      console.error("Approve error:", error);
+    } finally {
+      setProcessingId(null);
     }
   };
 
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
+      setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      loadApplications();
+      await loadApplications(true); // Force refresh after action
       setSelectedApp(null);
     } catch (error) {
       toast.error("Failed to reject application");
+      console.error("Reject error:", error);
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const getImageUrl = (imagePath: string) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-      return imagePath;
-    }
-    if (imagePath.startsWith("data:image")) {
-      return imagePath;
-    }
-    let cleanPath = imagePath.replace(/^\/+/, "");
-    if (!cleanPath.startsWith("uploads/")) {
-      cleanPath = `uploads/${cleanPath}`;
-    }
-    return `${PRODUCTION_URL}/${cleanPath}`;
-  };
+  const getImageUrl = useCallback(
+    (imagePath: string) => {
+      if (!imagePath) return null;
+      if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+        return imagePath;
+      }
+      if (imagePath.startsWith("data:image")) {
+        return imagePath;
+      }
+      let cleanPath = imagePath.replace(/^\/+/, "");
+      if (!cleanPath.startsWith("uploads/")) {
+        cleanPath = `uploads/${cleanPath}`;
+      }
+      return `${PRODUCTION_URL}/${cleanPath}`;
+    },
+    [PRODUCTION_URL],
+  );
 
-  const filteredApplications = applications.filter((app: any) => {
-    const matchesSearch =
-      app.applicationId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || app.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Memoized filtered applications for better performance
+  const filteredApplications = useMemo(() => {
+    return applications.filter((app: any) => {
+      const matchesSearch =
+        app.applicationId
+          ?.toLowerCase()
+          .includes(filter.searchTerm.toLowerCase()) ||
+        app.firstName
+          ?.toLowerCase()
+          .includes(filter.searchTerm.toLowerCase()) ||
+        app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
+        app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase());
+      const matchesStatus =
+        filter.statusFilter === "all" || app.status === filter.statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [applications, filter.searchTerm, filter.statusFilter]);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = useCallback((status: string) => {
     const styles = {
       pending: "bg-yellow-100 text-yellow-800",
       approved: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
     };
     return styles[status as keyof typeof styles] || "bg-gray-100 text-gray-800";
-  };
+  }, []);
 
-  if (loading) {
+  // Clear cache function
+  const clearCache = useCallback(() => {
+    localStorage.removeItem(CACHE_KEY);
+    toast.success("Cache cleared");
+    loadApplications(true);
+  }, []);
+
+  if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -116,7 +206,7 @@ export default function ApplicationsPage() {
     );
   }
 
-  if (error) {
+  if (error && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center max-w-md">
@@ -128,7 +218,7 @@ export default function ApplicationsPage() {
           </h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={loadApplications}
+            onClick={() => loadApplications(true)}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Try Again
@@ -153,14 +243,18 @@ export default function ApplicationsPage() {
             <input
               type="text"
               placeholder="Search by ID, name, or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={filter.searchTerm}
+              onChange={(e) =>
+                setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
+              }
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
           <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            value={filter.statusFilter}
+            onChange={(e) =>
+              setFilter((prev) => ({ ...prev, statusFilter: e.target.value }))
+            }
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
           >
             <option value="all">All Status</option>
@@ -169,12 +263,43 @@ export default function ApplicationsPage() {
             <option value="rejected">Rejected</option>
           </select>
           <button
-            onClick={loadApplications}
+            onClick={() => loadApplications(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            disabled={loading}
           >
-            <FiRefreshCw className="w-4 h-4" />
+            <FiRefreshCw
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
+          <button
+            onClick={clearCache}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+          >
+            Clear Cache
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-yellow-50 rounded-lg p-4">
+          <div className="text-sm text-yellow-600">Pending</div>
+          <div className="text-2xl font-bold text-yellow-700">
+            {applications.filter((a) => a.status === "pending").length}
+          </div>
+        </div>
+        <div className="bg-green-50 rounded-lg p-4">
+          <div className="text-sm text-green-600">Approved</div>
+          <div className="text-2xl font-bold text-green-700">
+            {applications.filter((a) => a.status === "approved").length}
+          </div>
+        </div>
+        <div className="bg-red-50 rounded-lg p-4">
+          <div className="text-sm text-red-600">Rejected</div>
+          <div className="text-2xl font-bold text-red-700">
+            {applications.filter((a) => a.status === "rejected").length}
+          </div>
         </div>
       </div>
 
@@ -214,7 +339,9 @@ export default function ApplicationsPage() {
                     colSpan={7}
                     className="px-6 py-8 text-center text-gray-500"
                   >
-                    No applications found
+                    {applications.length === 0 && !loading
+                      ? "No applications found"
+                      : "No applications match your filters"}
                   </td>
                 </tr>
               ) : (
@@ -259,10 +386,9 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Modal (keep your existing modal code here) */}
+      {/* Details Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          {/* Your existing modal content - unchanged */}
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -389,7 +515,7 @@ export default function ApplicationsPage() {
                       <textarea
                         id="adminNotes"
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                         placeholder="Add any notes about this application..."
                       />
                     </div>
@@ -409,9 +535,15 @@ export default function ApplicationsPage() {
                           ).value;
                           handleReject(selectedApp._id, notes);
                         }}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                        disabled={processingId === selectedApp._id}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <FiX /> Reject
+                        {processingId === selectedApp._id ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <FiX />
+                        )}
+                        Reject
                       </button>
                       <button
                         onClick={() => {
@@ -422,9 +554,15 @@ export default function ApplicationsPage() {
                           ).value;
                           handleApprove(selectedApp._id, notes);
                         }}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                        disabled={processingId === selectedApp._id}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <FiCheck /> Approve
+                        {processingId === selectedApp._id ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <FiCheck />
+                        )}
+                        Approve
                       </button>
                     </div>
                   </>
@@ -459,6 +597,7 @@ export default function ApplicationsPage() {
               alt="ID Document"
               className="w-full h-auto rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
+              loading="lazy"
             />
           </div>
         </div>

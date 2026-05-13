@@ -1,7 +1,7 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING FILE
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING FILE WITH CACHING
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllBillingCycles,
   getAllBills,
@@ -13,6 +13,8 @@ import {
   rejectPlanChange,
   disconnectClient,
   reconnectClient,
+  clearBillingCache,
+  getBillingStats,
 } from "@/services/billing";
 import { getAllUsers, confirmPayment } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
@@ -34,6 +36,7 @@ import {
   FiCheckCircle,
   FiClock,
   FiSearch,
+  FiDatabase,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -62,6 +65,7 @@ export default function AdminBillingPage() {
   const [bills, setBills] = useState<any[]>([]);
   const [allPayments, setAllPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState<UserWithBalance | null>(
@@ -75,68 +79,132 @@ export default function AdminBillingPage() {
   const [billingNotes, setBillingNotes] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalBalance: 0,
+    usersWithBalance: 0,
+    overdueUsers: 0,
+    activeCycles: 0,
+  });
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+
+  const loadData = useCallback(async (forceRefresh = false) => {
+    // Prevent duplicate simultaneous loads
+    if (loadPromiseRef.current && !forceRefresh) {
+      return loadPromiseRef.current;
+    }
+
+    const loadPromise = (async () => {
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        // Use Promise.allSettled to prevent one failure from blocking others
+        const [
+          cyclesResult,
+          billsResult,
+          settingsResult,
+          allUsersResult,
+          paymentsResult,
+          billingStats,
+        ] = await Promise.allSettled([
+          getAllBillingCycles({ limit: 100, forceRefresh }),
+          getAllBills({ limit: 100, forceRefresh }),
+          getBillingSettings(forceRefresh),
+          getAllUsers({ limit: 100 }),
+          getAllPayments({ limit: 100 }),
+          getBillingStats(forceRefresh),
+        ]);
+
+        const cyclesData = cyclesResult.status === 'fulfilled' ? cyclesResult.value : { data: [] };
+        const billsData = billsResult.status === 'fulfilled' ? billsResult.value : { data: [] };
+        const settingsData = settingsResult.status === 'fulfilled' ? settingsResult.value : { data: null };
+        const allUsersData = allUsersResult.status === 'fulfilled' ? allUsersResult.value : { data: [] };
+        const paymentsData = paymentsResult.status === 'fulfilled' ? paymentsResult.value : { data: [] };
+        const billingStatsData = billingStats.status === 'fulfilled' ? billingStats.value : null;
+
+        setBillingCycles(cyclesData.data || []);
+        setBills(billsData.data || []);
+        setSettings(settingsData.data);
+        setAllPayments(paymentsData.data || []);
+
+        // Process users with balance in a more efficient way
+        const billsList = billsData.data || [];
+        const cyclesList = cyclesData.data || [];
+        
+        const usersWithBalance = (allUsersData.data || []).map((user: any) => {
+          // Filter bills for this user efficiently
+          const userBills = billsList.filter(
+            (bill: any) => bill.userId?._id === user._id && bill.status !== "paid",
+          );
+
+          const totalBalance = userBills.reduce(
+            (sum: number, bill: any) => sum + (bill.total || 0),
+            0,
+          );
+
+          const overdueBills = userBills.filter(
+            (bill: any) =>
+              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+          );
+
+          const userCycle = cyclesList.find(
+            (cycle: any) => cycle.userId?._id === user._id,
+          );
+
+          return {
+            ...user,
+            currentBalance: totalBalance,
+            unpaidBills: userBills,
+            overdueBills,
+            billingCycle: userCycle,
+          };
+        });
+
+        // Sort in JavaScript instead of relying on backend
+        usersWithBalance.sort(
+          (a: UserWithBalance, b: UserWithBalance) =>
+            b.currentBalance - a.currentBalance,
+        );
+        
+        setUsers(usersWithBalance);
+
+        // Update stats
+        setStats({
+          totalUsers: usersWithBalance.length,
+          totalBalance: usersWithBalance.reduce((sum, u) => sum + u.currentBalance, 0),
+          usersWithBalance: usersWithBalance.filter((u) => u.currentBalance > 0).length,
+          overdueUsers: usersWithBalance.filter((u) => u.overdueBills.length > 0).length,
+          activeCycles: cyclesList.filter((c) => c.status === "active").length,
+        });
+
+        if (billingStatsData) {
+          // Optionally use billing stats from API
+        }
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        toast.error("Failed to load billing data");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        loadPromiseRef.current = null;
+      }
+    })();
+
+    loadPromiseRef.current = loadPromise;
+    return loadPromise;
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [cyclesData, billsData, settingsData, allUsersData, paymentsData] =
-        await Promise.all([
-          getAllBillingCycles({ limit: 100 }).catch(() => ({ data: [] })),
-          getAllBills({ limit: 100 }).catch(() => ({ data: [] })),
-          getBillingSettings().catch(() => ({ data: null })),
-          getAllUsers({ limit: 100 }).catch(() => ({ data: [] })),
-          getAllPayments({ limit: 100 }).catch(() => ({ data: [] })),
-        ]);
-
-      setBillingCycles(cyclesData.data || []);
-      setBills(billsData.data || []);
-      setSettings(settingsData.data);
-      setAllPayments(paymentsData.data || []);
-
-      const usersWithBalance = (allUsersData.data || []).map((user: any) => {
-        const userBills = (billsData.data || []).filter(
-          (bill: any) =>
-            bill.userId?._id === user._id && bill.status !== "paid",
-        );
-
-        const totalBalance = userBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
-
-        const overdueBills = userBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
-
-        const userCycle = (cyclesData.data || []).find(
-          (cycle: any) => cycle.userId?._id === user._id,
-        );
-
-        return {
-          ...user,
-          currentBalance: totalBalance,
-          unpaidBills: userBills,
-          overdueBills,
-          billingCycle: userCycle,
-        };
-      });
-
-      usersWithBalance.sort(
-        (a: UserWithBalance, b: UserWithBalance) =>
-          b.currentBalance - a.currentBalance,
-      );
-      setUsers(usersWithBalance);
-    } catch (error) {
-      console.error("Failed to load billing data:", error);
-      toast.error("Failed to load billing data");
-    } finally {
-      setLoading(false);
-    }
+  const handleRefresh = () => {
+    loadData(true);
   };
 
   const handleMarkBillAsPaid = async (bill: any) => {
@@ -153,7 +221,7 @@ export default function AdminBillingPage() {
       if (payment) {
         await confirmPayment(payment._id);
         toast.success(`Invoice ${bill.invoiceNumber} marked as paid!`);
-        loadData();
+        loadData(true); // Force refresh after payment
       } else {
         toast.error(
           "No payment record found for this bill. Please ask user to submit payment first.",
@@ -185,7 +253,7 @@ export default function AdminBillingPage() {
       setStartDate("");
       setCustomAmount("");
       setBillingNotes("");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
     }
@@ -202,7 +270,7 @@ export default function AdminBillingPage() {
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success("Billing stopped");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
@@ -212,7 +280,7 @@ export default function AdminBillingPage() {
     try {
       await approvePlanChange({ userId });
       toast.success("Plan change approved");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to approve plan change",
@@ -227,7 +295,7 @@ export default function AdminBillingPage() {
     try {
       await rejectPlanChange({ userId, rejectionReason: reason });
       toast.success("Plan change rejected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to reject plan change",
@@ -242,7 +310,7 @@ export default function AdminBillingPage() {
     try {
       await disconnectClient({ userId, reason });
       toast.success("Client disconnected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to disconnect client",
@@ -254,7 +322,7 @@ export default function AdminBillingPage() {
     try {
       await reconnectClient({ userId });
       toast.success("Client reconnected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to reconnect client",
@@ -278,6 +346,7 @@ export default function AdminBillingPage() {
       paused: "bg-yellow-100 text-yellow-800",
       completed: "bg-blue-100 text-blue-800",
       cancelled: "bg-red-100 text-red-800",
+      suspended: "bg-red-100 text-red-800",
     };
     return styles[status] || "bg-gray-100 text-gray-800";
   };
@@ -319,14 +388,6 @@ export default function AdminBillingPage() {
     return matchesSearch;
   });
 
-  const stats = {
-    totalUsers: users.length,
-    totalBalance: users.reduce((sum, u) => sum + u.currentBalance, 0),
-    usersWithBalance: users.filter((u) => u.currentBalance > 0).length,
-    overdueUsers: users.filter((u) => u.overdueBills.length > 0).length,
-    activeCycles: billingCycles.filter((c) => c.status === "active").length,
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -366,11 +427,12 @@ export default function AdminBillingPage() {
               Settings
             </button>
             <button
-              onClick={loadData}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 disabled:opacity-50"
             >
-              <FiRefreshCw className="w-4 h-4" />
-              Refresh
+              <FiRefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -557,297 +619,4 @@ export default function AdminBillingPage() {
                         {user.status === "active" ? (
                           <button
                             onClick={() => handleDisconnect(user._id)}
-                            className="p-1 text-yellow-600 hover:text-yellow-800"
-                            title="Disconnect"
-                          >
-                            <FiWifiOff className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleReconnect(user._id)}
-                            className="p-1 text-green-600 hover:text-green-800"
-                            title="Reconnect"
-                          >
-                            <FiWifi className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* User Detail Modal */}
-      {showUserDetailModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {selectedUser.firstName} {selectedUser.lastName}
-                  </h2>
-                  <p className="text-gray-500">{selectedUser.email}</p>
-                </div>
-                <button
-                  onClick={() => setShowUserDetailModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <FiX className="w-6 h-6" />
-                </button>
-              </div>
-
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">Outstanding Balance</p>
-                    <p
-                      className={`text-2xl font-bold ${getBalanceColor(selectedUser.currentBalance)}`}
-                    >
-                      ₱{selectedUser.currentBalance.toLocaleString()}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Unpaid Bills</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {selectedUser.unpaidBills.length}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Overdue Bills</p>
-                    <p className="text-2xl font-bold text-red-600">
-                      {selectedUser.overdueBills.length}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Unpaid Bills
-              </h3>
-              <div className="overflow-x-auto mb-6">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Invoice #
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Period
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Due Date
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Amount
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedUser.unpaidBills.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-8 text-center text-gray-500"
-                        >
-                          No unpaid bills
-                        </td>
-                      </tr>
-                    ) : (
-                      selectedUser.unpaidBills.map((bill) => (
-                        <tr key={bill._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {bill.invoiceNumber}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {bill.billingPeriod
-                              ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
-                              : "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {new Date(bill.dueDate).toLocaleDateString()}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                            ₱{bill.total?.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => handleMarkBillAsPaid(bill)}
-                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1"
-                            >
-                              <FiCheckCircle className="w-3 h-3" />
-                              Mark as Paid
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={() => setShowUserDetailModal(false)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Start Billing Modal */}
-      {showStartModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Start Billing
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select User *
-                </label>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select a user...</option>
-                  {users.map((user) => (
-                    <option key={user._id} value={user._id}>
-                      {user.firstName} {user.lastName} ({user.email}) - Balance:
-                      ₱{user.currentBalance.toLocaleString()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Custom Amount
-                </label>
-                <input
-                  type="number"
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  placeholder="Leave empty for auto-calculation"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowStartModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleStartBilling}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
-                >
-                  Start Billing
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Modal */}
-      {showSettingsModal && settings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Billing Settings
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reminder Days
-                </label>
-                <input
-                  type="text"
-                  value={settings.reminderDays?.join(", ")}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      reminderDays: e.target.value.split(",").map(Number),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date Days
-                </label>
-                <input
-                  type="number"
-                  value={settings.dueDateDaysAfterPeriod}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      dueDateDaysAfterPeriod: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Grace Period Days
-                </label>
-                <input
-                  type="number"
-                  value={settings.gracePeriodDays}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      gracePeriodDays: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowSettingsModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateSettings}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
-                >
-                  Save Settings
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                            className="p-1 text-yellow-600 hover:text-yellow

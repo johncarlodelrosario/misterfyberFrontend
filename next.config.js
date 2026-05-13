@@ -2,12 +2,24 @@
 const nextConfig = {
   // Image optimization
   images: {
-    domains: ["localhost", "your-backend-domain.com", "www.misterfyber.com"],
+    domains: [
+      "localhost",
+      "misterfyberbackend.onrender.com",
+      "www.misterfyber.com",
+    ],
     unoptimized: process.env.NODE_ENV === "development",
     formats: ["image/avif", "image/webp"],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
     minimumCacheTTL: 60 * 60 * 24,
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "misterfyberbackend.onrender.com",
+        port: "",
+        pathname: "/uploads/**",
+      },
+    ],
   },
 
   // Enable compression for faster loading
@@ -50,7 +62,6 @@ const nextConfig = {
       "lucide-react",
     ],
     swcTraceProfiling: false,
-    // INALIS: legacyBrowsers (invalid key sa Next.js 16)
     optimizeCss: true,
   },
 
@@ -129,23 +140,21 @@ const nextConfig = {
     ];
   },
 
-  // Rewrites for API (para iwas CORS)
+  // FIXED: Rewrites to proxy API requests and avoid CORS
   async rewrites() {
-    const apiDestination = "https://www.misterfyber.com/api/:path*";
-
     return [
       {
         source: "/api/:path*",
-        destination: apiDestination,
+        destination: "https://misterfyberbackend.onrender.com/api/:path*",
       },
       {
         source: "/uploads/:path*",
-        destination: "https://www.misterfyber.com/uploads/:path*",
+        destination: "https://misterfyberbackend.onrender.com/uploads/:path*",
       },
     ];
   },
 
-  // Redirects para sa SEO at better UX
+  // Redirects for SEO and better UX
   async redirects() {
     return [
       {
