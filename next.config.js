@@ -7,22 +7,22 @@ const nextConfig = {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
-    minimumCacheTTL: 60 * 60 * 24, // 24 hours
+    minimumCacheTTL: 60 * 60 * 24,
   },
 
   // Enable compression for faster loading
   compress: true,
 
-  // Use SWC for faster minification (2-3x faster than Babel)
+  // Use SWC for faster minification
   swcMinify: true,
 
   // Disable React strict mode in production for performance
   reactStrictMode: false,
 
-  // Disable source maps in production (reduces bundle size)
+  // Disable source maps in production
   productionBrowserSourceMaps: false,
 
-  // Powering the Next.js build (remove for security)
+  // Remove X-Powered-By header for security
   poweredByHeader: false,
 
   // Generate ETags for better caching
@@ -30,7 +30,7 @@ const nextConfig = {
 
   // Performance optimizations
   onDemandEntries: {
-    maxInactiveAge: 60 * 1000, // 60 seconds
+    maxInactiveAge: 60 * 1000,
     pagesBufferLength: 2,
   },
 
@@ -50,18 +50,15 @@ const nextConfig = {
       "lucide-react",
     ],
     swcTraceProfiling: false,
-    legacyBrowsers: false,
-    optimizeCss: true, // Optimize CSS for faster loading
+    // INALIS: legacyBrowsers (invalid key sa Next.js 16)
+    optimizeCss: true,
   },
 
   // Compiler optimizations
   compiler: {
-    // Remove console.log in production (keep errors and warnings)
     removeConsole:
       process.env.NODE_ENV === "production"
-        ? {
-            exclude: ["error", "warn"],
-          }
+        ? { exclude: ["error", "warn"] }
         : false,
   },
 
@@ -134,7 +131,6 @@ const nextConfig = {
 
   // Rewrites for API (para iwas CORS)
   async rewrites() {
-    // Use the correct destination: www.misterfyber.com
     const apiDestination = "https://www.misterfyber.com/api/:path*";
 
     return [
@@ -142,7 +138,6 @@ const nextConfig = {
         source: "/api/:path*",
         destination: apiDestination,
       },
-      // Para sa uploads/images
       {
         source: "/uploads/:path*",
         destination: "https://www.misterfyber.com/uploads/:path*",
@@ -164,60 +159,6 @@ const nextConfig = {
         permanent: true,
       },
     ];
-  },
-
-  // Webpack optimizations
-  webpack: (config, { isServer, dev }) => {
-    // Optimize bundle size (only in production)
-    if (!dev && !isServer) {
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          chunks: "all",
-          minSize: 20000,
-          maxSize: 244000,
-          minChunks: 1,
-          maxAsyncRequests: 30,
-          maxInitialRequests: 30,
-          cacheGroups: {
-            // Separate vendor chunks
-            defaultVendors: {
-              test: /[\\/]node_modules[\\/]/,
-              priority: -10,
-              reuseExistingChunk: true,
-              name: "vendors",
-            },
-            default: {
-              minChunks: 2,
-              priority: -20,
-              reuseExistingChunk: true,
-            },
-            // Separate react-icons
-            reactIcons: {
-              test: /[\\/]node_modules[\\/]react-icons[\\/]/,
-              name: "react-icons",
-              chunks: "all",
-              priority: 10,
-            },
-            // Separate chart.js
-            chartjs: {
-              test: /[\\/]node_modules[\\/](chart.js|react-chartjs-2)[\\/]/,
-              name: "chartjs",
-              chunks: "all",
-              priority: 10,
-            },
-          },
-        },
-      };
-    }
-
-    // Ignore warnings from specific packages
-    config.ignoreWarnings = [
-      { module: /node_modules\/react-icons/ },
-      { module: /node_modules\/chart.js/ },
-    ];
-
-    return config;
   },
 
   // Trailing slash configuration
