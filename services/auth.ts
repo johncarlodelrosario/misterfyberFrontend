@@ -1,4 +1,4 @@
-// services/auth.ts - COMPLETE AUTH SERVICE
+// services/auth.ts - COMPLETE AUTH SERVICE WITH FIXED ADMIN ROLE HANDLING
 import api from "./api";
 
 interface LoginResponse {
@@ -56,19 +56,6 @@ export const login = async (
     console.log("[Auth] Attempting login for:", email);
     console.log("[Auth] API URL:", api.defaults.baseURL);
 
-    // Test if server is reachable first
-    try {
-      const testResponse = await fetch(`${api.defaults.baseURL}/health`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      console.log("[Auth] Health check response:", testResponse.status);
-    } catch (healthError) {
-      console.error("[Auth] Server health check failed:", healthError);
-    }
-
     const response = await api.post("/auth/login", {
       email: email.trim(),
       password: password,
@@ -98,7 +85,17 @@ export const login = async (
       localStorage.setItem("token", token);
     }
 
+    // IMPORTANT FIX: Preserve the role exactly as returned from server
+    // For admin users, the server should return role as "admin", "super_admin", or "staff"
     const userRole = userData.role || "user";
+
+    console.log("[Auth] User role from server:", userRole);
+    console.log(
+      "[Auth] Is admin check:",
+      userRole === "admin" ||
+        userRole === "super_admin" ||
+        userRole === "staff",
+    );
 
     return {
       token,
@@ -111,7 +108,10 @@ export const login = async (
         lastName: userData.lastName || "",
         role: userRole,
         status: userData.status || "active",
-        isAdmin: userRole === "admin" || userData.isAdmin === true,
+        isAdmin:
+          userRole === "admin" ||
+          userRole === "super_admin" ||
+          userRole === "staff",
         profilePicture: userData.profilePicture,
       },
     };
@@ -123,12 +123,10 @@ export const login = async (
       status: error.response?.status,
     });
 
-    // Handle timeout error specifically
     if (error.code === "ECONNABORTED" || error.message.includes("timeout")) {
       throw new Error("Server is not responding. Please try again later.");
     }
 
-    // Handle network errors
     if (error.message === "Network Error") {
       throw new Error(
         "Cannot connect to server. Please check your internet connection.",
@@ -168,7 +166,9 @@ export const getCurrentUser = async (): Promise<User> => {
       userData = response.data;
     }
 
+    // IMPORTANT FIX: Preserve the role exactly as returned from server
     const userRole = userData.role || "user";
+    console.log("[Auth] getCurrentUser role:", userRole);
 
     return {
       _id: userData._id || userData.id,
