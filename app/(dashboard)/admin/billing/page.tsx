@@ -1,7 +1,7 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING FILE
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING FILE WITH CACHING (FULLY FIXED)
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllBillingCycles,
   getAllBills,
@@ -13,6 +13,7 @@ import {
   rejectPlanChange,
   disconnectClient,
   reconnectClient,
+  clearBillingCache,
 } from "@/services/billing";
 import { getAllUsers, confirmPayment } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
@@ -20,11 +21,9 @@ import {
   FiRefreshCw,
   FiPlay,
   FiPause,
-  FiCheck,
   FiX,
   FiSettings,
   FiUser,
-  FiCalendar,
   FiDollarSign,
   FiActivity,
   FiAlertCircle,
@@ -62,6 +61,7 @@ export default function AdminBillingPage() {
   const [bills, setBills] = useState<any[]>([]);
   const [allPayments, setAllPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState<UserWithBalance | null>(
@@ -75,68 +75,179 @@ export default function AdminBillingPage() {
   const [billingNotes, setBillingNotes] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalBalance: 0,
+    usersWithBalanceCount: 0,
+    overdueUsersCount: 0,
+    activeCyclesCount: 0,
+  });
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const isMountedRef = useRef(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const loadData = useCallback(async (forceRefresh = false) => {
+    // Prevent duplicate simultaneous loads
+    if (loadPromiseRef.current && !forceRefresh) {
+      return loadPromiseRef.current;
+    }
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [cyclesData, billsData, settingsData, allUsersData, paymentsData] =
-        await Promise.all([
-          getAllBillingCycles({ limit: 100 }).catch(() => ({ data: [] })),
-          getAllBills({ limit: 100 }).catch(() => ({ data: [] })),
-          getBillingSettings().catch(() => ({ data: null })),
-          getAllUsers({ limit: 100 }).catch(() => ({ data: [] })),
-          getAllPayments({ limit: 100 }).catch(() => ({ data: [] })),
+    const loadPromise = (async () => {
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        // Use Promise.allSettled to prevent one failure from blocking others
+        const [
+          cyclesResult,
+          billsResult,
+          settingsResult,
+          allUsersResult,
+          paymentsResult,
+        ] = await Promise.allSettled([
+          getAllBillingCycles({ limit: 100, forceRefresh }),
+          getAllBills({ limit: 100, forceRefresh }),
+          getBillingSettings(forceRefresh),
+          getAllUsers({ limit: 100 }),
+          getAllPayments({ limit: 100 }),
         ]);
 
-      setBillingCycles(cyclesData.data || []);
-      setBills(billsData.data || []);
-      setSettings(settingsData.data);
-      setAllPayments(paymentsData.data || []);
+        if (!isMountedRef.current) return;
 
-      const usersWithBalance = (allUsersData.data || []).map((user: any) => {
-        const userBills = (billsData.data || []).filter(
-          (bill: any) =>
-            bill.userId?._id === user._id && bill.status !== "paid",
+        const cyclesData =
+          cyclesResult.status === "fulfilled"
+            ? cyclesResult.value
+            : { data: [] };
+        const billsData =
+          billsResult.status === "fulfilled" ? billsResult.value : { data: [] };
+        const settingsData =
+          settingsResult.status === "fulfilled"
+            ? settingsResult.value
+            : { data: null };
+        const allUsersData =
+          allUsersResult.status === "fulfilled"
+            ? allUsersResult.value
+            : { data: [] };
+        const paymentsData =
+          paymentsResult.status === "fulfilled"
+            ? paymentsResult.value
+            : { data: [] };
+
+        setBillingCycles(cyclesData.data || []);
+        setBills(billsData.data || []);
+        if (settingsData.data) {
+          setSettings(settingsData.data);
+        }
+        setAllPayments(paymentsData.data || []);
+
+        // Process users with balance in a more efficient way
+        const billsList = billsData.data || [];
+        const cyclesList = cyclesData.data || [];
+
+        const usersWithBalanceData: UserWithBalance[] = (
+          allUsersData.data || []
+        ).map((user: any) => {
+          // Filter bills for this user efficiently
+          const userBills = billsList.filter(
+            (bill: any) =>
+              bill.userId?._id === user._id && bill.status !== "paid",
+          );
+
+          const totalBalance = userBills.reduce(
+            (sum: number, bill: any) => sum + (bill.total || 0),
+            0,
+          );
+
+          const overdueBills = userBills.filter(
+            (bill: any) =>
+              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+          );
+
+          const userCycle = cyclesList.find(
+            (cycle: any) => cycle.userId?._id === user._id,
+          );
+
+          return {
+            ...user,
+            currentBalance: totalBalance,
+            unpaidBills: userBills,
+            overdueBills,
+            billingCycle: userCycle,
+          };
+        });
+
+        // Sort in JavaScript instead of relying on backend
+        usersWithBalanceData.sort(
+          (a: UserWithBalance, b: UserWithBalance) =>
+            b.currentBalance - a.currentBalance,
         );
 
-        const totalBalance = userBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
+        if (isMountedRef.current) {
+          setUsers(usersWithBalanceData);
 
-        const overdueBills = userBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
+          // Calculate stats - FIXED with proper type annotations
+          let totalBalanceSum = 0;
+          let usersWithPositiveBalance = 0;
+          let usersWithOverdue = 0;
 
-        const userCycle = (cyclesData.data || []).find(
-          (cycle: any) => cycle.userId?._id === user._id,
-        );
+          for (let i = 0; i < usersWithBalanceData.length; i++) {
+            const user = usersWithBalanceData[i];
+            totalBalanceSum = totalBalanceSum + user.currentBalance;
+            if (user.currentBalance > 0) {
+              usersWithPositiveBalance++;
+            }
+            if (user.overdueBills.length > 0) {
+              usersWithOverdue++;
+            }
+          }
 
-        return {
-          ...user,
-          currentBalance: totalBalance,
-          unpaidBills: userBills,
-          overdueBills,
-          billingCycle: userCycle,
-        };
-      });
+          let activeCycles = 0;
+          for (let i = 0; i < cyclesList.length; i++) {
+            if (cyclesList[i].status === "active") {
+              activeCycles++;
+            }
+          }
 
-      usersWithBalance.sort(
-        (a: UserWithBalance, b: UserWithBalance) =>
-          b.currentBalance - a.currentBalance,
-      );
-      setUsers(usersWithBalance);
-    } catch (error) {
-      console.error("Failed to load billing data:", error);
-      toast.error("Failed to load billing data");
-    } finally {
-      setLoading(false);
-    }
+          setStats({
+            totalUsers: usersWithBalanceData.length,
+            totalBalance: totalBalanceSum,
+            usersWithBalanceCount: usersWithPositiveBalance,
+            overdueUsersCount: usersWithOverdue,
+            activeCyclesCount: activeCycles,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        loadPromiseRef.current = null;
+      }
+    })();
+
+    loadPromiseRef.current = loadPromise;
+    return loadPromise;
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    loadData();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [loadData]);
+
+  const handleRefresh = () => {
+    loadData(true);
   };
 
   const handleMarkBillAsPaid = async (bill: any) => {
@@ -153,7 +264,7 @@ export default function AdminBillingPage() {
       if (payment) {
         await confirmPayment(payment._id);
         toast.success(`Invoice ${bill.invoiceNumber} marked as paid!`);
-        loadData();
+        loadData(true);
       } else {
         toast.error(
           "No payment record found for this bill. Please ask user to submit payment first.",
@@ -185,7 +296,7 @@ export default function AdminBillingPage() {
       setStartDate("");
       setCustomAmount("");
       setBillingNotes("");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
     }
@@ -202,7 +313,7 @@ export default function AdminBillingPage() {
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success("Billing stopped");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
@@ -212,7 +323,7 @@ export default function AdminBillingPage() {
     try {
       await approvePlanChange({ userId });
       toast.success("Plan change approved");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to approve plan change",
@@ -227,7 +338,7 @@ export default function AdminBillingPage() {
     try {
       await rejectPlanChange({ userId, rejectionReason: reason });
       toast.success("Plan change rejected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to reject plan change",
@@ -242,7 +353,7 @@ export default function AdminBillingPage() {
     try {
       await disconnectClient({ userId, reason });
       toast.success("Client disconnected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to disconnect client",
@@ -254,7 +365,7 @@ export default function AdminBillingPage() {
     try {
       await reconnectClient({ userId });
       toast.success("Client reconnected");
-      loadData();
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to reconnect client",
@@ -267,6 +378,7 @@ export default function AdminBillingPage() {
       await updateBillingSettings(settings);
       toast.success("Billing settings updated");
       setShowSettingsModal(false);
+      loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to update settings");
     }
@@ -278,17 +390,7 @@ export default function AdminBillingPage() {
       paused: "bg-yellow-100 text-yellow-800",
       completed: "bg-blue-100 text-blue-800",
       cancelled: "bg-red-100 text-red-800",
-    };
-    return styles[status] || "bg-gray-100 text-gray-800";
-  };
-
-  const getBillStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      paid: "bg-green-100 text-green-800",
-      sent: "bg-blue-100 text-blue-800",
-      overdue: "bg-red-100 text-red-800",
-      cancelled: "bg-gray-100 text-gray-800",
-      draft: "bg-yellow-100 text-yellow-800",
+      suspended: "bg-red-100 text-red-800",
     };
     return styles[status] || "bg-gray-100 text-gray-800";
   };
@@ -318,14 +420,6 @@ export default function AdminBillingPage() {
 
     return matchesSearch;
   });
-
-  const stats = {
-    totalUsers: users.length,
-    totalBalance: users.reduce((sum, u) => sum + u.currentBalance, 0),
-    usersWithBalance: users.filter((u) => u.currentBalance > 0).length,
-    overdueUsers: users.filter((u) => u.overdueBills.length > 0).length,
-    activeCycles: billingCycles.filter((c) => c.status === "active").length,
-  };
 
   if (loading) {
     return (
@@ -366,11 +460,14 @@ export default function AdminBillingPage() {
               Settings
             </button>
             <button
-              onClick={loadData}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 disabled:opacity-50"
             >
-              <FiRefreshCw className="w-4 h-4" />
-              Refresh
+              <FiRefreshCw
+                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+              />
+              {refreshing ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </div>
@@ -405,7 +502,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">With Balance</p>
               <p className="text-2xl font-bold text-orange-600">
-                {stats.usersWithBalance}
+                {stats.usersWithBalanceCount}
               </p>
             </div>
             <FiAlertCircle className="w-8 h-8 text-orange-100" />
@@ -416,7 +513,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Overdue</p>
               <p className="text-2xl font-bold text-red-600">
-                {stats.overdueUsers}
+                {stats.overdueUsersCount}
               </p>
             </div>
             <FiClock className="w-8 h-8 text-red-100" />
@@ -427,7 +524,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Active Cycles</p>
               <p className="text-2xl font-bold text-green-600">
-                {stats.activeCycles}
+                {stats.activeCyclesCount}
               </p>
             </div>
             <FiActivity className="w-8 h-8 text-green-100" />
@@ -734,7 +831,7 @@ export default function AdminBillingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date
+                  Start Date (Optional)
                 </label>
                 <input
                   type="date"
@@ -745,7 +842,7 @@ export default function AdminBillingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Custom Amount
+                  Custom Amount (Optional)
                 </label>
                 <input
                   type="number"
@@ -784,7 +881,7 @@ export default function AdminBillingPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reminder Days
+                  Reminder Days (comma separated)
                 </label>
                 <input
                   type="text"
@@ -792,7 +889,9 @@ export default function AdminBillingPage() {
                   onChange={(e) =>
                     setSettings({
                       ...settings,
-                      reminderDays: e.target.value.split(",").map(Number),
+                      reminderDays: e.target.value
+                        .split(",")
+                        .map((n: string) => parseInt(n.trim())),
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -800,7 +899,7 @@ export default function AdminBillingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date Days
+                  Due Date Days After Period
                 </label>
                 <input
                   type="number"
@@ -829,6 +928,66 @@ export default function AdminBillingPage() {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing Cycle Day
+                </label>
+                <input
+                  type="number"
+                  value={settings.billingCycleDay}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      billingCycleDay: parseInt(e.target.value),
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoGenerateBills}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        autoGenerateBills: e.target.checked,
+                      })
+                    }
+                    className="rounded"
+                  />
+                  Auto Generate Bills
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoSendReminders}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        autoSendReminders: e.target.checked,
+                      })
+                    }
+                    className="rounded"
+                  />
+                  Auto Send Reminders
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoSuspendOnNonPayment}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        autoSuspendOnNonPayment: e.target.checked,
+                      })
+                    }
+                    className="rounded"
+                  />
+                  Auto Suspend on Non-Payment
+                </label>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
