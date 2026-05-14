@@ -16,15 +16,27 @@ import {
   FiImage,
   FiAlertCircle,
   FiWifiOff,
+  FiDatabase,
+  FiClock,
 } from "react-icons/fi";
 
-// Cache configuration
-const CACHE_KEY = "applications_cache";
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// ==================== PERSISTENT STORAGE CONFIGURATION ====================
+const STORAGE_KEYS = {
+  APPLICATIONS: "misterfyber_applications_data",
+  APPLICATIONS_META: "misterfyber_applications_meta",
+  LAST_FETCH: "misterfyber_last_fetch",
+  FILTER_STATE: "misterfyber_applications_filter",
+  CACHE_VERSION: "misterfyber_cache_v2",
+};
 
-interface CacheData {
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes (increased for better persistence)
+const MAX_STORED_APPLICATIONS = 500;
+
+interface StoredApplicationsData {
   applications: any[];
   timestamp: number;
+  version: string;
+  totalCount: number;
 }
 
 interface FilterState {
@@ -32,82 +44,136 @@ interface FilterState {
   statusFilter: string;
 }
 
-// Safe storage wrapper
-const safeStorage = {
+// ==================== ENHANCED STORAGE WRAPPER ====================
+const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
       const serialized = JSON.stringify(value);
       const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
-      if (sizeInMB > 4) {
+
+      if (sizeInMB > 5) {
         console.warn(
-          `Data too large (${sizeInMB.toFixed(2)}MB) for cache, skipping`,
+          `Data too large (${sizeInMB.toFixed(2)}MB), truncating...`,
         );
+        if (value.applications && value.applications.length > 100) {
+          const truncated = {
+            ...value,
+            applications: value.applications.slice(0, 100),
+          };
+          const retrySerialized = JSON.stringify(truncated);
+          localStorage.setItem(key, retrySerialized);
+          console.log(`Saved truncated data (100 items only)`);
+          return true;
+        }
         return false;
       }
+
       localStorage.setItem(key, serialized);
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
-        console.error("Storage quota exceeded");
+        console.error("Storage quota exceeded, clearing old data...");
+        Object.values(STORAGE_KEYS).forEach((k) => {
+          if (k !== key) {
+            try {
+              localStorage.removeItem(k);
+            } catch (err) {}
+          }
+        });
         try {
-          localStorage.removeItem(CACHE_KEY);
-          localStorage.removeItem("old_applications_cache");
-          const smallerData = {
-            applications: value.applications.slice(0, 50),
-            timestamp: value.timestamp,
-          };
-          localStorage.setItem(key, JSON.stringify(smallerData));
+          localStorage.setItem(key, JSON.stringify(value));
           return true;
         } catch (retryError) {
+          console.error("Still cannot save after cleanup");
           return false;
         }
       }
       return false;
     }
   },
+
   getItem: (key: string): any => {
     try {
       const item = localStorage.getItem(key);
       return item ? JSON.parse(item) : null;
     } catch (e) {
-      console.error("Failed to read from storage:", e);
+      console.error(`Failed to read ${key} from storage:`, e);
       return null;
     }
   },
+
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
-    } catch (e) {}
+    } catch (e) {
+      console.error(`Failed to remove ${key}:`, e);
+    }
+  },
+
+  clearAll: (): void => {
+    try {
+      Object.values(STORAGE_KEYS).forEach((key) =>
+        localStorage.removeItem(key),
+      );
+      console.log("All persistent storage cleared");
+    } catch (e) {
+      console.error("Failed to clear storage:", e);
+    }
+  },
+
+  getStorageInfo: () => {
+    let totalSize = 0;
+    let itemCount = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        const value = localStorage.getItem(key);
+        if (value) {
+          totalSize += value.length;
+          itemCount++;
+        }
+      }
+    }
+    return { totalSize: (totalSize / 1024).toFixed(2) + " KB", itemCount };
   },
 };
 
+// ==================== COMPONENT ====================
 export default function ApplicationsPage() {
+  // State
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterState>({
-    searchTerm: "",
-    statusFilter: "all",
-  });
-  const [retryCount, setRetryCount] = useState(0);
+  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const [isWakingBackend, setIsWakingBackend] = useState(false);
-  const loadAttempts = useRef(0);
+  const [filter, setFilter] = useState<FilterState>(() => {
+    const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
+    return savedFilter || { searchTerm: "", statusFilter: "all" };
+  });
 
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshInProgressRef = useRef(false);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
+
+  // Save filter to storage whenever it changes
+  useEffect(() => {
+    persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
+  }, [filter]);
 
   // Monitor online status
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
       toast.success("Network connected. Refreshing data...");
-      loadApplications(true);
+      refreshApplications(true);
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -123,164 +189,169 @@ export default function ApplicationsPage() {
     };
   }, []);
 
-  // Load from localStorage on mount
+  // Load from persistent storage on mount - INSTANT LOAD
   useEffect(() => {
-    try {
-      const cachedData = safeStorage.getItem(CACHE_KEY);
-      if (cachedData) {
-        const isExpired = Date.now() - cachedData.timestamp > CACHE_DURATION;
+    const loadFromPersistentStorage = async () => {
+      try {
+        const storedData = persistentStorage.getItem(
+          STORAGE_KEYS.APPLICATIONS,
+        ) as StoredApplicationsData | null;
+        const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
+
         if (
-          !isExpired &&
-          cachedData.applications &&
-          cachedData.applications.length > 0
+          storedData &&
+          storedData.applications &&
+          storedData.applications.length > 0
         ) {
-          setApplications(cachedData.applications);
-          setLoading(false);
           console.log(
-            `Loaded ${cachedData.applications.length} applications from cache`,
+            `📦 Loading ${storedData.applications.length} applications from persistent storage`,
           );
+          setApplications(storedData.applications);
+
+          if (lastFetch) {
+            setLastFetchTime(new Date(lastFetch));
+          }
+
+          const cacheAge = Date.now() - storedData.timestamp;
+          const isCacheFresh = cacheAge < CACHE_DURATION;
+
+          if (!isCacheFresh && isOnline) {
+            console.log("Cache expired, refreshing in background...");
+            setTimeout(() => refreshApplications(true), 100);
+          } else {
+            setLoading(false);
+          }
+        } else {
+          await refreshApplications(true);
         }
+      } catch (err) {
+        console.error("Failed to load from persistent storage:", err);
+        await refreshApplications(true);
       }
-    } catch (err) {
-      console.error("Failed to parse cached data:", err);
-      safeStorage.removeItem(CACHE_KEY);
-    }
-
-    // Initial load with small delay to let page render
-    const timer = setTimeout(() => {
-      loadApplications();
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Save to localStorage whenever applications update
-  const saveToCache = useCallback((apps: any[]) => {
-    if (!apps || apps.length === 0) return;
-    const cacheData: CacheData = {
-      applications: apps,
-      timestamp: Date.now(),
     };
-    safeStorage.setItem(CACHE_KEY, cacheData);
+
+    loadFromPersistentStorage();
+
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
   }, []);
 
-  // Wake up backend with health check
+  // Save applications to persistent storage whenever they change
+  useEffect(() => {
+    if (applications.length > 0) {
+      const dataToStore: StoredApplicationsData = {
+        applications: applications.slice(0, MAX_STORED_APPLICATIONS),
+        timestamp: Date.now(),
+        version: STORAGE_KEYS.CACHE_VERSION,
+        totalCount: applications.length,
+      };
+      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+    }
+  }, [applications]);
+
+  // Wake up backend
   const wakeBackend = useCallback(async (): Promise<boolean> => {
     setIsWakingBackend(true);
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-
       const response = await fetch(
         "https://misterfyberbackend.onrender.com/health",
-        {
-          signal: controller.signal,
-        },
+        { signal: controller.signal },
       );
       clearTimeout(timeoutId);
-
-      const isHealthy = response.ok;
-      console.log(
-        `Backend health check: ${isHealthy ? "healthy" : "unhealthy"}`,
-      );
-      return isHealthy;
+      return response.ok;
     } catch (error) {
-      console.log("Backend health check failed, may be waking up...");
+      console.log("Backend health check failed");
       return false;
     } finally {
       setIsWakingBackend(false);
     }
   }, []);
 
-  const loadApplications = async (forceRefresh = false) => {
-    if (!isOnline && !forceRefresh) {
-      const cachedData = safeStorage.getItem(CACHE_KEY);
-      if (cachedData?.applications?.length > 0) {
-        setApplications(cachedData.applications);
-        setError("You are offline. Showing cached data.");
-        setLoading(false);
-        return;
-      }
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      loadAttempts.current++;
-
-      // Try to wake backend if this is first attempt or retry
-      if (loadAttempts.current === 1 || retryCount > 0) {
-        console.log("Checking backend health...");
-        await wakeBackend();
-        // Wait a bit for backend to wake up
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      console.log("Fetching applications from API...");
-      const data = await getAllApplications();
-      const applicationsList = data.data || [];
-
-      console.log(`Received ${applicationsList.length} applications`);
-      setApplications(applicationsList);
-      saveToCache(applicationsList);
-      setRetryCount(0);
-      loadAttempts.current = 0;
-    } catch (error: any) {
-      console.error("Failed to load applications:", error);
-
-      let errorMessage = "Failed to load applications. ";
-      if (!isOnline) {
-        errorMessage = "No internet connection. ";
-      } else if (
-        error.code === "ERR_NETWORK_IO_SUSPENDED" ||
-        error.message?.includes("Network Error")
-      ) {
-        errorMessage = "Backend server is waking up. ";
-      } else if (error.code === "ECONNABORTED") {
-        errorMessage = "Request timed out. ";
-      }
-
-      // Try to load from cache as fallback
-      const cachedData = safeStorage.getItem(CACHE_KEY);
-      if (cachedData?.applications?.length > 0) {
-        setApplications(cachedData.applications);
-        errorMessage += `Showing ${cachedData.applications.length} cached applications.`;
-        setError(errorMessage);
-        toast(errorMessage, { icon: "📦", duration: 4000 });
-        setLoading(false);
+  // Refresh applications (with force option)
+  const refreshApplications = useCallback(
+    async (forceRefresh = false) => {
+      if (refreshInProgressRef.current && !forceRefresh) {
+        console.log("Refresh already in progress, skipping...");
         return;
       }
 
-      errorMessage += "Please check your connection and try again.";
-      setError(errorMessage);
+      if (!isOnline && !forceRefresh) {
+        const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+        if (storedData?.applications?.length > 0) {
+          setApplications(storedData.applications);
+          setError("Offline mode - showing cached data");
+          setLoading(false);
+          setRefreshing(false);
+        }
+        return;
+      }
 
-      // Auto retry with exponential backoff (max 5 retries)
-      if (retryCount < 5) {
-        const delay = Math.min(Math.pow(2, retryCount) * 2000, 30000);
-        console.log(
-          `Auto-retrying in ${delay / 1000} seconds... (Attempt ${retryCount + 1}/5)`,
-        );
-
-        setTimeout(() => {
-          setRetryCount((prev) => prev + 1);
-          loadApplications(forceRefresh);
-        }, delay);
+      refreshInProgressRef.current = true;
+      if (!forceRefresh) {
+        setRefreshing(true);
       } else {
-        toast.error(
-          "Unable to connect after multiple attempts. Please refresh the page.",
-        );
+        setLoading(true);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+      setError(null);
 
+      try {
+        if (forceRefresh) {
+          await wakeBackend();
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        console.log("Fetching fresh applications from API...");
+        // FIXED: Use params object instead of page, limit as separate args
+        const data = await getAllApplications({ page: 1, limit: 100 });
+        const applicationsList = data.data || [];
+
+        console.log(`✅ Received ${applicationsList.length} applications`);
+        setApplications(applicationsList);
+        setLastFetchTime(new Date());
+
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+        }
+
+        toast.success(`Loaded ${applicationsList.length} applications`);
+      } catch (error: any) {
+        console.error("Failed to refresh applications:", error);
+
+        const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+        if (storedData?.applications?.length > 0 && !forceRefresh) {
+          setApplications(storedData.applications);
+          setError(
+            `Network error. Showing ${storedData.applications.length} cached applications.`,
+          );
+          toast.error("Network error, using cached data");
+        } else if (forceRefresh) {
+          setError(
+            "Unable to connect to server. Please check your connection and try again.",
+          );
+          toast.error("Failed to connect to server");
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        refreshInProgressRef.current = false;
+      }
+    },
+    [isOnline, wakeBackend],
+  );
+
+  // Handle approve
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      await loadApplications(true);
+      await refreshApplications(true);
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Approve error:", error);
@@ -292,12 +363,13 @@ export default function ApplicationsPage() {
     }
   };
 
+  // Handle reject
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      await loadApplications(true);
+      await refreshApplications(true);
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Reject error:", error);
@@ -309,29 +381,26 @@ export default function ApplicationsPage() {
     }
   };
 
+  // Get image URL
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
-      if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+      if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
         return imagePath;
-      }
-      if (imagePath.startsWith("data:image")) {
-        return imagePath;
-      }
+      if (imagePath.startsWith("data:image")) return imagePath;
       let cleanPath = imagePath.replace(/^\/+/, "");
-      if (!cleanPath.startsWith("uploads/")) {
-        cleanPath = `uploads/${cleanPath}`;
-      }
+      if (!cleanPath.startsWith("uploads/")) cleanPath = `uploads/${cleanPath}`;
       return `${PRODUCTION_URL}/${cleanPath}`;
     },
     [PRODUCTION_URL],
   );
 
+  // Filtered applications (memoized for performance)
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
-
     return applications.filter((app: any) => {
       const matchesSearch =
+        !filter.searchTerm ||
         app.applicationId
           ?.toLowerCase()
           .includes(filter.searchTerm.toLowerCase()) ||
@@ -346,6 +415,7 @@ export default function ApplicationsPage() {
     });
   }, [applications, filter.searchTerm, filter.statusFilter]);
 
+  // Get status badge style
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
@@ -355,15 +425,39 @@ export default function ApplicationsPage() {
     return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
 
+  // Clear all cached data
   const clearCache = useCallback(() => {
-    safeStorage.removeItem(CACHE_KEY);
-    toast.success("Cache cleared");
+    persistentStorage.clearAll();
+    toast.success("All cached data cleared");
     setApplications([]);
     setError(null);
-    loadApplications(true);
+    refreshApplications(true);
   }, []);
 
-  // Loading State
+  // Format last fetch time
+  const getLastFetchDisplay = useCallback(() => {
+    if (!lastFetchTime) return "Never";
+    const now = new Date();
+    const diff = now.getTime() - lastFetchTime.getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  }, [lastFetchTime]);
+
+  // Stats
+  const stats = useMemo(
+    () => ({
+      pending: applications.filter((a) => a.status === "pending").length,
+      approved: applications.filter((a) => a.status === "approved").length,
+      rejected: applications.filter((a) => a.status === "rejected").length,
+      total: applications.length,
+    }),
+    [applications],
+  );
+
+  // Loading skeleton
   if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -371,74 +465,8 @@ export default function ApplicationsPage() {
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading applications...</p>
           {isWakingBackend && (
-            <p className="text-sm text-blue-500 mt-2">
-              Waking up backend server...
-            </p>
+            <p className="text-sm text-blue-500 mt-2">Waking up server...</p>
           )}
-          {retryCount > 0 && (
-            <p className="text-sm text-gray-500 mt-2">
-              Retry attempt {retryCount}/5 (waiting{" "}
-              {Math.min(Math.pow(2, retryCount) * 2, 30)}s)...
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Error State with no cached data
-  if (error && applications.length === 0 && !isOnline) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FiWifiOff className="w-8 h-8 text-red-600" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            No Internet Connection
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Please check your network and try again.
-          </p>
-          <button
-            onClick={() => loadApplications(true)}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (error && applications.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FiAlertCircle className="w-8 h-8 text-yellow-600" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Backend Waking Up
-          </h2>
-          <p className="text-gray-600 mb-4">
-            The server is starting up. This may take 30-60 seconds.
-          </p>
-          <div className="space-x-3">
-            <button
-              onClick={() => loadApplications(true)}
-              disabled={isWakingBackend}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-            >
-              {isWakingBackend ? "Waking up..." : "Try Again"}
-            </button>
-            <button
-              onClick={clearCache}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-            >
-              Clear Cache
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -446,31 +474,87 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
-        <p className="text-gray-600">Review and manage customer applications</p>
+      {/* Header */}
+      <div className="mb-6 flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
+          <p className="text-gray-600">
+            Review and manage customer applications
+          </p>
+        </div>
+
+        {/* Last fetch info and actions */}
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-500 flex items-center gap-1">
+            <FiClock className="w-3 h-3" />
+            <span>Last updated: {getLastFetchDisplay()}</span>
+          </div>
+          <button
+            onClick={() => refreshApplications(true)}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+          >
+            <FiRefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+          <button
+            onClick={clearCache}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+          >
+            <FiDatabase className="w-4 h-4" />
+            Clear Cache
+          </button>
+        </div>
       </div>
 
-      {/* Connection Status Banner */}
+      {/* Status Banner */}
       {!isOnline && (
-        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-          <div className="flex items-center">
-            <FiWifiOff className="w-5 h-5 text-yellow-400 mr-2" />
+        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+          <div className="flex items-center gap-2">
+            <FiWifiOff className="w-4 h-4 text-yellow-400" />
             <p className="text-sm text-yellow-700">
-              You are offline. Showing cached data from last successful load.
+              Offline mode - showing cached data
             </p>
           </div>
         </div>
       )}
 
       {error && applications.length > 0 && (
-        <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+        <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
           <p className="text-sm text-blue-700">{error}</p>
         </div>
       )}
 
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <div className="text-sm text-gray-600">Total Applications</div>
+          <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+        </div>
+        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+          <div className="text-sm text-yellow-600">Pending</div>
+          <div className="text-2xl font-bold text-yellow-700">
+            {stats.pending}
+          </div>
+        </div>
+        <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+          <div className="text-sm text-green-600">Approved</div>
+          <div className="text-2xl font-bold text-green-700">
+            {stats.approved}
+          </div>
+        </div>
+        <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+          <div className="text-sm text-red-600">Rejected</div>
+          <div className="text-2xl font-bold text-red-700">
+            {stats.rejected}
+          </div>
+        </div>
+      </div>
+
       {/* Filters */}
-      <div className="card p-4 mb-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -491,60 +575,22 @@ export default function ApplicationsPage() {
             }
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
           >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
+            <option value="all">All Status ({stats.total})</option>
+            <option value="pending">Pending ({stats.pending})</option>
+            <option value="approved">Approved ({stats.approved})</option>
+            <option value="rejected">Rejected ({stats.rejected})</option>
           </select>
-          <button
-            onClick={() => loadApplications(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-            disabled={loading || isWakingBackend}
-          >
-            <FiRefreshCw
-              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </button>
-          <button
-            onClick={clearCache}
-            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
-          >
-            Clear Cache
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-yellow-50 rounded-lg p-4">
-          <div className="text-sm text-yellow-600">Pending</div>
-          <div className="text-2xl font-bold text-yellow-700">
-            {applications.filter((a) => a.status === "pending").length}
-          </div>
-        </div>
-        <div className="bg-green-50 rounded-lg p-4">
-          <div className="text-sm text-green-600">Approved</div>
-          <div className="text-2xl font-bold text-green-700">
-            {applications.filter((a) => a.status === "approved").length}
-          </div>
-        </div>
-        <div className="bg-red-50 rounded-lg p-4">
-          <div className="text-sm text-red-600">Rejected</div>
-          <div className="text-2xl font-bold text-red-700">
-            {applications.filter((a) => a.status === "rejected").length}
-          </div>
         </div>
       </div>
 
       {/* Applications Table */}
-      <div className="card overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Application ID
+                  ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Name
@@ -571,26 +617,29 @@ export default function ApplicationsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-6 py-8 text-center text-gray-500"
+                    className="px-6 py-12 text-center text-gray-500"
                   >
-                    {applications.length === 0 && !loading
+                    {applications.length === 0
                       ? "No applications found"
                       : "No applications match your filters"}
                   </td>
                 </tr>
               ) : (
                 filteredApplications.map((app: any) => (
-                  <tr key={app._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr
+                    key={app._id}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
                       {app.applicationId}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {app.firstName} {app.lastName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {app.email}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {app.planId?.name || "N/A"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -603,13 +652,13 @@ export default function ApplicationsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(app.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         onClick={() => setSelectedApp(app)}
-                        className="text-primary-600 hover:text-primary-900 flex items-center gap-1"
+                        className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
                       >
                         <FiEye className="w-4 h-4" />
-                        View Details
+                        View
                       </button>
                     </td>
                   </tr>
@@ -618,190 +667,199 @@ export default function ApplicationsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Table Footer with count */}
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-600">
+          Showing {filteredApplications.length} of {applications.length}{" "}
+          applications
+        </div>
       </div>
 
       {/* Details Modal */}
       {selectedApp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold">
-                    {selectedApp.status === "pending"
-                      ? "Review Application"
-                      : "Application Details"}
-                  </h2>
-                  {selectedApp.status !== "pending" && (
-                    <span
-                      className={`inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(selectedApp.status)}`}
-                    >
-                      {selectedApp.status.toUpperCase()}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">
+                  {selectedApp.status === "pending"
+                    ? "Review Application"
+                    : "Application Details"}
+                </h2>
+                <p className="text-sm text-gray-500 font-mono">
+                  {selectedApp.applicationId}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedApp(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Personal Information */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3">
+                  Personal Information
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">Name:</span>{" "}
+                    <span className="font-medium">
+                      {selectedApp.firstName} {selectedApp.lastName}
                     </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Email:</span>{" "}
+                    <span className="font-medium">{selectedApp.email}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Phone:</span>{" "}
+                    <span className="font-medium">
+                      {selectedApp.phoneNumber}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3">Address</h3>
+                <div className="space-y-1 text-sm">
+                  <div>
+                    <span className="text-gray-500">Building:</span>{" "}
+                    {selectedApp.buildingId?.buildingName || "N/A"}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Floor:</span>{" "}
+                    {selectedApp.floor || "N/A"}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Unit Number:</span>{" "}
+                    {selectedApp.unitNumber || "N/A"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Plan Details */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3">
+                  Plan Details
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">Plan:</span>{" "}
+                    {selectedApp.planId?.name}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Price:</span> ₱
+                    {selectedApp.planId?.price}/month
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Speed:</span>{" "}
+                    {selectedApp.planId?.speed?.download} Mbps
+                  </div>
+                </div>
+              </div>
+
+              {/* ID Verification */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-semibold text-gray-900">
+                    ID Verification
+                  </h3>
+                  {selectedApp.idImage && (
+                    <button
+                      onClick={() => {
+                        const url = getImageUrl(selectedApp.idImage);
+                        if (url) {
+                          setImagePreview(url);
+                          setShowImageModal(true);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+                    >
+                      <FiImage className="w-4 h-4" />
+                      View ID
+                    </button>
                   )}
                 </div>
-                <button
-                  onClick={() => setSelectedApp(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <FiX className="w-6 h-6" />
-                </button>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">ID Type:</span>{" "}
+                    {selectedApp.idType}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">ID Number:</span>{" "}
+                    {selectedApp.idNumber}
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">
-                    Personal Information
-                  </h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <p>
-                      <span className="text-gray-500">Name:</span>{" "}
-                      {selectedApp.firstName} {selectedApp.lastName}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Email:</span>{" "}
-                      {selectedApp.email}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Phone:</span>{" "}
-                      {selectedApp.phoneNumber}
-                    </p>
+              {/* Admin Actions for Pending */}
+              {selectedApp.status === "pending" && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Admin Notes
+                    </label>
+                    <textarea
+                      id="adminNotes"
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="Add notes about this application..."
+                    />
                   </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">Address</h3>
-                  <div className="text-sm">
-                    <p>
-                      <span className="text-gray-500">Building:</span>{" "}
-                      {selectedApp.buildingId?.buildingName || "N/A"}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Floor:</span>{" "}
-                      {selectedApp.floor || "N/A"}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Unit Number:</span>{" "}
-                      {selectedApp.unitNumber || "N/A"}
-                    </p>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => setSelectedApp(null)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const notes = (
+                          document.getElementById(
+                            "adminNotes",
+                          ) as HTMLTextAreaElement
+                        )?.value;
+                        handleReject(selectedApp._id, notes);
+                      }}
+                      disabled={processingId === selectedApp._id}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {processingId === selectedApp._id ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <FiX />
+                      )}
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => {
+                        const notes = (
+                          document.getElementById(
+                            "adminNotes",
+                          ) as HTMLTextAreaElement
+                        )?.value;
+                        handleApprove(selectedApp._id, notes);
+                      }}
+                      disabled={processingId === selectedApp._id}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {processingId === selectedApp._id ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <FiCheck />
+                      )}
+                      Approve
+                    </button>
                   </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">
-                    Plan Details
-                  </h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <p>
-                      <span className="text-gray-500">Plan:</span>{" "}
-                      {selectedApp.planId?.name}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Price:</span> ₱
-                      {selectedApp.planId?.price}/month
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Speed:</span>{" "}
-                      {selectedApp.planId?.speed?.download} Mbps
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-semibold text-gray-900">
-                      ID Verification
-                    </h3>
-                    {selectedApp.idImage && (
-                      <button
-                        onClick={() => {
-                          const imageUrl = getImageUrl(selectedApp.idImage);
-                          if (imageUrl) {
-                            setImagePreview(imageUrl);
-                            setShowImageModal(true);
-                          }
-                        }}
-                        className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
-                      >
-                        <FiImage className="w-4 h-4" />
-                        View ID Image
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <p>
-                      <span className="text-gray-500">ID Type:</span>{" "}
-                      {selectedApp.idType}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">ID Number:</span>{" "}
-                      {selectedApp.idNumber}
-                    </p>
-                  </div>
-                </div>
-
-                {selectedApp.status === "pending" && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Admin Notes
-                      </label>
-                      <textarea
-                        id="adminNotes"
-                        rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                        placeholder="Add any notes about this application..."
-                      />
-                    </div>
-                    <div className="flex justify-end space-x-3 pt-4">
-                      <button
-                        onClick={() => setSelectedApp(null)}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => {
-                          const notes = (
-                            document.getElementById(
-                              "adminNotes",
-                            ) as HTMLTextAreaElement
-                          ).value;
-                          handleReject(selectedApp._id, notes);
-                        }}
-                        disabled={processingId === selectedApp._id}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {processingId === selectedApp._id ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <FiX />
-                        )}
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => {
-                          const notes = (
-                            document.getElementById(
-                              "adminNotes",
-                            ) as HTMLTextAreaElement
-                          ).value;
-                          handleApprove(selectedApp._id, notes);
-                        }}
-                        disabled={processingId === selectedApp._id}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {processingId === selectedApp._id ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <FiCheck />
-                        )}
-                        Approve
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -810,13 +868,13 @@ export default function ApplicationsPage() {
       {/* Image Modal */}
       {showImageModal && imagePreview && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
           onClick={() => {
             setShowImageModal(false);
             setImagePreview(null);
           }}
         >
-          <div className="relative max-w-4xl w-full mx-4">
+          <div className="relative max-w-4xl w-full">
             <button
               onClick={() => {
                 setShowImageModal(false);

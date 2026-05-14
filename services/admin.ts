@@ -117,7 +117,6 @@ export const getPendingPayments = async () => {
       "Error fetching pending payments:",
       error.response?.data || error.message,
     );
-    // Return empty data structure instead of throwing
     return { success: true, data: [] };
   }
 };
