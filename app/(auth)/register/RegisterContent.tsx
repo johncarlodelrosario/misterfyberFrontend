@@ -1,4 +1,3 @@
-// app/register/RegisterContent.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -15,6 +14,7 @@ import {
   FiEye,
   FiEyeOff,
   FiCheckCircle,
+  FiAlertCircle,
 } from "react-icons/fi";
 import {
   registerWithApplication,
@@ -35,7 +35,10 @@ const schema = yup.object({
     .string()
     .oneOf([yup.ref("password")], "Passwords must match")
     .required("Confirm password is required"),
-  applicationId: yup.string().required("Application ID is required"),
+  applicationId: yup
+    .string()
+    .min(8, "Application ID must be at least 8 characters")
+    .required("Application ID is required"),
 });
 
 type FormData = yup.InferType<typeof schema>;
@@ -51,7 +54,9 @@ export default function RegisterContent() {
   );
   const [checkingApp, setCheckingApp] = useState(false);
   const [appStatus, setAppStatus] = useState<any>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
   const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const {
     register,
@@ -63,14 +68,18 @@ export default function RegisterContent() {
     resolver: yupResolver(schema),
     defaultValues: {
       email: "",
+      applicationId: searchParams?.get("appId") || "",
     },
   });
 
   const applicationId = watch("applicationId");
 
-  // FIXED: Optimized check application with debounce and abort controller
+  // FIXED: Optimized check application with abort controller
   const checkApplication = useCallback(
     async (id: string) => {
+      // Clear previous error
+      setCheckError(null);
+
       if (!id || id.length < 8) {
         setApplicationValid(null);
         setAppStatus(null);
@@ -78,6 +87,12 @@ export default function RegisterContent() {
         return;
       }
 
+      // Cancel previous request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      abortControllerRef.current = new AbortController();
       setCheckingApp(true);
 
       try {
@@ -90,6 +105,7 @@ export default function RegisterContent() {
           if (status === "approved") {
             setApplicationValid(true);
             setAppStatus(result.data);
+            setCheckError(null);
             // Auto-fill email from application
             if (result.data.email) {
               setValue("email", result.data.email, { shouldValidate: true });
@@ -97,21 +113,28 @@ export default function RegisterContent() {
           } else if (status === "pending") {
             setApplicationValid(false);
             setAppStatus({ status: "pending" });
+            setCheckError("Your application is still pending approval");
           } else if (status === "rejected") {
             setApplicationValid(false);
             setAppStatus({ status: "rejected" });
+            setCheckError(
+              "Your application was rejected. Please contact support.",
+            );
           } else {
             setApplicationValid(false);
             setAppStatus(null);
+            setCheckError("Invalid application status");
           }
         } else {
           setApplicationValid(false);
           setAppStatus(null);
+          setCheckError(result.message || "Application ID not found");
         }
       } catch (error: any) {
         console.error("[Register] Error checking application:", error);
         setApplicationValid(false);
         setAppStatus(null);
+        setCheckError(error.message || "Failed to verify application ID");
       } finally {
         setCheckingApp(false);
       }
@@ -129,19 +152,22 @@ export default function RegisterContent() {
     // Set new timeout for debounce
     checkTimeoutRef.current = setTimeout(() => {
       checkApplication(applicationId);
-    }, 300); // Reduced debounce time to 300ms
+    }, 500); // 500ms debounce
 
     // Cleanup on unmount or when applicationId changes
     return () => {
       if (checkTimeoutRef.current) {
         clearTimeout(checkTimeoutRef.current);
       }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, [applicationId, checkApplication]);
 
   const onSubmit = async (data: FormData) => {
     if (!applicationValid) {
-      toast.error("Please enter a valid approved application ID");
+      toast.error(checkError || "Please enter a valid approved application ID");
       return;
     }
 
@@ -159,7 +185,8 @@ export default function RegisterContent() {
         router.push("/login");
       }, 2000);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Registration failed");
+      console.error("[Register] Registration error:", error);
+      toast.error(error.message || "Registration failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -201,7 +228,15 @@ export default function RegisterContent() {
               </label>
               <div className="mt-1 relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiCheckCircle className="h-5 w-5 text-gray-400" />
+                  <FiCheckCircle
+                    className={`h-5 w-5 ${
+                      applicationValid === true
+                        ? "text-green-400"
+                        : applicationValid === false
+                          ? "text-red-400"
+                          : "text-gray-400"
+                    }`}
+                  />
                 </div>
                 <input
                   id="applicationId"
@@ -214,7 +249,7 @@ export default function RegisterContent() {
                         ? "border-red-500"
                         : "border-gray-700"
                   }`}
-                  placeholder="Enter your Application ID (e.g., SLK2603123456)"
+                  placeholder="Enter your Application ID (e.g., FOU26053180539)"
                   autoComplete="off"
                 />
                 {checkingApp && (
@@ -223,34 +258,61 @@ export default function RegisterContent() {
                   </div>
                 )}
               </div>
+
+              {/* Status Messages */}
               {applicationValid === true && appStatus && (
-                <p className="mt-1 text-sm text-green-400">
-                  ✓ Application approved! You can now register.
-                </p>
+                <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded-lg">
+                  <p className="text-sm text-green-400 flex items-center gap-2">
+                    <FiCheckCircle className="h-4 w-4" />✓ Application approved!
+                    You can now register.
+                  </p>
+                </div>
               )}
+
               {applicationValid === false &&
                 appStatus?.status === "pending" && (
-                  <p className="mt-1 text-sm text-yellow-400">
-                    ⏳ Your application is still pending approval. Please wait
-                    for admin approval.
-                  </p>
+                  <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                    <p className="text-sm text-yellow-400 flex items-center gap-2">
+                      <FiAlertCircle className="h-4 w-4" />⏳ Your application
+                      is still pending approval. Please wait for admin approval.
+                    </p>
+                  </div>
                 )}
+
               {applicationValid === false &&
                 appStatus?.status === "rejected" && (
-                  <p className="mt-1 text-sm text-red-400">
-                    ✗ Your application was rejected. Please contact support.
-                  </p>
+                  <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded-lg">
+                    <p className="text-sm text-red-400 flex items-center gap-2">
+                      <FiAlertCircle className="h-4 w-4" />✗ Your application
+                      was rejected. Please contact support.
+                    </p>
+                  </div>
                 )}
-              {applicationValid === false && !appStatus && (
-                <p className="mt-1 text-sm text-red-400">
-                  Invalid Application ID. Please check and try again.
-                </p>
+
+              {checkError && !appStatus && (
+                <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded-lg">
+                  <p className="text-sm text-red-400 flex items-center gap-2">
+                    <FiAlertCircle className="h-4 w-4" />
+                    {checkError}
+                  </p>
+                </div>
               )}
+
               {errors.applicationId && (
                 <p className="mt-1 text-sm text-red-400">
                   {errors.applicationId.message}
                 </p>
               )}
+
+              <p className="mt-2 text-xs text-gray-500">
+                Need an Application ID?{" "}
+                <Link
+                  href="/apply"
+                  className="text-primary-400 hover:text-primary-300"
+                >
+                  Apply for internet connection first
+                </Link>
+              </p>
             </div>
 
             {/* Username */}
@@ -297,17 +359,21 @@ export default function RegisterContent() {
                   id="email"
                   {...register("email")}
                   type="email"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-800 text-white"
+                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm ${
+                    appStatus?.email
+                      ? "bg-gray-800 text-gray-300"
+                      : "bg-gray-900 text-white"
+                  } border-gray-700`}
                   placeholder="your@email.com"
                   readOnly={!!appStatus?.email}
                   autoComplete="off"
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-400">
-                {appStatus?.email
-                  ? "Email auto-filled from application"
-                  : "Email will be auto-filled from your application"}
-              </p>
+              {appStatus?.email && (
+                <p className="mt-1 text-xs text-green-400">
+                  Email auto-filled from your application
+                </p>
+              )}
               {errors.email && (
                 <p className="mt-1 text-sm text-red-400">
                   {errors.email.message}
@@ -398,20 +464,17 @@ export default function RegisterContent() {
             <button
               type="submit"
               disabled={isLoading || !applicationValid}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isLoading ? "Creating account..." : "Create Account"}
+              {isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Creating account...
+                </>
+              ) : (
+                "Create Account"
+              )}
             </button>
-          </div>
-
-          <div className="text-center text-sm text-gray-400">
-            <p>Don't have an Application ID?</p>
-            <Link
-              href="/apply"
-              className="text-primary-400 hover:text-primary-300 font-medium"
-            >
-              Apply for internet connection first →
-            </Link>
           </div>
         </form>
       </div>

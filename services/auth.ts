@@ -1,4 +1,4 @@
-// services/auth.ts - COMPLETE AUTH SERVICE WITH FIXED ADMIN ROLE HANDLING
+// services/auth.ts - COMPLETE AUTH SERVICE WITH FIXED CORS HANDLING
 import api from "./api";
 
 interface LoginResponse {
@@ -63,7 +63,6 @@ export const login = async (
 
     console.log("[Auth] Login response:", response.data);
 
-    // Handle different response structures
     let token: string;
     let userData: any;
 
@@ -85,17 +84,9 @@ export const login = async (
       localStorage.setItem("token", token);
     }
 
-    // IMPORTANT FIX: Preserve the role exactly as returned from server
-    // For admin users, the server should return role as "admin", "super_admin", or "staff"
     const userRole = userData.role || "user";
 
     console.log("[Auth] User role from server:", userRole);
-    console.log(
-      "[Auth] Is admin check:",
-      userRole === "admin" ||
-        userRole === "super_admin" ||
-        userRole === "staff",
-    );
 
     return {
       token,
@@ -127,7 +118,7 @@ export const login = async (
       throw new Error("Server is not responding. Please try again later.");
     }
 
-    if (error.message === "Network Error") {
+    if (error.message === "Network Error" || error.message.includes("CORS")) {
       throw new Error(
         "Cannot connect to server. Please check your internet connection.",
       );
@@ -166,7 +157,6 @@ export const getCurrentUser = async (): Promise<User> => {
       userData = response.data;
     }
 
-    // IMPORTANT FIX: Preserve the role exactly as returned from server
     const userRole = userData.role || "user";
     console.log("[Auth] getCurrentUser role:", userRole);
 
@@ -283,99 +273,115 @@ export const registerWithApplication = async (
       "[Auth] Register with application error:",
       error.response?.data || error.message,
     );
-    const errorMessage = error.response?.data?.message || "Registration failed";
+    const errorMessage =
+      error.response?.data?.message || error.message || "Registration failed";
     throw new Error(errorMessage);
   }
 };
 
+// FIXED: Completely rewritten checkApplicationStatus with better error handling
 export const checkApplicationStatus = async (
   applicationId: string,
 ): Promise<ApplicationStatusResponse> => {
+  if (!applicationId || applicationId.length < 8) {
+    return {
+      success: false,
+      message: "Invalid Application ID format",
+    };
+  }
+
   try {
     console.log("[Auth] Checking application status:", applicationId);
 
-    // FIXED: Reduced timeout and better error handling
-    const response = await api.get(`/auth/check-application/${applicationId}`, {
-      timeout: 5000, // 5 second timeout
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Request timeout")), 8000);
     });
 
-    console.log("[Auth] Application status response:", response.data);
+    // Make the API request with a timeout
+    const requestPromise = api.get(`/auth/check-application/${applicationId}`);
 
-    // FIXED: Handle all possible response structures immediately
-    if (response.data && response.data.data) {
+    const response = (await Promise.race([
+      requestPromise,
+      timeoutPromise,
+    ])) as any;
+
+    console.log("[Auth] Application status response:", response?.data);
+
+    // Handle different response structures
+    if (response?.data) {
+      const responseData = response.data;
+
+      // Check for success in response
+      if (responseData.success === false) {
+        return {
+          success: false,
+          message: responseData.message || "Application not found",
+        };
+      }
+
+      // Extract data from various response formats
+      const statusData = responseData.data || responseData;
+
+      if (
+        statusData.status === "approved" ||
+        statusData.status === "pending" ||
+        statusData.status === "rejected"
+      ) {
+        return {
+          success: true,
+          data: {
+            status: statusData.status,
+            email: statusData.email || "",
+            firstName: statusData.firstName || "",
+            lastName: statusData.lastName || "",
+            applicationId: statusData.applicationId || applicationId,
+          },
+        };
+      }
+    }
+
+    // If we get here, format is unexpected
+    return {
+      success: false,
+      message: response?.data?.message || "Invalid response from server",
+    };
+  } catch (error: any) {
+    console.error("[Auth] Check application error:", error.message);
+
+    // Handle specific error types
+    if (error.message === "Request timeout") {
       return {
-        success: true,
-        data: {
-          status: response.data.data.status,
-          email: response.data.data.email,
-          firstName: response.data.data.firstName,
-          lastName: response.data.data.lastName,
-          applicationId: response.data.data.applicationId || applicationId,
-        },
+        success: false,
+        message: "Server is taking too long to respond. Please try again.",
       };
     }
 
-    if (response.data && response.data.success && response.data.data) {
+    if (error.response?.status === 404) {
       return {
-        success: true,
-        data: {
-          status: response.data.data.status,
-          email: response.data.data.email,
-          firstName: response.data.data.firstName,
-          lastName: response.data.data.lastName,
-          applicationId: response.data.data.applicationId || applicationId,
-        },
+        success: false,
+        message: "Application ID not found. Please check and try again.",
       };
     }
 
     if (
-      response.data &&
-      (response.data.status === "approved" ||
-        response.data.status === "pending" ||
-        response.data.status === "rejected")
+      error.code === "ERR_NETWORK" ||
+      error.message?.includes("Network") ||
+      error.message?.includes("CORS")
     ) {
       return {
-        success: true,
-        data: {
-          status: response.data.status,
-          email: response.data.email,
-          firstName: response.data.firstName,
-          lastName: response.data.lastName,
-          applicationId: response.data.applicationId || applicationId,
-        },
-      };
-    }
-
-    // If we get here, no valid data found
-    return {
-      success: false,
-      message: response.data?.message || "Application not found",
-    };
-  } catch (error: any) {
-    console.error(
-      "[Auth] Check application error:",
-      error.response?.data || error.message,
-    );
-
-    // FIXED: Immediate return for 404
-    if (error.response?.status === 404) {
-      return {
         success: false,
-        message: "Application ID not found",
-      };
-    }
-
-    if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
-      return {
-        success: false,
-        message: "Server timeout. Please try again.",
+        message:
+          "Network error. Please check your internet connection and try again.",
       };
     }
 
     return {
       success: false,
       message:
-        error.response?.data?.message || "Failed to check application status",
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to check application status",
     };
   }
 };

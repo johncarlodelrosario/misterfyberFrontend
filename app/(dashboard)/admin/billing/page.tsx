@@ -1,4 +1,3 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION WITH PAUSE/RESUME
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -135,142 +134,90 @@ export default function AdminBillingPage() {
     pendingProRatedCount: 0,
     pendingActivationsCount: 0,
   });
-  const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
-
-  const loadFromCache = useCallback(() => {
-    try {
-      const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
-      const cachedTimestamp = billingStorage.getItem(
-        CACHE_KEYS.BILLING_TIMESTAMP,
-      );
-      const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
-
-      if (
-        cachedData &&
-        cachedTimestamp &&
-        Date.now() - cachedTimestamp < CACHE_DURATION
-      ) {
-        console.log("📦 Loading billing data from cache");
-        setUsers(cachedData.users || []);
-        setBillingCycles(cachedData.billingCycles || []);
-        setBills(cachedData.bills || []);
-        if (cachedStats) {
-          setStats(cachedStats);
-        }
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("Failed to load from cache:", error);
-      return false;
-    }
-  }, []);
-
-  const loadPendingData = useCallback(async () => {
-    try {
-      const [proRatedResult, activationsResult] = await Promise.allSettled([
-        getPendingProRatedBills(),
-        getPendingActivations(),
-      ]);
-
-      if (proRatedResult.status === "fulfilled") {
-        setPendingProRated(proRatedResult.value.data || []);
-      }
-      if (activationsResult.status === "fulfilled") {
-        setPendingActivations(activationsResult.value.data || []);
-      }
-    } catch (error) {
-      console.error("Failed to load pending data:", error);
-    }
-  }, []);
+  const loadedRef = useRef(false);
 
   const loadData = useCallback(
     async (forceRefresh = false) => {
-      if (!forceRefresh && loadFromCache()) {
-        setLoading(false);
+      if (!isMountedRef.current) return;
+      if (loadedRef.current && !forceRefresh) return;
+
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
       }
 
-      if (loadPromiseRef.current && !forceRefresh) {
-        return loadPromiseRef.current;
-      }
+      try {
+        // Check cache first
+        if (!forceRefresh) {
+          const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
+          const cachedTimestamp = billingStorage.getItem(
+            CACHE_KEYS.BILLING_TIMESTAMP,
+          );
 
-      const loadPromise = (async () => {
-        if (forceRefresh) {
-          setRefreshing(true);
-          clearBillingCache();
-        } else {
-          setLoading(true);
+          if (
+            cachedData &&
+            cachedTimestamp &&
+            Date.now() - cachedTimestamp < CACHE_DURATION
+          ) {
+            setUsers(cachedData.users || []);
+            setBillingCycles(cachedData.billingCycles || []);
+            setBills(cachedData.bills || []);
+            const cachedStats = billingStorage.getItem(
+              CACHE_KEYS.BILLING_STATS,
+            );
+            if (cachedStats) setStats(cachedStats);
+            setLoading(false);
+            loadedRef.current = true;
+            return;
+          }
         }
 
-        try {
-          const [
-            cyclesResult,
-            billsResult,
-            settingsResult,
-            allUsersResult,
-            paymentsResult,
-          ] = await Promise.allSettled([
-            getAllBillingCycles({ limit: 100, forceRefresh }),
-            getAllBills({ limit: 100, forceRefresh }),
-            getBillingSettings(forceRefresh),
-            getAllUsers({ limit: 100 }),
-            getAllPayments({ limit: 100 }),
-          ]);
+        const [
+          cyclesResult,
+          billsResult,
+          settingsResult,
+          allUsersResult,
+          paymentsResult,
+        ] = await Promise.all([
+          getAllBillingCycles({ limit: 100, forceRefresh }),
+          getAllBills({ limit: 100, forceRefresh }),
+          getBillingSettings(forceRefresh),
+          getAllUsers({ limit: 100 }),
+          getAllPayments({ limit: 100 }),
+        ]);
 
-          if (!isMountedRef.current) return;
+        if (!isMountedRef.current) return;
 
-          const cyclesData =
-            cyclesResult.status === "fulfilled"
-              ? cyclesResult.value
-              : { data: [] };
-          const billsData =
-            billsResult.status === "fulfilled"
-              ? billsResult.value
-              : { data: [] };
-          const settingsData =
-            settingsResult.status === "fulfilled"
-              ? settingsResult.value
-              : { data: null };
-          const allUsersData =
-            allUsersResult.status === "fulfilled"
-              ? allUsersResult.value
-              : { data: [] };
-          const paymentsData =
-            paymentsResult.status === "fulfilled"
-              ? paymentsResult.value
-              : { data: [] };
+        const cyclesData = cyclesResult?.data || [];
+        const billsList = billsResult?.data || [];
+        const settingsData = settingsResult?.data || null;
+        const usersData = allUsersResult?.data || [];
+        const paymentsData = paymentsResult?.data || [];
 
-          setBillingCycles(cyclesData.data || []);
-          setBills(billsData.data || []);
-          if (settingsData.data) {
-            setSettings(settingsData.data);
-          }
-          setAllPayments(paymentsData.data || []);
+        setBillingCycles(cyclesData);
+        setBills(billsList);
+        if (settingsData) setSettings(settingsData);
+        setAllPayments(paymentsData);
 
-          const billsList = billsData.data || [];
-          const cyclesList = cyclesData.data || [];
-
-          const usersWithBalanceData: UserWithBalance[] = (
-            allUsersData.data || []
-          ).map((user: any) => {
+        const usersWithBalanceData: UserWithBalance[] = usersData.map(
+          (user: any) => {
             const userBills = billsList.filter(
               (bill: any) =>
                 bill.userId?._id === user._id && bill.status !== "paid",
             );
-
             const totalBalance = userBills.reduce(
               (sum: number, bill: any) => sum + (bill.total || 0),
               0,
             );
-
             const overdueBills = userBills.filter(
               (bill: any) =>
                 bill.status === "overdue" ||
                 new Date(bill.dueDate) < new Date(),
             );
-
-            const userCycle = cyclesList.find(
+            const userCycle = cyclesData.find(
               (cycle: any) => cycle.userId?._id === user._id,
             );
 
@@ -281,93 +228,89 @@ export default function AdminBillingPage() {
               overdueBills,
               billingCycle: userCycle,
             };
-          });
+          },
+        );
 
-          usersWithBalanceData.sort(
-            (a: UserWithBalance, b: UserWithBalance) =>
-              b.currentBalance - a.currentBalance,
-          );
+        usersWithBalanceData.sort(
+          (a, b) => b.currentBalance - a.currentBalance,
+        );
 
-          if (isMountedRef.current) {
-            setUsers(usersWithBalanceData);
+        let totalBalanceSum = 0;
+        let usersWithPositiveBalance = 0;
+        let usersWithOverdue = 0;
+        let activeCycles = 0;
+        let pausedCycles = 0;
 
-            let totalBalanceSum = 0;
-            let usersWithPositiveBalance = 0;
-            let usersWithOverdue = 0;
-
-            for (let i = 0; i < usersWithBalanceData.length; i++) {
-              const user = usersWithBalanceData[i];
-              totalBalanceSum = totalBalanceSum + user.currentBalance;
-              if (user.currentBalance > 0) usersWithPositiveBalance++;
-              if (user.overdueBills.length > 0) usersWithOverdue++;
-            }
-
-            let activeCycles = 0;
-            let pausedCycles = 0;
-            for (let i = 0; i < cyclesList.length; i++) {
-              if (cyclesList[i].status === "active") activeCycles++;
-              if (cyclesList[i].status === "paused") pausedCycles++;
-            }
-
-            const newStats = {
-              totalUsers: usersWithBalanceData.length,
-              totalBalance: totalBalanceSum,
-              usersWithBalanceCount: usersWithPositiveBalance,
-              overdueUsersCount: usersWithOverdue,
-              activeCyclesCount: activeCycles,
-              pausedCyclesCount: pausedCycles,
-              pendingProRatedCount: pendingProRated.length,
-              pendingActivationsCount: pendingActivations.length,
-            };
-
-            setStats(newStats);
-
-            billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
-              users: usersWithBalanceData,
-              billingCycles: cyclesList,
-              bills: billsList,
-              timestamp: Date.now(),
-            });
-            billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
-            billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
-          }
-
-          await loadPendingData();
-        } catch (error) {
-          console.error("Failed to load billing data:", error);
-          if (isMountedRef.current) {
-            toast.error("Failed to load billing data");
-          }
-        } finally {
-          if (isMountedRef.current) {
-            setLoading(false);
-            setRefreshing(false);
-          }
-          loadPromiseRef.current = null;
+        for (const user of usersWithBalanceData) {
+          totalBalanceSum += user.currentBalance;
+          if (user.currentBalance > 0) usersWithPositiveBalance++;
+          if (user.overdueBills.length > 0) usersWithOverdue++;
         }
-      })();
 
-      loadPromiseRef.current = loadPromise;
-      return loadPromise;
+        for (const cycle of cyclesData) {
+          if (cycle.status === "active") activeCycles++;
+          if (cycle.status === "paused") pausedCycles++;
+        }
+
+        const newStats = {
+          totalUsers: usersWithBalanceData.length,
+          totalBalance: totalBalanceSum,
+          usersWithBalanceCount: usersWithPositiveBalance,
+          overdueUsersCount: usersWithOverdue,
+          activeCyclesCount: activeCycles,
+          pausedCyclesCount: pausedCycles,
+          pendingProRatedCount: pendingProRated.length,
+          pendingActivationsCount: pendingActivations.length,
+        };
+
+        setUsers(usersWithBalanceData);
+        setStats(newStats);
+
+        billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
+          users: usersWithBalanceData,
+          billingCycles: cyclesData,
+          bills: billsList,
+        });
+        billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
+        billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
+
+        // Load pending data in background
+        const [proRatedResult, activationsResult] = await Promise.all([
+          getPendingProRatedBills(),
+          getPendingActivations(),
+        ]);
+
+        if (isMountedRef.current) {
+          setPendingProRated(proRatedResult?.data || []);
+          setPendingActivations(activationsResult?.data || []);
+        }
+
+        loadedRef.current = true;
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
     },
-    [
-      loadFromCache,
-      loadPendingData,
-      pendingProRated.length,
-      pendingActivations.length,
-    ],
+    [pendingProRated.length, pendingActivations.length],
   );
 
   useEffect(() => {
     isMountedRef.current = true;
     loadData();
-
     return () => {
       isMountedRef.current = false;
     };
   }, [loadData]);
 
   const handleRefresh = () => {
+    loadedRef.current = false;
     loadData(true);
   };
 
@@ -387,6 +330,7 @@ export default function AdminBillingPage() {
 
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
       toast.success(`📧 Payment confirmation email sent to ${user.email}`);
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -416,6 +360,7 @@ export default function AdminBillingPage() {
       setStartDate("");
       setCustomAmount("");
       setBillingNotes("");
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
@@ -441,6 +386,7 @@ export default function AdminBillingPage() {
       setSelectedUserId("");
       setPauseReason("");
       setPauseUntilDate("");
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -464,6 +410,7 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Billing resumed for ${userFirstName}! User has been notified via email.`,
       );
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -483,6 +430,7 @@ export default function AdminBillingPage() {
       toast.success(
         `⛔ Billing stopped for ${userFirstName}. User has been notified.`,
       );
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -510,8 +458,8 @@ export default function AdminBillingPage() {
         `✅ Pro-rated payment confirmed! ${userEmail}'s service is now active.`,
       );
       toast.success(`📧 Activation email sent to ${userEmail}`);
+      loadedRef.current = false;
       loadData(true);
-      loadPendingData();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
     }
@@ -534,42 +482,11 @@ export default function AdminBillingPage() {
         `✅ Monthly billing started for ${userEmail}! First monthly bill generated.`,
       );
       toast.success(`📧 Invoice sent to ${userEmail}`);
+      loadedRef.current = false;
       loadData(true);
-      loadPendingData();
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to start monthly billing",
-      );
-    }
-  };
-
-  const handleApprovePlanChange = async (userId: string, userEmail: string) => {
-    try {
-      await approvePlanChange({ userId });
-      toast.success(
-        `✅ Plan change approved for ${userEmail}. User has been notified.`,
-      );
-      loadData(true);
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.message || "Failed to approve plan change",
-      );
-    }
-  };
-
-  const handleRejectPlanChange = async (userId: string, userEmail: string) => {
-    const reason = prompt("Enter rejection reason:");
-    if (reason === null) return;
-
-    try {
-      await rejectPlanChange({ userId, rejectionReason: reason });
-      toast.success(
-        `❌ Plan change rejected for ${userEmail}. User has been notified.`,
-      );
-      loadData(true);
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.message || "Failed to reject plan change",
       );
     }
   };
@@ -583,6 +500,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${userFirstName} disconnected. User has been notified via email.`,
       );
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -597,6 +515,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${userFirstName} reconnected. User has been notified via email.`,
       );
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -610,6 +529,7 @@ export default function AdminBillingPage() {
       await updateBillingSettings(settings);
       toast.success("✅ Billing settings updated successfully!");
       setShowSettingsModal(false);
+      loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to update settings");
