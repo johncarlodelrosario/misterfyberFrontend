@@ -25,9 +25,12 @@ const STORAGE_KEYS = {
   LAST_FETCH: "misterfyber_last_fetch",
   FILTER_STATE: "misterfyber_applications_filter",
   CACHE_VERSION: "misterfyber_cache_v2",
+  PRELOAD_CACHE: "misterfyber_preload_applications",
+  PRELOAD_TIMESTAMP: "misterfyber_preload_timestamp",
 };
 
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+const PRELOAD_DURATION = 10 * 60 * 1000; // 10 minutes for preload data
 const MAX_STORED_APPLICATIONS = 500;
 
 interface StoredApplicationsData {
@@ -129,7 +132,6 @@ export default function ApplicationsPage() {
     const handleOnline = () => {
       setIsOnline(true);
       toast.success("Network connected");
-      // Only refresh if user clicks refresh button, not automatic
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -145,44 +147,78 @@ export default function ApplicationsPage() {
     };
   }, []);
 
-  // CRITICAL: Load from localStorage IMMEDIATELY - NO API CALL on mount
+  // CRITICAL: Load from localStorage IMMEDIATELY - Check preload data first
   useEffect(() => {
-    // Load from storage synchronously - INSTANT display
     const loadStoredData = () => {
       try {
+        // FIRST: Check for preloaded data from layout
+        const preloadData = persistentStorage.getItem(
+          STORAGE_KEYS.PRELOAD_CACHE,
+        ) as StoredApplicationsData | null;
+        const preloadTimestamp = persistentStorage.getItem(
+          STORAGE_KEYS.PRELOAD_TIMESTAMP,
+        ) as number | null;
+
+        // SECOND: Check for regular cached data
         const storedData = persistentStorage.getItem(
           STORAGE_KEYS.APPLICATIONS,
         ) as StoredApplicationsData | null;
         const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
-        if (
+        // Use preload data if it's fresh (less than 10 minutes old)
+        const isPreloadFresh =
+          preloadData &&
+          preloadData.applications?.length > 0 &&
+          preloadTimestamp &&
+          Date.now() - preloadTimestamp < PRELOAD_DURATION;
+
+        // Use regular cached data if available and preload is not fresh
+        const isCacheValid =
           storedData &&
-          storedData.applications &&
-          storedData.applications.length > 0
-        ) {
+          storedData.applications?.length > 0 &&
+          Date.now() - storedData.timestamp < CACHE_DURATION;
+
+        if (isPreloadFresh) {
           console.log(
-            `📦 INSTANT LOAD: ${storedData.applications.length} applications from storage`,
+            `📦 INSTANT LOAD from PRELOAD: ${preloadData.applications.length} applications`,
+          );
+          setApplications(preloadData.applications);
+          if (preloadTimestamp) setLastFetchTime(new Date(preloadTimestamp));
+          setInitialLoading(false);
+
+          // Check if we need background refresh (preload is older than 5 min but still fresh)
+          if (
+            preloadTimestamp &&
+            Date.now() - preloadTimestamp > 5 * 60 * 1000 &&
+            isOnline &&
+            !refreshInProgressRef.current
+          ) {
+            console.log(
+              "Preload data is a bit old, refreshing in background...",
+            );
+            setTimeout(() => silentRefresh(), 1000);
+          }
+        } else if (isCacheValid) {
+          console.log(
+            `📦 INSTANT LOAD from CACHE: ${storedData.applications.length} applications`,
           );
           setApplications(storedData.applications);
           if (lastFetch) setLastFetchTime(new Date(lastFetch));
           setInitialLoading(false);
 
-          // ONLY check for refresh if cache is OLD (>30 min) AND online
+          // Background refresh if cache is old
           const cacheAge = Date.now() - storedData.timestamp;
           if (
-            cacheAge > CACHE_DURATION &&
+            cacheAge > CACHE_DURATION / 2 &&
             isOnline &&
             !refreshInProgressRef.current
           ) {
-            console.log("Cache old, refreshing in background silently");
-            // Background refresh - doesn't show loading
-            setTimeout(() => {
-              silentRefresh();
-            }, 500);
+            console.log("Cache aging, refreshing in background...");
+            setTimeout(() => silentRefresh(), 1000);
           }
         } else {
-          // No cached data, need to fetch
-          setInitialLoading(true);
+          // No valid cached data, fetch fresh
+          console.log("No valid cached data, fetching...");
           fetchApplications();
         }
       } catch (err) {
@@ -194,13 +230,13 @@ export default function ApplicationsPage() {
     loadStoredData();
   }, []); // Empty dependency - runs ONCE on mount
 
-  // Silent refresh - NO LOADING STATE
+  // Silent refresh - NO LOADING STATE (uses preload cache)
   const silentRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
 
     try {
-      console.log("Silent background refresh...");
+      console.log("🔄 Silent background refresh...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -208,16 +244,31 @@ export default function ApplicationsPage() {
         setApplications(applicationsList);
         setLastFetchTime(new Date());
 
-        // Update storage
+        // Update both caches
         const dataToStore: StoredApplicationsData = {
           applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
           timestamp: Date.now(),
           version: STORAGE_KEYS.CACHE_VERSION,
           totalCount: applicationsList.length,
         };
+
         persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
         persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        console.log("Background refresh completed");
+        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
+        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
+
+        console.log(
+          `✅ Background refresh completed: ${applicationsList.length} applications`,
+        );
+
+        // Update pending count in localStorage for layout to read
+        const pendingCount = applicationsList.filter(
+          (a: any) => a.status === "pending",
+        ).length;
+        localStorage.setItem(
+          "misterfyber_pending_count",
+          pendingCount.toString(),
+        );
       }
     } catch (error) {
       console.log("Background refresh failed, keeping cached data");
@@ -234,7 +285,7 @@ export default function ApplicationsPage() {
     setError(null);
 
     try {
-      console.log("Manual refresh fetching applications...");
+      console.log("🔄 Manual refresh fetching applications...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -242,15 +293,27 @@ export default function ApplicationsPage() {
       setApplications(applicationsList);
       setLastFetchTime(new Date());
 
-      // Save to storage
+      // Save to both storages
       const dataToStore: StoredApplicationsData = {
         applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
         timestamp: Date.now(),
         version: STORAGE_KEYS.CACHE_VERSION,
         totalCount: applicationsList.length,
       };
+
       persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
+      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
+
+      // Update pending count for layout
+      const pendingCount = applicationsList.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+      localStorage.setItem(
+        "misterfyber_pending_count",
+        pendingCount.toString(),
+      );
 
       toast.success(`Loaded ${applicationsList.length} applications`);
     } catch (error: any) {
@@ -275,7 +338,7 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Save applications to storage whenever they change (but don't trigger re-fetch)
+  // Save to preload cache whenever applications change (for layout to use)
   useEffect(() => {
     if (applications.length > 0 && !initialLoading) {
       const dataToStore: StoredApplicationsData = {
@@ -285,6 +348,17 @@ export default function ApplicationsPage() {
         totalCount: applications.length,
       };
       persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
+      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
+
+      // Update pending count for layout badge
+      const pendingCount = applications.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+      localStorage.setItem(
+        "misterfyber_pending_count",
+        pendingCount.toString(),
+      );
     }
   }, [applications, initialLoading]);
 
@@ -294,7 +368,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      await fetchApplications(); // Refresh after action
+      await fetchApplications();
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Approve error:", error);
@@ -312,7 +386,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      await fetchApplications(); // Refresh after action
+      await fetchApplications();
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Reject error:", error);

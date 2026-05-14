@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING FILE WITH CACHING (FULLY FIXED)
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH PRE-LOADING AND CACHING
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -36,6 +36,15 @@ import {
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
+// ==================== CACHE KEYS ====================
+const CACHE_KEYS = {
+  BILLING_DATA: "misterfyber_billing_data",
+  BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
+  BILLING_STATS: "misterfyber_billing_stats",
+};
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 interface UserWithBalance {
   _id: string;
   firstName: string;
@@ -54,6 +63,30 @@ interface UserWithBalance {
   overdueBills: any[];
   billingCycle?: any;
 }
+
+// Storage wrapper
+const billingStorage = {
+  setItem: (key: string, value: any): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error("Failed to save billing data:", e);
+    }
+  },
+  getItem: (key: string): any => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  },
+};
 
 export default function AdminBillingPage() {
   const [users, setUsers] = useState<UserWithBalance[]>([]);
@@ -85,157 +118,210 @@ export default function AdminBillingPage() {
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
 
-  const loadData = useCallback(async (forceRefresh = false) => {
-    // Prevent duplicate simultaneous loads
-    if (loadPromiseRef.current && !forceRefresh) {
-      return loadPromiseRef.current;
+  // Load from cache first
+  const loadFromCache = useCallback(() => {
+    try {
+      const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
+      const cachedTimestamp = billingStorage.getItem(
+        CACHE_KEYS.BILLING_TIMESTAMP,
+      );
+      const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
+
+      if (
+        cachedData &&
+        cachedTimestamp &&
+        Date.now() - cachedTimestamp < CACHE_DURATION
+      ) {
+        console.log("📦 Loading billing data from cache");
+        setUsers(cachedData.users || []);
+        setBillingCycles(cachedData.billingCycles || []);
+        setBills(cachedData.bills || []);
+        if (cachedStats) {
+          setStats(cachedStats);
+        }
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Failed to load from cache:", error);
+      return false;
     }
-
-    const loadPromise = (async () => {
-      if (forceRefresh) {
-        setRefreshing(true);
-        clearBillingCache();
-      } else {
-        setLoading(true);
-      }
-
-      try {
-        // Use Promise.allSettled to prevent one failure from blocking others
-        const [
-          cyclesResult,
-          billsResult,
-          settingsResult,
-          allUsersResult,
-          paymentsResult,
-        ] = await Promise.allSettled([
-          getAllBillingCycles({ limit: 100, forceRefresh }),
-          getAllBills({ limit: 100, forceRefresh }),
-          getBillingSettings(forceRefresh),
-          getAllUsers({ limit: 100 }),
-          getAllPayments({ limit: 100 }),
-        ]);
-
-        if (!isMountedRef.current) return;
-
-        const cyclesData =
-          cyclesResult.status === "fulfilled"
-            ? cyclesResult.value
-            : { data: [] };
-        const billsData =
-          billsResult.status === "fulfilled" ? billsResult.value : { data: [] };
-        const settingsData =
-          settingsResult.status === "fulfilled"
-            ? settingsResult.value
-            : { data: null };
-        const allUsersData =
-          allUsersResult.status === "fulfilled"
-            ? allUsersResult.value
-            : { data: [] };
-        const paymentsData =
-          paymentsResult.status === "fulfilled"
-            ? paymentsResult.value
-            : { data: [] };
-
-        setBillingCycles(cyclesData.data || []);
-        setBills(billsData.data || []);
-        if (settingsData.data) {
-          setSettings(settingsData.data);
-        }
-        setAllPayments(paymentsData.data || []);
-
-        // Process users with balance in a more efficient way
-        const billsList = billsData.data || [];
-        const cyclesList = cyclesData.data || [];
-
-        const usersWithBalanceData: UserWithBalance[] = (
-          allUsersData.data || []
-        ).map((user: any) => {
-          // Filter bills for this user efficiently
-          const userBills = billsList.filter(
-            (bill: any) =>
-              bill.userId?._id === user._id && bill.status !== "paid",
-          );
-
-          const totalBalance = userBills.reduce(
-            (sum: number, bill: any) => sum + (bill.total || 0),
-            0,
-          );
-
-          const overdueBills = userBills.filter(
-            (bill: any) =>
-              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-          );
-
-          const userCycle = cyclesList.find(
-            (cycle: any) => cycle.userId?._id === user._id,
-          );
-
-          return {
-            ...user,
-            currentBalance: totalBalance,
-            unpaidBills: userBills,
-            overdueBills,
-            billingCycle: userCycle,
-          };
-        });
-
-        // Sort in JavaScript instead of relying on backend
-        usersWithBalanceData.sort(
-          (a: UserWithBalance, b: UserWithBalance) =>
-            b.currentBalance - a.currentBalance,
-        );
-
-        if (isMountedRef.current) {
-          setUsers(usersWithBalanceData);
-
-          // Calculate stats - FIXED with proper type annotations
-          let totalBalanceSum = 0;
-          let usersWithPositiveBalance = 0;
-          let usersWithOverdue = 0;
-
-          for (let i = 0; i < usersWithBalanceData.length; i++) {
-            const user = usersWithBalanceData[i];
-            totalBalanceSum = totalBalanceSum + user.currentBalance;
-            if (user.currentBalance > 0) {
-              usersWithPositiveBalance++;
-            }
-            if (user.overdueBills.length > 0) {
-              usersWithOverdue++;
-            }
-          }
-
-          let activeCycles = 0;
-          for (let i = 0; i < cyclesList.length; i++) {
-            if (cyclesList[i].status === "active") {
-              activeCycles++;
-            }
-          }
-
-          setStats({
-            totalUsers: usersWithBalanceData.length,
-            totalBalance: totalBalanceSum,
-            usersWithBalanceCount: usersWithPositiveBalance,
-            overdueUsersCount: usersWithOverdue,
-            activeCyclesCount: activeCycles,
-          });
-        }
-      } catch (error) {
-        console.error("Failed to load billing data:", error);
-        if (isMountedRef.current) {
-          toast.error("Failed to load billing data");
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-        loadPromiseRef.current = null;
-      }
-    })();
-
-    loadPromiseRef.current = loadPromise;
-    return loadPromise;
   }, []);
+
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
+      // Try cache first if not force refresh
+      if (!forceRefresh && loadFromCache()) {
+        setLoading(false);
+      }
+
+      // Prevent duplicate simultaneous loads
+      if (loadPromiseRef.current && !forceRefresh) {
+        return loadPromiseRef.current;
+      }
+
+      const loadPromise = (async () => {
+        if (forceRefresh) {
+          setRefreshing(true);
+          clearBillingCache();
+        } else {
+          setLoading(true);
+        }
+
+        try {
+          // Use Promise.allSettled to prevent one failure from blocking others
+          const [
+            cyclesResult,
+            billsResult,
+            settingsResult,
+            allUsersResult,
+            paymentsResult,
+          ] = await Promise.allSettled([
+            getAllBillingCycles({ limit: 100, forceRefresh }),
+            getAllBills({ limit: 100, forceRefresh }),
+            getBillingSettings(forceRefresh),
+            getAllUsers({ limit: 100 }),
+            getAllPayments({ limit: 100 }),
+          ]);
+
+          if (!isMountedRef.current) return;
+
+          const cyclesData =
+            cyclesResult.status === "fulfilled"
+              ? cyclesResult.value
+              : { data: [] };
+          const billsData =
+            billsResult.status === "fulfilled"
+              ? billsResult.value
+              : { data: [] };
+          const settingsData =
+            settingsResult.status === "fulfilled"
+              ? settingsResult.value
+              : { data: null };
+          const allUsersData =
+            allUsersResult.status === "fulfilled"
+              ? allUsersResult.value
+              : { data: [] };
+          const paymentsData =
+            paymentsResult.status === "fulfilled"
+              ? paymentsResult.value
+              : { data: [] };
+
+          setBillingCycles(cyclesData.data || []);
+          setBills(billsData.data || []);
+          if (settingsData.data) {
+            setSettings(settingsData.data);
+          }
+          setAllPayments(paymentsData.data || []);
+
+          // Process users with balance in a more efficient way
+          const billsList = billsData.data || [];
+          const cyclesList = cyclesData.data || [];
+
+          const usersWithBalanceData: UserWithBalance[] = (
+            allUsersData.data || []
+          ).map((user: any) => {
+            // Filter bills for this user efficiently
+            const userBills = billsList.filter(
+              (bill: any) =>
+                bill.userId?._id === user._id && bill.status !== "paid",
+            );
+
+            const totalBalance = userBills.reduce(
+              (sum: number, bill: any) => sum + (bill.total || 0),
+              0,
+            );
+
+            const overdueBills = userBills.filter(
+              (bill: any) =>
+                bill.status === "overdue" ||
+                new Date(bill.dueDate) < new Date(),
+            );
+
+            const userCycle = cyclesList.find(
+              (cycle: any) => cycle.userId?._id === user._id,
+            );
+
+            return {
+              ...user,
+              currentBalance: totalBalance,
+              unpaidBills: userBills,
+              overdueBills,
+              billingCycle: userCycle,
+            };
+          });
+
+          // Sort in JavaScript instead of relying on backend
+          usersWithBalanceData.sort(
+            (a: UserWithBalance, b: UserWithBalance) =>
+              b.currentBalance - a.currentBalance,
+          );
+
+          if (isMountedRef.current) {
+            setUsers(usersWithBalanceData);
+
+            // Calculate stats
+            let totalBalanceSum = 0;
+            let usersWithPositiveBalance = 0;
+            let usersWithOverdue = 0;
+
+            for (let i = 0; i < usersWithBalanceData.length; i++) {
+              const user = usersWithBalanceData[i];
+              totalBalanceSum = totalBalanceSum + user.currentBalance;
+              if (user.currentBalance > 0) {
+                usersWithPositiveBalance++;
+              }
+              if (user.overdueBills.length > 0) {
+                usersWithOverdue++;
+              }
+            }
+
+            let activeCycles = 0;
+            for (let i = 0; i < cyclesList.length; i++) {
+              if (cyclesList[i].status === "active") {
+                activeCycles++;
+              }
+            }
+
+            const newStats = {
+              totalUsers: usersWithBalanceData.length,
+              totalBalance: totalBalanceSum,
+              usersWithBalanceCount: usersWithPositiveBalance,
+              overdueUsersCount: usersWithOverdue,
+              activeCyclesCount: activeCycles,
+            };
+
+            setStats(newStats);
+
+            // Save to cache
+            billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
+              users: usersWithBalanceData,
+              billingCycles: cyclesList,
+              bills: billsList,
+              timestamp: Date.now(),
+            });
+            billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
+            billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
+          }
+        } catch (error) {
+          console.error("Failed to load billing data:", error);
+          if (isMountedRef.current) {
+            toast.error("Failed to load billing data");
+          }
+        } finally {
+          if (isMountedRef.current) {
+            setLoading(false);
+            setRefreshing(false);
+          }
+          loadPromiseRef.current = null;
+        }
+      })();
+
+      loadPromiseRef.current = loadPromise;
+      return loadPromise;
+    },
+    [loadFromCache],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -421,7 +507,7 @@ export default function AdminBillingPage() {
     return matchesSearch;
   });
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

@@ -1,7 +1,7 @@
-// app/(dashboard)/admin/payments/page.tsx - COMPLETE WORKING FILE
+// app/(dashboard)/admin/payments/page.tsx - COMPLETE WITH PRE-LOADING AND CACHING (FIXED)
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllPayments,
   confirmPayment,
@@ -18,13 +18,49 @@ import {
   FiRefreshCw,
   FiClock,
   FiDollarSign,
+  FiX,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+
+// ==================== CACHE KEYS ====================
+const CACHE_KEYS = {
+  PAYMENTS_DATA: "misterfyber_payments_data",
+  PAYMENTS_TIMESTAMP: "misterfyber_payments_timestamp",
+  PAYMENTS_STATS: "misterfyber_payments_stats",
+  PENDING_PAYMENTS: "misterfyber_pending_payments",
+};
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Storage wrapper
+const paymentsStorage = {
+  setItem: (key: string, value: any): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error("Failed to save payments data:", e);
+    }
+  },
+  getItem: (key: string): any => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  },
+};
 
 export default function AdminPaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -37,45 +73,126 @@ export default function AdminPaymentsPage() {
     monthlyAmount: 0,
     monthlyCount: 0,
   });
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Load from cache first
+  const loadFromCache = useCallback(() => {
+    try {
+      const cachedPayments = paymentsStorage.getItem(CACHE_KEYS.PAYMENTS_DATA);
+      const cachedTimestamp = paymentsStorage.getItem(
+        CACHE_KEYS.PAYMENTS_TIMESTAMP,
+      );
+      const cachedStats = paymentsStorage.getItem(CACHE_KEYS.PAYMENTS_STATS);
+      const cachedPending = paymentsStorage.getItem(
+        CACHE_KEYS.PENDING_PAYMENTS,
+      );
+
+      if (
+        cachedPayments &&
+        cachedTimestamp &&
+        Date.now() - cachedTimestamp < CACHE_DURATION
+      ) {
+        console.log("📦 Loading payments data from cache");
+        setPayments(cachedPayments);
+        if (cachedPending) setPendingPayments(cachedPending);
+        if (cachedStats) setStats(cachedStats);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Failed to load from cache:", error);
+      return false;
+    }
+  }, []);
+
+  const loadPayments = useCallback(
+    async (forceRefresh = false) => {
+      // Try cache first if not force refresh
+      if (!forceRefresh && loadFromCache()) {
+        setLoading(false);
+      }
+
+      // Prevent duplicate loads
+      if (loadPromiseRef.current && !forceRefresh) {
+        return loadPromiseRef.current;
+      }
+
+      const loadPromise = (async () => {
+        if (forceRefresh) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        try {
+          // FIXED: Removed forceRefresh from getAllPayments params since it's not supported
+          const [allPaymentsResult, pendingResult] = await Promise.all([
+            getAllPayments({
+              page: currentPage,
+              limit: 10,
+              status: status || undefined,
+            }),
+            getPendingPayments().catch(() => ({ data: [] })),
+          ]);
+
+          if (!isMountedRef.current) return;
+
+          const paymentsList = allPaymentsResult.data || [];
+          const pendingList = pendingResult.data || [];
+
+          setPayments(paymentsList);
+          setTotalPages(allPaymentsResult.totalPages || 1);
+          setPendingPayments(pendingList);
+
+          if (allPaymentsResult.stats) {
+            const newStats = {
+              totalAmount: allPaymentsResult.stats.total || 0,
+              totalCount: allPaymentsResult.stats.totalCount || 0,
+              monthlyAmount: allPaymentsResult.stats.monthly || 0,
+              monthlyCount: allPaymentsResult.stats.monthlyCount || 0,
+            };
+            setStats(newStats);
+
+            // Save to cache
+            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_DATA, paymentsList);
+            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_TIMESTAMP, Date.now());
+            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_STATS, newStats);
+            paymentsStorage.setItem(CACHE_KEYS.PENDING_PAYMENTS, pendingList);
+          }
+        } catch (error: any) {
+          console.error("Failed to load payments:", error);
+          if (error.response?.status === 403) {
+            toast.error("You don't have permission to view payments");
+          } else if (!forceRefresh && !loadFromCache()) {
+            toast.error("Failed to load payments");
+          }
+        } finally {
+          if (isMountedRef.current) {
+            setLoading(false);
+            setRefreshing(false);
+          }
+          loadPromiseRef.current = null;
+        }
+      })();
+
+      loadPromiseRef.current = loadPromise;
+      return loadPromise;
+    },
+    [currentPage, status, loadFromCache],
+  );
 
   useEffect(() => {
+    isMountedRef.current = true;
     loadPayments();
-  }, [currentPage, status]);
 
-  const loadPayments = async () => {
-    setLoading(true);
-    try {
-      const [allPayments, pending] = await Promise.all([
-        getAllPayments({
-          page: currentPage,
-          limit: 10,
-          status: status || undefined,
-        }),
-        getPendingPayments().catch(() => ({ data: [] })),
-      ]);
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [loadPayments]);
 
-      setPayments(allPayments.data || []);
-      setTotalPages(allPayments.totalPages || 1);
-      setPendingPayments(pending.data || []);
-
-      if (allPayments.stats) {
-        setStats({
-          totalAmount: allPayments.stats.total || 0,
-          totalCount: allPayments.stats.totalCount || 0,
-          monthlyAmount: allPayments.stats.monthly || 0,
-          monthlyCount: allPayments.stats.monthlyCount || 0,
-        });
-      }
-    } catch (error: any) {
-      console.error("Failed to load payments:", error);
-      if (error.response?.status === 403) {
-        toast.error("You don't have permission to view payments");
-      } else {
-        toast.error("Failed to load payments");
-      }
-    } finally {
-      setLoading(false);
-    }
+  const handleRefresh = () => {
+    loadPayments(true);
   };
 
   const handleConfirmPayment = async (paymentId: string) => {
@@ -90,7 +207,8 @@ export default function AdminPaymentsPage() {
     try {
       await confirmPayment(paymentId);
       toast.success("Payment confirmed! User has been notified via email.");
-      loadPayments();
+      loadPayments(true);
+      setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
     } finally {
@@ -105,7 +223,8 @@ export default function AdminPaymentsPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
-      loadPayments();
+      loadPayments(true);
+      setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
     }
@@ -134,7 +253,7 @@ export default function AdminPaymentsPage() {
       payment.referenceNumber?.toLowerCase().includes(search.toLowerCase()),
   );
 
-  if (loading) {
+  if (loading && payments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -234,10 +353,14 @@ export default function AdminPaymentsPage() {
               </p>
             </div>
             <button
-              onClick={loadPayments}
-              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition flex items-center gap-2"
             >
-              <FiRefreshCw className="w-4 h-4" />
+              <FiRefreshCw
+                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+              />
+              Refresh
             </button>
           </div>
         </div>
@@ -271,10 +394,14 @@ export default function AdminPaymentsPage() {
             <option value="refunded">Refunded</option>
           </select>
           <button
-            onClick={loadPayments}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 disabled:opacity-50"
           >
-            <FiRefreshCw className="w-4 h-4" /> Refresh
+            <FiRefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            {refreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
@@ -498,7 +625,7 @@ export default function AdminPaymentsPage() {
                   onClick={() => setSelectedPayment(null)}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  <FiXCircle className="w-5 h-5" />
+                  <FiX className="w-5 h-5" />
                 </button>
               </div>
               <div className="space-y-3">
@@ -557,7 +684,6 @@ export default function AdminPaymentsPage() {
                     <button
                       onClick={() => {
                         handleConfirmPayment(selectedPayment._id);
-                        setSelectedPayment(null);
                       }}
                       className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2"
                     >
@@ -567,7 +693,6 @@ export default function AdminPaymentsPage() {
                     <button
                       onClick={() => {
                         handleRejectPayment(selectedPayment._id);
-                        setSelectedPayment(null);
                       }}
                       className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2"
                     >
