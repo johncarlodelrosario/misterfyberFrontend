@@ -294,36 +294,81 @@ export const checkApplicationStatus = async (
   try {
     console.log("[Auth] Checking application status:", applicationId);
 
-    const response = await api.get(`/auth/check-application/${applicationId}`);
+    // FIXED: Reduced timeout and better error handling
+    const response = await api.get(`/auth/check-application/${applicationId}`, {
+      timeout: 5000, // 5 second timeout
+    });
 
     console.log("[Auth] Application status response:", response.data);
 
-    if (response.data.data) {
+    // FIXED: Handle all possible response structures immediately
+    if (response.data && response.data.data) {
       return {
         success: true,
-        data: response.data.data,
-      };
-    } else if (response.data.success) {
-      return {
-        success: true,
-        data: response.data.data || response.data.application,
-      };
-    } else {
-      return {
-        success: false,
-        message: response.data.message || "Application not found",
+        data: {
+          status: response.data.data.status,
+          email: response.data.data.email,
+          firstName: response.data.data.firstName,
+          lastName: response.data.data.lastName,
+          applicationId: response.data.data.applicationId || applicationId,
+        },
       };
     }
+
+    if (response.data && response.data.success && response.data.data) {
+      return {
+        success: true,
+        data: {
+          status: response.data.data.status,
+          email: response.data.data.email,
+          firstName: response.data.data.firstName,
+          lastName: response.data.data.lastName,
+          applicationId: response.data.data.applicationId || applicationId,
+        },
+      };
+    }
+
+    if (
+      response.data &&
+      (response.data.status === "approved" ||
+        response.data.status === "pending" ||
+        response.data.status === "rejected")
+    ) {
+      return {
+        success: true,
+        data: {
+          status: response.data.status,
+          email: response.data.email,
+          firstName: response.data.firstName,
+          lastName: response.data.lastName,
+          applicationId: response.data.applicationId || applicationId,
+        },
+      };
+    }
+
+    // If we get here, no valid data found
+    return {
+      success: false,
+      message: response.data?.message || "Application not found",
+    };
   } catch (error: any) {
     console.error(
       "[Auth] Check application error:",
       error.response?.data || error.message,
     );
 
+    // FIXED: Immediate return for 404
     if (error.response?.status === 404) {
       return {
         success: false,
         message: "Application ID not found",
+      };
+    }
+
+    if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+      return {
+        success: false,
+        message: "Server timeout. Please try again.",
       };
     }
 

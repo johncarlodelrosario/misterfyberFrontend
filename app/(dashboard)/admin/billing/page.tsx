@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION WITH PAUSE/RESUME
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -131,6 +131,7 @@ export default function AdminBillingPage() {
     usersWithBalanceCount: 0,
     overdueUsersCount: 0,
     activeCyclesCount: 0,
+    pausedCyclesCount: 0,
     pendingProRatedCount: 0,
     pendingActivationsCount: 0,
   });
@@ -302,8 +303,10 @@ export default function AdminBillingPage() {
             }
 
             let activeCycles = 0;
+            let pausedCycles = 0;
             for (let i = 0; i < cyclesList.length; i++) {
               if (cyclesList[i].status === "active") activeCycles++;
+              if (cyclesList[i].status === "paused") pausedCycles++;
             }
 
             const newStats = {
@@ -312,6 +315,7 @@ export default function AdminBillingPage() {
               usersWithBalanceCount: usersWithPositiveBalance,
               overdueUsersCount: usersWithOverdue,
               activeCyclesCount: activeCycles,
+              pausedCyclesCount: pausedCycles,
               pendingProRatedCount: pendingProRated.length,
               pendingActivationsCount: pendingActivations.length,
             };
@@ -443,7 +447,11 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleResumeBilling = async (userId: string, userFirstName: string) => {
+  const handleResumeBilling = async (
+    userId: string,
+    userFirstName: string,
+    userEmail: string,
+  ) => {
     if (
       !confirm(
         `Resume billing for ${userFirstName}? This will reactivate their service.`,
@@ -708,7 +716,7 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -762,6 +770,17 @@ export default function AdminBillingPage() {
               </p>
             </div>
             <FiActivity className="w-8 h-8 text-green-100" />
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Paused Cycles</p>
+              <p className="text-2xl font-bold text-yellow-600">
+                {stats.pausedCyclesCount}
+              </p>
+            </div>
+            <FiPause className="w-8 h-8 text-yellow-100" />
           </div>
         </div>
       </div>
@@ -866,6 +885,14 @@ export default function AdminBillingPage() {
                           ? "Paused"
                           : user.status}
                       </span>
+                      {user.billingCycle?.pauseUntil && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Resume:{" "}
+                          {new Date(
+                            user.billingCycle.pauseUntil,
+                          ).toLocaleDateString()}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2 flex-wrap">
@@ -883,7 +910,11 @@ export default function AdminBillingPage() {
                         {user.billingCycle?.status === "paused" ? (
                           <button
                             onClick={() =>
-                              handleResumeBilling(user._id, user.firstName)
+                              handleResumeBilling(
+                                user._id,
+                                user.firstName,
+                                user.email,
+                              )
                             }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Resume Billing"
@@ -1117,6 +1148,14 @@ export default function AdminBillingPage() {
                         ? "Paused"
                         : selectedUser.status}
                     </span>
+                    {selectedUser.billingCycle?.pauseUntil && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Auto-resume:{" "}
+                        {new Date(
+                          selectedUser.billingCycle.pauseUntil,
+                        ).toLocaleDateString()}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1190,7 +1229,22 @@ export default function AdminBillingPage() {
                 </table>
               </div>
 
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex justify-end gap-3">
+                {selectedUser.billingCycle?.status === "paused" && (
+                  <button
+                    onClick={() =>
+                      handleResumeBilling(
+                        selectedUser._id,
+                        selectedUser.firstName,
+                        selectedUser.email,
+                      )
+                    }
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  >
+                    <FiPlay className="w-4 h-4" />
+                    Resume Billing
+                  </button>
+                )}
                 <button
                   onClick={() => setShowUserDetailModal(false)}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"

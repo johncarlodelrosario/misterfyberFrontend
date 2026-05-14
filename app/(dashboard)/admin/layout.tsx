@@ -180,11 +180,11 @@ export default function AdminLayout({
   const [mounted, setMounted] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingPlanChanges, setPendingPlanChanges] = useState(0);
-  const [isPreloading, setIsPreloading] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const preloadedRef = useRef(false);
 
   // Load sidebar state from localStorage
   useEffect(() => {
@@ -216,10 +216,10 @@ export default function AdminLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // PRELOAD APPLICATIONS ON LOGIN (Optimized)
+  // PRELOAD APPLICATIONS ON LOGIN (NO SYNC - JUST ONCE)
   useEffect(() => {
     const preloadApplications = async () => {
-      if (!isAuthenticated || !user?.role) return;
+      if (!isAuthenticated || !user?.role || preloadedRef.current) return;
 
       const isAdminUser =
         user.role === "super_admin" ||
@@ -249,14 +249,14 @@ export default function AdminLayout({
           (app: any) => app.status === "pending",
         ).length;
         setPendingCount(pending);
+        preloadedRef.current = true;
         return;
       }
 
-      if (isPreloading) return;
-      setIsPreloading(true);
+      preloadedRef.current = true;
 
       try {
-        console.log("🔄 Preloading applications data on login...");
+        console.log("🔄 Preloading applications data once...");
         const data = await getAllApplications({ page: 1, limit: 100 });
         const applicationsList = data.data || [];
 
@@ -278,13 +278,11 @@ export default function AdminLayout({
         );
       } catch (error) {
         console.error("Failed to preload applications:", error);
-      } finally {
-        setIsPreloading(false);
       }
     };
 
     preloadApplications();
-  }, [isAuthenticated, user, isPreloading]);
+  }, [isAuthenticated, user]); // Removed isPreloading dependency
 
   // Generate notifications
   const generateNotifications = useCallback(() => {
@@ -339,7 +337,7 @@ export default function AdminLayout({
     }
   }, [isAuthenticated, isLoading, user, router, mounted]);
 
-  // Fetch pending plan changes count
+  // Fetch pending plan changes count (NO INTERVAL - JUST ONCE)
   useEffect(() => {
     const fetchPendingPlanChanges = async () => {
       if (!isAuthenticated || !user?.role) return;
@@ -361,9 +359,8 @@ export default function AdminLayout({
     };
 
     fetchPendingPlanChanges();
-    const interval = setInterval(fetchPendingPlanChanges, 60000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated, user]);
+    // NO INTERVAL - removed the setInterval that was causing constant re-fetching
+  }, [isAuthenticated, user]); // Only runs once when auth changes
 
   const handleLogout = async () => {
     try {
@@ -539,19 +536,8 @@ export default function AdminLayout({
             </div>
           </nav>
 
-          {/* Bottom Section */}
-          <div className="p-4 border-t border-blue-700/50 space-y-2">
-            {isPreloading && (
-              <div
-                className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-center"} px-3 py-2 mb-2`}
-              >
-                <div className="w-5 h-5 border-2 border-blue-300 border-t-white rounded-full animate-spin"></div>
-                {!sidebarCollapsed && (
-                  <span className="text-xs text-blue-300 ml-2">Syncing...</span>
-                )}
-              </div>
-            )}
-
+          {/* Bottom Section - NO SYNC SPINNER */}
+          <div className="p-4 border-t border-blue-700/50">
             <button
               onClick={handleLogout}
               className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-3 py-3 text-sm text-red-300 hover:bg-red-600 hover:text-white rounded-xl transition-all duration-200 group`}

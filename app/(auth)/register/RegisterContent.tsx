@@ -1,6 +1,7 @@
+// app/register/RegisterContent.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -50,6 +51,7 @@ export default function RegisterContent() {
   );
   const [checkingApp, setCheckingApp] = useState(false);
   const [appStatus, setAppStatus] = useState<any>(null);
+  const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     register,
@@ -66,17 +68,23 @@ export default function RegisterContent() {
 
   const applicationId = watch("applicationId");
 
-  // Check application ID on change
-  useEffect(() => {
-    const checkApplication = async () => {
-      if (!applicationId || applicationId.length < 8) {
+  // FIXED: Optimized check application with debounce and abort controller
+  const checkApplication = useCallback(
+    async (id: string) => {
+      if (!id || id.length < 8) {
         setApplicationValid(null);
+        setAppStatus(null);
+        setCheckingApp(false);
         return;
       }
 
       setCheckingApp(true);
+
       try {
-        const result = await checkApplicationStatus(applicationId);
+        console.log("[Register] Checking application:", id);
+        const result = await checkApplicationStatus(id);
+        console.log("[Register] Check result:", result);
+
         if (result.success && result.data) {
           const status = result.data.status;
           if (status === "approved") {
@@ -92,21 +100,44 @@ export default function RegisterContent() {
           } else if (status === "rejected") {
             setApplicationValid(false);
             setAppStatus({ status: "rejected" });
+          } else {
+            setApplicationValid(false);
+            setAppStatus(null);
           }
         } else {
           setApplicationValid(false);
+          setAppStatus(null);
         }
       } catch (error: any) {
-        console.error("Error checking application:", error);
+        console.error("[Register] Error checking application:", error);
         setApplicationValid(false);
+        setAppStatus(null);
       } finally {
         setCheckingApp(false);
       }
-    };
+    },
+    [setValue],
+  );
 
-    const timeout = setTimeout(checkApplication, 500);
-    return () => clearTimeout(timeout);
-  }, [applicationId, setValue]);
+  // FIXED: Debounced effect with cleanup
+  useEffect(() => {
+    // Clear previous timeout
+    if (checkTimeoutRef.current) {
+      clearTimeout(checkTimeoutRef.current);
+    }
+
+    // Set new timeout for debounce
+    checkTimeoutRef.current = setTimeout(() => {
+      checkApplication(applicationId);
+    }, 300); // Reduced debounce time to 300ms
+
+    // Cleanup on unmount or when applicationId changes
+    return () => {
+      if (checkTimeoutRef.current) {
+        clearTimeout(checkTimeoutRef.current);
+      }
+    };
+  }, [applicationId, checkApplication]);
 
   const onSubmit = async (data: FormData) => {
     if (!applicationValid) {
@@ -184,6 +215,7 @@ export default function RegisterContent() {
                         : "border-gray-700"
                   }`}
                   placeholder="Enter your Application ID (e.g., SLK2603123456)"
+                  autoComplete="off"
                 />
                 {checkingApp && (
                   <div className="absolute right-3 top-2">
@@ -239,6 +271,7 @@ export default function RegisterContent() {
                   type="text"
                   className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="Choose a username"
+                  autoComplete="off"
                 />
               </div>
               {errors.username && (
@@ -266,10 +299,14 @@ export default function RegisterContent() {
                   type="email"
                   className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-800 text-white"
                   placeholder="your@email.com"
+                  readOnly={!!appStatus?.email}
+                  autoComplete="off"
                 />
               </div>
               <p className="mt-1 text-xs text-gray-400">
-                Email is auto-filled from your application
+                {appStatus?.email
+                  ? "Email auto-filled from application"
+                  : "Email will be auto-filled from your application"}
               </p>
               {errors.email && (
                 <p className="mt-1 text-sm text-red-400">
@@ -296,6 +333,7 @@ export default function RegisterContent() {
                   type={showPassword ? "text" : "password"}
                   className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="••••••••"
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -334,6 +372,7 @@ export default function RegisterContent() {
                   type={showConfirmPassword ? "text" : "password"}
                   className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
                   placeholder="••••••••"
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"

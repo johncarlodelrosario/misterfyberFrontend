@@ -1,3 +1,4 @@
+// app/register/page.tsx
 import { Suspense } from "react";
 import RegisterContent from "./RegisterContent";
 
