@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 import {
   FiHome,
   FiUsers,
@@ -436,16 +437,25 @@ export default function AdminLayout({
             className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-20 border-b border-blue-700/50`}
           >
             {!sidebarCollapsed && (
-              <div className="text-center">
-                <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
-                  MisterFyber
-                </h1>
-                <p className="text-xs text-blue-300 mt-0.5">Admin Panel</p>
+              <div className="flex justify-center w-full">
+                <Image
+                  src="/Logo.png"
+                  alt="Logo"
+                  width={60}
+                  height={60}
+                  className="object-contain"
+                />
               </div>
             )}
             {sidebarCollapsed && (
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-xl">MF</span>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
+                <Image
+                  src="/Logo.png"
+                  alt="Logo"
+                  width={40}
+                  height={40}
+                  className="object-contain"
+                />
               </div>
             )}
             <button

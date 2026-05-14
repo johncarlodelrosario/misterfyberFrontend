@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 import {
   FiHome,
   FiUser,
@@ -77,13 +78,16 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <Link
               href="/user/dashboard"
-              className="flex items-center space-x-2"
+              className="flex items-center justify-center w-full"
               onClick={onClose}
             >
-              <span className="text-2xl">🌐</span>
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
-                Mister Fyber
-              </span>
+              <Image
+                src="/Logo.png"
+                alt="Logo"
+                width={50}
+                height={50}
+                className="object-contain"
+              />
             </Link>
             <button
               onClick={onClose}

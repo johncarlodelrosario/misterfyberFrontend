@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import toast from "react-hot-toast";
+import Image from "next/image";
 import {
   FiMail,
   FiLock,
@@ -168,8 +169,14 @@ export default function RegisterContent() {
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-[#080616]">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <div className="text-center">
-            <span className="text-4xl">🌐</span>
+          <div className="text-center flex justify-center">
+            <Image
+              src="/Logo.png"
+              alt="Logo"
+              width={80}
+              height={80}
+              className="object-contain"
+            />
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
             Create your account

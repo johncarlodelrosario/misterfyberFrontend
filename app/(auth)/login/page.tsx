@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiMail, FiLock, FiEye, FiEyeOff } from "react-icons/fi";
+import Image from "next/image";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -37,8 +38,14 @@ export default function LoginPage() {
     >
       <div className="max-w-md w-full space-y-8">
         <div>
-          <div className="text-center">
-            <span className="text-4xl">🌐</span>
+          <div className="text-center flex justify-center">
+            <Image
+              src="/Logo.png"
+              alt="Logo"
+              width={80}
+              height={80}
+              className="object-contain"
+            />
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
             Sign in to your account
