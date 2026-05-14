@@ -45,7 +45,7 @@ const schema = yup.object({
 
 type FormData = yup.InferType<typeof schema>;
 
-export default function RegisterContent() {
+export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
@@ -173,8 +173,8 @@ export default function RegisterContent() {
             <Image
               src="/Logo.png"
               alt="Logo"
-              width={80}
-              height={80}
+              width={120}
+              height={120}
               className="object-contain"
             />
           </div>

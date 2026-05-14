@@ -1,4 +1,3 @@
-// components/User/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
@@ -84,8 +83,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               <Image
                 src="/Logo.png"
                 alt="Logo"
-                width={50}
-                height={50}
+                width={80}
+                height={80}
                 className="object-contain"
               />
             </Link>

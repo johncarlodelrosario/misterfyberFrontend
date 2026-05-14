@@ -6,7 +6,7 @@ const pendingRequests = new Map();
 const responseCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-// Safe storage wrapper to handle quota exceeded
+// Safe storage wrapper
 const safeStorage = {
   setItem: (key: string, value: string): boolean => {
     try {
@@ -90,13 +90,26 @@ const checkBackendHealth = async (): Promise<boolean> => {
   }
 };
 
-const api = axios.create({
-  baseURL:
+// Determine API URL based on environment
+const getApiUrl = () => {
+  // On Vercel, use the rewrite path to avoid CORS
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname.includes("vercel.app")
+  ) {
+    return "/api"; // Use Vercel rewrite
+  }
+  return (
     process.env.NEXT_PUBLIC_API_URL ||
-    "https://misterfyberbackend.onrender.com/api",
+    "https://misterfyberbackend.onrender.com/api"
+  );
+};
+
+const api = axios.create({
+  baseURL: getApiUrl(),
   headers: { "Content-Type": "application/json" },
   withCredentials: false,
-  timeout: 60000, // 60 second timeout for cold starts
+  timeout: 30000, // Reduced from 60s to 30s for better performance
 });
 
 // Request interceptor with health check and deduplication
@@ -105,6 +118,11 @@ api.interceptors.request.use(async (config) => {
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  // Add cache busting for non-GET requests
+  if (config.method !== "get") {
+    config.headers["Cache-Control"] = "no-cache";
   }
 
   // Check health before making request (only for GET requests to applications)
@@ -174,7 +192,8 @@ api.interceptors.response.use(
         `Network error detected, retry count: ${config?.__retryCount || 0}`,
       );
 
-      if (!config || config.__retryCount >= 5) {
+      if (!config || config.__retryCount >= 3) {
+        // Reduced from 5 to 3
         if (config?.url?.includes("/applications")) {
           console.log("Max retries reached, checking cache fallback...");
           const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
@@ -190,9 +209,9 @@ api.interceptors.response.use(
       config.__retryCount = config.__retryCount || 0;
       config.__retryCount += 1;
 
-      // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 30000);
-      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/5)`);
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 8000);
+      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/3)`);
 
       await new Promise((resolve) => setTimeout(resolve, delay));
       return api(config);
@@ -201,7 +220,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== "undefined") {
         safeStorage.removeItem("token");
-        if (!window.location.pathname.includes("/login")) {
+        if (
+          !window.location.pathname.includes("/login") &&
+          !window.location.pathname.includes("/register") &&
+          !window.location.pathname.includes("/application-status")
+        ) {
           window.location.href = "/login";
         }
       }

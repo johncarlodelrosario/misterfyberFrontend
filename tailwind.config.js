@@ -24,7 +24,26 @@ module.exports = {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
+      animation: {
+        "spin-slow": "spin 3s linear infinite",
+        "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      },
+      keyframes: {
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
+      },
     },
   },
   plugins: [],
+  // Important for performance
+  corePlugins: {
+    preflight: true, // Keep base styles
+    container: false, // Remove if not using
+  },
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
+  // Reduce output size
+  safelist: ["text-primary-500", "bg-primary-500", "border-primary-500"],
 };
