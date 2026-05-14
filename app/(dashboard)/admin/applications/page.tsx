@@ -14,7 +14,6 @@ import {
   FiRefreshCw,
   FiSearch,
   FiImage,
-  FiAlertCircle,
   FiWifiOff,
   FiDatabase,
   FiClock,
@@ -23,13 +22,12 @@ import {
 // ==================== PERSISTENT STORAGE CONFIGURATION ====================
 const STORAGE_KEYS = {
   APPLICATIONS: "misterfyber_applications_data",
-  APPLICATIONS_META: "misterfyber_applications_meta",
   LAST_FETCH: "misterfyber_last_fetch",
   FILTER_STATE: "misterfyber_applications_filter",
   CACHE_VERSION: "misterfyber_cache_v2",
 };
 
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes (increased for better persistence)
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const MAX_STORED_APPLICATIONS = 500;
 
 interface StoredApplicationsData {
@@ -44,30 +42,11 @@ interface FilterState {
   statusFilter: string;
 }
 
-// ==================== ENHANCED STORAGE WRAPPER ====================
+// ==================== PERSISTENT STORAGE WRAPPER ====================
 const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
       const serialized = JSON.stringify(value);
-      const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
-
-      if (sizeInMB > 5) {
-        console.warn(
-          `Data too large (${sizeInMB.toFixed(2)}MB), truncating...`,
-        );
-        if (value.applications && value.applications.length > 100) {
-          const truncated = {
-            ...value,
-            applications: value.applications.slice(0, 100),
-          };
-          const retrySerialized = JSON.stringify(truncated);
-          localStorage.setItem(key, retrySerialized);
-          console.log(`Saved truncated data (100 items only)`);
-          return true;
-        }
-        return false;
-      }
-
       localStorage.setItem(key, serialized);
       return true;
     } catch (e: any) {
@@ -84,7 +63,6 @@ const persistentStorage = {
           localStorage.setItem(key, JSON.stringify(value));
           return true;
         } catch (retryError) {
-          console.error("Still cannot save after cleanup");
           return false;
         }
       }
@@ -105,9 +83,7 @@ const persistentStorage = {
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
-    } catch (e) {
-      console.error(`Failed to remove ${key}:`, e);
-    }
+    } catch (e) {}
   },
 
   clearAll: (): void => {
@@ -116,25 +92,7 @@ const persistentStorage = {
         localStorage.removeItem(key),
       );
       console.log("All persistent storage cleared");
-    } catch (e) {
-      console.error("Failed to clear storage:", e);
-    }
-  },
-
-  getStorageInfo: () => {
-    let totalSize = 0;
-    let itemCount = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) {
-        const value = localStorage.getItem(key);
-        if (value) {
-          totalSize += value.length;
-          itemCount++;
-        }
-      }
-    }
-    return { totalSize: (totalSize / 1024).toFixed(2) + " KB", itemCount };
+    } catch (e) {}
   },
 };
 
@@ -142,7 +100,7 @@ const persistentStorage = {
 export default function ApplicationsPage() {
   // State
   const [applications, setApplications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
@@ -153,17 +111,15 @@ export default function ApplicationsPage() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
-  const [isWakingBackend, setIsWakingBackend] = useState(false);
   const [filter, setFilter] = useState<FilterState>(() => {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
     return savedFilter || { searchTerm: "", statusFilter: "all" };
   });
 
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const refreshInProgressRef = useRef(false);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
-  // Save filter to storage whenever it changes
+  // Save filter to storage
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
   }, [filter]);
@@ -172,8 +128,8 @@ export default function ApplicationsPage() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      toast.success("Network connected. Refreshing data...");
-      refreshApplications(true);
+      toast.success("Network connected");
+      // Only refresh if user clicks refresh button, not automatic
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -189,9 +145,10 @@ export default function ApplicationsPage() {
     };
   }, []);
 
-  // Load from persistent storage on mount - INSTANT LOAD
+  // CRITICAL: Load from localStorage IMMEDIATELY - NO API CALL on mount
   useEffect(() => {
-    const loadFromPersistentStorage = async () => {
+    // Load from storage synchronously - INSTANT display
+    const loadStoredData = () => {
       try {
         const storedData = persistentStorage.getItem(
           STORAGE_KEYS.APPLICATIONS,
@@ -204,44 +161,123 @@ export default function ApplicationsPage() {
           storedData.applications.length > 0
         ) {
           console.log(
-            `📦 Loading ${storedData.applications.length} applications from persistent storage`,
+            `📦 INSTANT LOAD: ${storedData.applications.length} applications from storage`,
           );
           setApplications(storedData.applications);
+          if (lastFetch) setLastFetchTime(new Date(lastFetch));
+          setInitialLoading(false);
 
-          if (lastFetch) {
-            setLastFetchTime(new Date(lastFetch));
-          }
-
+          // ONLY check for refresh if cache is OLD (>30 min) AND online
           const cacheAge = Date.now() - storedData.timestamp;
-          const isCacheFresh = cacheAge < CACHE_DURATION;
-
-          if (!isCacheFresh && isOnline) {
-            console.log("Cache expired, refreshing in background...");
-            setTimeout(() => refreshApplications(true), 100);
-          } else {
-            setLoading(false);
+          if (
+            cacheAge > CACHE_DURATION &&
+            isOnline &&
+            !refreshInProgressRef.current
+          ) {
+            console.log("Cache old, refreshing in background silently");
+            // Background refresh - doesn't show loading
+            setTimeout(() => {
+              silentRefresh();
+            }, 500);
           }
         } else {
-          await refreshApplications(true);
+          // No cached data, need to fetch
+          setInitialLoading(true);
+          fetchApplications();
         }
       } catch (err) {
-        console.error("Failed to load from persistent storage:", err);
-        await refreshApplications(true);
+        console.error("Failed to load from storage:", err);
+        fetchApplications();
       }
     };
 
-    loadFromPersistentStorage();
+    loadStoredData();
+  }, []); // Empty dependency - runs ONCE on mount
 
-    return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
+  // Silent refresh - NO LOADING STATE
+  const silentRefresh = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+
+    try {
+      console.log("Silent background refresh...");
+      const data = await getAllApplications({ page: 1, limit: 100 });
+      const applicationsList = data.data || [];
+
+      if (applicationsList.length > 0) {
+        setApplications(applicationsList);
+        setLastFetchTime(new Date());
+
+        // Update storage
+        const dataToStore: StoredApplicationsData = {
+          applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+          timestamp: Date.now(),
+          version: STORAGE_KEYS.CACHE_VERSION,
+          totalCount: applicationsList.length,
+        };
+        persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+        console.log("Background refresh completed");
       }
-    };
+    } catch (error) {
+      console.log("Background refresh failed, keeping cached data");
+    } finally {
+      refreshInProgressRef.current = false;
+    }
   }, []);
 
-  // Save applications to persistent storage whenever they change
+  // Manual fetch with loading indicator
+  const fetchApplications = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      console.log("Manual refresh fetching applications...");
+      const data = await getAllApplications({ page: 1, limit: 100 });
+      const applicationsList = data.data || [];
+
+      console.log(`✅ Received ${applicationsList.length} applications`);
+      setApplications(applicationsList);
+      setLastFetchTime(new Date());
+
+      // Save to storage
+      const dataToStore: StoredApplicationsData = {
+        applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+        timestamp: Date.now(),
+        version: STORAGE_KEYS.CACHE_VERSION,
+        totalCount: applicationsList.length,
+      };
+      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+
+      toast.success(`Loaded ${applicationsList.length} applications`);
+    } catch (error: any) {
+      console.error("Failed to fetch applications:", error);
+
+      // Try to use cached data as fallback
+      const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+      if (storedData?.applications?.length > 0) {
+        setApplications(storedData.applications);
+        setError(
+          `Network error. Showing ${storedData.applications.length} cached applications.`,
+        );
+        toast.error("Network error, using cached data");
+      } else {
+        setError("Unable to connect to server. Please check your connection.");
+        toast.error("Failed to connect to server");
+      }
+    } finally {
+      setInitialLoading(false);
+      setRefreshing(false);
+      refreshInProgressRef.current = false;
+    }
+  }, []);
+
+  // Save applications to storage whenever they change (but don't trigger re-fetch)
   useEffect(() => {
-    if (applications.length > 0) {
+    if (applications.length > 0 && !initialLoading) {
       const dataToStore: StoredApplicationsData = {
         applications: applications.slice(0, MAX_STORED_APPLICATIONS),
         timestamp: Date.now(),
@@ -249,101 +285,8 @@ export default function ApplicationsPage() {
         totalCount: applications.length,
       };
       persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
     }
-  }, [applications]);
-
-  // Wake up backend
-  const wakeBackend = useCallback(async (): Promise<boolean> => {
-    setIsWakingBackend(true);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(
-        "https://misterfyberbackend.onrender.com/health",
-        { signal: controller.signal },
-      );
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      console.log("Backend health check failed");
-      return false;
-    } finally {
-      setIsWakingBackend(false);
-    }
-  }, []);
-
-  // Refresh applications (with force option)
-  const refreshApplications = useCallback(
-    async (forceRefresh = false) => {
-      if (refreshInProgressRef.current && !forceRefresh) {
-        console.log("Refresh already in progress, skipping...");
-        return;
-      }
-
-      if (!isOnline && !forceRefresh) {
-        const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-        if (storedData?.applications?.length > 0) {
-          setApplications(storedData.applications);
-          setError("Offline mode - showing cached data");
-          setLoading(false);
-          setRefreshing(false);
-        }
-        return;
-      }
-
-      refreshInProgressRef.current = true;
-      if (!forceRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      setError(null);
-
-      try {
-        if (forceRefresh) {
-          await wakeBackend();
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-
-        console.log("Fetching fresh applications from API...");
-        // FIXED: Use params object instead of page, limit as separate args
-        const data = await getAllApplications({ page: 1, limit: 100 });
-        const applicationsList = data.data || [];
-
-        console.log(`✅ Received ${applicationsList.length} applications`);
-        setApplications(applicationsList);
-        setLastFetchTime(new Date());
-
-        if (retryTimeoutRef.current) {
-          clearTimeout(retryTimeoutRef.current);
-        }
-
-        toast.success(`Loaded ${applicationsList.length} applications`);
-      } catch (error: any) {
-        console.error("Failed to refresh applications:", error);
-
-        const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-        if (storedData?.applications?.length > 0 && !forceRefresh) {
-          setApplications(storedData.applications);
-          setError(
-            `Network error. Showing ${storedData.applications.length} cached applications.`,
-          );
-          toast.error("Network error, using cached data");
-        } else if (forceRefresh) {
-          setError(
-            "Unable to connect to server. Please check your connection and try again.",
-          );
-          toast.error("Failed to connect to server");
-        }
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-        refreshInProgressRef.current = false;
-      }
-    },
-    [isOnline, wakeBackend],
-  );
+  }, [applications, initialLoading]);
 
   // Handle approve
   const handleApprove = async (id: string, adminNotes?: string) => {
@@ -351,7 +294,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      await refreshApplications(true);
+      await fetchApplications(); // Refresh after action
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Approve error:", error);
@@ -369,7 +312,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      await refreshApplications(true);
+      await fetchApplications(); // Refresh after action
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Reject error:", error);
@@ -395,7 +338,7 @@ export default function ApplicationsPage() {
     [PRODUCTION_URL],
   );
 
-  // Filtered applications (memoized for performance)
+  // Filtered applications
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
     return applications.filter((app: any) => {
@@ -415,7 +358,7 @@ export default function ApplicationsPage() {
     });
   }, [applications, filter.searchTerm, filter.statusFilter]);
 
-  // Get status badge style
+  // Get status badge
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
@@ -425,14 +368,14 @@ export default function ApplicationsPage() {
     return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
 
-  // Clear all cached data
+  // Clear cache
   const clearCache = useCallback(() => {
     persistentStorage.clearAll();
-    toast.success("All cached data cleared");
+    toast.success("Cache cleared");
     setApplications([]);
     setError(null);
-    refreshApplications(true);
-  }, []);
+    fetchApplications();
+  }, [fetchApplications]);
 
   // Format last fetch time
   const getLastFetchDisplay = useCallback(() => {
@@ -457,16 +400,13 @@ export default function ApplicationsPage() {
     [applications],
   );
 
-  // Loading skeleton
-  if (loading && applications.length === 0) {
+  // Show loading ONLY on first ever load with no data
+  if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading applications...</p>
-          {isWakingBackend && (
-            <p className="text-sm text-blue-500 mt-2">Waking up server...</p>
-          )}
         </div>
       </div>
     );
@@ -483,15 +423,14 @@ export default function ApplicationsPage() {
           </p>
         </div>
 
-        {/* Last fetch info and actions */}
         <div className="flex items-center gap-3">
           <div className="text-sm text-gray-500 flex items-center gap-1">
             <FiClock className="w-3 h-3" />
             <span>Last updated: {getLastFetchDisplay()}</span>
           </div>
           <button
-            onClick={() => refreshApplications(true)}
-            disabled={refreshing || loading}
+            onClick={() => fetchApplications()}
+            disabled={refreshing}
             className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
           >
             <FiRefreshCw
@@ -667,8 +606,6 @@ export default function ApplicationsPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Table Footer with count */}
         <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-600">
           Showing {filteredApplications.length} of {applications.length}{" "}
           applications
@@ -699,7 +636,6 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Personal Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   Personal Information
@@ -724,7 +660,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Address */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">Address</h3>
                 <div className="space-y-1 text-sm">
@@ -743,7 +678,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Plan Details */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   Plan Details
@@ -764,7 +698,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* ID Verification */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-semibold text-gray-900">
@@ -798,7 +731,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Admin Actions for Pending */}
               {selectedApp.status === "pending" && (
                 <>
                   <div>
