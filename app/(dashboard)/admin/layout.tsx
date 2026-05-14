@@ -19,8 +19,6 @@ import {
   FiActivity,
   FiChevronLeft,
   FiChevronRight,
-  FiSettings,
-  FiHelpCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { getAllApplications } from "@/services/admin";
@@ -31,9 +29,14 @@ const PRELOAD_TIMESTAMP_KEY = "misterfyber_preload_timestamp";
 const SIDEBAR_STATE_KEY = "misterfyber_sidebar_collapsed";
 const PRELOAD_DURATION = 10 * 60 * 1000; // 10 minutes
 
+// LIMIT DATA SIZE TO PREVENT QUOTA EXCEEDED
+const MAX_APPS_TO_STORE = 50; // Only store 50 applications max
+const MAX_DATA_SIZE = 4 * 1024 * 1024; // 4MB limit
+
 interface PreloadData {
   applications: any[];
   timestamp: number;
+  version: string;
 }
 
 interface NavItem {
@@ -63,21 +66,103 @@ const navItems: NavItem[] = [
   { name: "Plans", href: "/admin/plans", icon: FiPackage },
 ];
 
-// Storage wrapper
+// Optimized storage wrapper with size checking
 const preloadStorage = {
-  setItem: (key: string, value: any): void => {
+  setItem: (key: string, value: any): boolean => {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error("Failed to save preload data:", e);
+      // Optimize data before storing
+      let dataToStore = value;
+
+      if (key === PRELOAD_CACHE_KEY && value.applications) {
+        // Limit number of applications
+        const limitedApps = value.applications.slice(0, MAX_APPS_TO_STORE);
+        // Remove large fields to save space
+        const optimizedApps = limitedApps.map((app: any) => ({
+          _id: app._id,
+          applicationId: app.applicationId,
+          firstName: app.firstName,
+          lastName: app.lastName,
+          email: app.email,
+          status: app.status,
+          createdAt: app.createdAt,
+          planId: app.planId
+            ? { name: app.planId.name, price: app.planId.price }
+            : null,
+          buildingId: app.buildingId
+            ? { buildingName: app.buildingId.buildingName }
+            : null,
+        }));
+
+        dataToStore = {
+          applications: optimizedApps,
+          timestamp: value.timestamp,
+          version: value.version || "1.0",
+        };
+      }
+
+      const serialized = JSON.stringify(dataToStore);
+
+      // Check size before storing
+      const sizeInBytes = new Blob([serialized]).size;
+      if (sizeInBytes > MAX_DATA_SIZE) {
+        console.warn(
+          `Data too large (${(sizeInBytes / 1024 / 1024).toFixed(2)}MB), skipping storage`,
+        );
+        return false;
+      }
+
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e: any) {
+      if (e.name === "QuotaExceededError") {
+        console.error("Storage quota exceeded, clearing old data...");
+        try {
+          localStorage.removeItem(PRELOAD_CACHE_KEY);
+          localStorage.removeItem(PRELOAD_TIMESTAMP_KEY);
+          // Try again with smaller data
+          if (key === PRELOAD_CACHE_KEY && value.applications) {
+            const minimalApps = value.applications.slice(0, 25);
+            const minimalData = {
+              applications: minimalApps.map((app: any) => ({
+                _id: app._id,
+                applicationId: app.applicationId,
+                firstName: app.firstName,
+                lastName: app.lastName,
+                email: app.email,
+                status: app.status,
+                createdAt: app.createdAt,
+              })),
+              timestamp: value.timestamp,
+              version: "minimal",
+            };
+            localStorage.setItem(key, JSON.stringify(minimalData));
+            console.log("Stored minimal data (25 items only)");
+            return true;
+          }
+        } catch (retryError) {
+          console.error("Still cannot save after cleanup");
+          return false;
+        }
+      }
+      return false;
     }
   },
+
   getItem: (key: string): any => {
     try {
       const item = localStorage.getItem(key);
       return item ? JSON.parse(item) : null;
     } catch (e) {
+      console.error("Failed to read from storage:", e);
       return null;
+    }
+  },
+
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.error("Failed to remove from storage:", e);
     }
   },
 };
@@ -131,7 +216,7 @@ export default function AdminLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // PRELOAD APPLICATIONS ON LOGIN
+  // PRELOAD APPLICATIONS ON LOGIN (Optimized)
   useEffect(() => {
     const preloadApplications = async () => {
       if (!isAuthenticated || !user?.role) return;
@@ -142,6 +227,7 @@ export default function AdminLayout({
         user.role === "staff";
       if (!isAdminUser) return;
 
+      // Check cache first
       const cachedData = preloadStorage.getItem(
         PRELOAD_CACHE_KEY,
       ) as PreloadData | null;
@@ -174,9 +260,11 @@ export default function AdminLayout({
         const data = await getAllApplications({ page: 1, limit: 100 });
         const applicationsList = data.data || [];
 
+        // Store optimized data
         preloadStorage.setItem(PRELOAD_CACHE_KEY, {
           applications: applicationsList,
           timestamp: now,
+          version: "1.0",
         });
         preloadStorage.setItem(PRELOAD_TIMESTAMP_KEY, now);
 
@@ -196,7 +284,7 @@ export default function AdminLayout({
     };
 
     preloadApplications();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, isPreloading]);
 
   // Generate notifications
   const generateNotifications = useCallback(() => {
@@ -234,6 +322,7 @@ export default function AdminLayout({
     generateNotifications();
   }, [generateNotifications]);
 
+  // Auth check
   useEffect(() => {
     if (!isLoading && mounted) {
       const isAdminUser =
@@ -279,8 +368,9 @@ export default function AdminLayout({
   const handleLogout = async () => {
     try {
       await logout();
-      localStorage.removeItem(PRELOAD_CACHE_KEY);
-      localStorage.removeItem(PRELOAD_TIMESTAMP_KEY);
+      // Clear all storage on logout
+      preloadStorage.removeItem(PRELOAD_CACHE_KEY);
+      preloadStorage.removeItem(PRELOAD_TIMESTAMP_KEY);
       router.push("/login");
     } catch (error) {
       toast.error("Failed to logout");
@@ -353,9 +443,7 @@ export default function AdminLayout({
                 <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
                   MisterFyber
                 </h1>
-                <p className="text-xs text-blue-300 mt-0.5">
-                  Administrator Panel
-                </p>
+                <p className="text-xs text-blue-300 mt-0.5">Admin Panel</p>
               </div>
             )}
             {sidebarCollapsed && (
@@ -394,9 +482,9 @@ export default function AdminLayout({
                   </p>
                   <p className="text-xs text-blue-300 truncate">
                     {user?.role === "super_admin"
-                      ? "Super Administrator"
+                      ? "Super Admin"
                       : user?.role === "admin"
-                        ? "Administrator"
+                        ? "Admin"
                         : "Staff"}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
@@ -495,7 +583,7 @@ export default function AdminLayout({
                 <div className="flex items-center space-x-2 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                   <span className="text-sm text-green-700 font-medium">
-                    System Online
+                    Online
                   </span>
                 </div>
               </div>
@@ -526,7 +614,7 @@ export default function AdminLayout({
                           onClick={markAllAsRead}
                           className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
                         >
-                          Mark all as read
+                          Mark all read
                         </button>
                       )}
                     </div>

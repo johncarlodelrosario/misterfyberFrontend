@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH PRE-LOADING AND CACHING
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -9,11 +9,18 @@ import {
   updateBillingSettings,
   startBilling,
   stopBilling,
+  pauseBilling,
+  resumeBilling,
   approvePlanChange,
   rejectPlanChange,
   disconnectClient,
   reconnectClient,
   clearBillingCache,
+  markBillAsPaid,
+  getPendingProRatedBills,
+  getPendingActivations,
+  confirmProRatedPayment,
+  startMonthlyBilling,
 } from "@/services/billing";
 import { getAllUsers, confirmPayment } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
@@ -33,6 +40,8 @@ import {
   FiCheckCircle,
   FiClock,
   FiSearch,
+  FiBell,
+  FiBellOff,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -43,7 +52,7 @@ const CACHE_KEYS = {
   BILLING_STATS: "misterfyber_billing_stats",
 };
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
 interface UserWithBalance {
   _id: string;
@@ -64,7 +73,6 @@ interface UserWithBalance {
   billingCycle?: any;
 }
 
-// Storage wrapper
 const billingStorage = {
   setItem: (key: string, value: any): void => {
     try {
@@ -102,23 +110,33 @@ export default function AdminBillingPage() {
   );
   const [showUserDetailModal, setShowUserDetailModal] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
+  const [showPauseModal, setShowPauseModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [customAmount, setCustomAmount] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
+  const [pauseReason, setPauseReason] = useState("");
+  const [pauseUntilDate, setPauseUntilDate] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [pendingProRated, setPendingProRated] = useState<any[]>([]);
+  const [pendingActivations, setPendingActivations] = useState<any[]>([]);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingModalType, setPendingModalType] = useState<
+    "pro-rated" | "activation"
+  >("pro-rated");
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalBalance: 0,
     usersWithBalanceCount: 0,
     overdueUsersCount: 0,
     activeCyclesCount: 0,
+    pendingProRatedCount: 0,
+    pendingActivationsCount: 0,
   });
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
 
-  // Load from cache first
   const loadFromCache = useCallback(() => {
     try {
       const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
@@ -148,14 +166,30 @@ export default function AdminBillingPage() {
     }
   }, []);
 
+  const loadPendingData = useCallback(async () => {
+    try {
+      const [proRatedResult, activationsResult] = await Promise.allSettled([
+        getPendingProRatedBills(),
+        getPendingActivations(),
+      ]);
+
+      if (proRatedResult.status === "fulfilled") {
+        setPendingProRated(proRatedResult.value.data || []);
+      }
+      if (activationsResult.status === "fulfilled") {
+        setPendingActivations(activationsResult.value.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to load pending data:", error);
+    }
+  }, []);
+
   const loadData = useCallback(
     async (forceRefresh = false) => {
-      // Try cache first if not force refresh
       if (!forceRefresh && loadFromCache()) {
         setLoading(false);
       }
 
-      // Prevent duplicate simultaneous loads
       if (loadPromiseRef.current && !forceRefresh) {
         return loadPromiseRef.current;
       }
@@ -169,7 +203,6 @@ export default function AdminBillingPage() {
         }
 
         try {
-          // Use Promise.allSettled to prevent one failure from blocking others
           const [
             cyclesResult,
             billsResult,
@@ -214,14 +247,12 @@ export default function AdminBillingPage() {
           }
           setAllPayments(paymentsData.data || []);
 
-          // Process users with balance in a more efficient way
           const billsList = billsData.data || [];
           const cyclesList = cyclesData.data || [];
 
           const usersWithBalanceData: UserWithBalance[] = (
             allUsersData.data || []
           ).map((user: any) => {
-            // Filter bills for this user efficiently
             const userBills = billsList.filter(
               (bill: any) =>
                 bill.userId?._id === user._id && bill.status !== "paid",
@@ -251,7 +282,6 @@ export default function AdminBillingPage() {
             };
           });
 
-          // Sort in JavaScript instead of relying on backend
           usersWithBalanceData.sort(
             (a: UserWithBalance, b: UserWithBalance) =>
               b.currentBalance - a.currentBalance,
@@ -260,7 +290,6 @@ export default function AdminBillingPage() {
           if (isMountedRef.current) {
             setUsers(usersWithBalanceData);
 
-            // Calculate stats
             let totalBalanceSum = 0;
             let usersWithPositiveBalance = 0;
             let usersWithOverdue = 0;
@@ -268,19 +297,13 @@ export default function AdminBillingPage() {
             for (let i = 0; i < usersWithBalanceData.length; i++) {
               const user = usersWithBalanceData[i];
               totalBalanceSum = totalBalanceSum + user.currentBalance;
-              if (user.currentBalance > 0) {
-                usersWithPositiveBalance++;
-              }
-              if (user.overdueBills.length > 0) {
-                usersWithOverdue++;
-              }
+              if (user.currentBalance > 0) usersWithPositiveBalance++;
+              if (user.overdueBills.length > 0) usersWithOverdue++;
             }
 
             let activeCycles = 0;
             for (let i = 0; i < cyclesList.length; i++) {
-              if (cyclesList[i].status === "active") {
-                activeCycles++;
-              }
+              if (cyclesList[i].status === "active") activeCycles++;
             }
 
             const newStats = {
@@ -289,11 +312,12 @@ export default function AdminBillingPage() {
               usersWithBalanceCount: usersWithPositiveBalance,
               overdueUsersCount: usersWithOverdue,
               activeCyclesCount: activeCycles,
+              pendingProRatedCount: pendingProRated.length,
+              pendingActivationsCount: pendingActivations.length,
             };
 
             setStats(newStats);
 
-            // Save to cache
             billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
               users: usersWithBalanceData,
               billingCycles: cyclesList,
@@ -303,6 +327,8 @@ export default function AdminBillingPage() {
             billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
             billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
           }
+
+          await loadPendingData();
         } catch (error) {
           console.error("Failed to load billing data:", error);
           if (isMountedRef.current) {
@@ -320,7 +346,12 @@ export default function AdminBillingPage() {
       loadPromiseRef.current = loadPromise;
       return loadPromise;
     },
-    [loadFromCache],
+    [
+      loadFromCache,
+      loadPendingData,
+      pendingProRated.length,
+      pendingActivations.length,
+    ],
   );
 
   useEffect(() => {
@@ -336,26 +367,23 @@ export default function AdminBillingPage() {
     loadData(true);
   };
 
-  const handleMarkBillAsPaid = async (bill: any) => {
+  const handleMarkBillAsPaid = async (bill: any, user: any) => {
     if (
       !confirm(
-        `Mark invoice ${bill.invoiceNumber} as paid? This will update the user's balance.`,
+        `Mark invoice ${bill.invoiceNumber} as paid? This will update ${user.firstName}'s balance.`,
       )
     )
       return;
 
     try {
-      const payment = allPayments.find((p) => p.billingId?._id === bill._id);
+      await markBillAsPaid(bill._id, {
+        referenceNumber: `ADMIN-${Date.now()}`,
+        notes: `Manually marked as paid by admin`,
+      });
 
-      if (payment) {
-        await confirmPayment(payment._id);
-        toast.success(`Invoice ${bill.invoiceNumber} marked as paid!`);
-        loadData(true);
-      } else {
-        toast.error(
-          "No payment record found for this bill. Please ask user to submit payment first.",
-        );
-      }
+      toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
+      toast.success(`📧 Payment confirmation email sent to ${user.email}`);
+      loadData(true);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to mark bill as paid",
@@ -376,7 +404,9 @@ export default function AdminBillingPage() {
         customAmount: customAmount ? parseFloat(customAmount) : undefined,
         notes: billingNotes,
       });
-      toast.success("Billing started successfully");
+      toast.success(
+        "✅ Billing started successfully! User will receive an email with their pro-rated bill.",
+      );
       setShowStartModal(false);
       setSelectedUserId("");
       setStartDate("");
@@ -388,36 +418,129 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Open start billing modal for a specific user
-  const handleOpenStartModal = (user: UserWithBalance) => {
-    setSelectedUserId(user._id);
-    setStartDate("");
-    setCustomAmount("");
-    setBillingNotes("");
-    setShowStartModal(true);
+  const handlePauseBilling = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+
+    try {
+      await pauseBilling({
+        userId: selectedUserId,
+        reason: pauseReason || "Admin initiated pause",
+        pauseUntilDate: pauseUntilDate || undefined,
+      });
+      toast.success(
+        "⏸️ Billing paused successfully! User has been notified via email.",
+      );
+      setShowPauseModal(false);
+      setSelectedUserId("");
+      setPauseReason("");
+      setPauseUntilDate("");
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to pause billing");
+    }
   };
 
-  const handleStopBilling = async (userId: string) => {
+  const handleResumeBilling = async (userId: string, userFirstName: string) => {
     if (
       !confirm(
-        "Stop billing for this user? This will cancel their active billing cycle.",
+        `Resume billing for ${userFirstName}? This will reactivate their service.`,
+      )
+    )
+      return;
+
+    try {
+      await resumeBilling({ userId });
+      toast.success(
+        `✅ Billing resumed for ${userFirstName}! User has been notified via email.`,
+      );
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to resume billing");
+    }
+  };
+
+  const handleStopBilling = async (userId: string, userFirstName: string) => {
+    if (
+      !confirm(
+        `Stop billing for ${userFirstName}? This will cancel their active billing cycle permanently.`,
       )
     )
       return;
 
     try {
       await stopBilling({ userId, reason: "Admin action" });
-      toast.success("Billing stopped");
+      toast.success(
+        `⛔ Billing stopped for ${userFirstName}. User has been notified.`,
+      );
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
   };
 
-  const handleApprovePlanChange = async (userId: string) => {
+  const handleConfirmProRatedPayment = async (
+    userId: string,
+    billId: string,
+    userEmail: string,
+  ) => {
+    if (
+      !confirm(
+        `Confirm pro-rated payment for ${userEmail}? This will activate their service.`,
+      )
+    )
+      return;
+
+    try {
+      await confirmProRatedPayment({
+        userId,
+        paymentDetails: { confirmedBy: "admin", confirmedAt: new Date() },
+      });
+      toast.success(
+        `✅ Pro-rated payment confirmed! ${userEmail}'s service is now active.`,
+      );
+      toast.success(`📧 Activation email sent to ${userEmail}`);
+      loadData(true);
+      loadPendingData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to confirm payment");
+    }
+  };
+
+  const handleStartMonthlyBilling = async (
+    userId: string,
+    userEmail: string,
+  ) => {
+    if (
+      !confirm(
+        `Start monthly billing for ${userEmail}? This will generate their first monthly bill.`,
+      )
+    )
+      return;
+
+    try {
+      await startMonthlyBilling({ userId });
+      toast.success(
+        `✅ Monthly billing started for ${userEmail}! First monthly bill generated.`,
+      );
+      toast.success(`📧 Invoice sent to ${userEmail}`);
+      loadData(true);
+      loadPendingData();
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to start monthly billing",
+      );
+    }
+  };
+
+  const handleApprovePlanChange = async (userId: string, userEmail: string) => {
     try {
       await approvePlanChange({ userId });
-      toast.success("Plan change approved");
+      toast.success(
+        `✅ Plan change approved for ${userEmail}. User has been notified.`,
+      );
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -426,13 +549,15 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleRejectPlanChange = async (userId: string) => {
+  const handleRejectPlanChange = async (userId: string, userEmail: string) => {
     const reason = prompt("Enter rejection reason:");
     if (reason === null) return;
 
     try {
       await rejectPlanChange({ userId, rejectionReason: reason });
-      toast.success("Plan change rejected");
+      toast.success(
+        `❌ Plan change rejected for ${userEmail}. User has been notified.`,
+      );
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -441,13 +566,15 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleDisconnect = async (userId: string) => {
+  const handleDisconnect = async (userId: string, userFirstName: string) => {
     const reason = prompt("Enter reason for disconnection:");
     if (reason === null) return;
 
     try {
       await disconnectClient({ userId, reason });
-      toast.success("Client disconnected");
+      toast.success(
+        `🔌 ${userFirstName} disconnected. User has been notified via email.`,
+      );
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -456,10 +583,12 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleReconnect = async (userId: string) => {
+  const handleReconnect = async (userId: string, userFirstName: string) => {
     try {
       await reconnectClient({ userId });
-      toast.success("Client reconnected");
+      toast.success(
+        `🔌 ${userFirstName} reconnected. User has been notified via email.`,
+      );
       loadData(true);
     } catch (error: any) {
       toast.error(
@@ -471,7 +600,7 @@ export default function AdminBillingPage() {
   const handleUpdateSettings = async () => {
     try {
       await updateBillingSettings(settings);
-      toast.success("Billing settings updated");
+      toast.success("✅ Billing settings updated successfully!");
       setShowSettingsModal(false);
       loadData(true);
     } catch (error: any) {
@@ -486,6 +615,7 @@ export default function AdminBillingPage() {
       completed: "bg-blue-100 text-blue-800",
       cancelled: "bg-red-100 text-red-800",
       suspended: "bg-red-100 text-red-800",
+      pending_activation: "bg-purple-100 text-purple-800",
     };
     return styles[status] || "bg-gray-100 text-gray-800";
   };
@@ -512,6 +642,8 @@ export default function AdminBillingPage() {
       return matchesSearch && user.status === "active";
     if (statusFilter === "suspended")
       return matchesSearch && user.status === "suspended";
+    if (statusFilter === "paused")
+      return matchesSearch && user.billingCycle?.status === "paused";
 
     return matchesSearch;
   });
@@ -527,6 +659,8 @@ export default function AdminBillingPage() {
     );
   }
 
+  const totalPendingCount = pendingProRated.length + pendingActivations.length;
+
   return (
     <div className="p-6">
       <div className="mb-8">
@@ -540,6 +674,18 @@ export default function AdminBillingPage() {
             </p>
           </div>
           <div className="flex gap-3">
+            {totalPendingCount > 0 && (
+              <button
+                onClick={() => {
+                  setPendingModalType("pro-rated");
+                  setShowPendingModal(true);
+                }}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <FiBell className="w-4 h-4" />
+                Pending ({totalPendingCount})
+              </button>
+            )}
             <button
               onClick={() => setShowSettingsModal(true)}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
@@ -642,6 +788,7 @@ export default function AdminBillingPage() {
             <option value="has_balance">With Balance</option>
             <option value="overdue">Overdue</option>
             <option value="active">Active</option>
+            <option value="paused">Paused</option>
             <option value="suspended">Suspended</option>
           </select>
         </div>
@@ -713,13 +860,15 @@ export default function AdminBillingPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(user.status)}`}
+                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(user.billingCycle?.status || user.status)}`}
                       >
-                        {user.status}
+                        {user.billingCycle?.status === "paused"
+                          ? "Paused"
+                          : user.status}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={() => {
                             setSelectedUser(user);
@@ -730,42 +879,74 @@ export default function AdminBillingPage() {
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
-                        {/* Start Billing button - only show if no active billing cycle */}
-                        {!user.billingCycle ||
-                        user.billingCycle?.status !== "active" ? (
+
+                        {user.billingCycle?.status === "paused" ? (
                           <button
-                            onClick={() => handleOpenStartModal(user)}
+                            onClick={() =>
+                              handleResumeBilling(user._id, user.firstName)
+                            }
+                            className="p-1 text-green-600 hover:text-green-800"
+                            title="Resume Billing"
+                          >
+                            <FiPlay className="w-4 h-4" />
+                          </button>
+                        ) : !user.billingCycle ||
+                          user.billingCycle?.status === "cancelled" ? (
+                          <button
+                            onClick={() => {
+                              setSelectedUserId(user._id);
+                              setShowStartModal(true);
+                            }}
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Start Billing"
                           >
                             <FiPlay className="w-4 h-4" />
                           </button>
-                        ) : (
-                          <button
-                            onClick={() => handleStopBilling(user._id)}
-                            className="p-1 text-red-600 hover:text-red-800"
-                            title="Stop Billing"
-                          >
-                            <FiPause className="w-4 h-4" />
-                          </button>
-                        )}
+                        ) : user.billingCycle?.status === "active" ? (
+                          <>
+                            <button
+                              onClick={() => {
+                                setSelectedUserId(user._id);
+                                setShowPauseModal(true);
+                              }}
+                              className="p-1 text-yellow-600 hover:text-yellow-800"
+                              title="Pause Billing (Vacation)"
+                            >
+                              <FiPause className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleStopBilling(user._id, user.firstName)
+                              }
+                              className="p-1 text-red-600 hover:text-red-800"
+                              title="Stop Billing"
+                            >
+                              <FiX className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : null}
+
                         {user.status === "active" ? (
                           <button
-                            onClick={() => handleDisconnect(user._id)}
-                            className="p-1 text-yellow-600 hover:text-yellow-800"
+                            onClick={() =>
+                              handleDisconnect(user._id, user.firstName)
+                            }
+                            className="p-1 text-red-600 hover:text-red-800"
                             title="Disconnect"
                           >
                             <FiWifiOff className="w-4 h-4" />
                           </button>
-                        ) : (
+                        ) : user.status === "suspended" ? (
                           <button
-                            onClick={() => handleReconnect(user._id)}
+                            onClick={() =>
+                              handleReconnect(user._id, user.firstName)
+                            }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Reconnect"
                           >
                             <FiWifi className="w-4 h-4" />
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -775,6 +956,115 @@ export default function AdminBillingPage() {
           </table>
         </div>
       </div>
+
+      {/* Pending Actions Modal */}
+      {showPendingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {pendingModalType === "pro-rated"
+                    ? "Pending Pro-rated Payments"
+                    : "Pending Activations"}
+                </h2>
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="w-6 h-6" />
+                </button>
+              </div>
+
+              {pendingModalType === "pro-rated" && (
+                <div className="space-y-4">
+                  {pendingProRated.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No pending pro-rated payments
+                    </p>
+                  ) : (
+                    pendingProRated.map((item: any) => (
+                      <div key={item._id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              {item.userId?.firstName} {item.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {item.userId?.email}
+                            </p>
+                            <p className="text-sm">
+                              Invoice: {item.invoiceNumber}
+                            </p>
+                            <p className="text-lg font-bold text-blue-600">
+                              ₱{item.total?.toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleConfirmProRatedPayment(
+                                item.userId?._id,
+                                item._id,
+                                item.userId?.email,
+                              )
+                            }
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                          >
+                            <FiCheckCircle className="w-4 h-4" />
+                            Confirm Payment & Activate
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {pendingModalType === "activation" && (
+                <div className="space-y-4">
+                  {pendingActivations.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No pending activations
+                    </p>
+                  ) : (
+                    pendingActivations.map((item: any) => (
+                      <div key={item._id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              {item.userId?.firstName} {item.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {item.userId?.email}
+                            </p>
+                            <p className="text-sm">Plan: {item.planId?.name}</p>
+                            <p className="text-sm">
+                              Pro-rated paid: ₱
+                              {item.currentProRatedAmount?.toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleStartMonthlyBilling(
+                                item.userId?._id,
+                                item.userId?.email,
+                              )
+                            }
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                          >
+                            <FiPlay className="w-4 h-4" />
+                            Start Monthly Billing
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* User Detail Modal */}
       {showUserDetailModal && selectedUser && (
@@ -797,7 +1087,7 @@ export default function AdminBillingPage() {
               </div>
 
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div>
                     <p className="text-sm text-gray-500">Outstanding Balance</p>
                     <p
@@ -817,6 +1107,16 @@ export default function AdminBillingPage() {
                     <p className="text-2xl font-bold text-red-600">
                       {selectedUser.overdueBills.length}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Billing Status</p>
+                    <span
+                      className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedUser.billingCycle?.status || selectedUser.status)}`}
+                    >
+                      {selectedUser.billingCycle?.status === "paused"
+                        ? "Paused"
+                        : selectedUser.status}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -874,7 +1174,9 @@ export default function AdminBillingPage() {
                           </td>
                           <td className="px-4 py-3">
                             <button
-                              onClick={() => handleMarkBillAsPaid(bill)}
+                              onClick={() =>
+                                handleMarkBillAsPaid(bill, selectedUser)
+                              }
                               className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1"
                             >
                               <FiCheckCircle className="w-3 h-3" />
@@ -901,7 +1203,7 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Start Billing Modal - Per Customer */}
+      {/* Start Billing Modal */}
       {showStartModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -971,6 +1273,72 @@ export default function AdminBillingPage() {
         </div>
       )}
 
+      {/* Pause Billing Modal */}
+      {showPauseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              Pause Billing for{" "}
+              {users.find((u) => u._id === selectedUserId)?.firstName}{" "}
+              {users.find((u) => u._id === selectedUserId)?.lastName}
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={pauseReason}
+                  onChange={(e) => setPauseReason(e.target.value)}
+                  placeholder="e.g., Vacation, Maintenance"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Auto-resume Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={pauseUntilDate}
+                  onChange={(e) => setPauseUntilDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty for manual resume only
+                </p>
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ When paused: No bills will be generated, service will be
+                  disconnected, and user will be notified via email.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowPauseModal(false);
+                    setSelectedUserId("");
+                    setPauseReason("");
+                    setPauseUntilDate("");
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePauseBilling}
+                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700"
+                >
+                  Pause Billing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Settings Modal */}
       {showSettingsModal && settings && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1031,15 +1399,15 @@ export default function AdminBillingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Billing Cycle Day
+                  Free Days (for pro-rated)
                 </label>
                 <input
                   type="number"
-                  value={settings.billingCycleDay}
+                  value={settings.freeDays || 1}
                   onChange={(e) =>
                     setSettings({
                       ...settings,
-                      billingCycleDay: parseInt(e.target.value),
+                      freeDays: parseInt(e.target.value),
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
