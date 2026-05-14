@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import * as yup from "yup";
 import toast from "react-hot-toast";
 import Image from "next/image";
 import {
@@ -23,29 +21,15 @@ import {
   checkApplicationStatus,
 } from "@/services/auth";
 
-const schema = yup.object({
-  username: yup
-    .string()
-    .min(3, "Username must be at least 3 characters")
-    .required("Username is required"),
-  email: yup.string().email("Invalid email").required("Email is required"),
-  password: yup
-    .string()
-    .min(6, "Password must be at least 6 characters")
-    .required("Password is required"),
-  confirmPassword: yup
-    .string()
-    .oneOf([yup.ref("password")], "Passwords must match")
-    .required("Confirm password is required"),
-  applicationId: yup
-    .string()
-    .min(8, "Application ID must be at least 8 characters")
-    .required("Application ID is required"),
-});
+type FormData = {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  applicationId: string;
+};
 
-type FormData = yup.InferType<typeof schema>;
-
-export default function RegisterPage() {
+export default function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
@@ -57,6 +41,7 @@ export default function RegisterPage() {
   const [checkingApp, setCheckingApp] = useState(false);
   const [appStatus, setAppStatus] = useState<any>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
@@ -64,9 +49,8 @@ export default function RegisterPage() {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors: formErrors },
   } = useForm<FormData>({
-    resolver: yupResolver(schema),
     defaultValues: {
       email: "",
       applicationId: searchParams?.get("appId") || "",
@@ -74,6 +58,31 @@ export default function RegisterPage() {
   });
 
   const applicationId = watch("applicationId");
+  const password = watch("password");
+  const confirmPassword = watch("confirmPassword");
+
+  const validateForm = (data: FormData): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!data.username || data.username.length < 3) {
+      newErrors.username = "Username must be at least 3 characters";
+    }
+    if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+      newErrors.email = "Invalid email address";
+    }
+    if (!data.password || data.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+    if (data.password !== data.confirmPassword) {
+      newErrors.confirmPassword = "Passwords must match";
+    }
+    if (!data.applicationId || data.applicationId.length < 8) {
+      newErrors.applicationId = "Application ID must be at least 8 characters";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const checkApplication = useCallback(
     async (id: string) => {
@@ -97,7 +106,7 @@ export default function RegisterPage() {
           setApplicationValid(true);
           setAppStatus(result.data);
           if (result.data.email) {
-            setValue("email", result.data.email, { shouldValidate: true });
+            setValue("email", result.data.email);
           }
         } else {
           setApplicationValid(false);
@@ -134,6 +143,10 @@ export default function RegisterPage() {
   }, [applicationId, checkApplication]);
 
   const onSubmit = async (data: FormData) => {
+    if (!validateForm(data)) {
+      return;
+    }
+
     if (!applicationValid) {
       toast.error(checkError || "Please enter a valid approved application ID");
       return;
@@ -275,7 +288,7 @@ export default function RegisterPage() {
 
               {errors.applicationId && (
                 <p className="mt-1 text-sm text-red-400">
-                  {errors.applicationId.message}
+                  {errors.applicationId}
                 </p>
               )}
             </div>
@@ -296,9 +309,7 @@ export default function RegisterPage() {
                 placeholder="Choose a username"
               />
               {errors.username && (
-                <p className="mt-1 text-sm text-red-400">
-                  {errors.username.message}
-                </p>
+                <p className="mt-1 text-sm text-red-400">{errors.username}</p>
               )}
             </div>
 
@@ -323,9 +334,7 @@ export default function RegisterPage() {
                 readOnly={!!appStatus?.email}
               />
               {errors.email && (
-                <p className="mt-1 text-sm text-red-400">
-                  {errors.email.message}
-                </p>
+                <p className="mt-1 text-sm text-red-400">{errors.email}</p>
               )}
             </div>
 
@@ -358,9 +367,7 @@ export default function RegisterPage() {
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-red-400">
-                  {errors.password.message}
-                </p>
+                <p className="mt-1 text-sm text-red-400">{errors.password}</p>
               )}
             </div>
 
@@ -394,7 +401,7 @@ export default function RegisterPage() {
               </div>
               {errors.confirmPassword && (
                 <p className="mt-1 text-sm text-red-400">
-                  {errors.confirmPassword.message}
+                  {errors.confirmPassword}
                 </p>
               )}
             </div>
