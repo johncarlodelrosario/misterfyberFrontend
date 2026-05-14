@@ -1,4 +1,5 @@
 import axios from "axios";
+import toast from "react-hot-toast";
 
 // Cache for pending requests (deduplication)
 const pendingRequests = new Map();
@@ -9,7 +10,6 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const safeStorage = {
   setItem: (key: string, value: string): boolean => {
     try {
-      // Check size before setting
       const sizeInMB = new Blob([value]).size / (1024 * 1024);
       if (sizeInMB > 4) {
         console.warn(
@@ -17,69 +17,89 @@ const safeStorage = {
         );
         return false;
       }
-
       localStorage.setItem(key, value);
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
         console.error("Storage quota exceeded, clearing old cache...");
-
-        // Clear old cache entries
         const keysToRemove = ["applications_cache", "old_applications_cache"];
         keysToRemove.forEach((k) => {
           if (k !== key) {
             try {
               localStorage.removeItem(k);
-            } catch (err) {
-              console.error(`Failed to remove ${k}:`, err);
-            }
+            } catch (err) {}
           }
         });
-
-        // Try one more time
         try {
           localStorage.setItem(key, value);
           return true;
         } catch (retryError) {
-          console.error("Still cannot save to storage after cleanup");
           return false;
         }
       }
-      console.error("Storage error:", e);
       return false;
     }
   },
-
   getItem: (key: string): string | null => {
     try {
       return localStorage.getItem(key);
     } catch (e) {
-      console.error("Failed to read from storage:", e);
       return null;
     }
   },
-
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
-    } catch (e) {
-      console.error("Failed to remove from storage:", e);
-    }
+    } catch (e) {}
   },
+};
+
+// Health check cache
+let isBackendHealthy: boolean | null = null;
+let lastHealthCheck = 0;
+const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+
+const checkBackendHealth = async (): Promise<boolean> => {
+  const now = Date.now();
+  if (
+    isBackendHealthy !== null &&
+    now - lastHealthCheck < HEALTH_CHECK_INTERVAL
+  ) {
+    return isBackendHealthy;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(
+      "https://misterfyberbackend.onrender.com/health",
+      {
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeoutId);
+
+    isBackendHealthy = response.ok;
+    lastHealthCheck = now;
+    return isBackendHealthy;
+  } catch (error) {
+    isBackendHealthy = false;
+    lastHealthCheck = now;
+    return false;
+  }
 };
 
 const api = axios.create({
   baseURL:
     process.env.NEXT_PUBLIC_API_URL ||
     "https://misterfyberbackend.onrender.com/api",
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
   withCredentials: false,
-  timeout: 30000, // 30 second timeout
+  timeout: 60000, // 60 second timeout for cold starts
 });
 
-// Request interceptor - deduplicate identical requests with retry logic
+// Request interceptor with health check and deduplication
 api.interceptors.request.use(async (config) => {
   const token =
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
@@ -87,21 +107,33 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Create a unique key for the request
+  // Check health before making request (only for GET requests to applications)
+  if (config.url?.includes("/applications") && config.method === "get") {
+    const isHealthy = await checkBackendHealth();
+    if (!isHealthy) {
+      console.log("Backend not healthy, checking cache...");
+      const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
+      if (responseCache.has(requestKey)) {
+        const cached = responseCache.get(requestKey);
+        if (Date.now() - cached.timestamp < CACHE_DURATION) {
+          console.log("Using cached data while backend wakes up");
+          return Promise.reject({ __cached: true, data: cached.data });
+        }
+      }
+    }
+  }
+
   const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}-${JSON.stringify(config.data)}`;
 
-  // Check if same request is already in progress
   if (pendingRequests.has(requestKey)) {
     console.log(`🔄 Deduplicating request: ${requestKey}`);
     return pendingRequests.get(requestKey);
   }
 
-  // For GET requests, check cache first
   if (config.method === "get" && responseCache.has(requestKey)) {
     const cached = responseCache.get(requestKey);
     if (Date.now() - cached.timestamp < CACHE_DURATION) {
       console.log(`📦 Cache hit: ${requestKey}`);
-      // Cancel the actual request and return cached data
       return Promise.reject({ __cached: true, data: cached.data });
     } else {
       responseCache.delete(requestKey);
@@ -111,62 +143,66 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Response interceptor with retry logic for network errors
+// Response interceptor with enhanced retry logic
 api.interceptors.response.use(
   (response) => {
-    // Cache GET requests
     if (response.config.method === "get") {
       const requestKey = `${response.config.method}-${response.config.url}-${JSON.stringify(response.config.params)}`;
       responseCache.set(requestKey, {
         data: response,
         timestamp: Date.now(),
       });
-      // Clear old cache entries
-      setTimeout(() => {
-        responseCache.delete(requestKey);
-      }, CACHE_DURATION);
+      setTimeout(() => responseCache.delete(requestKey), CACHE_DURATION);
     }
     return response;
   },
   async (error) => {
-    // Handle deduplication error
     if (error?.__cached) {
       return Promise.resolve(error.data);
     }
 
-    // Handle network I/O suspended errors with retry
+    const config = error.config;
+
+    // Handle network errors with exponential backoff retry
     if (
       error.code === "ERR_NETWORK_IO_SUSPENDED" ||
-      error.message?.includes("Network Error")
+      error.message?.includes("Network Error") ||
+      error.code === "ECONNABORTED" ||
+      error.message?.includes("timeout")
     ) {
-      console.warn("Network I/O suspended, retrying...");
+      console.warn(
+        `Network error detected, retry count: ${config?.__retryCount || 0}`,
+      );
 
-      const config = error.config;
-      if (!config || config.__retryCount >= 3) {
+      if (!config || config.__retryCount >= 5) {
+        if (config?.url?.includes("/applications")) {
+          console.log("Max retries reached, checking cache fallback...");
+          const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
+          if (responseCache.has(requestKey)) {
+            const cached = responseCache.get(requestKey);
+            console.log("Using cached data as fallback");
+            return Promise.resolve(cached.data);
+          }
+        }
         return Promise.reject(error);
       }
 
       config.__retryCount = config.__retryCount || 0;
       config.__retryCount += 1;
 
-      // Exponential backoff
-      const delay = Math.pow(2, config.__retryCount) * 1000;
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 30000);
+      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/5)`);
 
+      await new Promise((resolve) => setTimeout(resolve, delay));
       return api(config);
     }
 
-    if (error.code === "ECONNABORTED") {
-      console.error("[API] Request timeout");
-    }
-
-    if (error.response) {
-      if (error.response.status === 401) {
-        if (typeof window !== "undefined") {
-          safeStorage.removeItem("token");
-          if (!window.location.pathname.includes("/login")) {
-            window.location.href = "/login";
-          }
+    if (error.response?.status === 401) {
+      if (typeof window !== "undefined") {
+        safeStorage.removeItem("token");
+        if (!window.location.pathname.includes("/login")) {
+          window.location.href = "/login";
         }
       }
     }
@@ -176,4 +212,4 @@ api.interceptors.response.use(
 );
 
 export default api;
-export { safeStorage };
+export { safeStorage, checkBackendHealth };

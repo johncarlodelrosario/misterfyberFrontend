@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   getAllApplications,
   approveApplication,
@@ -15,6 +15,7 @@ import {
   FiSearch,
   FiImage,
   FiAlertCircle,
+  FiWifiOff,
 } from "react-icons/fi";
 
 // Cache configuration
@@ -37,43 +38,33 @@ const safeStorage = {
     try {
       const serialized = JSON.stringify(value);
       const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
-
       if (sizeInMB > 4) {
         console.warn(
           `Data too large (${sizeInMB.toFixed(2)}MB) for cache, skipping`,
         );
         return false;
       }
-
       localStorage.setItem(key, serialized);
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
         console.error("Storage quota exceeded");
-
-        // Try to clear old cache
         try {
           localStorage.removeItem(CACHE_KEY);
           localStorage.removeItem("old_applications_cache");
-
-          // Try one more time with smaller data
           const smallerData = {
             applications: value.applications.slice(0, 50),
             timestamp: value.timestamp,
           };
-          const smallerSerialized = JSON.stringify(smallerData);
-          localStorage.setItem(key, smallerSerialized);
-          console.log("Saved truncated cache (50 items only)");
+          localStorage.setItem(key, JSON.stringify(smallerData));
           return true;
         } catch (retryError) {
-          console.error("Still cannot save to storage");
           return false;
         }
       }
       return false;
     }
   },
-
   getItem: (key: string): any => {
     try {
       const item = localStorage.getItem(key);
@@ -83,13 +74,10 @@ const safeStorage = {
       return null;
     }
   },
-
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
-    } catch (e) {
-      console.error("Failed to remove from storage:", e);
-    }
+    } catch (e) {}
   },
 };
 
@@ -106,16 +94,41 @@ export default function ApplicationsPage() {
     statusFilter: "all",
   });
   const [retryCount, setRetryCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  const [isWakingBackend, setIsWakingBackend] = useState(false);
+  const loadAttempts = useRef(0);
 
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
-  // Load from localStorage on mount with error handling
+  // Monitor online status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast.success("Network connected. Refreshing data...");
+      loadApplications(true);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast.error("Network disconnected. Viewing cached data.");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Load from localStorage on mount
   useEffect(() => {
     try {
       const cachedData = safeStorage.getItem(CACHE_KEY);
       if (cachedData) {
         const isExpired = Date.now() - cachedData.timestamp > CACHE_DURATION;
-
         if (
           !isExpired &&
           cachedData.applications &&
@@ -130,17 +143,20 @@ export default function ApplicationsPage() {
       }
     } catch (err) {
       console.error("Failed to parse cached data:", err);
-      // Clear corrupted cache
       safeStorage.removeItem(CACHE_KEY);
     }
 
-    loadApplications();
+    // Initial load with small delay to let page render
+    const timer = setTimeout(() => {
+      loadApplications();
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Save to localStorage whenever applications update
   const saveToCache = useCallback((apps: any[]) => {
     if (!apps || apps.length === 0) return;
-
     const cacheData: CacheData = {
       applications: apps,
       timestamp: Date.now(),
@@ -148,10 +164,57 @@ export default function ApplicationsPage() {
     safeStorage.setItem(CACHE_KEY, cacheData);
   }, []);
 
+  // Wake up backend with health check
+  const wakeBackend = useCallback(async (): Promise<boolean> => {
+    setIsWakingBackend(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(
+        "https://misterfyberbackend.onrender.com/health",
+        {
+          signal: controller.signal,
+        },
+      );
+      clearTimeout(timeoutId);
+
+      const isHealthy = response.ok;
+      console.log(
+        `Backend health check: ${isHealthy ? "healthy" : "unhealthy"}`,
+      );
+      return isHealthy;
+    } catch (error) {
+      console.log("Backend health check failed, may be waking up...");
+      return false;
+    } finally {
+      setIsWakingBackend(false);
+    }
+  }, []);
+
   const loadApplications = async (forceRefresh = false) => {
+    if (!isOnline && !forceRefresh) {
+      const cachedData = safeStorage.getItem(CACHE_KEY);
+      if (cachedData?.applications?.length > 0) {
+        setApplications(cachedData.applications);
+        setError("You are offline. Showing cached data.");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       setError(null);
+      loadAttempts.current++;
+
+      // Try to wake backend if this is first attempt or retry
+      if (loadAttempts.current === 1 || retryCount > 0) {
+        console.log("Checking backend health...");
+        await wakeBackend();
+        // Wait a bit for backend to wake up
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
 
       console.log("Fetching applications from API...");
       const data = await getAllApplications();
@@ -159,56 +222,53 @@ export default function ApplicationsPage() {
 
       console.log(`Received ${applicationsList.length} applications`);
       setApplications(applicationsList);
-
-      // Save to cache only if not forcing refresh or if we have data
-      if (!forceRefresh || applicationsList.length > 0) {
-        saveToCache(applicationsList);
-      }
-
+      saveToCache(applicationsList);
       setRetryCount(0);
+      loadAttempts.current = 0;
     } catch (error: any) {
       console.error("Failed to load applications:", error);
 
       let errorMessage = "Failed to load applications. ";
-
-      if (error.code === "ERR_NETWORK_IO_SUSPENDED") {
-        errorMessage += "Network connection was interrupted. ";
-      } else if (error.message?.includes("Network Error")) {
-        errorMessage += "Please check your internet connection. ";
+      if (!isOnline) {
+        errorMessage = "No internet connection. ";
+      } else if (
+        error.code === "ERR_NETWORK_IO_SUSPENDED" ||
+        error.message?.includes("Network Error")
+      ) {
+        errorMessage = "Backend server is waking up. ";
       } else if (error.code === "ECONNABORTED") {
-        errorMessage += "Request timed out. The server might be busy. ";
-      } else {
-        errorMessage += error.message || "Please check your connection.";
+        errorMessage = "Request timed out. ";
       }
-
-      errorMessage += " Retrying...";
-      setError(errorMessage);
-      toast.error("Failed to load applications. Retrying...");
 
       // Try to load from cache as fallback
       const cachedData = safeStorage.getItem(CACHE_KEY);
-      if (
-        cachedData &&
-        cachedData.applications &&
-        cachedData.applications.length > 0
-      ) {
+      if (cachedData?.applications?.length > 0) {
         setApplications(cachedData.applications);
-        toast.success(
-          `Loaded ${cachedData.applications.length} applications from cache`,
-        );
-        setError(null);
+        errorMessage += `Showing ${cachedData.applications.length} cached applications.`;
+        setError(errorMessage);
+        toast(errorMessage, { icon: "📦", duration: 4000 });
+        setLoading(false);
+        return;
       }
 
-      // Auto retry up to 3 times with exponential backoff
-      if (retryCount < 3) {
-        const delay = Math.pow(2, retryCount) * 2000;
+      errorMessage += "Please check your connection and try again.";
+      setError(errorMessage);
+
+      // Auto retry with exponential backoff (max 5 retries)
+      if (retryCount < 5) {
+        const delay = Math.min(Math.pow(2, retryCount) * 2000, 30000);
         console.log(
-          `Auto-retrying in ${delay / 1000} seconds... (Attempt ${retryCount + 1}/3)`,
+          `Auto-retrying in ${delay / 1000} seconds... (Attempt ${retryCount + 1}/5)`,
         );
+
         setTimeout(() => {
           setRetryCount((prev) => prev + 1);
           loadApplications(forceRefresh);
         }, delay);
+      } else {
+        toast.error(
+          "Unable to connect after multiple attempts. Please refresh the page.",
+        );
       }
     } finally {
       setLoading(false);
@@ -220,7 +280,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      await loadApplications(true); // Force refresh after action
+      await loadApplications(true);
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Approve error:", error);
@@ -237,7 +297,7 @@ export default function ApplicationsPage() {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      await loadApplications(true); // Force refresh after action
+      await loadApplications(true);
       setSelectedApp(null);
     } catch (error: any) {
       console.error("Reject error:", error);
@@ -267,7 +327,6 @@ export default function ApplicationsPage() {
     [PRODUCTION_URL],
   );
 
-  // Memoized filtered applications for better performance
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
 
@@ -296,25 +355,57 @@ export default function ApplicationsPage() {
     return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
 
-  // Clear cache function
   const clearCache = useCallback(() => {
     safeStorage.removeItem(CACHE_KEY);
     toast.success("Cache cleared");
     setApplications([]);
+    setError(null);
     loadApplications(true);
   }, []);
 
+  // Loading State
   if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading applications...</p>
-          {retryCount > 0 && (
-            <p className="text-sm text-gray-500 mt-2">
-              Retry attempt {retryCount}/3...
+          {isWakingBackend && (
+            <p className="text-sm text-blue-500 mt-2">
+              Waking up backend server...
             </p>
           )}
+          {retryCount > 0 && (
+            <p className="text-sm text-gray-500 mt-2">
+              Retry attempt {retryCount}/5 (waiting{" "}
+              {Math.min(Math.pow(2, retryCount) * 2, 30)}s)...
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Error State with no cached data
+  if (error && applications.length === 0 && !isOnline) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FiWifiOff className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            No Internet Connection
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Please check your network and try again.
+          </p>
+          <button
+            onClick={() => loadApplications(true)}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -324,25 +415,28 @@ export default function ApplicationsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FiAlertCircle className="w-8 h-8 text-red-600" />
+          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FiAlertCircle className="w-8 h-8 text-yellow-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Connection Error
+            Backend Waking Up
           </h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <p className="text-gray-600 mb-4">
+            The server is starting up. This may take 30-60 seconds.
+          </p>
           <div className="space-x-3">
             <button
               onClick={() => loadApplications(true)}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              disabled={isWakingBackend}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
             >
-              Try Again
+              {isWakingBackend ? "Waking up..." : "Try Again"}
             </button>
             <button
               onClick={clearCache}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
             >
-              Clear Cache & Retry
+              Clear Cache
             </button>
           </div>
         </div>
@@ -356,6 +450,24 @@ export default function ApplicationsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
         <p className="text-gray-600">Review and manage customer applications</p>
       </div>
+
+      {/* Connection Status Banner */}
+      {!isOnline && (
+        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+          <div className="flex items-center">
+            <FiWifiOff className="w-5 h-5 text-yellow-400 mr-2" />
+            <p className="text-sm text-yellow-700">
+              You are offline. Showing cached data from last successful load.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {error && applications.length > 0 && (
+        <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+          <p className="text-sm text-blue-700">{error}</p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card p-4 mb-6">
@@ -387,7 +499,7 @@ export default function ApplicationsPage() {
           <button
             onClick={() => loadApplications(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-            disabled={loading}
+            disabled={loading || isWakingBackend}
           >
             <FiRefreshCw
               className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
@@ -658,7 +770,7 @@ export default function ApplicationsPage() {
                           handleReject(selectedApp._id, notes);
                         }}
                         disabled={processingId === selectedApp._id}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
                       >
                         {processingId === selectedApp._id ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -677,7 +789,7 @@ export default function ApplicationsPage() {
                           handleApprove(selectedApp._id, notes);
                         }}
                         disabled={processingId === selectedApp._id}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
                       >
                         {processingId === selectedApp._id ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
