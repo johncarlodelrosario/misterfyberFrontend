@@ -15,6 +15,7 @@ import {
   FiEyeOff,
   FiCheckCircle,
   FiAlertCircle,
+  FiRefreshCw,
 } from "react-icons/fi";
 import {
   registerWithApplication,
@@ -56,7 +57,6 @@ export default function RegisterContent() {
   const [appStatus, setAppStatus] = useState<any>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   const {
     register,
@@ -74,10 +74,8 @@ export default function RegisterContent() {
 
   const applicationId = watch("applicationId");
 
-  // FIXED: Optimized check application with abort controller
   const checkApplication = useCallback(
     async (id: string) => {
-      // Clear previous error
       setCheckError(null);
 
       if (!id || id.length < 8) {
@@ -87,51 +85,26 @@ export default function RegisterContent() {
         return;
       }
 
-      // Cancel previous request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      abortControllerRef.current = new AbortController();
       setCheckingApp(true);
 
       try {
         console.log("[Register] Checking application:", id);
         const result = await checkApplicationStatus(id);
-        console.log("[Register] Check result:", result);
+        console.log("[Register] Result:", result);
 
-        if (result.success && result.data) {
-          const status = result.data.status;
-          if (status === "approved") {
-            setApplicationValid(true);
-            setAppStatus(result.data);
-            setCheckError(null);
-            // Auto-fill email from application
-            if (result.data.email) {
-              setValue("email", result.data.email, { shouldValidate: true });
-            }
-          } else if (status === "pending") {
-            setApplicationValid(false);
-            setAppStatus({ status: "pending" });
-            setCheckError("Your application is still pending approval");
-          } else if (status === "rejected") {
-            setApplicationValid(false);
-            setAppStatus({ status: "rejected" });
-            setCheckError(
-              "Your application was rejected. Please contact support.",
-            );
-          } else {
-            setApplicationValid(false);
-            setAppStatus(null);
-            setCheckError("Invalid application status");
+        if (result.success && result.data?.status === "approved") {
+          setApplicationValid(true);
+          setAppStatus(result.data);
+          if (result.data.email) {
+            setValue("email", result.data.email, { shouldValidate: true });
           }
         } else {
           setApplicationValid(false);
-          setAppStatus(null);
-          setCheckError(result.message || "Application ID not found");
+          setAppStatus(result.data || null);
+          setCheckError(result.message || "Invalid Application ID");
         }
       } catch (error: any) {
-        console.error("[Register] Error checking application:", error);
+        console.error("[Register] Error:", error);
         setApplicationValid(false);
         setAppStatus(null);
         setCheckError(error.message || "Failed to verify application ID");
@@ -142,25 +115,19 @@ export default function RegisterContent() {
     [setValue],
   );
 
-  // FIXED: Debounced effect with cleanup
+  // Debounced check
   useEffect(() => {
-    // Clear previous timeout
     if (checkTimeoutRef.current) {
       clearTimeout(checkTimeoutRef.current);
     }
 
-    // Set new timeout for debounce
     checkTimeoutRef.current = setTimeout(() => {
       checkApplication(applicationId);
-    }, 500); // 500ms debounce
+    }, 500);
 
-    // Cleanup on unmount or when applicationId changes
     return () => {
       if (checkTimeoutRef.current) {
         clearTimeout(checkTimeoutRef.current);
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
       }
     };
   }, [applicationId, checkApplication]);
@@ -173,7 +140,7 @@ export default function RegisterContent() {
 
     setIsLoading(true);
     try {
-      const response = await registerWithApplication({
+      await registerWithApplication({
         username: data.username,
         email: data.email,
         password: data.password,
@@ -185,18 +152,20 @@ export default function RegisterContent() {
         router.push("/login");
       }, 2000);
     } catch (error: any) {
-      console.error("[Register] Registration error:", error);
-      toast.error(error.message || "Registration failed. Please try again.");
+      toast.error(error.message || "Registration failed");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleRetry = () => {
+    if (applicationId) {
+      checkApplication(applicationId);
+    }
+  };
+
   return (
-    <div
-      className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"
-      style={{ backgroundColor: "#080616" }}
-    >
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-[#080616]">
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="text-center">
@@ -209,7 +178,7 @@ export default function RegisterContent() {
             Already have an account?{" "}
             <Link
               href="/login"
-              className="font-medium text-primary-400 hover:text-primary-300"
+              className="font-medium text-blue-400 hover:text-blue-300"
             >
               Sign in
             </Link>
@@ -227,22 +196,11 @@ export default function RegisterContent() {
                 Application ID *
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiCheckCircle
-                    className={`h-5 w-5 ${
-                      applicationValid === true
-                        ? "text-green-400"
-                        : applicationValid === false
-                          ? "text-red-400"
-                          : "text-gray-400"
-                    }`}
-                  />
-                </div>
                 <input
                   id="applicationId"
                   {...register("applicationId")}
                   type="text"
-                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white ${
+                  className={`appearance-none block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white ${
                     applicationValid === true
                       ? "border-green-500"
                       : applicationValid === false
@@ -254,7 +212,7 @@ export default function RegisterContent() {
                 />
                 {checkingApp && (
                   <div className="absolute right-3 top-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-400"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400"></div>
                   </div>
                 )}
               </div>
@@ -274,7 +232,7 @@ export default function RegisterContent() {
                   <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
                     <p className="text-sm text-yellow-400 flex items-center gap-2">
                       <FiAlertCircle className="h-4 w-4" />⏳ Your application
-                      is still pending approval. Please wait for admin approval.
+                      is still pending approval.
                     </p>
                   </div>
                 )}
@@ -295,6 +253,16 @@ export default function RegisterContent() {
                     <FiAlertCircle className="h-4 w-4" />
                     {checkError}
                   </p>
+                  {checkError.includes("Cannot connect") && (
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className="mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                    >
+                      <FiRefreshCw className="h-3 w-3" />
+                      Retry
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -303,16 +271,6 @@ export default function RegisterContent() {
                   {errors.applicationId.message}
                 </p>
               )}
-
-              <p className="mt-2 text-xs text-gray-500">
-                Need an Application ID?{" "}
-                <Link
-                  href="/apply"
-                  className="text-primary-400 hover:text-primary-300"
-                >
-                  Apply for internet connection first
-                </Link>
-              </p>
             </div>
 
             {/* Username */}
@@ -323,19 +281,13 @@ export default function RegisterContent() {
               >
                 Username *
               </label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiUser className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  id="username"
-                  {...register("username")}
-                  type="text"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
-                  placeholder="Choose a username"
-                  autoComplete="off"
-                />
-              </div>
+              <input
+                id="username"
+                {...register("username")}
+                type="text"
+                className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white"
+                placeholder="Choose a username"
+              />
               {errors.username && (
                 <p className="mt-1 text-sm text-red-400">
                   {errors.username.message}
@@ -351,29 +303,18 @@ export default function RegisterContent() {
               >
                 Email Address *
               </label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiMail className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  id="email"
-                  {...register("email")}
-                  type="email"
-                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm ${
-                    appStatus?.email
-                      ? "bg-gray-800 text-gray-300"
-                      : "bg-gray-900 text-white"
-                  } border-gray-700`}
-                  placeholder="your@email.com"
-                  readOnly={!!appStatus?.email}
-                  autoComplete="off"
-                />
-              </div>
-              {appStatus?.email && (
-                <p className="mt-1 text-xs text-green-400">
-                  Email auto-filled from your application
-                </p>
-              )}
+              <input
+                id="email"
+                {...register("email")}
+                type="email"
+                className={`appearance-none block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                  appStatus?.email
+                    ? "bg-gray-800 text-gray-300"
+                    : "bg-gray-900 text-white"
+                } border-gray-700`}
+                placeholder="your@email.com"
+                readOnly={!!appStatus?.email}
+              />
               {errors.email && (
                 <p className="mt-1 text-sm text-red-400">
                   {errors.email.message}
@@ -390,16 +331,12 @@ export default function RegisterContent() {
                 Password *
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiLock className="h-5 w-5 text-gray-400" />
-                </div>
                 <input
                   id="password"
                   {...register("password")}
                   type={showPassword ? "text" : "password"}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white pr-10"
                   placeholder="••••••••"
-                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -429,16 +366,12 @@ export default function RegisterContent() {
                 Confirm Password *
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiLock className="h-5 w-5 text-gray-400" />
-                </div>
                 <input
                   id="confirmPassword"
                   {...register("confirmPassword")}
                   type={showConfirmPassword ? "text" : "password"}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white pr-10"
                   placeholder="••••••••"
-                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -460,21 +393,29 @@ export default function RegisterContent() {
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading || !applicationValid}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          <button
+            type="submit"
+            disabled={isLoading || checkingApp}
+            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Creating account...
+              </>
+            ) : (
+              "Create Account"
+            )}
+          </button>
+
+          <div className="text-center text-sm text-gray-400">
+            <p>Don't have an Application ID?</p>
+            <Link
+              href="/apply"
+              className="text-blue-400 hover:text-blue-300 font-medium"
             >
-              {isLoading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Creating account...
-                </>
-              ) : (
-                "Create Account"
-              )}
-            </button>
+              Apply for internet connection first →
+            </Link>
           </div>
         </form>
       </div>

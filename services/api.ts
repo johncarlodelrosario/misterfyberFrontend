@@ -76,7 +76,6 @@ const checkBackendHealth = async (): Promise<boolean> => {
       "https://misterfyberbackend.onrender.com/health",
       {
         signal: controller.signal,
-        mode: "cors", // Explicitly request CORS
       },
     );
     clearTimeout(timeoutId);
@@ -85,7 +84,6 @@ const checkBackendHealth = async (): Promise<boolean> => {
     lastHealthCheck = now;
     return isBackendHealthy;
   } catch (error) {
-    console.warn("Health check failed:", error);
     isBackendHealthy = false;
     lastHealthCheck = now;
     return false;
@@ -96,15 +94,12 @@ const api = axios.create({
   baseURL:
     process.env.NEXT_PUBLIC_API_URL ||
     "https://misterfyberbackend.onrender.com/api",
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
   withCredentials: false,
-  timeout: 30000, // 30 second timeout
+  timeout: 60000, // 60 second timeout for cold starts
 });
 
-// Add CORS headers to all requests
+// Request interceptor with health check and deduplication
 api.interceptors.request.use(async (config) => {
   const token =
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
@@ -112,8 +107,21 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Add CORS headers
-  config.headers["Origin"] = window.location.origin;
+  // Check health before making request (only for GET requests to applications)
+  if (config.url?.includes("/applications") && config.method === "get") {
+    const isHealthy = await checkBackendHealth();
+    if (!isHealthy) {
+      console.log("Backend not healthy, checking cache...");
+      const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
+      if (responseCache.has(requestKey)) {
+        const cached = responseCache.get(requestKey);
+        if (Date.now() - cached.timestamp < CACHE_DURATION) {
+          console.log("Using cached data while backend wakes up");
+          return Promise.reject({ __cached: true, data: cached.data });
+        }
+      }
+    }
+  }
 
   const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}-${JSON.stringify(config.data)}`;
 
@@ -155,30 +163,6 @@ api.interceptors.response.use(
 
     const config = error.config;
 
-    // Handle CORS errors specifically
-    if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
-      console.error("CORS or Network error detected:", error.message);
-
-      if (!config || config.__retryCount >= 3) {
-        // Return a more user-friendly error
-        return Promise.reject(
-          new Error(
-            "Unable to connect to server. Please check your connection and try again.",
-          ),
-        );
-      }
-
-      config.__retryCount = config.__retryCount || 0;
-      config.__retryCount += 1;
-
-      // Exponential backoff
-      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 10000);
-      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/3)`);
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      return api(config);
-    }
-
     // Handle network errors with exponential backoff retry
     if (
       error.code === "ERR_NETWORK_IO_SUSPENDED" ||
@@ -190,7 +174,7 @@ api.interceptors.response.use(
         `Network error detected, retry count: ${config?.__retryCount || 0}`,
       );
 
-      if (!config || config.__retryCount >= 3) {
+      if (!config || config.__retryCount >= 5) {
         if (config?.url?.includes("/applications")) {
           console.log("Max retries reached, checking cache fallback...");
           const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
@@ -206,9 +190,9 @@ api.interceptors.response.use(
       config.__retryCount = config.__retryCount || 0;
       config.__retryCount += 1;
 
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 8000);
-      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/3)`);
+      // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 30000);
+      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/5)`);
 
       await new Promise((resolve) => setTimeout(resolve, delay));
       return api(config);

@@ -1,4 +1,4 @@
-// services/auth.ts - COMPLETE AUTH SERVICE WITH FIXED CORS HANDLING
+// services/auth.ts - With direct fetch fallback for CORS issues
 import api from "./api";
 
 interface LoginResponse {
@@ -54,14 +54,11 @@ export const login = async (
 ): Promise<LoginResponse> => {
   try {
     console.log("[Auth] Attempting login for:", email);
-    console.log("[Auth] API URL:", api.defaults.baseURL);
 
     const response = await api.post("/auth/login", {
       email: email.trim(),
       password: password,
     });
-
-    console.log("[Auth] Login response:", response.data);
 
     let token: string;
     let userData: any;
@@ -76,17 +73,11 @@ export const login = async (
       throw new Error("Invalid response structure from server");
     }
 
-    if (!token || !userData) {
-      throw new Error("Missing token or user data in response");
-    }
-
     if (typeof window !== "undefined") {
       localStorage.setItem("token", token);
     }
 
     const userRole = userData.role || "user";
-
-    console.log("[Auth] User role from server:", userRole);
 
     return {
       token,
@@ -107,28 +98,17 @@ export const login = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Login error details:", {
-      message: error.message,
-      code: error.code,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
+    console.error("[Auth] Login error:", error.message);
 
-    if (error.code === "ECONNABORTED" || error.message.includes("timeout")) {
-      throw new Error("Server is not responding. Please try again later.");
-    }
-
-    if (error.message === "Network Error" || error.message.includes("CORS")) {
+    if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
       throw new Error(
-        "Cannot connect to server. Please check your internet connection.",
+        "Cannot connect to server. Please check if the backend is running.",
       );
     }
 
-    const errorMessage =
-      error.response?.data?.message ||
-      error.message ||
-      "Invalid email or password";
-    throw new Error(errorMessage);
+    throw new Error(
+      error.response?.data?.message || error.message || "Login failed",
+    );
   }
 };
 
@@ -157,9 +137,6 @@ export const getCurrentUser = async (): Promise<User> => {
       userData = response.data;
     }
 
-    const userRole = userData.role || "user";
-    console.log("[Auth] getCurrentUser role:", userRole);
-
     return {
       _id: userData._id || userData.id,
       id: userData._id || userData.id,
@@ -167,56 +144,12 @@ export const getCurrentUser = async (): Promise<User> => {
       email: userData.email || "",
       firstName: userData.firstName || "",
       lastName: userData.lastName || "",
-      role: userRole,
+      role: userData.role || "user",
       status: userData.status || "active",
       profilePicture: userData.profilePicture,
     };
   } catch (error: any) {
     console.error("[Auth] Get current user error:", error);
-    throw error;
-  }
-};
-
-export const register = async (userData: {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber?: string;
-}): Promise<LoginResponse> => {
-  try {
-    const response = await api.post("/auth/register", userData);
-
-    let token: string;
-    let data: any;
-
-    if (response.data.data) {
-      token = response.data.data.token;
-      data = response.data.data.user;
-    } else if (response.data.token) {
-      token = response.data.token;
-      data = response.data.user;
-    } else {
-      throw new Error("Invalid response structure");
-    }
-
-    const userRole = data.role || "user";
-
-    return {
-      token,
-      user: {
-        id: data._id || data.id,
-        _id: data._id || data.id,
-        username: data.username || data.email.split("@")[0],
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        role: userRole,
-        status: "active",
-      },
-    };
-  } catch (error: any) {
-    console.error("[Auth] Register error:", error);
     throw error;
   }
 };
@@ -233,8 +166,6 @@ export const registerWithApplication = async (
       password: data.password,
       applicationId: data.applicationId,
     });
-
-    console.log("[Auth] Registration response:", response.data);
 
     let token: string;
     let userData: any;
@@ -253,8 +184,6 @@ export const registerWithApplication = async (
       localStorage.setItem("token", token);
     }
 
-    const userRole = userData.role || "user";
-
     return {
       token,
       user: {
@@ -264,124 +193,137 @@ export const registerWithApplication = async (
         email: userData.email || data.email,
         firstName: userData.firstName || "",
         lastName: userData.lastName || "",
-        role: userRole,
+        role: userData.role || "user",
         status: "active",
       },
     };
   } catch (error: any) {
-    console.error(
-      "[Auth] Register with application error:",
-      error.response?.data || error.message,
+    console.error("[Auth] Register error:", error.message);
+    throw new Error(
+      error.response?.data?.message || error.message || "Registration failed",
     );
-    const errorMessage =
-      error.response?.data?.message || error.message || "Registration failed";
-    throw new Error(errorMessage);
   }
 };
 
-// FIXED: Completely rewritten checkApplicationStatus with better error handling
+// COMPLETELY REWRITTEN - Uses fetch directly to avoid axios CORS preflight issues
 export const checkApplicationStatus = async (
   applicationId: string,
 ): Promise<ApplicationStatusResponse> => {
   if (!applicationId || applicationId.length < 8) {
     return {
       success: false,
-      message: "Invalid Application ID format",
+      message: "Application ID must be at least 8 characters",
     };
   }
 
-  try {
-    console.log("[Auth] Checking application status:", applicationId);
+  console.log(
+    "[Auth] Checking application status directly with fetch:",
+    applicationId,
+  );
 
-    // Create a timeout promise
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Request timeout")), 8000);
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+  try {
+    const url = `https://misterfyberbackend.onrender.com/api/auth/check-application/${applicationId}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+      // Do NOT include 'Origin' header - browser adds it automatically
     });
 
-    // Make the API request with a timeout
-    const requestPromise = api.get(`/auth/check-application/${applicationId}`);
+    clearTimeout(timeoutId);
 
-    const response = (await Promise.race([
-      requestPromise,
-      timeoutPromise,
-    ])) as any;
-
-    console.log("[Auth] Application status response:", response?.data);
-
-    // Handle different response structures
-    if (response?.data) {
-      const responseData = response.data;
-
-      // Check for success in response
-      if (responseData.success === false) {
+    if (!response.ok) {
+      if (response.status === 404) {
         return {
           success: false,
-          message: responseData.message || "Application not found",
+          message: "Application ID not found. Please check and try again.",
         };
       }
-
-      // Extract data from various response formats
-      const statusData = responseData.data || responseData;
-
-      if (
-        statusData.status === "approved" ||
-        statusData.status === "pending" ||
-        statusData.status === "rejected"
-      ) {
+      if (response.status === 502 || response.status === 503) {
         return {
-          success: true,
-          data: {
-            status: statusData.status,
-            email: statusData.email || "",
-            firstName: statusData.firstName || "",
-            lastName: statusData.lastName || "",
-            applicationId: statusData.applicationId || applicationId,
-          },
+          success: false,
+          message:
+            "Server is temporarily unavailable. Please try again in a few moments.",
         };
       }
+      return {
+        success: false,
+        message: `Server error: ${response.status}`,
+      };
     }
 
-    // If we get here, format is unexpected
+    const result = await response.json();
+    console.log("[Auth] Application check result:", result);
+
+    // Handle different response structures
+    const responseData = result.data || result;
+
+    if (responseData.status === "approved") {
+      return {
+        success: true,
+        data: {
+          status: "approved",
+          email: responseData.email || "",
+          firstName: responseData.firstName || "",
+          lastName: responseData.lastName || "",
+          applicationId: responseData.applicationId || applicationId,
+        },
+      };
+    }
+
+    if (responseData.status === "pending") {
+      return {
+        success: false,
+        message: "Your application is still pending approval. Please wait.",
+        data: { status: "pending", applicationId },
+      };
+    }
+
+    if (responseData.status === "rejected") {
+      return {
+        success: false,
+        message: "Your application was rejected. Please contact support.",
+        data: { status: "rejected", applicationId },
+      };
+    }
+
     return {
       success: false,
-      message: response?.data?.message || "Invalid response from server",
+      message: result.message || "Invalid application status",
     };
   } catch (error: any) {
-    console.error("[Auth] Check application error:", error.message);
+    clearTimeout(timeoutId);
+    console.error("[Auth] Fetch error:", error.name, error.message);
 
-    // Handle specific error types
-    if (error.message === "Request timeout") {
+    if (error.name === "AbortError") {
       return {
         success: false,
         message: "Server is taking too long to respond. Please try again.",
       };
     }
 
-    if (error.response?.status === 404) {
-      return {
-        success: false,
-        message: "Application ID not found. Please check and try again.",
-      };
-    }
-
     if (
-      error.code === "ERR_NETWORK" ||
-      error.message?.includes("Network") ||
-      error.message?.includes("CORS")
+      error.message?.includes("Failed to fetch") ||
+      error.message?.includes("NetworkError")
     ) {
       return {
         success: false,
         message:
-          "Network error. Please check your internet connection and try again.",
+          "Cannot connect to server. The backend may be down or waking up from cold start.",
       };
     }
 
     return {
       success: false,
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to check application status",
+      message: error.message || "Failed to check application status",
     };
   }
 };
