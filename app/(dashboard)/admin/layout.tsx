@@ -71,13 +71,10 @@ const navItems: NavItem[] = [
 const preloadStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
-      // Optimize data before storing
       let dataToStore = value;
 
       if (key === PRELOAD_CACHE_KEY && value.applications) {
-        // Limit number of applications
         const limitedApps = value.applications.slice(0, MAX_APPS_TO_STORE);
-        // Remove large fields to save space
         const optimizedApps = limitedApps.map((app: any) => ({
           _id: app._id,
           applicationId: app.applicationId,
@@ -102,8 +99,6 @@ const preloadStorage = {
       }
 
       const serialized = JSON.stringify(dataToStore);
-
-      // Check size before storing
       const sizeInBytes = new Blob([serialized]).size;
       if (sizeInBytes > MAX_DATA_SIZE) {
         console.warn(
@@ -120,7 +115,6 @@ const preloadStorage = {
         try {
           localStorage.removeItem(PRELOAD_CACHE_KEY);
           localStorage.removeItem(PRELOAD_TIMESTAMP_KEY);
-          // Try again with smaller data
           if (key === PRELOAD_CACHE_KEY && value.applications) {
             const minimalApps = value.applications.slice(0, 25);
             const minimalData = {
@@ -187,7 +181,6 @@ export default function AdminLayout({
   const notificationRef = useRef<HTMLDivElement>(null);
   const preloadedRef = useRef(false);
 
-  // Load sidebar state from localStorage
   useEffect(() => {
     const savedState = localStorage.getItem(SIDEBAR_STATE_KEY);
     if (savedState !== null) {
@@ -196,14 +189,12 @@ export default function AdminLayout({
     setMounted(true);
   }, []);
 
-  // Save sidebar state
   const toggleSidebarCollapse = () => {
     const newState = !sidebarCollapsed;
     setSidebarCollapsed(newState);
     localStorage.setItem(SIDEBAR_STATE_KEY, String(newState));
   };
 
-  // Close notification panel when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -217,7 +208,6 @@ export default function AdminLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // PRELOAD APPLICATIONS ON LOGIN (NO SYNC - JUST ONCE)
   useEffect(() => {
     const preloadApplications = async () => {
       if (!isAuthenticated || !user?.role || preloadedRef.current) return;
@@ -228,7 +218,6 @@ export default function AdminLayout({
         user.role === "staff";
       if (!isAdminUser) return;
 
-      // Check cache first
       const cachedData = preloadStorage.getItem(
         PRELOAD_CACHE_KEY,
       ) as PreloadData | null;
@@ -261,7 +250,6 @@ export default function AdminLayout({
         const data = await getAllApplications({ page: 1, limit: 100 });
         const applicationsList = data.data || [];
 
-        // Store optimized data
         preloadStorage.setItem(PRELOAD_CACHE_KEY, {
           applications: applicationsList,
           timestamp: now,
@@ -283,9 +271,8 @@ export default function AdminLayout({
     };
 
     preloadApplications();
-  }, [isAuthenticated, user]); // Removed isPreloading dependency
+  }, [isAuthenticated, user]);
 
-  // Generate notifications
   const generateNotifications = useCallback(() => {
     const newNotifications: Notification[] = [];
 
@@ -321,7 +308,6 @@ export default function AdminLayout({
     generateNotifications();
   }, [generateNotifications]);
 
-  // Auth check
   useEffect(() => {
     if (!isLoading && mounted) {
       const isAdminUser =
@@ -338,7 +324,6 @@ export default function AdminLayout({
     }
   }, [isAuthenticated, isLoading, user, router, mounted]);
 
-  // Fetch pending plan changes count (NO INTERVAL - JUST ONCE)
   useEffect(() => {
     const fetchPendingPlanChanges = async () => {
       if (!isAuthenticated || !user?.role) return;
@@ -360,13 +345,11 @@ export default function AdminLayout({
     };
 
     fetchPendingPlanChanges();
-    // NO INTERVAL - removed the setInterval that was causing constant re-fetching
-  }, [isAuthenticated, user]); // Only runs once when auth changes
+  }, [isAuthenticated, user]);
 
   const handleLogout = async () => {
     try {
       await logout();
-      // Clear all storage on logout
       preloadStorage.removeItem(PRELOAD_CACHE_KEY);
       preloadStorage.removeItem(PRELOAD_TIMESTAMP_KEY);
       router.push("/login");
@@ -401,8 +384,6 @@ export default function AdminLayout({
       user.role === "staff");
   if (!isAdminUser) return null;
 
-  const totalNotifications = pendingCount + pendingPlanChanges;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Mobile Sidebar Toggle */}
@@ -434,26 +415,26 @@ export default function AdminLayout({
         <div className="flex flex-col h-full">
           {/* Logo Area */}
           <div
-            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-20 border-b border-blue-700/50`}
+            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-24 border-b border-blue-700/50`}
           >
             {!sidebarCollapsed && (
               <div className="flex justify-center w-full">
                 <Image
                   src="/Logo.png"
                   alt="Logo"
-                  width={60}
-                  height={60}
+                  width={80}
+                  height={80}
                   className="object-contain"
                 />
               </div>
             )}
             {sidebarCollapsed && (
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg">
                 <Image
                   src="/Logo.png"
                   alt="Logo"
-                  width={40}
-                  height={40}
+                  width={50}
+                  height={50}
                   className="object-contain"
                 />
               </div>
@@ -546,7 +527,7 @@ export default function AdminLayout({
             </div>
           </nav>
 
-          {/* Bottom Section - NO SYNC SPINNER */}
+          {/* Bottom Section */}
           <div className="p-4 border-t border-blue-700/50">
             <button
               onClick={handleLogout}
@@ -717,7 +698,6 @@ export default function AdminLayout({
         <main className="p-4 lg:p-8">{children}</main>
       </div>
 
-      {/* Animation Styles */}
       <style jsx>{`
         @keyframes fadeInDown {
           from {
