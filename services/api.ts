@@ -107,12 +107,15 @@ const getApiUrl = () => {
 
 const api = axios.create({
   baseURL: getApiUrl(),
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
   withCredentials: false,
   timeout: 30000, // Reduced from 60s to 30s for better performance
 });
 
-// Request interceptor with health check and deduplication
+// Request interceptor with health check and deduplication - FIXED to remove cache-control
 api.interceptors.request.use(async (config) => {
   const token =
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
@@ -120,10 +123,9 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Add cache busting for non-GET requests
-  if (config.method !== "get") {
-    config.headers["Cache-Control"] = "no-cache";
-  }
+  // REMOVE cache-control header completely to avoid CORS issues
+  delete config.headers["cache-control"];
+  delete config.headers["Cache-Control"];
 
   // Check health before making request (only for GET requests to applications)
   if (config.url?.includes("/applications") && config.method === "get") {
