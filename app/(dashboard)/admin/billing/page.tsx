@@ -388,6 +388,15 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Open start billing modal for a specific user
+  const handleOpenStartModal = (user: UserWithBalance) => {
+    setSelectedUserId(user._id);
+    setStartDate("");
+    setCustomAmount("");
+    setBillingNotes("");
+    setShowStartModal(true);
+  };
+
   const handleStopBilling = async (userId: string) => {
     if (
       !confirm(
@@ -531,13 +540,6 @@ export default function AdminBillingPage() {
             </p>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={() => setShowStartModal(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
-            >
-              <FiPlay className="w-4 h-4" />
-              Start Billing
-            </button>
             <button
               onClick={() => setShowSettingsModal(true)}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
@@ -728,7 +730,17 @@ export default function AdminBillingPage() {
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
-                        {user.billingCycle?.status === "active" && (
+                        {/* Start Billing button - only show if no active billing cycle */}
+                        {!user.billingCycle ||
+                        user.billingCycle?.status !== "active" ? (
+                          <button
+                            onClick={() => handleOpenStartModal(user)}
+                            className="p-1 text-green-600 hover:text-green-800"
+                            title="Start Billing"
+                          >
+                            <FiPlay className="w-4 h-4" />
+                          </button>
+                        ) : (
                           <button
                             onClick={() => handleStopBilling(user._id)}
                             className="p-1 text-red-600 hover:text-red-800"
@@ -889,32 +901,16 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Start Billing Modal */}
+      {/* Start Billing Modal - Per Customer */}
       {showStartModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Start Billing
+              Start Billing for{" "}
+              {users.find((u) => u._id === selectedUserId)?.firstName}{" "}
+              {users.find((u) => u._id === selectedUserId)?.lastName}
             </h2>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select User *
-                </label>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select a user...</option>
-                  {users.map((user) => (
-                    <option key={user._id} value={user._id}>
-                      {user.firstName} {user.lastName} ({user.email}) - Balance:
-                      ₱{user.currentBalance.toLocaleString()}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Start Date (Optional)
@@ -938,9 +934,27 @@ export default function AdminBillingPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={billingNotes}
+                  onChange={(e) => setBillingNotes(e.target.value)}
+                  placeholder="Add notes about this billing cycle..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
               <div className="flex gap-3 pt-4">
                 <button
-                  onClick={() => setShowStartModal(false)}
+                  onClick={() => {
+                    setShowStartModal(false);
+                    setSelectedUserId("");
+                    setStartDate("");
+                    setCustomAmount("");
+                    setBillingNotes("");
+                  }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
                   Cancel

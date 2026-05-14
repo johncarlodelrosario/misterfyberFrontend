@@ -17,6 +17,7 @@ import {
   FiWifiOff,
   FiDatabase,
   FiClock,
+  FiBell,
 } from "react-icons/fi";
 
 // ==================== PERSISTENT STORAGE CONFIGURATION ====================
@@ -24,14 +25,16 @@ const STORAGE_KEYS = {
   APPLICATIONS: "misterfyber_applications_data",
   LAST_FETCH: "misterfyber_last_fetch",
   FILTER_STATE: "misterfyber_applications_filter",
-  CACHE_VERSION: "misterfyber_cache_v2",
+  CACHE_VERSION: "misterfyber_cache_v3",
   PRELOAD_CACHE: "misterfyber_preload_applications",
   PRELOAD_TIMESTAMP: "misterfyber_preload_timestamp",
+  LAST_KNOWN_TOTAL: "misterfyber_last_known_total",
+  LAST_KNOWN_PENDING: "misterfyber_last_known_pending",
 };
 
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
-const PRELOAD_DURATION = 10 * 60 * 1000; // 10 minutes for preload data
+const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
 const MAX_STORED_APPLICATIONS = 500;
+const CHECK_INTERVAL = 15000; // Check every 15 seconds for new applicants
 
 interface StoredApplicationsData {
   applications: any[];
@@ -45,7 +48,6 @@ interface FilterState {
   statusFilter: string;
 }
 
-// ==================== PERSISTENT STORAGE WRAPPER ====================
 const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
@@ -54,7 +56,6 @@ const persistentStorage = {
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
-        console.error("Storage quota exceeded, clearing old data...");
         Object.values(STORAGE_KEYS).forEach((k) => {
           if (k !== key) {
             try {
@@ -72,36 +73,29 @@ const persistentStorage = {
       return false;
     }
   },
-
   getItem: (key: string): any => {
     try {
       const item = localStorage.getItem(key);
       return item ? JSON.parse(item) : null;
     } catch (e) {
-      console.error(`Failed to read ${key} from storage:`, e);
       return null;
     }
   },
-
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
     } catch (e) {}
   },
-
   clearAll: (): void => {
     try {
       Object.values(STORAGE_KEYS).forEach((key) =>
         localStorage.removeItem(key),
       );
-      console.log("All persistent storage cleared");
     } catch (e) {}
   },
 };
 
-// ==================== COMPONENT ====================
 export default function ApplicationsPage() {
-  // State
   const [applications, setApplications] = useState<any[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -114,12 +108,15 @@ export default function ApplicationsPage() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
+  const [hasNewApplicant, setHasNewApplicant] = useState(false);
+  const [newApplicantCount, setNewApplicantCount] = useState(0);
   const [filter, setFilter] = useState<FilterState>(() => {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
     return savedFilter || { searchTerm: "", statusFilter: "all" };
   });
 
   const refreshInProgressRef = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
   // Save filter to storage
@@ -132,10 +129,11 @@ export default function ApplicationsPage() {
     const handleOnline = () => {
       setIsOnline(true);
       toast.success("Network connected");
+      checkForNewApplicants(); // Check for new applicants when connection returns
     };
     const handleOffline = () => {
       setIsOnline(false);
-      toast.error("Network disconnected. Viewing cached data.");
+      toast.error("Network disconnected");
     };
 
     window.addEventListener("online", handleOnline);
@@ -147,80 +145,135 @@ export default function ApplicationsPage() {
     };
   }, []);
 
-  // CRITICAL: Load from localStorage IMMEDIATELY - Check preload data first
+  // Check for new applicants function
+  const checkForNewApplicants = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+
+    try {
+      const data = await getAllApplications({ page: 1, limit: 100 });
+      const applicationsList = data.data || [];
+      const currentTotal = applicationsList.length;
+      const currentPending = applicationsList.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+
+      // Get last known counts from storage
+      const lastKnownTotal =
+        (persistentStorage.getItem(STORAGE_KEYS.LAST_KNOWN_TOTAL) as number) ||
+        applications.length;
+      const lastKnownPending =
+        (persistentStorage.getItem(
+          STORAGE_KEYS.LAST_KNOWN_PENDING,
+        ) as number) ||
+        applications.filter((a: any) => a.status === "pending").length;
+
+      // Check if there are new applicants (total increased OR pending increased)
+      const hasNew =
+        currentTotal > lastKnownTotal || currentPending > lastKnownPending;
+      const newCount =
+        currentTotal - lastKnownTotal + (currentPending - lastKnownPending);
+
+      if (hasNew) {
+        console.log(
+          `🆕 New applicant detected! Total: ${lastKnownTotal} → ${currentTotal}, Pending: ${lastKnownPending} → ${currentPending}`,
+        );
+        setHasNewApplicant(true);
+        setNewApplicantCount(newCount > 0 ? newCount : 1);
+
+        // AUTO REFRESH - Load new data immediately
+        await silentRefresh();
+
+        // Clear notification after 5 seconds
+        setTimeout(() => {
+          setHasNewApplicant(false);
+          setNewApplicantCount(0);
+        }, 5000);
+      }
+    } catch (error) {
+      console.error("Failed to check for new applicants:", error);
+    }
+  }, [applications.length]);
+
+  // Periodically check for new applicants (every 15 seconds)
+  useEffect(() => {
+    if (isOnline && !initialLoading) {
+      // Start interval
+      intervalRef.current = setInterval(() => {
+        checkForNewApplicants();
+      }, CHECK_INTERVAL);
+
+      console.log("🔍 Started checking for new applicants every 15 seconds");
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isOnline, initialLoading, checkForNewApplicants]);
+
+  // Load from localStorage on mount
   useEffect(() => {
     const loadStoredData = () => {
       try {
-        // FIRST: Check for preloaded data from layout
         const preloadData = persistentStorage.getItem(
           STORAGE_KEYS.PRELOAD_CACHE,
         ) as StoredApplicationsData | null;
-        const preloadTimestamp = persistentStorage.getItem(
-          STORAGE_KEYS.PRELOAD_TIMESTAMP,
-        ) as number | null;
-
-        // SECOND: Check for regular cached data
         const storedData = persistentStorage.getItem(
           STORAGE_KEYS.APPLICATIONS,
         ) as StoredApplicationsData | null;
         const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
-        // Use preload data if it's fresh (less than 10 minutes old)
-        const isPreloadFresh =
+        if (
           preloadData &&
-          preloadData.applications?.length > 0 &&
-          preloadTimestamp &&
-          Date.now() - preloadTimestamp < PRELOAD_DURATION;
-
-        // Use regular cached data if available and preload is not fresh
-        const isCacheValid =
-          storedData &&
-          storedData.applications?.length > 0 &&
-          Date.now() - storedData.timestamp < CACHE_DURATION;
-
-        if (isPreloadFresh) {
+          preloadData.applications &&
+          preloadData.applications.length > 0
+        ) {
           console.log(
-            `📦 INSTANT LOAD from PRELOAD: ${preloadData.applications.length} applications`,
+            `📦 LOADING from PRELOAD: ${preloadData.applications.length} applications`,
           );
           setApplications(preloadData.applications);
-          if (preloadTimestamp) setLastFetchTime(new Date(preloadTimestamp));
-          setInitialLoading(false);
+          if (preloadData.timestamp)
+            setLastFetchTime(new Date(preloadData.timestamp));
 
-          // Check if we need background refresh (preload is older than 5 min but still fresh)
-          if (
-            preloadTimestamp &&
-            Date.now() - preloadTimestamp > 5 * 60 * 1000 &&
-            isOnline &&
-            !refreshInProgressRef.current
-          ) {
-            console.log(
-              "Preload data is a bit old, refreshing in background...",
-            );
-            setTimeout(() => silentRefresh(), 1000);
-          }
-        } else if (isCacheValid) {
+          // Save last known counts
+          const total = preloadData.applications.length;
+          const pending = preloadData.applications.filter(
+            (a: any) => a.status === "pending",
+          ).length;
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+          setInitialLoading(false);
+          return;
+        }
+
+        if (
+          storedData &&
+          storedData.applications &&
+          storedData.applications.length > 0
+        ) {
           console.log(
-            `📦 INSTANT LOAD from CACHE: ${storedData.applications.length} applications`,
+            `📦 LOADING from CACHE: ${storedData.applications.length} applications`,
           );
           setApplications(storedData.applications);
           if (lastFetch) setLastFetchTime(new Date(lastFetch));
-          setInitialLoading(false);
 
-          // Background refresh if cache is old
-          const cacheAge = Date.now() - storedData.timestamp;
-          if (
-            cacheAge > CACHE_DURATION / 2 &&
-            isOnline &&
-            !refreshInProgressRef.current
-          ) {
-            console.log("Cache aging, refreshing in background...");
-            setTimeout(() => silentRefresh(), 1000);
-          }
-        } else {
-          // No valid cached data, fetch fresh
-          console.log("No valid cached data, fetching...");
-          fetchApplications();
+          // Save last known counts
+          const total = storedData.applications.length;
+          const pending = storedData.applications.filter(
+            (a: any) => a.status === "pending",
+          ).length;
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+          setInitialLoading(false);
+          return;
         }
+
+        // First time - fetch data
+        fetchApplications();
       } catch (err) {
         console.error("Failed to load from storage:", err);
         fetchApplications();
@@ -228,15 +281,15 @@ export default function ApplicationsPage() {
     };
 
     loadStoredData();
-  }, []); // Empty dependency - runs ONCE on mount
+  }, []);
 
-  // Silent refresh - NO LOADING STATE (uses preload cache)
+  // Silent refresh - no loading indicator
   const silentRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
 
     try {
-      console.log("🔄 Silent background refresh...");
+      console.log("🔄 Silent refresh - new applicant detected...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -244,7 +297,7 @@ export default function ApplicationsPage() {
         setApplications(applicationsList);
         setLastFetchTime(new Date());
 
-        // Update both caches
+        // Update caches
         const dataToStore: StoredApplicationsData = {
           applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
           timestamp: Date.now(),
@@ -257,27 +310,30 @@ export default function ApplicationsPage() {
         persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
         persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
-        console.log(
-          `✅ Background refresh completed: ${applicationsList.length} applications`,
-        );
-
-        // Update pending count in localStorage for layout to read
-        const pendingCount = applicationsList.filter(
+        // Update last known counts
+        const total = applicationsList.length;
+        const pending = applicationsList.filter(
           (a: any) => a.status === "pending",
         ).length;
-        localStorage.setItem(
-          "misterfyber_pending_count",
-          pendingCount.toString(),
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+        // Update pending count for layout
+        localStorage.setItem("misterfyber_pending_count", pending.toString());
+
+        // Show notification toast
+        toast.success(
+          `🆕 New applicant(s) loaded! Total: ${total} applications`,
         );
       }
     } catch (error) {
-      console.log("Background refresh failed, keeping cached data");
+      console.log("Silent refresh failed");
     } finally {
       refreshInProgressRef.current = false;
     }
   }, []);
 
-  // Manual fetch with loading indicator
+  // Manual refresh with loading indicator
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -285,7 +341,7 @@ export default function ApplicationsPage() {
     setError(null);
 
     try {
-      console.log("🔄 Manual refresh fetching applications...");
+      console.log("🔄 Manual refresh...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -293,7 +349,6 @@ export default function ApplicationsPage() {
       setApplications(applicationsList);
       setLastFetchTime(new Date());
 
-      // Save to both storages
       const dataToStore: StoredApplicationsData = {
         applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
         timestamp: Date.now(),
@@ -306,30 +361,30 @@ export default function ApplicationsPage() {
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
-      // Update pending count for layout
-      const pendingCount = applicationsList.filter(
+      // Update last known counts
+      const total = applicationsList.length;
+      const pending = applicationsList.filter(
         (a: any) => a.status === "pending",
       ).length;
-      localStorage.setItem(
-        "misterfyber_pending_count",
-        pendingCount.toString(),
-      );
+      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+      localStorage.setItem("misterfyber_pending_count", pending.toString());
 
       toast.success(`Loaded ${applicationsList.length} applications`);
+      setHasNewApplicant(false);
     } catch (error: any) {
-      console.error("Failed to fetch applications:", error);
-
-      // Try to use cached data as fallback
+      console.error("Failed to fetch:", error);
       const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
       if (storedData?.applications?.length > 0) {
         setApplications(storedData.applications);
         setError(
-          `Network error. Showing ${storedData.applications.length} cached applications.`,
+          `Network error. Showing ${storedData.applications.length} cached.`,
         );
         toast.error("Network error, using cached data");
       } else {
-        setError("Unable to connect to server. Please check your connection.");
-        toast.error("Failed to connect to server");
+        setError("Unable to connect to server.");
+        toast.error("Failed to connect");
       }
     } finally {
       setInitialLoading(false);
@@ -338,9 +393,17 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Save to preload cache whenever applications change (for layout to use)
+  // Update counts when applications change
   useEffect(() => {
     if (applications.length > 0 && !initialLoading) {
+      const total = applications.length;
+      const pending = applications.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+      // Update storage
       const dataToStore: StoredApplicationsData = {
         applications: applications.slice(0, MAX_STORED_APPLICATIONS),
         timestamp: Date.now(),
@@ -350,15 +413,6 @@ export default function ApplicationsPage() {
       persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
-
-      // Update pending count for layout badge
-      const pendingCount = applications.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-      localStorage.setItem(
-        "misterfyber_pending_count",
-        pendingCount.toString(),
-      );
     }
   }, [applications, initialLoading]);
 
@@ -371,10 +425,7 @@ export default function ApplicationsPage() {
       await fetchApplications();
       setSelectedApp(null);
     } catch (error: any) {
-      console.error("Approve error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to approve application",
-      );
+      toast.error(error.response?.data?.message || "Failed to approve");
     } finally {
       setProcessingId(null);
     }
@@ -389,16 +440,12 @@ export default function ApplicationsPage() {
       await fetchApplications();
       setSelectedApp(null);
     } catch (error: any) {
-      console.error("Reject error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to reject application",
-      );
+      toast.error(error.response?.data?.message || "Failed to reject");
     } finally {
       setProcessingId(null);
     }
   };
 
-  // Get image URL
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
@@ -412,7 +459,6 @@ export default function ApplicationsPage() {
     [PRODUCTION_URL],
   );
 
-  // Filtered applications
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
     return applications.filter((app: any) => {
@@ -432,7 +478,6 @@ export default function ApplicationsPage() {
     });
   }, [applications, filter.searchTerm, filter.statusFilter]);
 
-  // Get status badge
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
@@ -442,7 +487,6 @@ export default function ApplicationsPage() {
     return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
 
-  // Clear cache
   const clearCache = useCallback(() => {
     persistentStorage.clearAll();
     toast.success("Cache cleared");
@@ -451,7 +495,6 @@ export default function ApplicationsPage() {
     fetchApplications();
   }, [fetchApplications]);
 
-  // Format last fetch time
   const getLastFetchDisplay = useCallback(() => {
     if (!lastFetchTime) return "Never";
     const now = new Date();
@@ -463,7 +506,6 @@ export default function ApplicationsPage() {
     return `${hours} hour${hours > 1 ? "s" : ""} ago`;
   }, [lastFetchTime]);
 
-  // Stats
   const stats = useMemo(
     () => ({
       pending: applications.filter((a) => a.status === "pending").length,
@@ -474,7 +516,6 @@ export default function ApplicationsPage() {
     [applications],
   );
 
-  // Show loading ONLY on first ever load with no data
   if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -488,6 +529,28 @@ export default function ApplicationsPage() {
 
   return (
     <div>
+      {/* New Applicant Alert Banner */}
+      {hasNewApplicant && (
+        <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-4 rounded-lg shadow-md animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+              <FiBell className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-green-800">
+                🆕 New Applicant{newApplicantCount > 1 ? "s" : ""} Detected!
+              </p>
+              <p className="text-sm text-green-700">
+                {newApplicantCount} new applicant
+                {newApplicantCount > 1 ? "s have" : " has"} been added. Page is
+                automatically refreshing...
+              </p>
+            </div>
+            <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6 flex justify-between items-center flex-wrap gap-4">
         <div>
@@ -500,7 +563,10 @@ export default function ApplicationsPage() {
         <div className="flex items-center gap-3">
           <div className="text-sm text-gray-500 flex items-center gap-1">
             <FiClock className="w-3 h-3" />
-            <span>Last updated: {getLastFetchDisplay()}</span>
+            <span>
+              Auto-check: Every 15 seconds | Last updated:{" "}
+              {getLastFetchDisplay()}
+            </span>
           </div>
           <button
             onClick={() => fetchApplications()}
@@ -686,7 +752,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Details Modal */}
+      {/* Details Modal - Same as before */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
