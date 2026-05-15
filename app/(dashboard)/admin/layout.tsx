@@ -657,7 +657,7 @@ export default function AdminLayout({
                               {notification.type === "billing" && (
                                 <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                                   <span className="text-blue-600 text-xs">
-                                    💰
+                                    ₱
                                   </span>
                                 </div>
                               )}
