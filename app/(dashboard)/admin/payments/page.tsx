@@ -17,7 +17,7 @@ import {
   FiXCircle,
   FiRefreshCw,
   FiClock,
-  FiDollarSign,
+  FiClipboard,
   FiX,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
@@ -282,7 +282,7 @@ export default function AdminPaymentsPage() {
               </p>
             </div>
             <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-              <FiDollarSign className="w-5 h-5 text-green-600" />
+              <FiClipboard className="w-5 h-5 text-green-600" />
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-2">

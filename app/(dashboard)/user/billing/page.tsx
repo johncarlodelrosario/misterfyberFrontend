@@ -9,7 +9,7 @@ import {
 } from "@/services/user";
 import { createPayment } from "@/services/payment";
 import {
-  FiDollarSign,
+  FiClipboard,
   FiCalendar,
   FiCheckCircle,
   FiClock,
@@ -446,7 +446,7 @@ export default function BillingPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <FiDollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <FiClipboard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">No payment history found</p>
             </div>
           )}

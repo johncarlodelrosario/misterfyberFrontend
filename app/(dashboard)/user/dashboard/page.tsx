@@ -10,7 +10,7 @@ import {
 } from "@/services/user";
 import {
   FiWifi,
-  FiDollarSign,
+  FiClipboard,
   FiActivity,
   FiClock,
   FiRefreshCw,
@@ -158,7 +158,7 @@ export default function UserDashboard() {
                   </p>
                 )}
               </div>
-              <FiDollarSign className="w-8 h-8 text-green-600" />
+              <FiClipboard className="w-8 h-8 text-green-600" />
             </div>
           </div>
 
@@ -260,7 +260,7 @@ export default function UserDashboard() {
             className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition text-center group"
           >
             <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition">
-              <FiDollarSign className="w-6 h-6 text-green-600" />
+              <FiClipboard className="w-6 h-6 text-green-600" />
             </div>
             <h3 className="font-semibold mb-1 text-gray-900">Pay Bill</h3>
             <p className="text-sm text-gray-500">

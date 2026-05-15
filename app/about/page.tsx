@@ -11,7 +11,7 @@ import {
   FiHeart,
   FiCheckCircle,
   FiZap,
-  FiDollarSign,
+  FiClipboard,
   FiHeadphones,
   FiHome,
   FiCpu,
@@ -267,7 +267,7 @@ export default function AboutPage() {
                   desc: "Lightning-fast fiber connection with consistent performance.",
                 },
                 {
-                  icon: FiDollarSign,
+                  icon: FiClipboard,
                   title: "Affordable Plans",
                   desc: "Budget-friendly packages for any need.",
                 },
