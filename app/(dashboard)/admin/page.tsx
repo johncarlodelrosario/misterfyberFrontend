@@ -6,7 +6,7 @@ import {
   FiUsers,
   FiUserCheck,
   FiCreditCard,
-  FiDollarSign,
+  FiClipboard,
   FiActivity,
   FiTrendingUp,
   FiCalendar,
@@ -113,7 +113,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <FiDollarSign className="w-6 h-6 text-purple-600" />
+              <FiClipboard className="w-6 h-6 text-purple-600" />
             </div>
           </div>
         </div>

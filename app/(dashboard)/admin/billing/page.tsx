@@ -30,7 +30,7 @@ import {
   FiX,
   FiSettings,
   FiUser,
-  FiDollarSign,
+  FiClipboard,
   FiActivity,
   FiAlertCircle,
   FiWifi,
@@ -656,7 +656,7 @@ export default function AdminBillingPage() {
                 ₱{stats.totalBalance.toLocaleString()}
               </p>
             </div>
-            <FiDollarSign className="w-8 h-8 text-red-100" />
+            <FiClipboard className="w-8 h-8 text-red-100" />
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
