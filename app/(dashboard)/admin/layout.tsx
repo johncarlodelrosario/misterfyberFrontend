@@ -16,7 +16,7 @@ import {
   FiMenu,
   FiX,
   FiBell,
-  FiDollarSign,
+  FiClipboard,
   FiActivity,
   FiChevronLeft,
   FiChevronRight,
@@ -62,7 +62,7 @@ const navItems: NavItem[] = [
   { name: "Users", href: "/admin/users", icon: FiUsers },
   { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
   { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
-  { name: "Billing", href: "/admin/billing", icon: FiDollarSign },
+  { name: "Billing", href: "/admin/billing", icon: FiClipboard },
   { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
   { name: "Plans", href: "/admin/plans", icon: FiPackage },
 ];
