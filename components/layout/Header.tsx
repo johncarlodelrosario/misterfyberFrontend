@@ -174,7 +174,7 @@ export default function Header() {
                     <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-md opacity-0 group-hover/logo:opacity-100 transition-opacity duration-300" />
                     <Image
                       src="/Logo.png"
-                      alt="MisterFiber Logo"
+                      alt="MisterFyber Logo"
                       width={140}
                       height={50}
                       className="object-contain w-auto h-12 md:h-14 relative"

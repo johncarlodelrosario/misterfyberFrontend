@@ -55,7 +55,7 @@ const JoinFamilySection: React.FC = () => {
 
           {/* Description - Smaller font */}
           <p className="text-sm md:text-base lg:text-lg text-gray-200 mb-6 md:mb-8 max-w-2xl mx-auto leading-relaxed px-4">
-            Experience the difference with Misterfiber.
+            Experience the difference with Misterfyber.
             <br className="hidden sm:block" />
             <span className="text-white/90">
               We're here to connect you to a better tomorrow.

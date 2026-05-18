@@ -117,7 +117,7 @@ export default function Footer() {
               <Link href="/" className="block mb-5">
                 <Image
                   src="/Logo.png"
-                  alt="MisterFiber Logo"
+                  alt="MisterFyber Logo"
                   width={200}
                   height={65}
                   className="object-contain"
@@ -216,7 +216,7 @@ export default function Footer() {
                 <li className="flex items-center space-x-3 group">
                   <FiMail className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
                   <span className="text-gray-300 group-hover:text-gray-200 transition">
-                    admin@misterfiber.com
+                    admin@misterfyber.com
                   </span>
                 </li>
               </ul>
@@ -262,7 +262,7 @@ export default function Footer() {
           {/* Bottom Bar */}
           <div className="border-t border-white/10 mt-12 pt-8 text-center">
             <p className="text-gray-400 text-sm flex items-center justify-center gap-2 flex-wrap">
-              &copy; {new Date().getFullYear()} MisterFiber. All rights
+              &copy; {new Date().getFullYear()} MisterFyber. All rights
               reserved.
               <span className="hidden md:inline">•</span>
               <Link
@@ -278,7 +278,7 @@ export default function Footer() {
               <span className="flex items-center gap-1 text-gray-500">
                 Made with{" "}
                 <FiHeart className="w-3 h-3 text-red-500 animate-pulse" /> by
-                MisterFiber
+                MisterFyber
               </span>
             </p>
           </div>
