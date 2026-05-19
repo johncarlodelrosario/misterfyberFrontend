@@ -95,6 +95,22 @@ const persistentStorage = {
   },
 };
 
+// Helper function to safely format price
+const formatPrice = (price: number | undefined | null): string => {
+  if (price === undefined || price === null || isNaN(price)) {
+    return "0.00";
+  }
+  return price.toFixed(2);
+};
+
+// Helper function to safely get speed
+const getSpeed = (plan: any): string => {
+  if (!plan) return "N/A";
+  if (plan.speed?.download) return `${plan.speed.download} Mbps`;
+  if (plan.speed) return `${plan.speed} Mbps`;
+  return "N/A";
+};
+
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -129,7 +145,7 @@ export default function ApplicationsPage() {
     const handleOnline = () => {
       setIsOnline(true);
       toast.success("Network connected");
-      checkForNewApplicants(); // Check for new applicants when connection returns
+      checkForNewApplicants();
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -157,7 +173,6 @@ export default function ApplicationsPage() {
         (a: any) => a.status === "pending",
       ).length;
 
-      // Get last known counts from storage
       const lastKnownTotal =
         (persistentStorage.getItem(STORAGE_KEYS.LAST_KNOWN_TOTAL) as number) ||
         applications.length;
@@ -167,7 +182,6 @@ export default function ApplicationsPage() {
         ) as number) ||
         applications.filter((a: any) => a.status === "pending").length;
 
-      // Check if there are new applicants (total increased OR pending increased)
       const hasNew =
         currentTotal > lastKnownTotal || currentPending > lastKnownPending;
       const newCount =
@@ -179,11 +193,8 @@ export default function ApplicationsPage() {
         );
         setHasNewApplicant(true);
         setNewApplicantCount(newCount > 0 ? newCount : 1);
-
-        // AUTO REFRESH - Load new data immediately
         await silentRefresh();
 
-        // Clear notification after 5 seconds
         setTimeout(() => {
           setHasNewApplicant(false);
           setNewApplicantCount(0);
@@ -194,10 +205,9 @@ export default function ApplicationsPage() {
     }
   }, [applications.length]);
 
-  // Periodically check for new applicants (every 15 seconds)
+  // Periodically check for new applicants
   useEffect(() => {
     if (isOnline && !initialLoading) {
-      // Start interval
       intervalRef.current = setInterval(() => {
         checkForNewApplicants();
       }, CHECK_INTERVAL);
@@ -237,7 +247,6 @@ export default function ApplicationsPage() {
           if (preloadData.timestamp)
             setLastFetchTime(new Date(preloadData.timestamp));
 
-          // Save last known counts
           const total = preloadData.applications.length;
           const pending = preloadData.applications.filter(
             (a: any) => a.status === "pending",
@@ -260,7 +269,6 @@ export default function ApplicationsPage() {
           setApplications(storedData.applications);
           if (lastFetch) setLastFetchTime(new Date(lastFetch));
 
-          // Save last known counts
           const total = storedData.applications.length;
           const pending = storedData.applications.filter(
             (a: any) => a.status === "pending",
@@ -272,7 +280,6 @@ export default function ApplicationsPage() {
           return;
         }
 
-        // First time - fetch data
         fetchApplications();
       } catch (err) {
         console.error("Failed to load from storage:", err);
@@ -283,7 +290,7 @@ export default function ApplicationsPage() {
     loadStoredData();
   }, []);
 
-  // Silent refresh - no loading indicator
+  // Silent refresh
   const silentRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -297,7 +304,6 @@ export default function ApplicationsPage() {
         setApplications(applicationsList);
         setLastFetchTime(new Date());
 
-        // Update caches
         const dataToStore: StoredApplicationsData = {
           applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
           timestamp: Date.now(),
@@ -310,7 +316,6 @@ export default function ApplicationsPage() {
         persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
         persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
-        // Update last known counts
         const total = applicationsList.length;
         const pending = applicationsList.filter(
           (a: any) => a.status === "pending",
@@ -318,10 +323,8 @@ export default function ApplicationsPage() {
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
 
-        // Update pending count for layout
         localStorage.setItem("misterfyber_pending_count", pending.toString());
 
-        // Show notification toast
         toast.success(
           `🆕 New applicant(s) loaded! Total: ${total} applications`,
         );
@@ -333,7 +336,7 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Manual refresh with loading indicator
+  // Manual refresh
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -361,7 +364,6 @@ export default function ApplicationsPage() {
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
-      // Update last known counts
       const total = applicationsList.length;
       const pending = applicationsList.filter(
         (a: any) => a.status === "pending",
@@ -403,7 +405,6 @@ export default function ApplicationsPage() {
       persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
       persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
 
-      // Update storage
       const dataToStore: StoredApplicationsData = {
         applications: applications.slice(0, MAX_STORED_APPLICATIONS),
         timestamp: Date.now(),
@@ -752,7 +753,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Details Modal - Same as before */}
+      {/* Details Modal - FIXED with safe price formatting */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -825,15 +826,15 @@ export default function ApplicationsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">Plan:</span>{" "}
-                    {selectedApp.planId?.name}
+                    {selectedApp.planId?.name || "N/A"}
                   </div>
                   <div>
                     <span className="text-gray-500">Price:</span> ₱
-                    {selectedApp.planId?.price}/month
+                    {formatPrice(selectedApp.planId?.price)}/month
                   </div>
                   <div>
                     <span className="text-gray-500">Speed:</span>{" "}
-                    {selectedApp.planId?.speed?.download} Mbps
+                    {getSpeed(selectedApp.planId)}
                   </div>
                 </div>
               </div>
@@ -862,11 +863,11 @@ export default function ApplicationsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">ID Type:</span>{" "}
-                    {selectedApp.idType}
+                    {selectedApp.idType || "N/A"}
                   </div>
                   <div>
                     <span className="text-gray-500">ID Number:</span>{" "}
-                    {selectedApp.idNumber}
+                    {selectedApp.idNumber || "N/A"}
                   </div>
                 </div>
               </div>
