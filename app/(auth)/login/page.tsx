@@ -53,10 +53,10 @@ export default function LoginPage() {
           <p className="mt-2 text-center text-sm text-gray-400">
             Or{" "}
             <Link
-              href="/apply"
+              href="/register"
               className="font-medium text-primary-400 hover:text-primary-300"
             >
-              apply for internet connection
+              create a new account
             </Link>
           </p>
         </div>
@@ -193,6 +193,18 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
+
+        <div className="text-center">
+          <p className="text-sm text-gray-400">
+            Don't have an account?{" "}
+            <Link
+              href="/register"
+              className="font-medium text-primary-400 hover:text-primary-300"
+            >
+              Register here
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
