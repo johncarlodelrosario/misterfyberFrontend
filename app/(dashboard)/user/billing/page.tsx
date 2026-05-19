@@ -222,24 +222,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Info Box */}
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200 flex gap-3">
-          <FiInfo className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm text-blue-800 font-medium">How to Pay:</p>
-            <p className="text-sm text-blue-700">
-              1. Send payment to: <strong>GCash 09123456789</strong> or{" "}
-              <strong>BDO 1234567890</strong>
-              <br />
-              2. Enter your reference number below
-              <br />
-              3. Wait for admin confirmation (within 24 hours)
-              <br />
-              4. You will receive an email once your payment is confirmed
-            </p>
-          </div>
-        </div>
-
         {/* Billing Cycle Info */}
         {billingCycle?.billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-6 border border-blue-100">
