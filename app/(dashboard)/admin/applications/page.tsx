@@ -417,14 +417,27 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // Handle approve
+  // Handle approve - FIXED: Immediately update local state
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
-      await fetchApplications();
+
+      // Immediately update local state
+      setApplications((prevApplications) =>
+        prevApplications.map((app) =>
+          app._id === id ? { ...app, status: "approved" } : app,
+        ),
+      );
+
+      // Close modal after successful approval
       setSelectedApp(null);
+
+      // Refresh in background to ensure consistency with server
+      setTimeout(() => {
+        fetchApplications();
+      }, 1000);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to approve");
     } finally {
@@ -432,14 +445,27 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle reject
+  // Handle reject - FIXED: Immediately update local state
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
-      await fetchApplications();
+
+      // Immediately update local state
+      setApplications((prevApplications) =>
+        prevApplications.map((app) =>
+          app._id === id ? { ...app, status: "rejected" } : app,
+        ),
+      );
+
+      // Close modal after successful rejection
       setSelectedApp(null);
+
+      // Refresh in background to ensure consistency with server
+      setTimeout(() => {
+        fetchApplications();
+      }, 1000);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject");
     } finally {
@@ -753,7 +779,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Details Modal - FIXED with safe price formatting */}
+      {/* Details Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
