@@ -1,4 +1,4 @@
-// services/billing.ts - COMPLETE WITH NEW BILLING FLOW FUNCTIONS
+// services/billing.ts - FIXED VERSION (no cache errors)
 import api from "./api";
 
 export interface BillingCycle {
@@ -24,6 +24,7 @@ export interface BillingCycle {
   manuallyStartedAt?: string;
   isAfterCutoff: boolean;
   cutoffDayUsed: number;
+  installationDay: number;
   paymentHistory: Array<{
     billingId: string;
     amount: number;
@@ -67,6 +68,7 @@ export interface Bill {
   _id: string;
   invoiceNumber: string;
   userId: any;
+  billingCycleId: string;
   billingPeriod: {
     start: string;
     end: string;
@@ -93,18 +95,22 @@ export interface Bill {
   notes: string;
   isProRated: boolean;
   proRatedDays: number;
-  billingCycleId: string;
+  includesProRatedAmount: boolean;
+  proRatedAmountIncluded: number;
+  reminder7DaySent: boolean;
+  reminder3DaySent: boolean;
+  reminder1DaySent: boolean;
+  reminderDueDateSent: boolean;
+  suspensionNotified: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 const CACHE_KEYS = {
-  BILLING_CYCLES: "billing_cycles_cache",
-  BILLS: "bills_cache",
-  SETTINGS: "billing_settings_cache",
-  USERS: "users_cache",
-  PAYMENTS: "payments_cache",
-  BILLING_STATS: "billing_stats_cache",
+  BILLING_CYCLES: "misterfyber_billing_cycles",
+  BILLS: "misterfyber_bills",
+  SETTINGS: "misterfyber_billing_settings",
+  BILLING_STATS: "misterfyber_billing_stats",
 };
 
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -124,7 +130,8 @@ function getCachedData<T>(key: string): T | null {
       return null;
     }
     return item.data;
-  } catch {
+  } catch (error) {
+    console.error("Failed to get cached data:", error);
     return null;
   }
 }
@@ -144,61 +151,36 @@ export function clearBillingCache(): void {
 
 // ==================== USER BILLING FUNCTIONS ====================
 
-export const getUserBillingCycle = async (): Promise<{
-  billingCycle: BillingCycle;
-  upcomingBills: Bill[];
-  hasOverdue: boolean;
-  overdueCount: number;
-  overdueAmount: number;
-} | null> => {
+export const getUserCurrentBilling = async (): Promise<any> => {
   try {
-    const response = await api.get("/users/billing-cycle");
-    return response.data.data;
+    const response = await api.get("/billing/user/current");
+    return response.data;
   } catch (error) {
-    console.error("Error fetching user billing cycle:", error);
-    return null;
+    console.error("Error fetching user current billing:", error);
+    return { success: true, data: null };
   }
 };
 
-export const getCurrentBill = async (): Promise<Bill | null> => {
-  try {
-    const response = await api.get("/users/billing/current");
-    return response.data.data;
-  } catch (error) {
-    console.error("Error fetching current bill:", error);
-    return null;
-  }
-};
-
-export const getBillingHistory = async (params?: {
+export const getUserBillingHistory = async (params?: {
   page?: number;
   limit?: number;
 }): Promise<{
-  data: Bill[];
-  totalPages: number;
-  currentPage: number;
-  total: number;
+  success: boolean;
+  data: {
+    billingHistory: Bill[];
+    total: number;
+    page: number;
+    pages: number;
+  };
 }> => {
   try {
-    const response = await api.get("/users/billing/history", { params });
+    const response = await api.get("/billing/user/history", { params });
     return response.data;
   } catch (error) {
     console.error("Error fetching billing history:", error);
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
-  }
-};
-
-export const getUserBillingSummary = async (): Promise<any> => {
-  try {
-    const response = await api.get("/users/billing-summary");
-    return response.data.data;
-  } catch (error) {
-    console.error("Error fetching billing summary:", error);
     return {
-      currentBill: null,
-      lastPayment: null,
-      paymentHistory: [],
-      billingHistory: [],
+      success: false,
+      data: { billingHistory: [], total: 0, page: 1, pages: 0 },
     };
   }
 };
@@ -211,20 +193,15 @@ export const getAllBillingCycles = async (params?: {
   status?: string;
   forceRefresh?: boolean;
 }): Promise<{
+  success: boolean;
   data: BillingCycle[];
-  totalPages: number;
-  currentPage: number;
-  total: number;
 }> => {
   try {
     if (!params?.forceRefresh) {
-      const cached = getCachedData<{
-        data: BillingCycle[];
-        totalPages: number;
-        currentPage: number;
-        total: number;
-      }>(CACHE_KEYS.BILLING_CYCLES);
-      if (cached) return cached;
+      const cached = getCachedData<any>(CACHE_KEYS.BILLING_CYCLES);
+      if (cached && cached.success !== undefined) {
+        return cached;
+      }
     }
 
     const response = await api.get("/billing/cycles", { params });
@@ -233,7 +210,7 @@ export const getAllBillingCycles = async (params?: {
     return result;
   } catch (error) {
     console.error("Error fetching billing cycles:", error);
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+    return { success: false, data: [] };
   }
 };
 
@@ -241,25 +218,18 @@ export const getAllBills = async (params?: {
   page?: number;
   limit?: number;
   status?: string;
-  userId?: string;
+  type?: string;
   forceRefresh?: boolean;
 }): Promise<{
+  success: boolean;
   data: Bill[];
-  stats: any[];
-  totalPages: number;
-  currentPage: number;
-  total: number;
 }> => {
   try {
     if (!params?.forceRefresh) {
-      const cached = getCachedData<{
-        data: Bill[];
-        stats: any[];
-        totalPages: number;
-        currentPage: number;
-        total: number;
-      }>(CACHE_KEYS.BILLS);
-      if (cached) return cached;
+      const cached = getCachedData<any>(CACHE_KEYS.BILLS);
+      if (cached && cached.success !== undefined) {
+        return cached;
+      }
     }
 
     const response = await api.get("/billing/all-bills", { params });
@@ -268,14 +238,59 @@ export const getAllBills = async (params?: {
     return result;
   } catch (error) {
     console.error("Error fetching all bills:", error);
-    return { data: [], stats: [], totalPages: 0, currentPage: 1, total: 0 };
+    return { success: false, data: [] };
+  }
+};
+
+export const getBillingSummaryAdmin = async (
+  forceRefresh?: boolean,
+): Promise<{
+  success: boolean;
+  data: {
+    activeSubscriptions: number;
+    pausedSubscriptions: number;
+    pendingProRated: number;
+    pendingActivations: number;
+    overdueAccounts: number;
+    totalOutstanding: number;
+    monthlyRevenue: number;
+    unpaidProRated: number;
+  };
+}> => {
+  try {
+    if (!forceRefresh) {
+      const cached = getCachedData<any>(CACHE_KEYS.BILLING_STATS);
+      if (cached && cached.success !== undefined) {
+        return cached;
+      }
+    }
+
+    const response = await api.get("/billing/summary");
+    const result = response.data;
+    setCachedData(CACHE_KEYS.BILLING_STATS, result);
+    return result;
+  } catch (error) {
+    console.error("Error fetching billing summary:", error);
+    return {
+      success: false,
+      data: {
+        activeSubscriptions: 0,
+        pausedSubscriptions: 0,
+        pendingProRated: 0,
+        pendingActivations: 0,
+        overdueAccounts: 0,
+        totalOutstanding: 0,
+        monthlyRevenue: 0,
+        unpaidProRated: 0,
+      },
+    };
   }
 };
 
 export const startBilling = async (data: {
   userId: string;
   startDate?: string;
-  customAmount?: number;
+  customProRatedAmount?: number;
   notes?: string;
 }): Promise<any> => {
   try {
@@ -358,14 +373,15 @@ export const reconnectClient = async (data: {
 export const getBillingSettings = async (
   forceRefresh?: boolean,
 ): Promise<{
+  success: boolean;
   data: BillingSettings;
 }> => {
   try {
     if (!forceRefresh) {
-      const cached = getCachedData<{ data: BillingSettings }>(
-        CACHE_KEYS.SETTINGS,
-      );
-      if (cached) return cached;
+      const cached = getCachedData<any>(CACHE_KEYS.SETTINGS);
+      if (cached && cached.success !== undefined) {
+        return cached;
+      }
     }
     const response = await api.get("/billing/settings");
     const result = response.data;
@@ -391,6 +407,7 @@ export const updateBillingSettings = async (
 };
 
 export const getBillingSettingsAdmin = async (): Promise<{
+  success: boolean;
   data: BillingSettings;
 }> => {
   try {
@@ -417,13 +434,13 @@ export const updateBillingSettingsAdmin = async (
 
 export const markBillAsPaid = async (
   billId: string,
-  paymentData: {
+  data: {
     referenceNumber?: string;
     notes?: string;
   },
 ): Promise<any> => {
   try {
-    const response = await api.put(`/billing/mark-paid/${billId}`, paymentData);
+    const response = await api.put(`/billing/mark-paid/${billId}`, data);
     clearBillingCache();
     return response.data;
   } catch (error) {
@@ -432,36 +449,16 @@ export const markBillAsPaid = async (
   }
 };
 
-export const getPendingProRatedBills = async (): Promise<{
-  data: any[];
-}> => {
-  try {
-    const response = await api.get("/billing/pending-pro-rated");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching pending pro-rated bills:", error);
-    return { data: [] };
-  }
-};
-
-export const getPendingActivations = async (): Promise<{
-  data: any[];
-}> => {
-  try {
-    const response = await api.get("/billing/pending-activations");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching pending activations:", error);
-    return { data: [] };
-  }
-};
-
 export const confirmProRatedPayment = async (data: {
-  userId: string;
-  paymentDetails?: any;
+  billId: string;
+  referenceNumber?: string;
+  notes?: string;
 }): Promise<any> => {
   try {
-    const response = await api.post("/billing/confirm-pro-rated", data);
+    const response = await api.put(
+      `/billing/confirm-pro-rated/${data.billId}`,
+      data,
+    );
     clearBillingCache();
     return response.data;
   } catch (error) {
@@ -470,15 +467,90 @@ export const confirmProRatedPayment = async (data: {
   }
 };
 
-export const startMonthlyBilling = async (data: {
-  userId: string;
+export const getPendingProRatedBills = async (): Promise<{
+  success: boolean;
+  data: Bill[];
+}> => {
+  try {
+    const response = await api.get("/billing/pending-pro-rated");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending pro-rated bills:", error);
+    return { success: false, data: [] };
+  }
+};
+
+export const getPendingActivations = async (): Promise<{
+  success: boolean;
+  data: BillingCycle[];
+}> => {
+  try {
+    const response = await api.get("/billing/pending-activations");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending activations:", error);
+    return { success: false, data: [] };
+  }
+};
+
+// User payment submission
+export const submitProRatedPayment = async (data: {
+  billId: string;
+  referenceNumber?: string;
+  notes?: string;
 }): Promise<any> => {
   try {
-    const response = await api.post("/billing/start-monthly", data);
+    const response = await api.post("/billing/user/submit-pro-rated", data);
     clearBillingCache();
     return response.data;
   } catch (error) {
-    console.error("Error starting monthly billing:", error);
+    console.error("Error submitting pro-rated payment:", error);
+    throw error;
+  }
+};
+
+export const submitMonthlyPayment = async (data: {
+  billId: string;
+  referenceNumber?: string;
+  notes?: string;
+}): Promise<any> => {
+  try {
+    const response = await api.post("/billing/user/submit-monthly", data);
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error submitting monthly payment:", error);
+    throw error;
+  }
+};
+
+// Auto cron jobs
+export const autoGenerateMonthlyBills = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-generate");
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-generating bills:", error);
+    throw error;
+  }
+};
+
+export const autoSendReminders = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-reminders");
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-sending reminders:", error);
+    throw error;
+  }
+};
+
+export const autoSuspendOverdue = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-suspend");
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-suspending overdue:", error);
     throw error;
   }
 };

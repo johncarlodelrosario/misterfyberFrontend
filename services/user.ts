@@ -1,5 +1,6 @@
-// services/user.ts - COMPLETE FIXED FILE
+// services/user.ts - UPDATED (remove duplicate billing functions)
 import api from "./api";
+import { getUserCurrentBilling, getUserBillingHistory } from "./billing";
 
 export interface AddressData {
   street: string;
@@ -49,22 +50,6 @@ export interface Plan {
   isActive: boolean;
 }
 
-export interface BillingCycle {
-  _id: string;
-  planId: Plan;
-  billingStartDate: string;
-  nextBillingDate: string;
-  status: string;
-  monthlyRate: number;
-  currentProRatedAmount: number;
-  pendingPlanChange: {
-    newPlanId: Plan;
-    requestedAt: string;
-    effectiveDate: string;
-    status: string;
-  } | null;
-}
-
 export const getUserProfile = async (): Promise<UserProfile> => {
   try {
     const response = await api.get("/users/profile");
@@ -97,18 +82,7 @@ export const getUserDashboard = async () => {
       },
       usage: 45,
       nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      recentActivities: [
-        {
-          description: "Welcome to Mister Fyber!",
-          date: new Date(),
-          type: "welcome",
-        },
-        {
-          description: "Your account has been created",
-          date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-          type: "account",
-        },
-      ],
+      recentActivities: [],
     };
   }
 };
@@ -129,41 +103,8 @@ export const requestPlanChange = async (
   return response.data;
 };
 
-export const getUserBillingCycle = async () => {
-  try {
-    const response = await api.get("/users/billing-cycle");
-    return response.data.data;
-  } catch (error) {
-    console.error("Error fetching billing cycle:", error);
-    return null;
-  }
-};
-
-export const getCurrentBill = async () => {
-  try {
-    const response = await api.get("/users/billing/current");
-    return response.data.data;
-  } catch (error) {
-    console.error("Error fetching current bill:", error);
-    return null;
-  }
-};
-
-export const getUserBillingHistory = async () => {
-  try {
-    const response = await api.get("/users/billing-summary");
-    console.log("Billing summary response:", response.data);
-    return response.data.data;
-  } catch (error) {
-    console.error("Error fetching billing summary:", error);
-    return {
-      currentBill: null,
-      lastPayment: null,
-      paymentHistory: [],
-      billingHistory: [],
-    };
-  }
-};
+// Re-export billing functions from billing service
+export { getUserCurrentBilling, getUserBillingHistory };
 
 export const getUsage = async () => {
   try {
@@ -173,11 +114,7 @@ export const getUsage = async () => {
     return {
       currentUsage: 45,
       totalLimit: 1000,
-      dailyUsage: [
-        { date: "2024-01-01", usage: 5 },
-        { date: "2024-01-02", usage: 8 },
-        { date: "2024-01-03", usage: 6 },
-      ],
+      dailyUsage: [],
     };
   }
 };
@@ -207,15 +144,7 @@ export const getPaymentMethods = async () => {
     const response = await api.get("/users/payment-methods");
     return response.data.data;
   } catch (error) {
-    return [
-      {
-        id: "1",
-        type: "credit_card",
-        last4: "4242",
-        expiry: "12/25",
-        isDefault: true,
-      },
-    ];
+    return [];
   }
 };
 
@@ -242,7 +171,7 @@ export const getUserBills = async (params?: {
   status?: string;
 }) => {
   try {
-    const response = await api.get("/users/bills", { params });
+    const response = await api.get("/billing/user/history", { params });
     return response.data;
   } catch (error) {
     console.error("Error fetching bills:", error);
