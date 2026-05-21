@@ -1,3 +1,4 @@
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -10,8 +11,6 @@ import {
   stopBilling,
   pauseBilling,
   resumeBilling,
-  approvePlanChange,
-  rejectPlanChange,
   disconnectClient,
   reconnectClient,
   clearBillingCache,
@@ -20,8 +19,10 @@ import {
   getPendingActivations,
   confirmProRatedPayment,
   startMonthlyBilling,
+  getBillingSettingsAdmin,
+  updateBillingSettingsAdmin,
 } from "@/services/billing";
-import { getAllUsers, confirmPayment } from "@/services/admin";
+import { getAllUsers } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
 import {
   FiRefreshCw,
@@ -40,11 +41,11 @@ import {
   FiClock,
   FiSearch,
   FiBell,
-  FiBellOff,
+  FiCalendar,
+  FiInfo,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-// ==================== CACHE KEYS ====================
 const CACHE_KEYS = {
   BILLING_DATA: "misterfyber_billing_data",
   BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
@@ -124,6 +125,19 @@ export default function AdminBillingPage() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation"
   >("pro-rated");
+
+  const [billingFlowSettings, setBillingFlowSettings] = useState({
+    proRatedDueDay: 25,
+    monthlyDueDay: 5,
+    billingCutoffDay: 23,
+    enableAutoBilling: true,
+    sendInvoiceOnInstall: true,
+    requireAdminActivation: false,
+    freeDays: 1,
+    gracePeriodDays: 5,
+    reminderDays: [7, 3, 1],
+  });
+
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalBalance: 0,
@@ -134,176 +148,196 @@ export default function AdminBillingPage() {
     pendingProRatedCount: 0,
     pendingActivationsCount: 0,
   });
+
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  const loadData = useCallback(
-    async (forceRefresh = false) => {
-      if (!isMountedRef.current) return;
-      if (loadedRef.current && !forceRefresh) return;
-
-      if (forceRefresh) {
-        setRefreshing(true);
-        clearBillingCache();
-      } else {
-        setLoading(true);
-      }
-
-      try {
-        // Check cache first
-        if (!forceRefresh) {
-          const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
-          const cachedTimestamp = billingStorage.getItem(
-            CACHE_KEYS.BILLING_TIMESTAMP,
-          );
-
-          if (
-            cachedData &&
-            cachedTimestamp &&
-            Date.now() - cachedTimestamp < CACHE_DURATION
-          ) {
-            setUsers(cachedData.users || []);
-            setBillingCycles(cachedData.billingCycles || []);
-            setBills(cachedData.bills || []);
-            const cachedStats = billingStorage.getItem(
-              CACHE_KEYS.BILLING_STATS,
-            );
-            if (cachedStats) setStats(cachedStats);
-            setLoading(false);
-            loadedRef.current = true;
-            return;
-          }
-        }
-
-        const [
-          cyclesResult,
-          billsResult,
-          settingsResult,
-          allUsersResult,
-          paymentsResult,
-        ] = await Promise.all([
-          getAllBillingCycles({ limit: 100, forceRefresh }),
-          getAllBills({ limit: 100, forceRefresh }),
-          getBillingSettings(forceRefresh),
-          getAllUsers({ limit: 100 }),
-          getAllPayments({ limit: 100 }),
-        ]);
-
-        if (!isMountedRef.current) return;
-
-        const cyclesData = cyclesResult?.data || [];
-        const billsList = billsResult?.data || [];
-        const settingsData = settingsResult?.data || null;
-        const usersData = allUsersResult?.data || [];
-        const paymentsData = paymentsResult?.data || [];
-
-        setBillingCycles(cyclesData);
-        setBills(billsList);
-        if (settingsData) setSettings(settingsData);
-        setAllPayments(paymentsData);
-
-        const usersWithBalanceData: UserWithBalance[] = usersData.map(
-          (user: any) => {
-            const userBills = billsList.filter(
-              (bill: any) =>
-                bill.userId?._id === user._id && bill.status !== "paid",
-            );
-            const totalBalance = userBills.reduce(
-              (sum: number, bill: any) => sum + (bill.total || 0),
-              0,
-            );
-            const overdueBills = userBills.filter(
-              (bill: any) =>
-                bill.status === "overdue" ||
-                new Date(bill.dueDate) < new Date(),
-            );
-            const userCycle = cyclesData.find(
-              (cycle: any) => cycle.userId?._id === user._id,
-            );
-
-            return {
-              ...user,
-              currentBalance: totalBalance,
-              unpaidBills: userBills,
-              overdueBills,
-              billingCycle: userCycle,
-            };
-          },
-        );
-
-        usersWithBalanceData.sort(
-          (a, b) => b.currentBalance - a.currentBalance,
-        );
-
-        let totalBalanceSum = 0;
-        let usersWithPositiveBalance = 0;
-        let usersWithOverdue = 0;
-        let activeCycles = 0;
-        let pausedCycles = 0;
-
-        for (const user of usersWithBalanceData) {
-          totalBalanceSum += user.currentBalance;
-          if (user.currentBalance > 0) usersWithPositiveBalance++;
-          if (user.overdueBills.length > 0) usersWithOverdue++;
-        }
-
-        for (const cycle of cyclesData) {
-          if (cycle.status === "active") activeCycles++;
-          if (cycle.status === "paused") pausedCycles++;
-        }
-
-        const newStats = {
-          totalUsers: usersWithBalanceData.length,
-          totalBalance: totalBalanceSum,
-          usersWithBalanceCount: usersWithPositiveBalance,
-          overdueUsersCount: usersWithOverdue,
-          activeCyclesCount: activeCycles,
-          pausedCyclesCount: pausedCycles,
-          pendingProRatedCount: pendingProRated.length,
-          pendingActivationsCount: pendingActivations.length,
-        };
-
-        setUsers(usersWithBalanceData);
-        setStats(newStats);
-
-        billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
-          users: usersWithBalanceData,
-          billingCycles: cyclesData,
-          bills: billsList,
+  // Load billing flow settings - FIXED: getBillingSettingsAdmin returns data directly
+  const loadBillingFlowSettings = async () => {
+    try {
+      const response = await getBillingSettingsAdmin();
+      // FIXED: response contains data directly, not response.success
+      if (response && response.data) {
+        const data = response.data;
+        setBillingFlowSettings({
+          proRatedDueDay: data.proRatedDueDay || 25,
+          monthlyDueDay: data.monthlyDueDay || 5,
+          billingCutoffDay: data.billingCutoffDay || 23,
+          enableAutoBilling: data.enableAutoBilling !== false,
+          sendInvoiceOnInstall: data.sendInvoiceOnInstall !== false,
+          requireAdminActivation: data.requireAdminActivation || false,
+          freeDays: data.freeDays || 1,
+          gracePeriodDays: data.gracePeriodDays || 5,
+          reminderDays: data.reminderDays || [7, 3, 1],
         });
-        billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
-        billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
+      }
+    } catch (error) {
+      console.error("Failed to load billing flow settings:", error);
+    }
+  };
 
-        // Load pending data in background
-        const [proRatedResult, activationsResult] = await Promise.all([
-          getPendingProRatedBills(),
-          getPendingActivations(),
-        ]);
+  // Save billing flow settings
+  const saveBillingFlowSettings = async () => {
+    try {
+      await updateBillingSettingsAdmin(billingFlowSettings);
+      toast.success("✅ Billing flow settings saved successfully!");
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to save settings");
+    }
+  };
 
-        if (isMountedRef.current) {
-          setPendingProRated(proRatedResult?.data || []);
-          setPendingActivations(activationsResult?.data || []);
-        }
+  const loadData = useCallback(async (forceRefresh = false) => {
+    if (!isMountedRef.current) return;
+    if (loadedRef.current && !forceRefresh) return;
 
-        loadedRef.current = true;
-      } catch (error) {
-        console.error("Failed to load billing data:", error);
-        if (isMountedRef.current) {
-          toast.error("Failed to load billing data");
-        }
-      } finally {
-        if (isMountedRef.current) {
+    if (forceRefresh) {
+      setRefreshing(true);
+      clearBillingCache();
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      if (!forceRefresh) {
+        const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
+        const cachedTimestamp = billingStorage.getItem(
+          CACHE_KEYS.BILLING_TIMESTAMP,
+        );
+        if (
+          cachedData &&
+          cachedTimestamp &&
+          Date.now() - cachedTimestamp < CACHE_DURATION
+        ) {
+          setUsers(cachedData.users || []);
+          setBillingCycles(cachedData.billingCycles || []);
+          setBills(cachedData.bills || []);
+          const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
+          if (cachedStats) setStats(cachedStats);
           setLoading(false);
-          setRefreshing(false);
+          loadedRef.current = true;
+          return;
         }
       }
-    },
-    [pendingProRated.length, pendingActivations.length],
-  );
+
+      const [
+        cyclesResult,
+        billsResult,
+        settingsResult,
+        allUsersResult,
+        paymentsResult,
+      ] = await Promise.all([
+        getAllBillingCycles({ limit: 100, forceRefresh }),
+        getAllBills({ limit: 100, forceRefresh }),
+        getBillingSettings(forceRefresh),
+        getAllUsers({ limit: 100 }),
+        getAllPayments({ limit: 100 }),
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      const cyclesData = cyclesResult?.data || [];
+      const billsList = billsResult?.data || [];
+      const settingsData = settingsResult?.data || null;
+      const usersData = allUsersResult?.data || [];
+      const paymentsData = paymentsResult?.data || [];
+
+      setBillingCycles(cyclesData);
+      setBills(billsList);
+      if (settingsData) setSettings(settingsData);
+      setAllPayments(paymentsData);
+
+      const usersWithBalanceData: UserWithBalance[] = usersData.map(
+        (user: any) => {
+          const userBills = billsList.filter(
+            (bill: any) =>
+              bill.userId?._id === user._id && bill.status !== "paid",
+          );
+          const totalBalance = userBills.reduce(
+            (sum: number, bill: any) => sum + (bill.total || 0),
+            0,
+          );
+          const overdueBills = userBills.filter(
+            (bill: any) =>
+              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+          );
+          const userCycle = cyclesData.find(
+            (cycle: any) => cycle.userId?._id === user._id,
+          );
+          return {
+            ...user,
+            currentBalance: totalBalance,
+            unpaidBills: userBills,
+            overdueBills,
+            billingCycle: userCycle,
+          };
+        },
+      );
+
+      usersWithBalanceData.sort((a, b) => b.currentBalance - a.currentBalance);
+
+      let totalBalanceSum = 0,
+        usersWithPositiveBalance = 0,
+        usersWithOverdue = 0,
+        activeCycles = 0,
+        pausedCycles = 0;
+      for (const user of usersWithBalanceData) {
+        totalBalanceSum += user.currentBalance;
+        if (user.currentBalance > 0) usersWithPositiveBalance++;
+        if (user.overdueBills.length > 0) usersWithOverdue++;
+      }
+      for (const cycle of cyclesData) {
+        if (cycle.status === "active") activeCycles++;
+        if (cycle.status === "paused") pausedCycles++;
+      }
+
+      const [proRatedResult, activationsResult] = await Promise.all([
+        getPendingProRatedBills(),
+        getPendingActivations(),
+      ]);
+
+      const newStats = {
+        totalUsers: usersWithBalanceData.length,
+        totalBalance: totalBalanceSum,
+        usersWithBalanceCount: usersWithPositiveBalance,
+        overdueUsersCount: usersWithOverdue,
+        activeCyclesCount: activeCycles,
+        pausedCyclesCount: pausedCycles,
+        pendingProRatedCount: proRatedResult?.data?.length || 0,
+        pendingActivationsCount: activationsResult?.data?.length || 0,
+      };
+
+      setUsers(usersWithBalanceData);
+      setStats(newStats);
+      setPendingProRated(proRatedResult?.data || []);
+      setPendingActivations(activationsResult?.data || []);
+
+      billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
+        users: usersWithBalanceData,
+        billingCycles: cyclesData,
+        bills: billsList,
+      });
+      billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
+      billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
+
+      loadedRef.current = true;
+    } catch (error) {
+      console.error("Failed to load billing data:", error);
+      if (isMountedRef.current) {
+        toast.error("Failed to load billing data");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
     loadData();
+    loadBillingFlowSettings();
     return () => {
       isMountedRef.current = false;
     };
@@ -321,13 +355,11 @@ export default function AdminBillingPage() {
       )
     )
       return;
-
     try {
       await markBillAsPaid(bill._id, {
         referenceNumber: `ADMIN-${Date.now()}`,
         notes: `Manually marked as paid by admin`,
       });
-
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
       toast.success(`📧 Payment confirmation email sent to ${user.email}`);
       loadedRef.current = false;
@@ -344,17 +376,27 @@ export default function AdminBillingPage() {
       toast.error("Please select a user");
       return;
     }
-
     try {
-      await startBilling({
+      const response = await startBilling({
         userId: selectedUserId,
         startDate: startDate || undefined,
         customAmount: customAmount ? parseFloat(customAmount) : undefined,
         notes: billingNotes,
       });
-      toast.success(
-        "✅ Billing started successfully! User will receive an email with their pro-rated bill.",
-      );
+
+      const data = response.data;
+      if (data.isAfterCutoff) {
+        toast.success(
+          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). No pro-rated bill needed. First monthly bill generated!`,
+        );
+        toast.success(`📧 Monthly invoice sent to customer`);
+      } else {
+        toast.success(
+          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.proRatedDueDate).toLocaleDateString()}`,
+        );
+        toast.success(`📧 Pro-rated invoice sent to customer`);
+      }
+
       setShowStartModal(false);
       setSelectedUserId("");
       setStartDate("");
@@ -372,7 +414,6 @@ export default function AdminBillingPage() {
       toast.error("Please select a user");
       return;
     }
-
     try {
       await pauseBilling({
         userId: selectedUserId,
@@ -393,18 +434,13 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleResumeBilling = async (
-    userId: string,
-    userFirstName: string,
-    userEmail: string,
-  ) => {
+  const handleResumeBilling = async (userId: string, userFirstName: string) => {
     if (
       !confirm(
         `Resume billing for ${userFirstName}? This will reactivate their service.`,
       )
     )
       return;
-
     try {
       await resumeBilling({ userId });
       toast.success(
@@ -424,7 +460,6 @@ export default function AdminBillingPage() {
       )
     )
       return;
-
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success(
@@ -439,7 +474,6 @@ export default function AdminBillingPage() {
 
   const handleConfirmProRatedPayment = async (
     userId: string,
-    billId: string,
     userEmail: string,
   ) => {
     if (
@@ -448,7 +482,6 @@ export default function AdminBillingPage() {
       )
     )
       return;
-
     try {
       await confirmProRatedPayment({
         userId,
@@ -475,7 +508,6 @@ export default function AdminBillingPage() {
       )
     )
       return;
-
     try {
       await startMonthlyBilling({ userId });
       toast.success(
@@ -494,7 +526,6 @@ export default function AdminBillingPage() {
   const handleDisconnect = async (userId: string, userFirstName: string) => {
     const reason = prompt("Enter reason for disconnection:");
     if (reason === null) return;
-
     try {
       await disconnectClient({ userId, reason });
       toast.success(
@@ -521,18 +552,6 @@ export default function AdminBillingPage() {
       toast.error(
         error.response?.data?.message || "Failed to reconnect client",
       );
-    }
-  };
-
-  const handleUpdateSettings = async () => {
-    try {
-      await updateBillingSettings(settings);
-      toast.success("✅ Billing settings updated successfully!");
-      setShowSettingsModal(false);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to update settings");
     }
   };
 
@@ -572,9 +591,10 @@ export default function AdminBillingPage() {
       return matchesSearch && user.status === "suspended";
     if (statusFilter === "paused")
       return matchesSearch && user.billingCycle?.status === "paused";
-
     return matchesSearch;
   });
+
+  const totalPendingCount = pendingProRated.length + pendingActivations.length;
 
   if (loading && users.length === 0) {
     return (
@@ -586,8 +606,6 @@ export default function AdminBillingPage() {
       </div>
     );
   }
-
-  const totalPendingCount = pendingProRated.length + pendingActivations.length;
 
   return (
     <div className="p-6">
@@ -610,16 +628,14 @@ export default function AdminBillingPage() {
                 }}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
               >
-                <FiBell className="w-4 h-4" />
-                Pending ({totalPendingCount})
+                <FiBell className="w-4 h-4" /> Pending ({totalPendingCount})
               </button>
             )}
             <button
               onClick={() => setShowSettingsModal(true)}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
             >
-              <FiSettings className="w-4 h-4" />
-              Settings
+              <FiSettings className="w-4 h-4" /> Settings
             </button>
             <button
               onClick={handleRefresh}
@@ -636,7 +652,7 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -701,6 +717,58 @@ export default function AdminBillingPage() {
               </p>
             </div>
             <FiPause className="w-8 h-8 text-yellow-100" />
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Pro-rated Due</p>
+              <p className="text-2xl font-bold text-purple-600">
+                {billingFlowSettings.proRatedDueDay}
+              </p>
+              <p className="text-xs text-gray-400">Day of month</p>
+            </div>
+            <FiCalendar className="w-8 h-8 text-purple-100" />
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Cutoff Day</p>
+              <p className="text-2xl font-bold text-indigo-600">
+                {billingFlowSettings.billingCutoffDay}
+              </p>
+              <p className="text-xs text-gray-400">After = next month</p>
+            </div>
+            <FiCalendar className="w-8 h-8 text-indigo-100" />
+          </div>
+        </div>
+      </div>
+
+      {/* Billing Flow Info Banner */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
+        <div className="flex items-start gap-3">
+          <FiInfo className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-blue-800">
+              📋 Current Billing Flow Settings:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-xs text-blue-700">
+              <div>
+                • Install Day 1-{billingFlowSettings.billingCutoffDay}:
+                Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th of
+                current month
+              </div>
+              <div>
+                • Install Day {billingFlowSettings.billingCutoffDay + 1}-31: No
+                pro-rated, first bill is next month's full bill due on{" "}
+                {billingFlowSettings.monthlyDueDay}th
+              </div>
+              <div>
+                • Free {billingFlowSettings.freeDays} day(s) for installation,{" "}
+                {billingFlowSettings.gracePeriodDays} day(s) grace period
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -778,6 +846,11 @@ export default function AdminBillingPage() {
                       </p>
                       <p className="text-sm text-gray-500">{user.email}</p>
                       <p className="text-xs text-gray-400">@{user.username}</p>
+                      {user.billingCycle?.isAfterCutoff && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          After cutoff: First bill next month
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {user.planId?.name || "No Plan"}
@@ -805,14 +878,6 @@ export default function AdminBillingPage() {
                           ? "Paused"
                           : user.status}
                       </span>
-                      {user.billingCycle?.pauseUntil && (
-                        <p className="text-xs text-gray-400 mt-1">
-                          Resume:{" "}
-                          {new Date(
-                            user.billingCycle.pauseUntil,
-                          ).toLocaleDateString()}
-                        </p>
-                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2 flex-wrap">
@@ -826,15 +891,10 @@ export default function AdminBillingPage() {
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
-
                         {user.billingCycle?.status === "paused" ? (
                           <button
                             onClick={() =>
-                              handleResumeBilling(
-                                user._id,
-                                user.firstName,
-                                user.email,
-                              )
+                              handleResumeBilling(user._id, user.firstName)
                             }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Resume Billing"
@@ -861,7 +921,7 @@ export default function AdminBillingPage() {
                                 setShowPauseModal(true);
                               }}
                               className="p-1 text-yellow-600 hover:text-yellow-800"
-                              title="Pause Billing (Vacation)"
+                              title="Pause Billing"
                             >
                               <FiPause className="w-4 h-4" />
                             </button>
@@ -876,7 +936,6 @@ export default function AdminBillingPage() {
                             </button>
                           </>
                         ) : null}
-
                         {user.status === "active" ? (
                           <button
                             onClick={() =>
@@ -908,268 +967,240 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Pending Actions Modal */}
-      {showPendingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  {pendingModalType === "pro-rated"
-                    ? "Pending Pro-rated Payments"
-                    : "Pending Activations"}
-                </h2>
-                <button
-                  onClick={() => setShowPendingModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <FiX className="w-6 h-6" />
-                </button>
-              </div>
-
-              {pendingModalType === "pro-rated" && (
-                <div className="space-y-4">
-                  {pendingProRated.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">
-                      No pending pro-rated payments
-                    </p>
-                  ) : (
-                    pendingProRated.map((item: any) => (
-                      <div key={item._id} className="border rounded-lg p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">
-                              {item.userId?.firstName} {item.userId?.lastName}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {item.userId?.email}
-                            </p>
-                            <p className="text-sm">
-                              Invoice: {item.invoiceNumber}
-                            </p>
-                            <p className="text-lg font-bold text-blue-600">
-                              ₱{item.total?.toLocaleString()}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() =>
-                              handleConfirmProRatedPayment(
-                                item.userId?._id,
-                                item._id,
-                                item.userId?.email,
-                              )
-                            }
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-                          >
-                            <FiCheckCircle className="w-4 h-4" />
-                            Confirm Payment & Activate
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {pendingModalType === "activation" && (
-                <div className="space-y-4">
-                  {pendingActivations.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">
-                      No pending activations
-                    </p>
-                  ) : (
-                    pendingActivations.map((item: any) => (
-                      <div key={item._id} className="border rounded-lg p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">
-                              {item.userId?.firstName} {item.userId?.lastName}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {item.userId?.email}
-                            </p>
-                            <p className="text-sm">Plan: {item.planId?.name}</p>
-                            <p className="text-sm">
-                              Pro-rated paid: ₱
-                              {item.currentProRatedAmount?.toLocaleString()}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() =>
-                              handleStartMonthlyBilling(
-                                item.userId?._id,
-                                item.userId?.email,
-                              )
-                            }
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                          >
-                            <FiPlay className="w-4 h-4" />
-                            Start Monthly Billing
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Billing Settings
+              </h2>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* User Detail Modal */}
-      {showUserDetailModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {selectedUser.firstName} {selectedUser.lastName}
-                  </h2>
-                  <p className="text-gray-500">{selectedUser.email}</p>
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiSettings className="text-gray-500" /> Basic Settings
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Free Days (Installation)
+                    </label>
+                    <input
+                      type="number"
+                      value={billingFlowSettings.freeDays}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          freeDays: parseInt(e.target.value) || 1,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Installation day is free
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Grace Period (Days)
+                    </label>
+                    <input
+                      type="number"
+                      value={billingFlowSettings.gracePeriodDays}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          gracePeriodDays: parseInt(e.target.value) || 5,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Days after due before suspension
+                    </p>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setShowUserDetailModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <FiX className="w-6 h-6" />
-                </button>
               </div>
-
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
-                <div className="grid grid-cols-4 gap-4">
+              <div className="border-t pt-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiCalendar className="text-blue-500" /> Billing Flow Settings
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <p className="text-sm text-gray-500">Outstanding Balance</p>
-                    <p
-                      className={`text-2xl font-bold ${getBalanceColor(selectedUser.currentBalance)}`}
-                    >
-                      ₱{selectedUser.currentBalance.toLocaleString()}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Pro-rated Due Day
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={billingFlowSettings.proRatedDueDay}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          proRatedDueDay: parseInt(e.target.value) || 25,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Due date for pro-rated bills (default: 25th)
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Unpaid Bills</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {selectedUser.unpaidBills.length}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Monthly Due Day
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={billingFlowSettings.monthlyDueDay}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          monthlyDueDay: parseInt(e.target.value) || 5,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Due date for monthly bills (default: 5th)
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Overdue Bills</p>
-                    <p className="text-2xl font-bold text-red-600">
-                      {selectedUser.overdueBills.length}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Billing Cutoff Day
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={billingFlowSettings.billingCutoffDay}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          billingCutoffDay: parseInt(e.target.value) || 23,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Installations after this day go to next month (default:
+                      23rd)
                     </p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Billing Status</p>
-                    <span
-                      className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedUser.billingCycle?.status || selectedUser.status)}`}
-                    >
-                      {selectedUser.billingCycle?.status === "paused"
-                        ? "Paused"
-                        : selectedUser.status}
+                </div>
+                <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>📌 How it works:</strong>
+                    <br />• Install on Day 1-
+                    {billingFlowSettings.billingCutoffDay}: Pro-rated bill from
+                    install date to end of month, due on{" "}
+                    {billingFlowSettings.proRatedDueDay}th
+                    <br />• Install on Day{" "}
+                    {billingFlowSettings.billingCutoffDay + 1}-31: NO pro-rated
+                    bill. First bill is NEXT month's full monthly bill, due on{" "}
+                    {billingFlowSettings.monthlyDueDay}th of that month
+                    <br />• Daily rate = (Monthly Price × 12) ÷ 365
+                  </p>
+                </div>
+                <div className="space-y-2 mb-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={billingFlowSettings.enableAutoBilling}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          enableAutoBilling: e.target.checked,
+                        })
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Enable Automatic Billing Generation
                     </span>
-                    {selectedUser.billingCycle?.pauseUntil && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Auto-resume:{" "}
-                        {new Date(
-                          selectedUser.billingCycle.pauseUntil,
-                        ).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={billingFlowSettings.sendInvoiceOnInstall}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          sendInvoiceOnInstall: e.target.checked,
+                        })
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Send Invoice Email Immediately on Installation
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={billingFlowSettings.requireAdminActivation}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          requireAdminActivation: e.target.checked,
+                        })
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Require Admin Activation After Pro-rated Payment
+                    </span>
+                  </label>
                 </div>
               </div>
-
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Unpaid Bills
-              </h3>
-              <div className="overflow-x-auto mb-6">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Invoice #
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Period
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Due Date
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Amount
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedUser.unpaidBills.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-8 text-center text-gray-500"
-                        >
-                          No unpaid bills
-                        </td>
-                      </tr>
-                    ) : (
-                      selectedUser.unpaidBills.map((bill) => (
-                        <tr key={bill._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {bill.invoiceNumber}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {bill.billingPeriod
-                              ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
-                              : "-"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {new Date(bill.dueDate).toLocaleDateString()}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                            ₱{bill.total?.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() =>
-                                handleMarkBillAsPaid(bill, selectedUser)
-                              }
-                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1"
-                            >
-                              <FiCheckCircle className="w-3 h-3" />
-                              Mark as Paid
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-3">
-                {selectedUser.billingCycle?.status === "paused" && (
-                  <button
-                    onClick={() =>
-                      handleResumeBilling(
-                        selectedUser._id,
-                        selectedUser.firstName,
-                        selectedUser.email,
-                      )
+              <div className="border-t pt-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiBell className="text-yellow-500" /> Reminder Settings
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reminder Days (comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={billingFlowSettings.reminderDays?.join(", ")}
+                    onChange={(e) =>
+                      setBillingFlowSettings({
+                        ...billingFlowSettings,
+                        reminderDays: e.target.value
+                          .split(",")
+                          .map((n: string) => parseInt(n.trim())),
+                      })
                     }
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-                  >
-                    <FiPlay className="w-4 h-4" />
-                    Resume Billing
-                  </button>
-                )}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Days before due date to send reminders (default: 7, 3, 1)
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
                 <button
-                  onClick={() => setShowUserDetailModal(false)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
-                  Close
+                  Cancel
+                </button>
+                <button
+                  onClick={saveBillingFlowSettings}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                >
+                  Save All Settings
                 </button>
               </div>
             </div>
@@ -1186,10 +1217,22 @@ export default function AdminBillingPage() {
               {users.find((u) => u._id === selectedUserId)?.firstName}{" "}
               {users.find((u) => u._id === selectedUserId)?.lastName}
             </h2>
+            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+              <p className="text-sm text-blue-800">
+                <strong>📌 Billing Flow:</strong>
+                <br />• If installed on Day 1-
+                {billingFlowSettings.billingCutoffDay}: Pro-rated bill due on{" "}
+                {billingFlowSettings.proRatedDueDay}th
+                <br />• If installed on Day{" "}
+                {billingFlowSettings.billingCutoffDay + 1}-31: No pro-rated,
+                first monthly bill due on {billingFlowSettings.monthlyDueDay}th
+                of next month
+              </p>
+            </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date (Optional)
+                  Installation Date (Optional)
                 </label>
                 <input
                   type="date"
@@ -1197,6 +1240,9 @@ export default function AdminBillingPage() {
                   onChange={(e) => setStartDate(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty for today
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1252,9 +1298,7 @@ export default function AdminBillingPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Pause Billing for{" "}
-              {users.find((u) => u._id === selectedUserId)?.firstName}{" "}
-              {users.find((u) => u._id === selectedUserId)?.lastName}
+              Pause Billing
             </h2>
             <div className="space-y-4">
               <div>
@@ -1313,136 +1357,250 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Settings Modal */}
-      {showSettingsModal && settings && (
+      {/* Pending Actions Modal */}
+      {showPendingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Billing Settings
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reminder Days (comma separated)
-                </label>
-                <input
-                  type="text"
-                  value={settings.reminderDays?.join(", ")}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      reminderDays: e.target.value
-                        .split(",")
-                        .map((n: string) => parseInt(n.trim())),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date Days After Period
-                </label>
-                <input
-                  type="number"
-                  value={settings.dueDateDaysAfterPeriod}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      dueDateDaysAfterPeriod: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Grace Period Days
-                </label>
-                <input
-                  type="number"
-                  value={settings.gracePeriodDays}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      gracePeriodDays: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Free Days (for pro-rated)
-                </label>
-                <input
-                  type="number"
-                  value={settings.freeDays || 1}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      freeDays: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoGenerateBills}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        autoGenerateBills: e.target.checked,
-                      })
-                    }
-                    className="rounded"
-                  />
-                  Auto Generate Bills
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoSendReminders}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        autoSendReminders: e.target.checked,
-                      })
-                    }
-                    className="rounded"
-                  />
-                  Auto Send Reminders
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoSuspendOnNonPayment}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        autoSuspendOnNonPayment: e.target.checked,
-                      })
-                    }
-                    className="rounded"
-                  />
-                  Auto Suspend on Non-Payment
-                </label>
-              </div>
-              <div className="flex gap-3 pt-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {pendingModalType === "pro-rated"
+                    ? "Pending Pro-rated Payments"
+                    : "Pending Activations"}
+                </h2>
                 <button
-                  onClick={() => setShowSettingsModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  onClick={() => setShowPendingModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  Cancel
+                  <FiX className="w-6 h-6" />
                 </button>
+              </div>
+              {pendingModalType === "pro-rated" && (
+                <div className="space-y-4">
+                  {pendingProRated.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No pending pro-rated payments
+                    </p>
+                  ) : (
+                    pendingProRated.map((item: any) => (
+                      <div key={item._id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              {item.userId?.firstName} {item.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {item.userId?.email}
+                            </p>
+                            <p className="text-sm">
+                              Invoice: {item.invoiceNumber}
+                            </p>
+                            <p className="text-lg font-bold text-blue-600">
+                              ₱{item.total?.toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleConfirmProRatedPayment(
+                                item.userId?._id,
+                                item.userId?.email,
+                              )
+                            }
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                          >
+                            <FiCheckCircle className="w-4 h-4" /> Confirm
+                            Payment & Activate
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+              {pendingModalType === "activation" && (
+                <div className="space-y-4">
+                  {pendingActivations.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No pending activations
+                    </p>
+                  ) : (
+                    pendingActivations.map((item: any) => (
+                      <div key={item._id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              {item.userId?.firstName} {item.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {item.userId?.email}
+                            </p>
+                            <p className="text-sm">Plan: {item.planId?.name}</p>
+                            <p className="text-sm">
+                              Pro-rated paid: ₱
+                              {item.currentProRatedAmount?.toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleStartMonthlyBilling(
+                                item.userId?._id,
+                                item.userId?.email,
+                              )
+                            }
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                          >
+                            <FiPlay className="w-4 h-4" /> Start Monthly Billing
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Detail Modal */}
+      {showUserDetailModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    {selectedUser.firstName} {selectedUser.lastName}
+                  </h2>
+                  <p className="text-gray-500">{selectedUser.email}</p>
+                </div>
                 <button
-                  onClick={handleUpdateSettings}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                  onClick={() => setShowUserDetailModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  Save Settings
+                  <FiX className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
+                <div className="grid grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Outstanding Balance</p>
+                    <p
+                      className={`text-2xl font-bold ${getBalanceColor(selectedUser.currentBalance)}`}
+                    >
+                      ₱{selectedUser.currentBalance.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Unpaid Bills</p>
+                    <p className="text-2xl font-bold text-orange-600">
+                      {selectedUser.unpaidBills.length}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Overdue Bills</p>
+                    <p className="text-2xl font-bold text-red-600">
+                      {selectedUser.overdueBills.length}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Billing Status</p>
+                    <span
+                      className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedUser.billingCycle?.status || selectedUser.status)}`}
+                    >
+                      {selectedUser.billingCycle?.status === "paused"
+                        ? "Paused"
+                        : selectedUser.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                Unpaid Bills
+              </h3>
+              <div className="overflow-x-auto mb-6">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                        Invoice #
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                        Period
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                        Due Date
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                        Amount
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedUser.unpaidBills.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-4 py-8 text-center text-gray-500"
+                        >
+                          No unpaid bills
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedUser.unpaidBills.map((bill) => (
+                        <tr key={bill._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                            {bill.invoiceNumber}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {bill.billingPeriod
+                              ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
+                              : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {new Date(bill.dueDate).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                            ₱{bill.total?.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() =>
+                                handleMarkBillAsPaid(bill, selectedUser)
+                              }
+                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1"
+                            >
+                              <FiCheckCircle className="w-3 h-3" /> Mark as Paid
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                {selectedUser.billingCycle?.status === "paused" && (
+                  <button
+                    onClick={() =>
+                      handleResumeBilling(
+                        selectedUser._id,
+                        selectedUser.firstName,
+                      )
+                    }
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  >
+                    <FiPlay className="w-4 h-4" /> Resume Billing
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowUserDetailModal(false)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  Close
                 </button>
               </div>
             </div>
