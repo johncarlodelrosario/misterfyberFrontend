@@ -1,13 +1,12 @@
-// app/(dashboard)/user/billing/page.tsx - COMPLETE WORKING BILLING PAGE
 "use client";
 
 import { useState, useEffect } from "react";
 import {
+  getUserCurrentBilling,
   getUserBillingHistory,
-  getUserBillingCycle,
-  getCurrentBill,
-} from "@/services/user";
-import { createPayment } from "@/services/payment";
+  submitProRatedPayment,
+  submitMonthlyPayment,
+} from "@/services/billing";
 import {
   FiClipboard,
   FiCalendar,
@@ -17,15 +16,13 @@ import {
   FiAlertTriangle,
   FiUpload,
   FiInfo,
-  FiDownload,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
 
 export default function BillingPage() {
+  const [billingData, setBillingData] = useState<any>(null);
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
-  const [billingCycle, setBillingCycle] = useState<any>(null);
-  const [currentBill, setCurrentBill] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedBill, setSelectedBill] = useState<any>(null);
@@ -36,23 +33,16 @@ export default function BillingPage() {
   const loadBilling = async () => {
     setLoading(true);
     try {
-      const [billingSummary, cycleData, billData] = await Promise.all([
-        getUserBillingHistory(),
-        getUserBillingCycle(),
-        getCurrentBill(),
+      const [currentResult, historyResult] = await Promise.all([
+        getUserCurrentBilling(),
+        getUserBillingHistory({ page: 1, limit: 50 }),
       ]);
 
-      console.log("✅ Billing Summary:", billingSummary);
-      console.log("✅ Billing Cycle:", cycleData);
-      console.log("✅ Current Bill:", billData);
+      console.log("✅ Current Billing:", currentResult);
+      console.log("✅ Billing History:", historyResult);
 
-      // Extract billing history from the response
-      const bills = billingSummary?.billingHistory || [];
-      console.log("📋 Bills found:", bills.length);
-
-      setBillingHistory(bills);
-      setBillingCycle(cycleData);
-      setCurrentBill(billData);
+      setBillingData(currentResult?.data || null);
+      setBillingHistory(historyResult?.data?.billingHistory || []);
     } catch (error: any) {
       console.error("Failed to load billing:", error);
       toast.error(error.response?.data?.message || "Failed to load billing");
@@ -65,26 +55,48 @@ export default function BillingPage() {
     loadBilling();
   }, []);
 
-  const handleSubmitPayment = async (billId: string, amount: number) => {
+  const handleSubmitProRatedPayment = async (billId: string) => {
     if (!paymentReference) {
-      toast.error(
-        "Please enter a reference number (e.g., GCash Ref No., Bank Ref No.)",
-      );
+      toast.error("Please enter a reference number");
       return;
     }
 
     setSubmitting(true);
     try {
-      await createPayment({
-        amount,
-        paymentMethod: "manual",
-        billingId: billId,
-        paymentType: "subscription",
+      await submitProRatedPayment({
+        billId,
         referenceNumber: paymentReference,
         notes: paymentNotes,
       });
 
-      toast.success("Payment submitted! Please wait for admin confirmation.");
+      toast.success("Payment submitted! Awaiting admin confirmation.");
+      setShowPaymentModal(false);
+      setPaymentReference("");
+      setPaymentNotes("");
+      setSelectedBill(null);
+      loadBilling();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to submit payment");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitMonthlyPayment = async (billId: string) => {
+    if (!paymentReference) {
+      toast.error("Please enter a reference number");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await submitMonthlyPayment({
+        billId,
+        referenceNumber: paymentReference,
+        notes: paymentNotes,
+      });
+
+      toast.success("Payment submitted! Awaiting admin confirmation.");
       setShowPaymentModal(false);
       setPaymentReference("");
       setPaymentNotes("");
@@ -124,6 +136,13 @@ export default function BillingPage() {
         icon: FiAlertTriangle,
       };
     }
+    if (normalizedStatus === "pending_confirmation") {
+      return {
+        color: "bg-yellow-100 text-yellow-700",
+        text: "Pending Confirmation",
+        icon: FiClock,
+      };
+    }
     if (dueDate) {
       const daysLeft = getDaysUntilDue(dueDate);
       if (daysLeft !== null && daysLeft <= 1 && daysLeft >= 0) {
@@ -141,35 +160,32 @@ export default function BillingPage() {
         };
       }
     }
-    return {
-      color: "bg-yellow-100 text-yellow-700",
-      text: "Pending",
-      icon: FiClock,
-    };
+    return { color: "bg-blue-100 text-blue-700", text: "Sent", icon: FiClock };
   };
 
-  const getBillAmount = (bill: any) => bill.total || bill.amount || 0;
-  const getBillDueDate = (bill: any) => bill.dueDate;
-  const getBillStatus = (bill: any) => bill.status || "pending";
-  const getBillInvoiceNumber = (bill: any) =>
-    bill.invoiceNumber || bill._id?.slice(-8);
-  const getBillId = (bill: any) => bill._id;
+  // Get current bills from billingData and billingHistory
+  const currentBill = billingData?.currentBill || null;
+  const needsFirstPayment = billingData?.needsFirstPayment === true;
+  const isAfterCutoff = billingData?.isAfterCutoff || false;
+  const billingCycle = billingData?.billingCycle || null;
 
-  const getBillPeriod = (bill: any) => {
-    if (bill.billingPeriod && typeof bill.billingPeriod === "object") {
-      const start = bill.billingPeriod.start
-        ? new Date(bill.billingPeriod.start).toLocaleDateString()
-        : "";
-      const end = bill.billingPeriod.end
-        ? new Date(bill.billingPeriod.end).toLocaleDateString()
-        : "";
-      if (start && end) return `${start} - ${end}`;
+  // Filter unpaid bills from history (excluding the current bill if it's pro-rated and unpaid)
+  const unpaidBills = billingHistory.filter(
+    (bill: any) => bill.status !== "paid" && bill.status !== "cancelled",
+  );
+
+  const paidBills = billingHistory.filter(
+    (bill: any) => bill.status === "paid",
+  );
+
+  const hasOverdue = unpaidBills.some((bill: any) => {
+    const dueDate = bill.dueDate;
+    if (dueDate) {
+      const daysLeft = getDaysUntilDue(dueDate);
+      return daysLeft !== null && daysLeft < 0;
     }
-    if (typeof bill.billingPeriod === "string") return bill.billingPeriod;
-    if (bill.period) return bill.period;
-    if (bill.month) return bill.month;
-    return "-";
-  };
+    return false;
+  });
 
   if (loading) {
     return (
@@ -183,23 +199,6 @@ export default function BillingPage() {
       </UserLayout>
     );
   }
-
-  // Filter bills
-  const unpaidBills = billingHistory.filter(
-    (bill: any) => getBillStatus(bill) !== "paid",
-  );
-  const paidBills = billingHistory.filter(
-    (bill: any) => getBillStatus(bill) === "paid",
-  );
-
-  const hasOverdue = unpaidBills.some((bill: any) => {
-    const dueDate = getBillDueDate(bill);
-    if (dueDate) {
-      const daysLeft = getDaysUntilDue(dueDate);
-      return daysLeft !== null && daysLeft < 0;
-    }
-    return false;
-  });
 
   return (
     <UserLayout>
@@ -223,7 +222,7 @@ export default function BillingPage() {
         </div>
 
         {/* Billing Cycle Info */}
-        {billingCycle?.billingCycle && (
+        {billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-6 border border-blue-100">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <FiCalendar className="text-blue-600" /> Current Billing Cycle
@@ -232,9 +231,9 @@ export default function BillingPage() {
               <div>
                 <p className="text-xs text-gray-500">Period Start</p>
                 <p className="text-sm font-medium">
-                  {billingCycle.billingCycle.billingStartDate
+                  {billingCycle.billingStartDate
                     ? new Date(
-                        billingCycle.billingCycle.billingStartDate,
+                        billingCycle.billingStartDate,
                       ).toLocaleDateString()
                     : "-"}
                 </p>
@@ -242,9 +241,9 @@ export default function BillingPage() {
               <div>
                 <p className="text-xs text-gray-500">Next Billing</p>
                 <p className="text-sm font-medium">
-                  {billingCycle.billingCycle.nextBillingDate
+                  {billingCycle.nextBillingDate
                     ? new Date(
-                        billingCycle.billingCycle.nextBillingDate,
+                        billingCycle.nextBillingDate,
                       ).toLocaleDateString()
                     : "-"}
                 </p>
@@ -252,23 +251,61 @@ export default function BillingPage() {
               <div>
                 <p className="text-xs text-gray-500">Monthly Rate</p>
                 <p className="text-sm font-medium">
-                  ₱
-                  {(
-                    billingCycle.billingCycle.monthlyRate || 0
-                  ).toLocaleString()}
+                  ₱{(billingCycle.monthlyRate || 0).toLocaleString()}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Status</p>
                 <span
                   className={`inline-block px-2 py-1 text-xs rounded-full ${
-                    billingCycle.billingCycle.status === "active"
+                    billingCycle.status === "active"
                       ? "bg-green-100 text-green-800"
-                      : "bg-gray-100 text-gray-800"
+                      : billingCycle.status === "pending_activation"
+                        ? "bg-purple-100 text-purple-800"
+                        : "bg-gray-100 text-gray-800"
                   }`}
                 >
-                  {billingCycle.billingCycle.status || "Unknown"}
+                  {billingCycle.status === "pending_activation"
+                    ? "Awaiting First Payment"
+                    : billingCycle.status || "Unknown"}
                 </span>
+              </div>
+            </div>
+            {isAfterCutoff && (
+              <div className="mt-3 p-2 bg-blue-100 rounded-lg">
+                <p className="text-xs text-blue-700">
+                  ℹ️ Your installation was after the cutoff date. Your first
+                  bill is for next month's full monthly subscription.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Needs Pro-rated Payment Alert */}
+        {needsFirstPayment && currentBill && currentBill.isProRated && (
+          <div className="mb-6 bg-purple-50 border border-purple-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <FiInfo className="w-5 h-5 text-purple-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold text-purple-800">
+                  📋 Pro-rated Payment Required
+                </p>
+                <p className="text-sm text-purple-600 mb-3">
+                  Your pro-rated payment of ₱
+                  {(currentBill.total || 0).toLocaleString()} is due on{" "}
+                  {new Date(currentBill.dueDate).toLocaleDateString()}. Once
+                  paid, your service will be fully activated.
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedBill(currentBill);
+                    setShowPaymentModal(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+                >
+                  <FiUpload className="w-4 h-4" /> Pay Pro-rated Amount Now
+                </button>
               </div>
             </div>
           </div>
@@ -282,42 +319,51 @@ export default function BillingPage() {
               <p className="font-semibold text-red-800">⚠️ Overdue Payment</p>
               <p className="text-sm text-red-600">
                 You have overdue bill(s). Please pay immediately to avoid
-                service interruption. You have a 5-day grace period before
-                service is suspended.
+                service interruption.
               </p>
             </div>
           </div>
         )}
 
-        {/* Unpaid Bills */}
-        {unpaidBills.length > 0 && (
+        {/* Unpaid Bills (excluding pro-rated if separate) */}
+        {unpaidBills.length > 0 && !needsFirstPayment && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Pending Payments ({unpaidBills.length})
             </h2>
             <div className="space-y-4">
-              {unpaidBills.map((bill: any, index: number) => {
-                const amount = getBillAmount(bill);
-                const dueDate = getBillDueDate(bill);
-                const invoiceNumber = getBillInvoiceNumber(bill);
-                const billId = getBillId(bill);
-                const daysLeft = dueDate ? getDaysUntilDue(dueDate) : null;
+              {unpaidBills.map((bill: any) => {
+                const daysLeft = bill.dueDate
+                  ? getDaysUntilDue(bill.dueDate)
+                  : null;
                 const isOverdue = daysLeft !== null && daysLeft < 0;
-                const statusInfo = getStatusBadge(getBillStatus(bill), dueDate);
+                const statusInfo = getStatusBadge(bill.status, bill.dueDate);
                 const StatusIcon = statusInfo.icon;
+                const isPendingConfirmation =
+                  bill.status === "pending_confirmation";
 
                 return (
                   <div
-                    key={billId || index}
+                    key={bill._id}
                     className="bg-white rounded-xl shadow-sm border p-6"
                   >
                     <div className="flex flex-wrap justify-between items-start gap-4">
                       <div className="flex-1">
                         <p className="text-sm text-gray-500">
-                          Invoice #{invoiceNumber}
+                          Invoice #{bill.invoiceNumber}
                         </p>
+                        {bill.isProRated && (
+                          <span className="inline-block text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full mt-1">
+                            Pro-rated Bill
+                          </span>
+                        )}
+                        {bill.includesProRatedAmount && (
+                          <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full mt-1 ml-2">
+                            Includes Pro-rated Amount
+                          </span>
+                        )}
                         <p className="text-2xl font-bold text-gray-900 mt-1">
-                          ₱{amount.toLocaleString()}
+                          ₱{bill.total?.toLocaleString()}
                         </p>
                         <div className="flex flex-wrap items-center gap-4 mt-2">
                           <span
@@ -326,12 +372,12 @@ export default function BillingPage() {
                             <StatusIcon className="w-3 h-3" />
                             {statusInfo.text}
                           </span>
-                          {dueDate && isOverdue && (
+                          {bill.dueDate && isOverdue && (
                             <span className="text-xs text-red-600">
                               Overdue by {Math.abs(daysLeft)} day(s)
                             </span>
                           )}
-                          {dueDate &&
+                          {bill.dueDate &&
                             !isOverdue &&
                             daysLeft !== null &&
                             daysLeft >= 0 && (
@@ -341,16 +387,31 @@ export default function BillingPage() {
                               </span>
                             )}
                         </div>
+                        {bill.items && bill.items.length > 0 && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            {bill.items.map((item: any, idx: number) => (
+                              <p key={idx}>{item.description}</p>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={() => {
-                          setSelectedBill(bill);
-                          setShowPaymentModal(true);
-                        }}
-                        className="px-6 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition flex items-center gap-2"
-                      >
-                        <FiUpload className="w-4 h-4" /> Submit Payment
-                      </button>
+                      {!isPendingConfirmation && (
+                        <button
+                          onClick={() => {
+                            setSelectedBill(bill);
+                            setShowPaymentModal(true);
+                          }}
+                          className="px-6 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition flex items-center gap-2"
+                        >
+                          <FiUpload className="w-4 h-4" /> Submit Payment
+                        </button>
+                      )}
+                      {isPendingConfirmation && (
+                        <span className="px-4 py-2 bg-yellow-100 text-yellow-700 rounded-lg flex items-center gap-2">
+                          <FiClock className="w-4 h-4" /> Waiting for
+                          confirmation
+                        </span>
+                      )}
                     </div>
 
                     {isOverdue && daysLeft !== null && daysLeft <= -5 && (
@@ -358,8 +419,7 @@ export default function BillingPage() {
                         <p className="text-sm text-red-700 flex items-center gap-2">
                           <FiAlertTriangle className="w-4 h-4" />
                           <strong>URGENT:</strong> Your payment is 5+ days
-                          overdue. Your service will be suspended immediately if
-                          not paid.
+                          overdue. Your service will be suspended if not paid.
                         </p>
                       </div>
                     )}
@@ -398,23 +458,23 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {paidBills.map((bill: any, index: number) => (
-                    <tr key={bill._id || index} className="hover:bg-gray-50">
+                  {paidBills.map((bill: any) => (
+                    <tr key={bill._id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {bill.paidDate
-                          ? new Date(bill.paidDate).toLocaleDateString()
-                          : bill.updatedAt
-                            ? new Date(bill.updatedAt).toLocaleDateString()
-                            : "-"}
+                        {bill.updatedAt
+                          ? new Date(bill.updatedAt).toLocaleDateString()
+                          : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {getBillInvoiceNumber(bill)}
+                        {bill.invoiceNumber}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {getBillPeriod(bill)}
+                        {bill.billingPeriod
+                          ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
+                          : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        ₱{getBillAmount(bill).toLocaleString()}
+                        ₱{bill.total?.toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
@@ -453,9 +513,17 @@ export default function BillingPage() {
               Submit Payment
             </h2>
             <p className="text-gray-600 mb-4">
-              Invoice #{getBillInvoiceNumber(selectedBill)} - ₱
-              {getBillAmount(selectedBill).toLocaleString()}
+              Invoice #{selectedBill.invoiceNumber} - ₱
+              {selectedBill.total?.toLocaleString()}
             </p>
+            {selectedBill.isProRated && (
+              <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-sm text-purple-800">
+                  <strong>Pro-rated Bill:</strong> This payment will activate
+                  your service.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -508,12 +576,13 @@ export default function BillingPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() =>
-                    handleSubmitPayment(
-                      getBillId(selectedBill),
-                      getBillAmount(selectedBill),
-                    )
-                  }
+                  onClick={() => {
+                    if (selectedBill.isProRated) {
+                      handleSubmitProRatedPayment(selectedBill._id);
+                    } else {
+                      handleSubmitMonthlyPayment(selectedBill._id);
+                    }
+                  }}
                   disabled={submitting || !paymentReference}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
