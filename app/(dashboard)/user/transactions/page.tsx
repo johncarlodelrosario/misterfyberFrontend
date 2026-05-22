@@ -1,13 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getUserBillingHistory } from "@/services/user";
+import {
+  getUserBillingHistory,
+  getInvoice,
+  downloadInvoice,
+} from "@/services/user";
 import {
   FiFileText,
   FiDownload,
   FiCheckCircle,
   FiClock,
   FiRefreshCw,
+  FiAlertCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
@@ -15,12 +20,34 @@ import UserLayout from "@/components/User/UserLayout";
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const loadTransactions = async () => {
     setLoading(true);
     try {
-      const data = await getUserBillingHistory();
-      setTransactions(data?.history || []);
+      const response = await getUserBillingHistory();
+      // Fixed: response.data.billingHistory ang tamang path
+      const billingHistory = response?.data?.billingHistory || [];
+
+      // Transform billing history to transaction format
+      const formattedTransactions = billingHistory.map((bill: any) => ({
+        id: bill._id,
+        paidDate: bill.updatedAt || bill.createdAt,
+        month: bill.billingPeriod
+          ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
+          : "Monthly Subscription",
+        amount: bill.total || 0,
+        status:
+          bill.status === "paid"
+            ? "paid"
+            : bill.status === "pending_confirmation"
+              ? "pending"
+              : "completed",
+        invoiceNumber: bill.invoiceNumber,
+        isProRated: bill.isProRated || false,
+      }));
+
+      setTransactions(formattedTransactions);
     } catch (error: any) {
       console.error("Failed to load transactions:", error);
       toast.error(
@@ -34,6 +61,68 @@ export default function TransactionsPage() {
   useEffect(() => {
     loadTransactions();
   }, []);
+
+  const handleDownloadInvoice = async (
+    invoiceNumber: string,
+    billId: string,
+  ) => {
+    if (!billId) {
+      toast.error("Invalid invoice ID");
+      return;
+    }
+
+    setDownloading(billId);
+    try {
+      // Try to get invoice data first
+      const invoiceData = await getInvoice(billId);
+      if (invoiceData) {
+        // Create a blob and trigger download
+        const blob = new Blob([JSON.stringify(invoiceData, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `invoice_${invoiceNumber}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`Invoice ${invoiceNumber} downloaded successfully!`);
+      } else {
+        toast.error("No invoice data found");
+      }
+    } catch (error: any) {
+      console.error("Download failed:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to download invoice",
+      );
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    if (status === "paid") {
+      return {
+        color: "bg-green-100 text-green-700",
+        text: "Completed",
+        icon: FiCheckCircle,
+      };
+    }
+    if (status === "pending") {
+      return {
+        color: "bg-yellow-100 text-yellow-700",
+        text: "Pending Confirmation",
+        icon: FiClock,
+      };
+    }
+    return {
+      color: "bg-red-100 text-red-700",
+      text: "Failed",
+      icon: FiAlertCircle,
+    };
+  };
 
   if (loading) {
     return (
@@ -59,9 +148,10 @@ export default function TransactionsPage() {
             </div>
             <button
               onClick={loadTransactions}
-              className="text-blue-600 hover:text-blue-700"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
             >
-              <FiRefreshCw className="w-5 h-5" />
+              <FiRefreshCw className="w-4 h-4" />
+              Refresh
             </button>
           </div>
         </div>
@@ -73,7 +163,7 @@ export default function TransactionsPage() {
               No transactions yet
             </h3>
             <p className="text-gray-500">
-              Your payment history will appear here
+              Your payment history will appear here once you make a payment
             </p>
           </div>
         ) : (
@@ -86,7 +176,10 @@ export default function TransactionsPage() {
                       Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Description
+                      Invoice #
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Period
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Amount
@@ -95,50 +188,74 @@ export default function TransactionsPage() {
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Invoice
+                      Action
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {transactions.map((transaction, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {transaction.paidDate
-                          ? new Date(transaction.paidDate).toLocaleDateString()
-                          : "-"}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        Internet Service - {transaction.month}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        ₱{transaction.amount.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                            transaction.status === "paid"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {transaction.status === "paid" ? (
-                            <FiCheckCircle className="w-3 h-3" />
-                          ) : (
-                            <FiClock className="w-3 h-3" />
+                  {transactions.map((transaction) => {
+                    const statusInfo = getStatusBadge(transaction.status);
+                    const StatusIcon = statusInfo.icon;
+                    const isDownloading = downloading === transaction.id;
+
+                    return (
+                      <tr key={transaction.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {transaction.paidDate
+                            ? new Date(
+                                transaction.paidDate,
+                              ).toLocaleDateString()
+                            : "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-mono text-gray-900">
+                          {transaction.invoiceNumber || "-"}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {transaction.month}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                          ₱{transaction.amount.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}
+                          >
+                            <StatusIcon className="w-3 h-3" />
+                            {statusInfo.text}
+                          </span>
+                          {transaction.isProRated && (
+                            <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                              Pro-rated
+                            </span>
                           )}
-                          {transaction.status === "paid"
-                            ? "Completed"
-                            : "Pending"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm">
-                          <FiDownload className="w-3 h-3" />
-                          PDF
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() =>
+                              handleDownloadInvoice(
+                                transaction.invoiceNumber,
+                                transaction.id,
+                              )
+                            }
+                            disabled={isDownloading}
+                            className="flex items-center gap-1 px-3 py-1 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isDownloading ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                Downloading...
+                              </>
+                            ) : (
+                              <>
+                                <FiDownload className="w-3 h-3" />
+                                Invoice
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
