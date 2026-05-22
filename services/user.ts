@@ -1,4 +1,4 @@
-// services/user.ts - UPDATED (remove duplicate billing functions)
+// services/user.ts - COMPLETE WITH ALL EXPORTS
 import api from "./api";
 import { getUserCurrentBilling, getUserBillingHistory } from "./billing";
 
@@ -105,6 +105,13 @@ export const requestPlanChange = async (
 
 // Re-export billing functions from billing service
 export { getUserCurrentBilling, getUserBillingHistory };
+
+// Alias for backward compatibility
+export const getUserBillingCycle = getUserCurrentBilling;
+export const getCurrentBill = async () => {
+  const result = await getUserCurrentBilling();
+  return result?.data?.currentBill || null;
+};
 
 export const getUsage = async () => {
   try {

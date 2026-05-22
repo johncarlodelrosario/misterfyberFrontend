@@ -1,12 +1,12 @@
-// app/(dashboard)/user/page.tsx - User dashboard
+// app/(dashboard)/user/page.tsx - User dashboard (FIXED)
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getUserDashboard,
-  getUserBillingCycle,
-  getCurrentBill,
+  getUserCurrentBilling,
+  getUserBillingHistory,
 } from "@/services/user";
 import {
   FiWifi,
@@ -24,21 +24,18 @@ import UserLayout from "@/components/User/UserLayout";
 export default function UserDashboard() {
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState<any>(null);
-  const [billingCycle, setBillingCycle] = useState<any>(null);
-  const [currentBill, setCurrentBill] = useState<any>(null);
+  const [billingData, setBillingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      const [data, cycleData, billData] = await Promise.all([
+      const [data, billingCurrent] = await Promise.all([
         getUserDashboard(),
-        getUserBillingCycle(),
-        getCurrentBill(),
+        getUserCurrentBilling(),
       ]);
       setDashboardData(data);
-      setBillingCycle(cycleData);
-      setCurrentBill(billData);
+      setBillingData(billingCurrent?.data || null);
     } catch (error: any) {
       console.error("Failed to load dashboard:", error);
       toast.error(error.response?.data?.message || "Failed to load dashboard");
@@ -50,6 +47,11 @@ export default function UserDashboard() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  const billingCycle = billingData?.billingCycle || null;
+  const currentBill = billingData?.currentBill || null;
+  const needsFirstPayment = billingData?.needsFirstPayment || false;
+  const hasOverdue = currentBill?.status === "overdue";
 
   if (loading) {
     return (
@@ -76,15 +78,39 @@ export default function UserDashboard() {
           </p>
         </div>
 
-        {/* Billing Cycle Alert */}
-        {billingCycle?.hasOverdue && (
+        {/* Needs First Payment Alert */}
+        {needsFirstPayment && currentBill && currentBill.isProRated && (
+          <div className="mb-6 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center gap-3">
+            <FiAlertCircle className="w-6 h-6 text-purple-600" />
+            <div className="flex-1">
+              <p className="font-semibold text-purple-800">
+                📋 Pro-rated Payment Required
+              </p>
+              <p className="text-sm text-purple-600">
+                Your pro-rated payment of ₱
+                {(currentBill.total || 0).toLocaleString()} is due on{" "}
+                {new Date(currentBill.dueDate).toLocaleDateString()}. Once paid,
+                your service will be fully activated.
+              </p>
+            </div>
+            <Link
+              href="/user/billing"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            >
+              Pay Now
+            </Link>
+          </div>
+        )}
+
+        {/* Overdue Alert */}
+        {hasOverdue && !needsFirstPayment && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
             <FiAlertCircle className="w-6 h-6 text-red-600" />
             <div className="flex-1">
               <p className="font-semibold text-red-800">⚠️ Overdue Payment</p>
               <p className="text-sm text-red-600">
-                You have {billingCycle.overdueCount} overdue bill(s). Please pay
-                immediately to avoid service interruption.
+                You have an overdue bill. Please pay immediately to avoid
+                service interruption.
               </p>
             </div>
             <Link
@@ -96,8 +122,8 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {billingCycle?.billingCycle?.pendingPlanChange?.status ===
-          "pending" && (
+        {/* Pending Plan Change Alert */}
+        {billingCycle?.pendingPlanChange?.status === "pending" && (
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
             <FiClock className="w-6 h-6 text-yellow-600" />
             <div className="flex-1">
@@ -106,8 +132,8 @@ export default function UserDashboard() {
               </p>
               <p className="text-sm text-yellow-600">
                 Your request to change to{" "}
-                {billingCycle.billingCycle.pendingPlanChange.newPlanId?.name} is
-                awaiting admin approval.
+                {billingCycle.pendingPlanChange.newPlanId?.name} is awaiting
+                admin approval.
               </p>
             </div>
           </div>
@@ -148,7 +174,7 @@ export default function UserDashboard() {
                 {(currentBill?.dueDate ||
                   dashboardData?.currentBill?.dueDate) && (
                   <p
-                    className={`text-sm ${new Date(currentBill?.dueDate || dashboardData?.currentBill?.dueDate) < new Date() ? "text-red-500" : "text-yellow-500"}`}
+                    className={`text-sm ${hasOverdue ? "text-red-500" : "text-yellow-500"}`}
                   >
                     Due:{" "}
                     {new Date(
@@ -180,9 +206,9 @@ export default function UserDashboard() {
               <div>
                 <p className="text-sm text-gray-500">Next Billing</p>
                 <p className="text-xl font-bold text-gray-900">
-                  {billingCycle?.billingCycle?.nextBillingDate
+                  {billingCycle?.nextBillingDate
                     ? new Date(
-                        billingCycle.billingCycle.nextBillingDate,
+                        billingCycle.nextBillingDate,
                       ).toLocaleDateString()
                     : dashboardData?.nextBillingDate
                       ? new Date(
@@ -190,10 +216,9 @@ export default function UserDashboard() {
                         ).toLocaleDateString()
                       : "N/A"}
                 </p>
-                {billingCycle?.billingCycle?.monthlyRate && (
+                {billingCycle?.monthlyRate && (
                   <p className="text-sm text-gray-500">
-                    ₱{billingCycle.billingCycle.monthlyRate.toLocaleString()}
-                    /month
+                    ₱{billingCycle.monthlyRate.toLocaleString()}/month
                   </p>
                 )}
               </div>
@@ -203,7 +228,7 @@ export default function UserDashboard() {
         </div>
 
         {/* Billing Cycle Info Card */}
-        {billingCycle?.billingCycle && (
+        {billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-8 border border-blue-100">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <FiClock className="text-blue-600" /> Billing Cycle Information
@@ -212,44 +237,58 @@ export default function UserDashboard() {
               <div>
                 <p className="text-xs text-gray-500">Billing Period</p>
                 <p className="text-sm font-medium">
-                  {new Date(
-                    billingCycle.billingCycle.billingStartDate,
-                  ).toLocaleDateString()}{" "}
-                  -
-                  {billingCycle.billingCycle.billingEndDate
+                  {billingCycle.billingStartDate
                     ? new Date(
-                        billingCycle.billingCycle.billingEndDate,
+                        billingCycle.billingStartDate,
                       ).toLocaleDateString()
+                    : "-"}{" "}
+                  -
+                  {billingCycle.billingEndDate
+                    ? new Date(billingCycle.billingEndDate).toLocaleDateString()
                     : "Ongoing"}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Next Billing Date</p>
                 <p className="text-sm font-medium">
-                  {new Date(
-                    billingCycle.billingCycle.nextBillingDate,
-                  ).toLocaleDateString()}
+                  {billingCycle.nextBillingDate
+                    ? new Date(
+                        billingCycle.nextBillingDate,
+                      ).toLocaleDateString()
+                    : "-"}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Monthly Rate</p>
                 <p className="text-sm font-medium">
-                  ₱{billingCycle.billingCycle.monthlyRate?.toLocaleString()}
+                  ₱{billingCycle.monthlyRate?.toLocaleString() || 0}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Cycle Status</p>
                 <span
                   className={`inline-block px-2 py-1 text-xs rounded-full ${
-                    billingCycle.billingCycle.status === "active"
+                    billingCycle.status === "active"
                       ? "bg-green-100 text-green-800"
-                      : "bg-gray-100 text-gray-800"
+                      : billingCycle.status === "pending_activation"
+                        ? "bg-purple-100 text-purple-800"
+                        : "bg-gray-100 text-gray-800"
                   }`}
                 >
-                  {billingCycle.billingCycle.status}
+                  {billingCycle.status === "pending_activation"
+                    ? "Awaiting First Payment"
+                    : billingCycle.status || "Unknown"}
                 </span>
               </div>
             </div>
+            {billingData?.isAfterCutoff && (
+              <div className="mt-3 p-2 bg-blue-100 rounded-lg">
+                <p className="text-xs text-blue-700">
+                  ℹ️ Your installation was after the cutoff date. Your first
+                  bill is for next month's full monthly subscription.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
