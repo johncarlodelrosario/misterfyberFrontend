@@ -1,3 +1,4 @@
+// app/(dashboard)/user/billing/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -163,13 +164,11 @@ export default function BillingPage() {
     return { color: "bg-blue-100 text-blue-700", text: "Sent", icon: FiClock };
   };
 
-  // Get current bills from billingData and billingHistory
   const currentBill = billingData?.currentBill || null;
   const needsFirstPayment = billingData?.needsFirstPayment === true;
   const isAfterCutoff = billingData?.isAfterCutoff || false;
   const billingCycle = billingData?.billingCycle || null;
 
-  // Filter unpaid bills from history (excluding the current bill if it's pro-rated and unpaid)
   const unpaidBills = billingHistory.filter(
     (bill: any) => bill.status !== "paid" && bill.status !== "cancelled",
   );
@@ -221,7 +220,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Billing Cycle Info */}
         {billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-6 border border-blue-100">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -282,7 +280,6 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Needs Pro-rated Payment Alert */}
         {needsFirstPayment && currentBill && currentBill.isProRated && (
           <div className="mb-6 bg-purple-50 border border-purple-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
@@ -311,8 +308,7 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Overdue Alert */}
-        {hasOverdue && (
+        {hasOverdue && !needsFirstPayment && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
             <FiAlertTriangle className="w-6 h-6 text-red-600" />
             <div className="flex-1">
@@ -325,7 +321,6 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Unpaid Bills (excluding pro-rated if separate) */}
         {unpaidBills.length > 0 && !needsFirstPayment && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -355,11 +350,6 @@ export default function BillingPage() {
                         {bill.isProRated && (
                           <span className="inline-block text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full mt-1">
                             Pro-rated Bill
-                          </span>
-                        )}
-                        {bill.includesProRatedAmount && (
-                          <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full mt-1 ml-2">
-                            Includes Pro-rated Amount
                           </span>
                         )}
                         <p className="text-2xl font-bold text-gray-900 mt-1">
@@ -430,7 +420,6 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Payment History */}
         <div className="bg-white rounded-xl shadow-sm border">
           <h2 className="text-lg font-semibold text-gray-900 p-6 border-b">
             Payment History {paidBills.length > 0 && `(${paidBills.length})`}
@@ -494,7 +483,6 @@ export default function BillingPage() {
           )}
         </div>
 
-        {/* Info Box */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800">
             <strong>📌 Billing Information:</strong> Bills are generated at the
@@ -505,7 +493,6 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Payment Modal */}
       {showPaymentModal && selectedBill && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6">
@@ -590,8 +577,7 @@ export default function BillingPage() {
                     <>Processing...</>
                   ) : (
                     <>
-                      <FiUpload className="w-4 h-4" />
-                      Submit Payment
+                      <FiUpload className="w-4 h-4" /> Submit Payment
                     </>
                   )}
                 </button>

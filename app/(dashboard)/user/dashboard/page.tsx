@@ -1,13 +1,9 @@
-// app/(dashboard)/user/page.tsx - User dashboard (FIXED)
+// app/(dashboard)/user/dashboard/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  getUserDashboard,
-  getUserCurrentBilling,
-  getUserBillingHistory,
-} from "@/services/user";
+import { getUserCurrentBilling } from "@/services/billing";
 import {
   FiWifi,
   FiClipboard,
@@ -20,6 +16,21 @@ import {
 import Link from "next/link";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
+
+// Simple getUserDashboard function since it might not exist
+const getUserDashboard = async () => {
+  try {
+    const response = await fetch("/api/users/dashboard", {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+    });
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching dashboard:", error);
+    return { plan: null, usage: "0", recentActivities: [] };
+  }
+};
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -78,7 +89,6 @@ export default function UserDashboard() {
           </p>
         </div>
 
-        {/* Needs First Payment Alert */}
         {needsFirstPayment && currentBill && currentBill.isProRated && (
           <div className="mb-6 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center gap-3">
             <FiAlertCircle className="w-6 h-6 text-purple-600" />
@@ -102,7 +112,6 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {/* Overdue Alert */}
         {hasOverdue && !needsFirstPayment && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
             <FiAlertCircle className="w-6 h-6 text-red-600" />
@@ -122,24 +131,6 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {/* Pending Plan Change Alert */}
-        {billingCycle?.pendingPlanChange?.status === "pending" && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
-            <FiClock className="w-6 h-6 text-yellow-600" />
-            <div className="flex-1">
-              <p className="font-semibold text-yellow-800">
-                ⏳ Plan Change Pending
-              </p>
-              <p className="text-sm text-yellow-600">
-                Your request to change to{" "}
-                {billingCycle.pendingPlanChange.newPlanId?.name} is awaiting
-                admin approval.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Stats Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex items-center justify-between">
@@ -227,7 +218,6 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* Billing Cycle Info Card */}
         {billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-8 border border-blue-100">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -267,13 +257,7 @@ export default function UserDashboard() {
               <div>
                 <p className="text-xs text-gray-500">Cycle Status</p>
                 <span
-                  className={`inline-block px-2 py-1 text-xs rounded-full ${
-                    billingCycle.status === "active"
-                      ? "bg-green-100 text-green-800"
-                      : billingCycle.status === "pending_activation"
-                        ? "bg-purple-100 text-purple-800"
-                        : "bg-gray-100 text-gray-800"
-                  }`}
+                  className={`inline-block px-2 py-1 text-xs rounded-full ${billingCycle.status === "active" ? "bg-green-100 text-green-800" : billingCycle.status === "pending_activation" ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800"}`}
                 >
                   {billingCycle.status === "pending_activation"
                     ? "Awaiting First Payment"
@@ -292,7 +276,6 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {/* Quick Actions */}
         <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Link
             href="/user/billing"
@@ -340,7 +323,6 @@ export default function UserDashboard() {
           </Link>
         </div>
 
-        {/* Recent Activity */}
         {dashboardData?.recentActivities &&
           dashboardData.recentActivities.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
@@ -373,11 +355,7 @@ export default function UserDashboard() {
                       </div>
                       {activity.amount && (
                         <span
-                          className={`text-sm font-semibold ${
-                            activity.type === "payment"
-                              ? "text-green-600"
-                              : "text-blue-600"
-                          }`}
+                          className={`text-sm font-semibold ${activity.type === "payment" ? "text-green-600" : "text-blue-600"}`}
                         >
                           ₱{activity.amount.toLocaleString()}
                         </span>

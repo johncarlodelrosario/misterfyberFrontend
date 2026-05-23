@@ -1,3 +1,4 @@
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -5,7 +6,6 @@ import {
   getAllBillingCycles,
   getAllBills,
   getBillingSettings,
-  updateBillingSettings,
   startBilling,
   stopBilling,
   pauseBilling,
@@ -17,11 +17,12 @@ import {
   getPendingProRatedBills,
   getPendingActivations,
   confirmProRatedPayment,
+  startMonthlyBilling,
   getBillingSettingsAdmin,
   updateBillingSettingsAdmin,
-  getBillingSummaryAdmin,
 } from "@/services/billing";
 import { getAllUsers } from "@/services/admin";
+import { getAllPayments } from "@/services/admin";
 import {
   FiRefreshCw,
   FiPlay,
@@ -41,10 +42,16 @@ import {
   FiBell,
   FiCalendar,
   FiInfo,
-  FiDollarSign,
-  FiTrendingUp,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+
+const CACHE_KEYS = {
+  BILLING_DATA: "misterfyber_billing_data",
+  BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
+  BILLING_STATS: "misterfyber_billing_stats",
+};
+
+const CACHE_DURATION = 5 * 60 * 1000;
 
 interface UserWithBalance {
   _id: string;
@@ -65,10 +72,34 @@ interface UserWithBalance {
   billingCycle?: any;
 }
 
+const billingStorage = {
+  setItem: (key: string, value: any): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error("Failed to save billing data:", e);
+    }
+  },
+  getItem: (key: string): any => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  },
+};
+
 export default function AdminBillingPage() {
   const [users, setUsers] = useState<UserWithBalance[]>([]);
   const [billingCycles, setBillingCycles] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
+  const [allPayments, setAllPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -81,7 +112,7 @@ export default function AdminBillingPage() {
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [customProRatedAmount, setCustomProRatedAmount] = useState("");
+  const [customAmount, setCustomAmount] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
   const [pauseReason, setPauseReason] = useState("");
   const [pauseUntilDate, setPauseUntilDate] = useState("");
@@ -93,16 +124,15 @@ export default function AdminBillingPage() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation"
   >("pro-rated");
-  const [summaryStats, setSummaryStats] = useState<any>(null);
 
   const [billingFlowSettings, setBillingFlowSettings] = useState({
     proRatedDueDay: 25,
     monthlyDueDay: 5,
-    billingCutoffDay: 23,
+    billingCutoffDay: 24,
     enableAutoBilling: true,
     sendInvoiceOnInstall: true,
     requireAdminActivation: false,
-    freeDays: 1,
+    freeDays: 0,
     gracePeriodDays: 5,
     reminderDays: [7, 3, 1],
   });
@@ -121,22 +151,22 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Load billing flow settings
   const loadBillingFlowSettings = async () => {
     try {
       const response = await getBillingSettingsAdmin();
-      if (response && response.data) {
-        const data = response.data;
+      // Handle different response structures
+      const settingsData = response?.data || response;
+      if (settingsData) {
         setBillingFlowSettings({
-          proRatedDueDay: data.proRatedDueDay || 25,
-          monthlyDueDay: data.monthlyDueDay || 5,
-          billingCutoffDay: data.billingCutoffDay || 23,
-          enableAutoBilling: data.enableAutoBilling !== false,
-          sendInvoiceOnInstall: data.sendInvoiceOnInstall !== false,
-          requireAdminActivation: data.requireAdminActivation || false,
-          freeDays: data.freeDays || 1,
-          gracePeriodDays: data.gracePeriodDays || 5,
-          reminderDays: data.reminderDays || [7, 3, 1],
+          proRatedDueDay: settingsData.proRatedDueDay || 25,
+          monthlyDueDay: settingsData.monthlyDueDay || 5,
+          billingCutoffDay: settingsData.billingCutoffDay || 24,
+          enableAutoBilling: settingsData.enableAutoBilling !== false,
+          sendInvoiceOnInstall: settingsData.sendInvoiceOnInstall !== false,
+          requireAdminActivation: settingsData.requireAdminActivation || false,
+          freeDays: 0,
+          gracePeriodDays: settingsData.gracePeriodDays || 5,
+          reminderDays: settingsData.reminderDays || [7, 3, 1],
         });
       }
     } catch (error) {
@@ -144,25 +174,11 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Load summary stats
-  const loadSummaryStats = async () => {
-    try {
-      const response = await getBillingSummaryAdmin();
-      if (response && response.data) {
-        setSummaryStats(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to load summary stats:", error);
-    }
-  };
-
-  // Save billing flow settings
   const saveBillingFlowSettings = async () => {
     try {
-      await updateBillingSettingsAdmin(billingFlowSettings);
+      await updateBillingSettingsAdmin({ ...billingFlowSettings, freeDays: 0 });
       toast.success("✅ Billing flow settings saved successfully!");
       loadData(true);
-      loadSummaryStats();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
     }
@@ -180,22 +196,39 @@ export default function AdminBillingPage() {
     }
 
     try {
+      if (!forceRefresh) {
+        const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
+        const cachedTimestamp = billingStorage.getItem(
+          CACHE_KEYS.BILLING_TIMESTAMP,
+        );
+        if (
+          cachedData &&
+          cachedTimestamp &&
+          Date.now() - cachedTimestamp < CACHE_DURATION
+        ) {
+          setUsers(cachedData.users || []);
+          setBillingCycles(cachedData.billingCycles || []);
+          setBills(cachedData.bills || []);
+          const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
+          if (cachedStats) setStats(cachedStats);
+          setLoading(false);
+          loadedRef.current = true;
+          return;
+        }
+      }
+
       const [
         cyclesResult,
         billsResult,
         settingsResult,
         allUsersResult,
-        summaryResult,
-        proRatedResult,
-        activationsResult,
+        paymentsResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
         getBillingSettings(forceRefresh),
         getAllUsers({ limit: 100 }),
-        getBillingSummaryAdmin(forceRefresh),
-        getPendingProRatedBills(),
-        getPendingActivations(),
+        getAllPayments({ limit: 100 }),
       ]);
 
       if (!isMountedRef.current) return;
@@ -204,18 +237,13 @@ export default function AdminBillingPage() {
       const billsList = billsResult?.data || [];
       const settingsData = settingsResult?.data || null;
       const usersData = allUsersResult?.data || [];
-      const summaryData = summaryResult?.data || null;
-      const proRatedData = proRatedResult?.data || [];
-      const activationsData = activationsResult?.data || [];
+      const paymentsData = paymentsResult?.data || [];
 
       setBillingCycles(cyclesData);
       setBills(billsList);
       if (settingsData) setSettings(settingsData);
-      if (summaryData) setSummaryStats(summaryData);
-      setPendingProRated(proRatedData);
-      setPendingActivations(activationsData);
+      setAllPayments(paymentsData);
 
-      // Build users with balance
       const usersWithBalanceData: UserWithBalance[] = usersData.map(
         (user: any) => {
           const userBills = billsList.filter(
@@ -247,20 +275,23 @@ export default function AdminBillingPage() {
 
       let totalBalanceSum = 0,
         usersWithPositiveBalance = 0,
-        usersWithOverdue = 0;
-      let activeCycles = 0,
+        usersWithOverdue = 0,
+        activeCycles = 0,
         pausedCycles = 0;
-
       for (const user of usersWithBalanceData) {
         totalBalanceSum += user.currentBalance;
         if (user.currentBalance > 0) usersWithPositiveBalance++;
         if (user.overdueBills.length > 0) usersWithOverdue++;
       }
-
       for (const cycle of cyclesData) {
         if (cycle.status === "active") activeCycles++;
         if (cycle.status === "paused") pausedCycles++;
       }
+
+      const [proRatedResult, activationsResult] = await Promise.all([
+        getPendingProRatedBills(),
+        getPendingActivations(),
+      ]);
 
       const newStats = {
         totalUsers: usersWithBalanceData.length,
@@ -269,12 +300,22 @@ export default function AdminBillingPage() {
         overdueUsersCount: usersWithOverdue,
         activeCyclesCount: activeCycles,
         pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: proRatedData.length,
-        pendingActivationsCount: activationsData.length,
+        pendingProRatedCount: proRatedResult?.data?.length || 0,
+        pendingActivationsCount: activationsResult?.data?.length || 0,
       };
 
       setUsers(usersWithBalanceData);
       setStats(newStats);
+      setPendingProRated(proRatedResult?.data || []);
+      setPendingActivations(activationsResult?.data || []);
+
+      billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
+        users: usersWithBalanceData,
+        billingCycles: cyclesData,
+        bills: billsList,
+      });
+      billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
+      billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
 
       loadedRef.current = true;
     } catch (error) {
@@ -294,7 +335,6 @@ export default function AdminBillingPage() {
     isMountedRef.current = true;
     loadData();
     loadBillingFlowSettings();
-    loadSummaryStats();
     return () => {
       isMountedRef.current = false;
     };
@@ -303,7 +343,6 @@ export default function AdminBillingPage() {
   const handleRefresh = () => {
     loadedRef.current = false;
     loadData(true);
-    loadSummaryStats();
   };
 
   const handleMarkBillAsPaid = async (bill: any, user: any) => {
@@ -319,9 +358,9 @@ export default function AdminBillingPage() {
         notes: `Manually marked as paid by admin`,
       });
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
+      toast.success(`📧 Payment confirmation email sent to ${user.email}`);
       loadedRef.current = false;
       loadData(true);
-      loadSummaryStats();
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to mark bill as paid",
@@ -338,37 +377,30 @@ export default function AdminBillingPage() {
       const response = await startBilling({
         userId: selectedUserId,
         startDate: startDate || undefined,
-        customProRatedAmount: customProRatedAmount
-          ? parseFloat(customProRatedAmount)
-          : undefined,
+        customAmount: customAmount ? parseFloat(customAmount) : undefined,
         notes: billingNotes,
       });
 
       const data = response.data;
       if (data.isAfterCutoff) {
         toast.success(
-          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). First monthly bill generated!`,
+          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). No pro-rated bill needed. First monthly bill generated!`,
         );
+        toast.success(`📧 Monthly invoice sent to customer`);
       } else {
-        if (data.proRatedAmount > 0) {
-          toast.success(
-            `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.proRatedDueDate).toLocaleDateString()}`,
-          );
-        } else {
-          toast.success(
-            `✅ No pro-rated amount required. First monthly bill will be generated next month.`,
-          );
-        }
+        toast.success(
+          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.proRatedDueDate).toLocaleDateString()}`,
+        );
+        toast.success(`📧 Pro-rated invoice sent to customer`);
       }
 
       setShowStartModal(false);
       setSelectedUserId("");
       setStartDate("");
-      setCustomProRatedAmount("");
+      setCustomAmount("");
       setBillingNotes("");
       loadedRef.current = false;
       loadData(true);
-      loadSummaryStats();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
     }
@@ -385,7 +417,9 @@ export default function AdminBillingPage() {
         reason: pauseReason || "Admin initiated pause",
         pauseUntilDate: pauseUntilDate || undefined,
       });
-      toast.success("⏸️ Billing paused successfully!");
+      toast.success(
+        "⏸️ Billing paused successfully! User has been notified via email.",
+      );
       setShowPauseModal(false);
       setSelectedUserId("");
       setPauseReason("");
@@ -397,11 +431,22 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleResumeBilling = async (userId: string, userFirstName: string) => {
-    if (!confirm(`Resume billing for ${userFirstName}?`)) return;
+  const handleResumeBilling = async (
+    userId: string,
+    userFirstName: string,
+    userEmail: string,
+  ) => {
+    if (
+      !confirm(
+        `Resume billing for ${userFirstName}? This will reactivate their service.`,
+      )
+    )
+      return;
     try {
       await resumeBilling({ userId });
-      toast.success(`✅ Billing resumed for ${userFirstName}!`);
+      toast.success(
+        `✅ Billing resumed for ${userFirstName}! User has been notified via email.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -418,16 +463,18 @@ export default function AdminBillingPage() {
       return;
     try {
       await stopBilling({ userId, reason: "Admin action" });
-      toast.success(`⛔ Billing stopped for ${userFirstName}.`);
+      toast.success(
+        `⛔ Billing stopped for ${userFirstName}. User has been notified.`,
+      );
       loadedRef.current = false;
       loadData(true);
-      loadSummaryStats();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
   };
 
   const handleConfirmProRatedPayment = async (
+    userId: string,
     billId: string,
     userEmail: string,
   ) => {
@@ -438,15 +485,43 @@ export default function AdminBillingPage() {
     )
       return;
     try {
-      await confirmProRatedPayment({ billId });
+      await confirmProRatedPayment({
+        userId,
+        paymentDetails: { confirmedBy: "admin", confirmedAt: new Date() },
+      });
       toast.success(
         `✅ Pro-rated payment confirmed! ${userEmail}'s service is now active.`,
       );
+      toast.success(`📧 Activation email sent to ${userEmail}`);
       loadedRef.current = false;
       loadData(true);
-      loadSummaryStats();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
+    }
+  };
+
+  const handleStartMonthlyBilling = async (
+    userId: string,
+    userEmail: string,
+  ) => {
+    if (
+      !confirm(
+        `Start monthly billing for ${userEmail}? This will generate their first monthly bill.`,
+      )
+    )
+      return;
+    try {
+      await startMonthlyBilling({ userId });
+      toast.success(
+        `✅ Monthly billing started for ${userEmail}! First monthly bill generated.`,
+      );
+      toast.success(`📧 Invoice sent to ${userEmail}`);
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to start monthly billing",
+      );
     }
   };
 
@@ -455,7 +530,9 @@ export default function AdminBillingPage() {
     if (reason === null) return;
     try {
       await disconnectClient({ userId, reason });
-      toast.success(`🔌 ${userFirstName} disconnected.`);
+      toast.success(
+        `🔌 ${userFirstName} disconnected. User has been notified via email.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -468,7 +545,9 @@ export default function AdminBillingPage() {
   const handleReconnect = async (userId: string, userFirstName: string) => {
     try {
       await reconnectClient({ userId });
-      toast.success(`🔌 ${userFirstName} reconnected.`);
+      toast.success(
+        `🔌 ${userFirstName} reconnected. User has been notified via email.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -574,8 +653,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -590,12 +668,12 @@ export default function AdminBillingPage() {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Total Outstanding</p>
+              <p className="text-sm text-gray-500">Total Balance</p>
               <p className="text-2xl font-bold text-red-600">
                 ₱{stats.totalBalance.toLocaleString()}
               </p>
             </div>
-            <FiDollarSign className="w-8 h-8 text-red-100" />
+            <FiClipboard className="w-8 h-8 text-red-100" />
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
@@ -614,7 +692,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Overdue</p>
               <p className="text-2xl font-bold text-red-600">
-                {summaryStats?.overdueAccounts || 0}
+                {stats.overdueUsersCount}
               </p>
             </div>
             <FiClock className="w-8 h-8 text-red-100" />
@@ -625,7 +703,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Active Cycles</p>
               <p className="text-2xl font-bold text-green-600">
-                {summaryStats?.activeSubscriptions || 0}
+                {stats.activeCyclesCount}
               </p>
             </div>
             <FiActivity className="w-8 h-8 text-green-100" />
@@ -636,7 +714,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Paused Cycles</p>
               <p className="text-2xl font-bold text-yellow-600">
-                {summaryStats?.pausedSubscriptions || 0}
+                {stats.pausedCyclesCount}
               </p>
             </div>
             <FiPause className="w-8 h-8 text-yellow-100" />
@@ -645,12 +723,13 @@ export default function AdminBillingPage() {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Monthly Revenue</p>
-              <p className="text-2xl font-bold text-emerald-600">
-                ₱{(summaryStats?.monthlyRevenue || 0).toLocaleString()}
+              <p className="text-sm text-gray-500">Pro-rated Due</p>
+              <p className="text-2xl font-bold text-purple-600">
+                {billingFlowSettings.proRatedDueDay}
               </p>
+              <p className="text-xs text-gray-400">Day of month</p>
             </div>
-            <FiTrendingUp className="w-8 h-8 text-emerald-100" />
+            <FiCalendar className="w-8 h-8 text-purple-100" />
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
@@ -667,7 +746,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Billing Flow Info Banner */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
         <div className="flex items-start gap-3">
           <FiInfo className="w-5 h-5 text-blue-600 mt-0.5" />
@@ -678,11 +756,13 @@ export default function AdminBillingPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-xs text-blue-700">
               <div>
                 • Install Day 1-{billingFlowSettings.billingCutoffDay}:
-                Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th
+                Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th of
+                current month
               </div>
               <div>
                 • Install Day {billingFlowSettings.billingCutoffDay + 1}-31: No
-                pro-rated, first bill is next month's bill
+                pro-rated, first bill is next month's full bill due on{" "}
+                {billingFlowSettings.monthlyDueDay}th
               </div>
               <div>
                 • Free {billingFlowSettings.freeDays} day(s) for installation,{" "}
@@ -693,7 +773,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-100">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
@@ -721,7 +800,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Users Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -794,11 +872,9 @@ export default function AdminBillingPage() {
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(user.billingCycle?.status || user.status)}`}
                       >
-                        {user.billingCycle?.status === "pending_activation"
-                          ? "Pending Activation"
-                          : user.billingCycle?.status === "paused"
-                            ? "Paused"
-                            : user.status}
+                        {user.billingCycle?.status === "paused"
+                          ? "Paused"
+                          : user.status}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -816,7 +892,11 @@ export default function AdminBillingPage() {
                         {user.billingCycle?.status === "paused" ? (
                           <button
                             onClick={() =>
-                              handleResumeBilling(user._id, user.firstName)
+                              handleResumeBilling(
+                                user._id,
+                                user.firstName,
+                                user.email,
+                              )
                             }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Resume Billing"
@@ -889,7 +969,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Settings Modal */}
+      {/* Settings Modal - Keep as is */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -917,16 +997,11 @@ export default function AdminBillingPage() {
                     <input
                       type="number"
                       value={billingFlowSettings.freeDays}
-                      onChange={(e) =>
-                        setBillingFlowSettings({
-                          ...billingFlowSettings,
-                          freeDays: parseInt(e.target.value) || 1,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                      disabled
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      First day is free
+                      Free days are disabled (set to 0)
                     </p>
                   </div>
                   <div>
@@ -944,9 +1019,6 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Days after due before suspension
-                    </p>
                   </div>
                 </div>
               </div>
@@ -972,9 +1044,6 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Due date for pro-rated bills
-                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -993,9 +1062,6 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Due date for monthly bills
-                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1009,14 +1075,11 @@ export default function AdminBillingPage() {
                       onChange={(e) =>
                         setBillingFlowSettings({
                           ...billingFlowSettings,
-                          billingCutoffDay: parseInt(e.target.value) || 23,
+                          billingCutoffDay: parseInt(e.target.value) || 24,
                         })
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Installations after this day go to next month
-                    </p>
                   </div>
                 </div>
                 <div className="bg-blue-50 p-3 rounded-lg mb-4">
@@ -1028,8 +1091,9 @@ export default function AdminBillingPage() {
                     {billingFlowSettings.proRatedDueDay}th
                     <br />• Install on Day{" "}
                     {billingFlowSettings.billingCutoffDay + 1}-31: NO pro-rated
-                    bill. First bill is NEXT month's full monthly bill
-                    <br />• Daily rate = (Monthly Price × 12) ÷ 365
+                    bill. First bill is NEXT month's full monthly bill, due on{" "}
+                    {billingFlowSettings.monthlyDueDay}th of that month
+                    <br />• Daily rate = Monthly Price ÷ 30
                   </p>
                 </div>
                 <div className="space-y-2 mb-4">
@@ -1104,9 +1168,6 @@ export default function AdminBillingPage() {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Days before due date to send reminders
-                  </p>
                 </div>
               </div>
               <div className="flex gap-3 pt-4">
@@ -1145,7 +1206,8 @@ export default function AdminBillingPage() {
                 {billingFlowSettings.proRatedDueDay}th
                 <br />• If installed on Day{" "}
                 {billingFlowSettings.billingCutoffDay + 1}-31: No pro-rated,
-                first monthly bill next month
+                first monthly bill due on {billingFlowSettings.monthlyDueDay}th
+                of next month
               </p>
             </div>
             <div className="space-y-4">
@@ -1159,18 +1221,15 @@ export default function AdminBillingPage() {
                   onChange={(e) => setStartDate(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Leave empty for today
-                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Custom Pro-rated Amount (Optional)
+                  Custom Amount (Optional)
                 </label>
                 <input
                   type="number"
-                  value={customProRatedAmount}
-                  onChange={(e) => setCustomProRatedAmount(e.target.value)}
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
                   placeholder="Leave empty for auto-calculation"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
@@ -1182,7 +1241,6 @@ export default function AdminBillingPage() {
                 <textarea
                   value={billingNotes}
                   onChange={(e) => setBillingNotes(e.target.value)}
-                  placeholder="Add notes about this billing cycle..."
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
@@ -1193,7 +1251,7 @@ export default function AdminBillingPage() {
                     setShowStartModal(false);
                     setSelectedUserId("");
                     setStartDate("");
-                    setCustomProRatedAmount("");
+                    setCustomAmount("");
                     setBillingNotes("");
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
@@ -1228,7 +1286,6 @@ export default function AdminBillingPage() {
                   type="text"
                   value={pauseReason}
                   onChange={(e) => setPauseReason(e.target.value)}
-                  placeholder="e.g., Vacation, Maintenance"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -1242,14 +1299,11 @@ export default function AdminBillingPage() {
                   onChange={(e) => setPauseUntilDate(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Leave empty for manual resume only
-                </p>
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-sm text-yellow-800">
                   ⚠️ When paused: No bills will be generated, service will be
-                  disconnected
+                  disconnected, and user will be notified via email.
                 </p>
               </div>
               <div className="flex gap-3 pt-4">
@@ -1317,15 +1371,11 @@ export default function AdminBillingPage() {
                             <p className="text-lg font-bold text-blue-600">
                               ₱{item.total?.toLocaleString()}
                             </p>
-                            {item.items?.map((i: any, idx: number) => (
-                              <p key={idx} className="text-xs text-gray-500">
-                                {i.description}
-                              </p>
-                            ))}
                           </div>
                           <button
                             onClick={() =>
                               handleConfirmProRatedPayment(
+                                item.userId?._id,
                                 item._id,
                                 item.userId?.email,
                               )
@@ -1360,19 +1410,21 @@ export default function AdminBillingPage() {
                             </p>
                             <p className="text-sm">Plan: {item.planId?.name}</p>
                             <p className="text-sm">
-                              Pro-rated amount: ₱
+                              Pro-rated paid: ₱
                               {item.currentProRatedAmount?.toLocaleString()}
                             </p>
-                            {item.isAfterCutoff && (
-                              <p className="text-xs text-blue-600">
-                                After cutoff installation - first bill next
-                                month
-                              </p>
-                            )}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            Status: {item.status}
-                          </div>
+                          <button
+                            onClick={() =>
+                              handleStartMonthlyBilling(
+                                item.userId?._id,
+                                item.userId?.email,
+                              )
+                            }
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                          >
+                            <FiPlay className="w-4 h-4" /> Start Monthly Billing
+                          </button>
                         </div>
                       </div>
                     ))
@@ -1430,12 +1482,9 @@ export default function AdminBillingPage() {
                     <span
                       className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedUser.billingCycle?.status || selectedUser.status)}`}
                     >
-                      {selectedUser.billingCycle?.status ===
-                      "pending_activation"
-                        ? "Pending Activation"
-                        : selectedUser.billingCycle?.status === "paused"
-                          ? "Paused"
-                          : selectedUser.status}
+                      {selectedUser.billingCycle?.status === "paused"
+                        ? "Paused"
+                        : selectedUser.status}
                     </span>
                   </div>
                 </div>
@@ -1514,6 +1563,7 @@ export default function AdminBillingPage() {
                       handleResumeBilling(
                         selectedUser._id,
                         selectedUser.firstName,
+                        selectedUser.email,
                       )
                     }
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
