@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WORKING VERSION
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -20,6 +20,7 @@ import {
   startMonthlyBilling,
   getBillingSettingsAdmin,
   updateBillingSettingsAdmin,
+  getBillingSummaryAdmin,
 } from "@/services/billing";
 import { getAllUsers } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
@@ -154,7 +155,6 @@ export default function AdminBillingPage() {
   const loadBillingFlowSettings = async () => {
     try {
       const response = await getBillingSettingsAdmin();
-      // Handle different response structures
       const settingsData = response?.data || response;
       if (settingsData) {
         setBillingFlowSettings({
@@ -223,12 +223,14 @@ export default function AdminBillingPage() {
         settingsResult,
         allUsersResult,
         paymentsResult,
+        summaryResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
         getBillingSettings(forceRefresh),
         getAllUsers({ limit: 100 }),
         getAllPayments({ limit: 100 }),
+        getBillingSummaryAdmin().catch(() => ({ data: {} })),
       ]);
 
       if (!isMountedRef.current) return;
@@ -238,11 +240,30 @@ export default function AdminBillingPage() {
       const settingsData = settingsResult?.data || null;
       const usersData = allUsersResult?.data || [];
       const paymentsData = paymentsResult?.data || [];
+      const summaryData = summaryResult?.data || {};
 
       setBillingCycles(cyclesData);
       setBills(billsList);
       if (settingsData) setSettings(settingsData);
       setAllPayments(paymentsData);
+
+      // Update stats from summary if available
+      if (summaryData) {
+        setStats((prev) => ({
+          ...prev,
+          activeCyclesCount:
+            summaryData.activeSubscriptions || prev.activeCyclesCount,
+          pausedCyclesCount:
+            summaryData.pausedSubscriptions || prev.pausedCyclesCount,
+          pendingProRatedCount:
+            summaryData.pendingProRated || prev.pendingProRatedCount,
+          pendingActivationsCount:
+            summaryData.pendingActivations || prev.pendingActivationsCount,
+          overdueUsersCount:
+            summaryData.overdueAccounts || prev.overdueUsersCount,
+          totalBalance: summaryData.totalOutstanding || prev.totalBalance,
+        }));
+      }
 
       const usersWithBalanceData: UserWithBalance[] = usersData.map(
         (user: any) => {
@@ -278,6 +299,7 @@ export default function AdminBillingPage() {
         usersWithOverdue = 0,
         activeCycles = 0,
         pausedCycles = 0;
+
       for (const user of usersWithBalanceData) {
         totalBalanceSum += user.currentBalance;
         if (user.currentBalance > 0) usersWithPositiveBalance++;
@@ -384,15 +406,14 @@ export default function AdminBillingPage() {
       const data = response.data;
       if (data.isAfterCutoff) {
         toast.success(
-          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). No pro-rated bill needed. First monthly bill generated!`,
+          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). Combined bill of ₱${(data.proRatedAmount + data.monthlyRate).toFixed(2)} generated! Due on ${new Date(data.dueDate).toLocaleDateString()}`,
         );
-        toast.success(`📧 Monthly invoice sent to customer`);
       } else {
         toast.success(
-          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.proRatedDueDate).toLocaleDateString()}`,
+          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.dueDate).toLocaleDateString()}`,
         );
-        toast.success(`📧 Pro-rated invoice sent to customer`);
       }
+      toast.success(`📧 Invoice sent to customer`);
 
       setShowStartModal(false);
       setSelectedUserId("");
@@ -653,6 +674,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
@@ -746,6 +768,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Billing Flow Info */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
         <div className="flex items-start gap-3">
           <FiInfo className="w-5 h-5 text-blue-600 mt-0.5" />
@@ -760,19 +783,20 @@ export default function AdminBillingPage() {
                 current month
               </div>
               <div>
-                • Install Day {billingFlowSettings.billingCutoffDay + 1}-31: No
-                pro-rated, first bill is next month's full bill due on{" "}
+                • Install Day {billingFlowSettings.billingCutoffDay + 1}-31:
+                Combined bill (pro-rated + next month) due on{" "}
                 {billingFlowSettings.monthlyDueDay}th
               </div>
               <div>
-                • Free {billingFlowSettings.freeDays} day(s) for installation,{" "}
-                {billingFlowSettings.gracePeriodDays} day(s) grace period
+                • {billingFlowSettings.gracePeriodDays} day(s) grace period
+                before suspension
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Search and Filter */}
       <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-100">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
@@ -800,6 +824,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Users Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -846,7 +871,7 @@ export default function AdminBillingPage() {
                       <p className="text-xs text-gray-400">@{user.username}</p>
                       {user.billingCycle?.isAfterCutoff && (
                         <p className="text-xs text-blue-600 mt-1">
-                          After cutoff: First bill next month
+                          After cutoff: Combined bill next month
                         </p>
                       )}
                     </td>
@@ -969,7 +994,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Settings Modal - Keep as is */}
+      {/* Settings Modal */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -990,20 +1015,6 @@ export default function AdminBillingPage() {
                   <FiSettings className="text-gray-500" /> Basic Settings
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Free Days (Installation)
-                    </label>
-                    <input
-                      type="number"
-                      value={billingFlowSettings.freeDays}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-                      disabled
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Free days are disabled (set to 0)
-                    </p>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Grace Period (Days)
@@ -1090,10 +1101,10 @@ export default function AdminBillingPage() {
                     install date to end of month, due on{" "}
                     {billingFlowSettings.proRatedDueDay}th
                     <br />• Install on Day{" "}
-                    {billingFlowSettings.billingCutoffDay + 1}-31: NO pro-rated
-                    bill. First bill is NEXT month's full monthly bill, due on{" "}
-                    {billingFlowSettings.monthlyDueDay}th of that month
-                    <br />• Daily rate = Monthly Price ÷ 30
+                    {billingFlowSettings.billingCutoffDay + 1}-31: Combined bill
+                    (pro-rated for remaining days + next month's full bill), due
+                    on {billingFlowSettings.monthlyDueDay}th of next month
+                    <br />• Daily rate = (Monthly Price × 12) ÷ 365
                   </p>
                 </div>
                 <div className="space-y-2 mb-4">
@@ -1205,9 +1216,9 @@ export default function AdminBillingPage() {
                 {billingFlowSettings.billingCutoffDay}: Pro-rated bill due on{" "}
                 {billingFlowSettings.proRatedDueDay}th
                 <br />• If installed on Day{" "}
-                {billingFlowSettings.billingCutoffDay + 1}-31: No pro-rated,
-                first monthly bill due on {billingFlowSettings.monthlyDueDay}th
-                of next month
+                {billingFlowSettings.billingCutoffDay + 1}-31: Combined bill
+                (pro-rated + next month) due on{" "}
+                {billingFlowSettings.monthlyDueDay}th
               </p>
             </div>
             <div className="space-y-4">

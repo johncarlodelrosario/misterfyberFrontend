@@ -1,4 +1,4 @@
-// services/billing.ts
+// services/billing.ts - COMPLETE FIXED VERSION (MATCH SA BACKEND)
 import api from "./api";
 
 export interface BillingCycle {
@@ -145,14 +145,14 @@ export function clearBillingCache(): void {
 // ==================== USER BILLING FUNCTIONS ====================
 
 export const getUserBillingCycle = async (): Promise<{
-  billingCycle: BillingCycle;
+  billingCycle: BillingCycle | null;
   upcomingBills: Bill[];
   hasOverdue: boolean;
   overdueCount: number;
   overdueAmount: number;
 } | null> => {
   try {
-    const response = await api.get("/users/billing-cycle");
+    const response = await api.get("/billing/users/billing-cycle");
     return response.data.data;
   } catch (error) {
     console.error("Error fetching user billing cycle:", error);
@@ -162,7 +162,7 @@ export const getUserBillingCycle = async (): Promise<{
 
 export const getCurrentBill = async (): Promise<Bill | null> => {
   try {
-    const response = await api.get("/users/billing/current");
+    const response = await api.get("/billing/users/billing/current");
     return response.data.data;
   } catch (error) {
     console.error("Error fetching current bill:", error);
@@ -180,8 +180,15 @@ export const getBillingHistory = async (params?: {
   total: number;
 }> => {
   try {
-    const response = await api.get("/users/billing/history", { params });
-    return response.data;
+    const response = await api.get("/billing/users/billing/history", {
+      params,
+    });
+    return {
+      data: response.data.data || [],
+      totalPages: response.data.totalPages || 0,
+      currentPage: response.data.currentPage || 1,
+      total: response.data.total || 0,
+    };
   } catch (error) {
     console.error("Error fetching billing history:", error);
     return { data: [], totalPages: 0, currentPage: 1, total: 0 };
@@ -190,7 +197,7 @@ export const getBillingHistory = async (params?: {
 
 export const getUserBillingSummary = async (): Promise<any> => {
   try {
-    const response = await api.get("/users/billing-summary");
+    const response = await api.get("/billing/users/billing-summary");
     return response.data.data;
   } catch (error) {
     console.error("Error fetching billing summary:", error);
@@ -228,9 +235,23 @@ export const getAllBillingCycles = async (params?: {
     }
 
     const response = await api.get("/billing/cycles", { params });
+    // Handle different response structures
     const result = response.data;
-    setCachedData(CACHE_KEYS.BILLING_CYCLES, result);
-    return result;
+    const data = result.data || result;
+    const totalPages =
+      result.totalPages ||
+      Math.ceil((result.total || 0) / (params?.limit || 10));
+    const currentPage = result.currentPage || params?.page || 1;
+    const total = result.total || data?.length || 0;
+
+    const returnData = {
+      data: Array.isArray(data) ? data : [],
+      totalPages,
+      currentPage,
+      total,
+    };
+    setCachedData(CACHE_KEYS.BILLING_CYCLES, returnData);
+    return returnData;
   } catch (error) {
     console.error("Error fetching billing cycles:", error);
     return { data: [], totalPages: 0, currentPage: 1, total: 0 };
@@ -264,8 +285,17 @@ export const getAllBills = async (params?: {
 
     const response = await api.get("/billing/all-bills", { params });
     const result = response.data;
-    setCachedData(CACHE_KEYS.BILLS, result);
-    return result;
+    const data = result.data || result;
+
+    const returnData = {
+      data: Array.isArray(data) ? data : [],
+      stats: result.stats || [],
+      totalPages: result.totalPages || 1,
+      currentPage: result.currentPage || 1,
+      total: result.total || (Array.isArray(data) ? data.length : 0),
+    };
+    setCachedData(CACHE_KEYS.BILLS, returnData);
+    return returnData;
   } catch (error) {
     console.error("Error fetching all bills:", error);
     return { data: [], stats: [], totalPages: 0, currentPage: 1, total: 0 };
@@ -532,6 +562,51 @@ export const submitMonthlyPayment = async (data: {
     return response.data;
   } catch (error) {
     console.error("Error submitting monthly payment:", error);
+    throw error;
+  }
+};
+
+// ==================== ADDITIONAL HELPER FUNCTIONS ====================
+
+export const getBillingSummaryAdmin = async (): Promise<any> => {
+  try {
+    const response = await api.get("/billing/summary");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching billing summary admin:", error);
+    return { data: {} };
+  }
+};
+
+export const autoGenerateMonthlyBills = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-generate");
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-generating monthly bills:", error);
+    throw error;
+  }
+};
+
+export const autoSendReminders = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-reminders");
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-sending reminders:", error);
+    throw error;
+  }
+};
+
+export const autoSuspendOverdue = async (): Promise<any> => {
+  try {
+    const response = await api.post("/billing/auto-suspend");
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error auto-suspending overdue:", error);
     throw error;
   }
 };
