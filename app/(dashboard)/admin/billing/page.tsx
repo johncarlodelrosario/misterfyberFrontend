@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH BUILDINGS DROPDOWN
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH EMAIL BUTTON FUNCTIONALITY
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -49,6 +49,8 @@ import {
   FiInfo,
   FiUserPlus,
   FiHome,
+  FiMail,
+  FiSend,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -156,6 +158,14 @@ export default function AdminBillingPage() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation"
   >("pro-rated");
+
+  // Email Modal States
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailUser, setEmailUser] = useState<UserWithBalance | null>(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailType, setEmailType] = useState("custom");
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   // Manual Customer Form State
   const [manualCustomerForm, setManualCustomerForm] = useState({
@@ -283,6 +293,96 @@ export default function AdminBillingPage() {
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
     }
+  };
+
+  // NEW: Handle sending manual email
+  const handleSendManualEmail = async () => {
+    if (!emailUser) return;
+
+    if (!emailSubject.trim()) {
+      toast.error("Please enter an email subject");
+      return;
+    }
+
+    if (!emailMessage.trim()) {
+      toast.error("Please enter an email message");
+      return;
+    }
+
+    setSendingEmail(true);
+
+    try {
+      const response = await fetch("/api/email/send-manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: emailUser._id,
+          emailType: emailType,
+          subject: emailSubject,
+          message: emailMessage,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`📧 Email sent successfully to ${emailUser.email}`);
+        // Reset form and close modal
+        setShowEmailModal(false);
+        setEmailUser(null);
+        setEmailSubject("");
+        setEmailMessage("");
+        setEmailType("custom");
+      } else {
+        toast.error(data.message || "Failed to send email");
+      }
+    } catch (error: any) {
+      console.error("Failed to send email:", error);
+      toast.error(error.message || "Failed to send email");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  // Open email modal with pre-filled template
+  const openEmailModal = (user: UserWithBalance, templateType: string) => {
+    setEmailUser(user);
+    setEmailType(templateType);
+
+    // Pre-fill subject and message based on template type
+    switch (templateType) {
+      case "invoice":
+        setEmailSubject(`Invoice Reminder - MisterFyber`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${user.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "payment_confirmation":
+        setEmailSubject(`Payment Confirmation - MisterFyber`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "disconnection":
+        setEmailSubject(
+          `Important: Service Disconnection Notice - MisterFyber`,
+        );
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${user.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "welcome":
+        setEmailSubject(`Welcome to MisterFyber!`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      default:
+        setEmailSubject(`Message from MisterFyber`);
+        setEmailMessage(`Dear ${user.firstName},\n\n`);
+    }
+
+    setShowEmailModal(true);
   };
 
   const loadData = useCallback(async (forceRefresh = false) => {
@@ -1091,6 +1191,14 @@ export default function AdminBillingPage() {
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
+                        {/* NEW: Email Button */}
+                        <button
+                          onClick={() => openEmailModal(user, "custom")}
+                          className="p-1 text-purple-600 hover:text-purple-800"
+                          title="Send Email"
+                        >
+                          <FiMail className="w-4 h-4" />
+                        </button>
                         {user.billingCycle?.status === "paused" ? (
                           <button
                             onClick={() =>
@@ -1166,6 +1274,142 @@ export default function AdminBillingPage() {
           </table>
         </div>
       </div>
+
+      {/* EMAIL MODAL */}
+      {showEmailModal && emailUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Send Email to
+                </h2>
+                <p className="text-gray-600">
+                  {emailUser.firstName} {emailUser.lastName} ({emailUser.email})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailUser(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Quick Template Buttons */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quick Templates
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => openEmailModal(emailUser, "invoice")}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                  >
+                    Invoice Reminder
+                  </button>
+                  <button
+                    onClick={() =>
+                      openEmailModal(emailUser, "payment_confirmation")
+                    }
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                  >
+                    Payment Confirmation
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "disconnection")}
+                    className="px-3 py-1 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200"
+                  >
+                    Disconnection Notice
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "welcome")}
+                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                  >
+                    Welcome Email
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "custom")}
+                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    Custom Message
+                  </button>
+                </div>
+              </div>
+
+              {/* Email Subject */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject *
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter email subject"
+                />
+              </div>
+
+              {/* Email Message */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message *
+                </label>
+                <textarea
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                  placeholder="Enter your email message here..."
+                />
+              </div>
+
+              {/* Preview Note */}
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  📧 This email will be sent to {emailUser.email}. The email
+                  will include your signature automatically.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailUser(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendManualEmail}
+                  disabled={sendingEmail}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {sendingEmail ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiSend className="w-4 h-4" />
+                      Send Email
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MANUAL CUSTOMER MODAL */}
       {showManualCustomerModal && (
