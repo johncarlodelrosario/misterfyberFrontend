@@ -210,7 +210,13 @@ export default function Footer() {
                 <li className="flex items-center space-x-3 group">
                   <FiPhone className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
                   <span className="text-gray-300 group-hover:text-gray-200 transition">
-                    +63 939 874 7934
+                    (0969) 341 4876 - Fountain Breeze Condominium
+                  </span>
+                </li>
+                <li className="flex items-center space-x-3 group">
+                  <FiPhone className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="text-gray-300 group-hover:text-gray-200 transition">
+                    (0955) 7327694 - Silk Residences
                   </span>
                 </li>
                 <li className="flex items-center space-x-3 group">

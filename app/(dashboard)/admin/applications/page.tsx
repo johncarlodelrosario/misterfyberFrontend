@@ -473,14 +473,33 @@ export default function ApplicationsPage() {
     }
   };
 
+  // FIXED: Properly construct image URL
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
+
+      // If it's already a full URL
       if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
         return imagePath;
+
+      // If it's a data URL
       if (imagePath.startsWith("data:image")) return imagePath;
+
+      // Clean the path - remove leading slashes
       let cleanPath = imagePath.replace(/^\/+/, "");
-      if (!cleanPath.startsWith("uploads/")) cleanPath = `uploads/${cleanPath}`;
+
+      // If path doesn't start with uploads, add it
+      if (
+        !cleanPath.startsWith("uploads/") &&
+        !cleanPath.startsWith("uploads\\")
+      ) {
+        cleanPath = `uploads/${cleanPath}`;
+      }
+
+      // Replace backslashes with forward slashes
+      cleanPath = cleanPath.replace(/\\/g, "/");
+
+      // Construct the full URL
       return `${PRODUCTION_URL}/${cleanPath}`;
     },
     [PRODUCTION_URL],
@@ -877,6 +896,8 @@ export default function ApplicationsPage() {
                         if (url) {
                           setImagePreview(url);
                           setShowImageModal(true);
+                        } else {
+                          toast.error("Could not load image URL");
                         }
                       }}
                       className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
@@ -989,6 +1010,13 @@ export default function ApplicationsPage() {
               className="w-full h-auto rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
               loading="lazy"
+              onError={() => {
+                toast.error(
+                  "Failed to load image. Please check if the file exists.",
+                );
+                setShowImageModal(false);
+                setImagePreview(null);
+              }}
             />
           </div>
         </div>
