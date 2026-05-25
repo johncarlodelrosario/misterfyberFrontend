@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE UPDATED VERSION
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -48,10 +48,6 @@ import {
   FiCalendar,
   FiInfo,
   FiUserPlus,
-  FiMail,
-  FiPhone,
-  FiHome,
-  FiDollarSign,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -620,6 +616,39 @@ export default function AdminBillingPage() {
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
+    }
+  };
+
+  // ==================== FIXED: ADD MISSING HANDLERS ====================
+  const handleDisconnect = async (userId: string, userFirstName: string) => {
+    const reason = prompt("Enter reason for disconnection:");
+    if (reason === null) return;
+    try {
+      await disconnectClient({ userId, reason });
+      toast.success(
+        `🔌 ${userFirstName} disconnected. User has been notified via email.`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to disconnect client",
+      );
+    }
+  };
+
+  const handleReconnect = async (userId: string, userFirstName: string) => {
+    try {
+      await reconnectClient({ userId });
+      toast.success(
+        `🔌 ${userFirstName} reconnected. User has been notified via email.`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to reconnect client",
+      );
     }
   };
 
@@ -1425,7 +1454,6 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Other Modals (Settings, Start, Pause, etc.) remain the same as before */}
       {/* Settings Modal */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
