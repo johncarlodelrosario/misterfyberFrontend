@@ -152,7 +152,7 @@ export const getUserBillingCycle = async (): Promise<{
   overdueAmount: number;
 } | null> => {
   try {
-    const response = await api.get("/billing/users/billing-cycle");
+    const response = await api.get("/billing/user/current");
     return response.data.data;
   } catch (error) {
     console.error("Error fetching user billing cycle:", error);
@@ -162,8 +162,9 @@ export const getUserBillingCycle = async (): Promise<{
 
 export const getCurrentBill = async (): Promise<Bill | null> => {
   try {
-    const response = await api.get("/billing/users/billing/current");
-    return response.data.data;
+    const response = await api.get("/billing/user/current");
+    const data = response.data.data;
+    return data?.currentBill || null;
   } catch (error) {
     console.error("Error fetching current bill:", error);
     return null;
@@ -180,14 +181,13 @@ export const getBillingHistory = async (params?: {
   total: number;
 }> => {
   try {
-    const response = await api.get("/billing/users/billing/history", {
-      params,
-    });
+    const response = await api.get("/billing/user/history", { params });
+    const result = response.data;
     return {
-      data: response.data.data || [],
-      totalPages: response.data.totalPages || 0,
-      currentPage: response.data.currentPage || 1,
-      total: response.data.total || 0,
+      data: result.data?.billingHistory || [],
+      totalPages: result.data?.pages || 0,
+      currentPage: result.data?.page || 1,
+      total: result.data?.total || 0,
     };
   } catch (error) {
     console.error("Error fetching billing history:", error);
@@ -197,7 +197,7 @@ export const getBillingHistory = async (params?: {
 
 export const getUserBillingSummary = async (): Promise<any> => {
   try {
-    const response = await api.get("/billing/users/billing-summary");
+    const response = await api.get("/billing/user/current");
     return response.data.data;
   } catch (error) {
     console.error("Error fetching billing summary:", error);
@@ -235,14 +235,12 @@ export const getAllBillingCycles = async (params?: {
     }
 
     const response = await api.get("/billing/cycles", { params });
-    // Handle different response structures
     const result = response.data;
-    const data = result.data || result;
-    const totalPages =
-      result.totalPages ||
-      Math.ceil((result.total || 0) / (params?.limit || 10));
-    const currentPage = result.currentPage || params?.page || 1;
-    const total = result.total || data?.length || 0;
+    const data = result.data || [];
+    const total = result.total || data.length;
+    const currentPage = params?.page || 1;
+    const limit = params?.limit || 10;
+    const totalPages = Math.ceil(total / limit);
 
     const returnData = {
       data: Array.isArray(data) ? data : [],
@@ -285,14 +283,18 @@ export const getAllBills = async (params?: {
 
     const response = await api.get("/billing/all-bills", { params });
     const result = response.data;
-    const data = result.data || result;
+    const data = result.data || [];
+    const total = result.total || data.length;
+    const currentPage = params?.page || 1;
+    const limit = params?.limit || 10;
+    const totalPages = Math.ceil(total / limit);
 
     const returnData = {
       data: Array.isArray(data) ? data : [],
       stats: result.stats || [],
-      totalPages: result.totalPages || 1,
-      currentPage: result.currentPage || 1,
-      total: result.total || (Array.isArray(data) ? data.length : 0),
+      totalPages,
+      currentPage,
+      total,
     };
     setCachedData(CACHE_KEYS.BILLS, returnData);
     return returnData;
