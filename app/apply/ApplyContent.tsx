@@ -14,11 +14,14 @@ import {
   FiAlertCircle,
   FiLoader,
   FiClipboard,
+  FiCheckSquare,
+  FiSquare,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getActiveBuildings, Building } from "@/services/building";
+import TermsAndConditionsModal from "@/components/common/TermsAndConditionsModal";
 
 interface Plan {
   _id: string;
@@ -56,6 +59,10 @@ export default function ApplyContent() {
   const [idImage, setIdImage] = useState<File | null>(null);
   const [idPreview, setIdPreview] = useState<string | null>(null);
   const [step, setStep] = useState(1);
+
+  // Terms and Conditions state
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   useEffect(() => {
     fetchPlans();
@@ -145,6 +152,12 @@ export default function ApplyContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Check if terms and conditions are accepted
+    if (!acceptedTerms) {
+      toast.error("Please read and accept the Terms and Conditions to proceed");
+      return;
+    }
+
     if (!selectedPlan) {
       toast.error("Please select a plan");
       return;
@@ -193,6 +206,7 @@ export default function ApplyContent() {
       submitFormData.append("idType", formData.idType);
       submitFormData.append("idNumber", formData.idNumber);
       submitFormData.append("idImage", idImage);
+      submitFormData.append("acceptedTerms", "true");
 
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -227,9 +241,35 @@ export default function ApplyContent() {
     (b) => b._id === selectedBuilding,
   );
 
+  // Get the selected plan details for the contract summary
+  const getSelectedPlanSpeed = () => {
+    if (selectedPlanDetails?.speed?.download) {
+      return `${selectedPlanDetails.speed.download} mbps`;
+    }
+    return "___ mbps";
+  };
+
+  const getSelectedPlanName = () => {
+    return selectedPlanDetails?.name || "______";
+  };
+
   return (
     <>
       <Header />
+
+      {/* Terms and Conditions Modal */}
+      <TermsAndConditionsModal
+        isOpen={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        onAccept={() => {
+          setAcceptedTerms(true);
+          setShowTermsModal(false);
+          toast.success("You have accepted the Terms and Conditions");
+        }}
+        planName={getSelectedPlanName()}
+        planSpeed={getSelectedPlanSpeed()}
+      />
+
       <div className="min-h-screen bg-[#080616] pt-24 pb-16">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
@@ -282,6 +322,7 @@ export default function ApplyContent() {
                   setIdImage(null);
                   setIdPreview(null);
                   setSelectedBuilding("");
+                  setAcceptedTerms(false);
                   window.scrollTo(0, 0);
                 }}
                 className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-500 to-emerald-500 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
@@ -583,6 +624,56 @@ export default function ApplyContent() {
                             </div>
                           )}
                         </label>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Terms and Conditions Checkbox */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                  >
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAcceptedTerms(!acceptedTerms)}
+                        className="mt-0.5 flex-shrink-0"
+                      >
+                        {acceptedTerms ? (
+                          <FiCheckSquare className="w-5 h-5 text-blue-500" />
+                        ) : (
+                          <FiSquare className="w-5 h-5 text-gray-400 hover:text-blue-400 transition" />
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-300">
+                          I have read, understood, and agree to the{" "}
+                          <button
+                            type="button"
+                            onClick={() => setShowTermsModal(true)}
+                            className="text-blue-400 hover:text-blue-300 underline font-semibold"
+                          >
+                            Terms and Conditions
+                          </button>{" "}
+                          of Mister Fyber's internet service. I confirm that I
+                          avail Plan{" "}
+                          <span className="font-semibold text-white">
+                            {getSelectedPlanName() || "______"}
+                          </span>{" "}
+                          with{" "}
+                          <span className="font-semibold text-white">
+                            {getSelectedPlanSpeed()}
+                          </span>
+                          .
+                        </p>
+                        {!acceptedTerms && (
+                          <p className="text-xs text-red-400 mt-1">
+                            * You must accept the Terms and Conditions to
+                            proceed
+                          </p>
+                        )}
                       </div>
                     </div>
                   </motion.div>

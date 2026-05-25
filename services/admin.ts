@@ -89,14 +89,10 @@ export const getAllApplications = async (params?: {
   return response.data;
 };
 
-export const approveApplication = async (
-  id: string,
-  adminNotes?: string,
-  startBillingImmediately?: boolean,
-) => {
+// APPROVE APPLICATION - UPDATED (no auto-account creation)
+export const approveApplication = async (id: string, adminNotes?: string) => {
   const response = await api.put(`/applications/${id}/approve`, {
     adminNotes,
-    startBillingImmediately,
   });
   return response.data;
 };
@@ -147,7 +143,7 @@ export const getAllBills = async (params?: {
   return response.data;
 };
 
-// ==================== NEW: MANUAL CUSTOMER CREATION ====================
+// ==================== MANUAL CUSTOMER CREATION ====================
 
 export const createManualCustomer = async (data: {
   firstName: string;
@@ -169,7 +165,7 @@ export const createManualCustomer = async (data: {
   return response.data;
 };
 
-// ==================== NEW: GET CUSTOMERS WITHOUT ACCOUNTS ====================
+// ==================== GET CUSTOMERS WITHOUT ACCOUNTS ====================
 
 export const getCustomersWithoutAccounts = async () => {
   try {
@@ -184,7 +180,7 @@ export const getCustomersWithoutAccounts = async () => {
   }
 };
 
-// ==================== NEW: START BILLING FOR APPLICATION ====================
+// ==================== START BILLING FOR APPLICATION ====================
 
 export const startBillingForApplication = async (
   applicationId: string,
