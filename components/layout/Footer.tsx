@@ -216,7 +216,7 @@ export default function Footer() {
                 <li className="flex items-center space-x-3 group">
                   <FiPhone className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
                   <span className="text-gray-300 group-hover:text-gray-200 transition">
-                    (0955) 7327694 - Silk Residences
+                    (0955) 732 7694 - Silk Residences
                   </span>
                 </li>
                 <li className="flex items-center space-x-3 group">

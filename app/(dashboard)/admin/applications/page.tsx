@@ -417,27 +417,21 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // Handle approve - FIXED: Immediately update local state
+  // Handle approve
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
 
-      // Immediately update local state
       setApplications((prevApplications) =>
         prevApplications.map((app) =>
           app._id === id ? { ...app, status: "approved" } : app,
         ),
       );
 
-      // Close modal after successful approval
       setSelectedApp(null);
-
-      // Refresh in background to ensure consistency with server
-      setTimeout(() => {
-        fetchApplications();
-      }, 1000);
+      fetchApplications();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to approve");
     } finally {
@@ -445,27 +439,21 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle reject - FIXED: Immediately update local state
+  // Handle reject
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
 
-      // Immediately update local state
       setApplications((prevApplications) =>
         prevApplications.map((app) =>
           app._id === id ? { ...app, status: "rejected" } : app,
         ),
       );
 
-      // Close modal after successful rejection
       setSelectedApp(null);
-
-      // Refresh in background to ensure consistency with server
-      setTimeout(() => {
-        fetchApplications();
-      }, 1000);
+      fetchApplications();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject");
     } finally {
@@ -473,33 +461,21 @@ export default function ApplicationsPage() {
     }
   };
 
-  // FIXED: Properly construct image URL
+  // Get image URL
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
-
-      // If it's already a full URL
       if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
         return imagePath;
-
-      // If it's a data URL
       if (imagePath.startsWith("data:image")) return imagePath;
-
-      // Clean the path - remove leading slashes
       let cleanPath = imagePath.replace(/^\/+/, "");
-
-      // If path doesn't start with uploads, add it
       if (
         !cleanPath.startsWith("uploads/") &&
         !cleanPath.startsWith("uploads\\")
       ) {
         cleanPath = `uploads/${cleanPath}`;
       }
-
-      // Replace backslashes with forward slashes
       cleanPath = cleanPath.replace(/\\/g, "/");
-
-      // Construct the full URL
       return `${PRODUCTION_URL}/${cleanPath}`;
     },
     [PRODUCTION_URL],
