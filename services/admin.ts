@@ -1,4 +1,3 @@
-// services/admin.ts - COMPLETE UPDATED FILE
 import api from "./api";
 
 export const getDashboardStats = async () => {
@@ -89,7 +88,6 @@ export const getAllApplications = async (params?: {
   return response.data;
 };
 
-// APPROVE APPLICATION - UPDATED (no auto-account creation)
 export const approveApplication = async (id: string, adminNotes?: string) => {
   const response = await api.put(`/applications/${id}/approve`, {
     adminNotes,
@@ -143,8 +141,6 @@ export const getAllBills = async (params?: {
   return response.data;
 };
 
-// ==================== MANUAL CUSTOMER CREATION ====================
-
 export const createManualCustomer = async (data: {
   firstName: string;
   lastName: string;
@@ -165,22 +161,20 @@ export const createManualCustomer = async (data: {
   return response.data;
 };
 
-// ==================== GET CUSTOMERS WITHOUT ACCOUNTS ====================
-
 export const getCustomersWithoutAccounts = async () => {
   try {
+    console.log("🔍 Fetching customers without accounts from API...");
     const response = await api.get("/admin/customers-without-accounts");
+    console.log("📦 API Response:", response.data);
     return response.data;
   } catch (error: any) {
     console.error(
       "Error fetching customers without accounts:",
       error.response?.data || error.message,
     );
-    return { data: [] };
+    return { data: [], count: 0 };
   }
 };
-
-// ==================== START BILLING FOR APPLICATION ====================
 
 export const startBillingForApplication = async (
   applicationId: string,
@@ -192,8 +186,6 @@ export const startBillingForApplication = async (
   );
   return response.data;
 };
-
-// ==================== BILLING CYCLE API CALLS ====================
 
 export interface BillingCycle {
   _id: string;
@@ -244,6 +236,7 @@ export const getAllBillingCycles = async (params?: {
   page?: number;
   limit?: number;
   status?: string;
+  forceRefresh?: boolean;
 }) => {
   try {
     const response = await api.get("/billing/cycles", { params });

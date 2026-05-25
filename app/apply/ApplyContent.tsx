@@ -253,6 +253,12 @@ export default function ApplyContent() {
     return selectedPlanDetails?.name || "______";
   };
 
+  const handleAcceptTerms = () => {
+    setAcceptedTerms(true);
+    setShowTermsModal(false);
+    toast.success("You have accepted the Terms and Conditions");
+  };
+
   return (
     <>
       <Header />
@@ -261,11 +267,7 @@ export default function ApplyContent() {
       <TermsAndConditionsModal
         isOpen={showTermsModal}
         onClose={() => setShowTermsModal(false)}
-        onAccept={() => {
-          setAcceptedTerms(true);
-          setShowTermsModal(false);
-          toast.success("You have accepted the Terms and Conditions");
-        }}
+        onAccept={handleAcceptTerms}
         planName={getSelectedPlanName()}
         planSpeed={getSelectedPlanSpeed()}
       />
@@ -660,7 +662,7 @@ export default function ApplyContent() {
                           of Mister Fyber's internet service. I confirm that I
                           avail Plan{" "}
                           <span className="font-semibold text-white">
-                            {getSelectedPlanName() || "______"}
+                            {getSelectedPlanName()}
                           </span>{" "}
                           with{" "}
                           <span className="font-semibold text-white">

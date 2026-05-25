@@ -18,8 +18,6 @@ export default function TermsAndConditionsModal({
   planName,
   planSpeed,
 }: TermsAndConditionsModalProps) {
-  if (!isOpen) return null;
-
   return (
     <AnimatePresence>
       {isOpen && (
@@ -82,7 +80,9 @@ export default function TermsAndConditionsModal({
                 </p>
                 <p className="text-sm mt-1">
                   Speed:{" "}
-                  <span className="text-white font-semibold">{planSpeed}</span>
+                  <span className="text-white font-semibold">
+                    {planSpeed || "___ mbps"}
+                  </span>
                 </p>
               </div>
 
@@ -289,9 +289,9 @@ export default function TermsAndConditionsModal({
                 <div className="mt-6 p-4 bg-blue-900/20 rounded-lg border border-blue-800/30">
                   <p className="text-sm text-blue-200">
                     By signing below, I (the "Subscriber") confirm that I avail
-                    Plan ______ with ______ mbps, and I have read, understood,
-                    and agreed to the terms and conditions of this Subscription
-                    Contract.
+                    Plan {planName || "______"} with {planSpeed || "___ mbps"},
+                    and I have read, understood, and agreed to the terms and
+                    conditions of this Subscription Contract.
                   </p>
                   <div className="mt-4 pt-4 border-t border-blue-800/30 flex justify-between text-xs text-gray-400">
                     <span>Subscriber's Signature: _________________</span>
