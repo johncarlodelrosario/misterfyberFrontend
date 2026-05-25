@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH BUILDINGS DROPDOWN
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -48,6 +48,7 @@ import {
   FiCalendar,
   FiInfo,
   FiUserPlus,
+  FiHome,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -76,6 +77,21 @@ interface UserWithBalance {
   unpaidBills: any[];
   overdueBills: any[];
   billingCycle?: any;
+}
+
+interface Building {
+  _id: string;
+  buildingName: string;
+  streetAddress: string;
+  city: string;
+  isActive: boolean;
+}
+
+interface Plan {
+  _id: string;
+  name: string;
+  price: number;
+  speed: { download: number; upload: number };
 }
 
 function formatDateFixed(dateStr: string): string {
@@ -158,8 +174,9 @@ export default function AdminBillingPage() {
     installationDate: "",
     notes: "",
   });
-  const [plans, setPlans] = useState<any[]>([]);
-  const [buildings, setBuildings] = useState<any[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [loadingBuildings, setLoadingBuildings] = useState(false);
   const [customersWithoutAccounts, setCustomersWithoutAccounts] = useState<
     any[]
   >([]);
@@ -192,17 +209,47 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Load plans and buildings for manual customer form
-  const loadPlansAndBuildings = async () => {
+  // Load plans for manual customer form
+  const loadPlans = async () => {
     try {
-      const [plansRes, buildingsRes] = await Promise.all([
-        fetch("/api/plans").then((res) => res.json()),
-        fetch("/api/buildings/active").then((res) => res.json()),
-      ]);
-      setPlans(plansRes.data || []);
-      setBuildings(buildingsRes.data || []);
+      const response = await fetch("/api/plans");
+      const data = await response.json();
+      setPlans(data.data || []);
     } catch (error) {
-      console.error("Failed to load plans/buildings:", error);
+      console.error("Failed to load plans:", error);
+    }
+  };
+
+  // Load buildings for manual customer form
+  const loadBuildings = async () => {
+    setLoadingBuildings(true);
+    try {
+      const response = await fetch("/api/buildings/active");
+      const data = await response.json();
+      console.log("Buildings loaded:", data.data);
+      setBuildings(data.data || []);
+    } catch (error) {
+      console.error("Failed to load buildings:", error);
+    } finally {
+      setLoadingBuildings(false);
+    }
+  };
+
+  // Handle building selection - auto-fill building name
+  const handleBuildingChange = (buildingId: string) => {
+    const selectedBuilding = buildings.find((b) => b._id === buildingId);
+    if (selectedBuilding) {
+      setManualCustomerForm({
+        ...manualCustomerForm,
+        buildingId: buildingId,
+        buildingName: selectedBuilding.buildingName,
+      });
+    } else {
+      setManualCustomerForm({
+        ...manualCustomerForm,
+        buildingId: buildingId,
+        buildingName: "",
+      });
     }
   };
 
@@ -415,7 +462,8 @@ export default function AdminBillingPage() {
     isMountedRef.current = true;
     loadData();
     loadBillingFlowSettings();
-    loadPlansAndBuildings();
+    loadPlans();
+    loadBuildings();
     return () => {
       isMountedRef.current = false;
     };
@@ -619,7 +667,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== FIXED: ADD MISSING HANDLERS ====================
   const handleDisconnect = async (userId: string, userFirstName: string) => {
     const reason = prompt("Enter reason for disconnection:");
     if (reason === null) return;
@@ -1207,6 +1254,60 @@ export default function AdminBillingPage() {
                 </div>
               </div>
 
+              {/* Building Selection - DROPDOWN */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FiHome className="inline mr-1 w-4 h-4" /> Building (Optional)
+                </label>
+                <select
+                  value={manualCustomerForm.buildingId}
+                  onChange={(e) => handleBuildingChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  disabled={loadingBuildings}
+                >
+                  <option value="">-- Select Building (Optional) --</option>
+                  {buildings.map((building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.buildingName} - {building.streetAddress},{" "}
+                      {building.city}
+                    </option>
+                  ))}
+                </select>
+                {loadingBuildings && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Loading buildings...
+                  </p>
+                )}
+                {buildings.length === 0 && !loadingBuildings && (
+                  <p className="text-xs text-yellow-600 mt-1">
+                    No buildings found. You can still proceed without selecting
+                    a building.
+                  </p>
+                )}
+              </div>
+
+              {/* Building Name - Auto-filled or manual entry */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Building Name
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.buildingName}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      buildingName: e.target.value,
+                    })
+                  }
+                  placeholder="Enter building name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Auto-filled when you select a building above, or type manually
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1261,7 +1362,8 @@ export default function AdminBillingPage() {
                   <option value="">Select a plan</option>
                   {plans.map((plan) => (
                     <option key={plan._id} value={plan._id}>
-                      {plan.name} - ₱{plan.price?.toLocaleString()}/month
+                      {plan.name} - ₱{plan.price?.toLocaleString()}/month (
+                      {plan.speed?.download} Mbps)
                     </option>
                   ))}
                 </select>
