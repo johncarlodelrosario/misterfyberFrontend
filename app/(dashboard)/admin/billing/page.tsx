@@ -73,6 +73,16 @@ interface UserWithBalance {
   billingCycle?: any;
 }
 
+// FIXED: Helper function para mag-format ng date ng TAMA
+function formatDateFixed(dateStr: string): string {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  return `${month}/${day}/${year}`;
+}
+
 const billingStorage = {
   setItem: (key: string, value: any): void => {
     try {
@@ -247,7 +257,6 @@ export default function AdminBillingPage() {
       if (settingsData) setSettings(settingsData);
       setAllPayments(paymentsData);
 
-      // Update stats from summary if available
       if (summaryData) {
         setStats((prev) => ({
           ...prev,
@@ -406,11 +415,11 @@ export default function AdminBillingPage() {
       const data = response.data;
       if (data.isAfterCutoff) {
         toast.success(
-          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). Combined bill of ₱${(data.proRatedAmount + data.monthlyRate).toFixed(2)} generated! Due on ${new Date(data.dueDate).toLocaleDateString()}`,
+          `✅ Installation after cutoff (day ${data.installationDay} > ${data.billingCutoffDay}). Combined bill of ₱${(data.proRatedAmount + data.monthlyRate).toFixed(2)} generated! Due on ${formatDateFixed(data.dueDate)}`,
         );
       } else {
         toast.success(
-          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${new Date(data.dueDate).toLocaleDateString()}`,
+          `✅ Pro-rated amount of ₱${data.proRatedAmount.toFixed(2)} generated! Due on ${formatDateFixed(data.dueDate)}`,
         );
       }
       toast.success(`📧 Invoice sent to customer`);
@@ -1447,7 +1456,7 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* User Detail Modal */}
+      {/* User Detail Modal - FIXED DATE DISPLAY HERE */}
       {showUserDetailModal && selectedUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1540,13 +1549,14 @@ export default function AdminBillingPage() {
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
                             {bill.invoiceNumber}
                           </td>
+                          {/* FIXED: Use formatDateFixed para TAMA ang display */}
                           <td className="px-4 py-3 text-sm text-gray-500">
                             {bill.billingPeriod
-                              ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
+                              ? `${formatDateFixed(bill.billingPeriod.start)} - ${formatDateFixed(bill.billingPeriod.end)}`
                               : "-"}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">
-                            {new Date(bill.dueDate).toLocaleDateString()}
+                            {formatDateFixed(bill.dueDate)}
                           </td>
                           <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                             ₱{bill.total?.toLocaleString()}
