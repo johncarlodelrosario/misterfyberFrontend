@@ -1,3 +1,4 @@
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -20,14 +21,14 @@ import {
   getBillingSettingsAdmin,
   updateBillingSettingsAdmin,
   getBillingSummaryAdmin,
+  getBillingHistory,
+  getUserCurrentBilling,
 } from "@/services/billing";
 import {
   getAllUsers,
   createManualCustomer,
   getCustomersWithoutAccounts,
-  startBillingForApplication,
 } from "@/services/admin";
-import { getAllPayments } from "@/services/admin";
 import {
   FiRefreshCw,
   FiPlay,
@@ -53,14 +54,6 @@ import {
   FiSend,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
-
-const CACHE_KEYS = {
-  BILLING_DATA: "misterfyber_billing_data",
-  BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
-  BILLING_STATS: "misterfyber_billing_stats",
-};
-
-const CACHE_DURATION = 5 * 60 * 1000;
 
 interface UserWithBalance {
   _id: string;
@@ -105,34 +98,12 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-const billingStorage = {
-  setItem: (key: string, value: any): void => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error("Failed to save billing data:", e);
-    }
-  },
-  getItem: (key: string): any => {
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-  removeItem: (key: string): void => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {}
-  },
-};
+const CACHE_DURATION = 5 * 60 * 1000;
 
 export default function AdminBillingPage() {
   const [users, setUsers] = useState<UserWithBalance[]>([]);
   const [billingCycles, setBillingCycles] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
-  const [allPayments, setAllPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -236,7 +207,6 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
-      console.log("Buildings loaded:", data.data);
       setBuildings(data.data || []);
     } catch (error) {
       console.error("Failed to load buildings:", error);
@@ -245,7 +215,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Handle building selection - auto-fill building name
   const handleBuildingChange = (buildingId: string) => {
     const selectedBuilding = buildings.find((b) => b._id === buildingId);
     if (selectedBuilding) {
@@ -295,7 +264,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Handle sending manual email
   const handleSendManualEmail = async () => {
     if (!emailUser) return;
 
@@ -343,7 +311,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Open email modal with pre-filled template
   const openEmailModal = (user: UserWithBalance, templateType: string) => {
     setEmailUser(user);
     setEmailType(templateType);
@@ -395,79 +362,41 @@ export default function AdminBillingPage() {
     }
 
     try {
-      if (!forceRefresh) {
-        const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
-        const cachedTimestamp = billingStorage.getItem(
-          CACHE_KEYS.BILLING_TIMESTAMP,
-        );
-        if (
-          cachedData &&
-          cachedTimestamp &&
-          Date.now() - cachedTimestamp < CACHE_DURATION
-        ) {
-          setUsers(cachedData.users || []);
-          setBillingCycles(cachedData.billingCycles || []);
-          setBills(cachedData.bills || []);
-          const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
-          if (cachedStats) setStats(cachedStats);
-          setLoading(false);
-          loadedRef.current = true;
-          return;
-        }
-      }
-
       const [
         cyclesResult,
         billsResult,
-        settingsResult,
         allUsersResult,
-        paymentsResult,
         summaryResult,
         customersWithoutAccountsResult,
+        proRatedResult,
+        activationsResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
-        getBillingSettings(forceRefresh),
         getAllUsers({ limit: 100 }),
-        getAllPayments({ limit: 100 }),
         getBillingSummaryAdmin().catch(() => ({ data: {} })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+        getPendingProRatedBills().catch(() => ({ data: [] })),
+        getPendingActivations().catch(() => ({ data: [] })),
       ]);
-
       if (!isMountedRef.current) return;
 
       const cyclesData = cyclesResult?.data || [];
       const billsList = billsResult?.data || [];
-      const settingsData = settingsResult?.data || null;
       const usersData = allUsersResult?.data || [];
-      const paymentsData = paymentsResult?.data || [];
       const summaryData = summaryResult?.data || {};
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
+      const proRatedData = proRatedResult?.data || [];
+      const activationsData = activationsResult?.data || [];
 
       setBillingCycles(cyclesData);
       setBills(billsList);
-      if (settingsData) setSettings(settingsData);
-      setAllPayments(paymentsData);
+      setPendingProRated(proRatedData);
+      setPendingActivations(activationsData);
       setCustomersWithoutAccounts(customersWithoutAccountsData);
 
-      if (summaryData) {
-        setStats((prev) => ({
-          ...prev,
-          activeCyclesCount:
-            summaryData.activeSubscriptions || prev.activeCyclesCount,
-          pausedCyclesCount:
-            summaryData.pausedSubscriptions || prev.pausedCyclesCount,
-          pendingProRatedCount:
-            summaryData.pendingProRated || prev.pendingProRatedCount,
-          pendingActivationsCount:
-            summaryData.pendingActivations || prev.pendingActivationsCount,
-          overdueUsersCount:
-            summaryData.overdueAccounts || prev.overdueUsersCount,
-          totalBalance: summaryData.totalOutstanding || prev.totalBalance,
-        }));
-      }
-
+      // Calculate users with balance
       const usersWithBalanceData: UserWithBalance[] = usersData.map(
         (user: any) => {
           const userBills = billsList.filter(
@@ -497,11 +426,11 @@ export default function AdminBillingPage() {
 
       usersWithBalanceData.sort((a, b) => b.currentBalance - a.currentBalance);
 
-      let totalBalanceSum = 0,
-        usersWithPositiveBalance = 0,
-        usersWithOverdue = 0;
-      let activeCycles = 0,
-        pausedCycles = 0;
+      let totalBalanceSum = 0;
+      let usersWithPositiveBalance = 0;
+      let usersWithOverdue = 0;
+      let activeCycles = 0;
+      let pausedCycles = 0;
 
       for (const user of usersWithBalanceData) {
         totalBalanceSum += user.currentBalance;
@@ -513,11 +442,6 @@ export default function AdminBillingPage() {
         if (cycle.status === "paused") pausedCycles++;
       }
 
-      const [proRatedResult, activationsResult] = await Promise.all([
-        getPendingProRatedBills(),
-        getPendingActivations(),
-      ]);
-
       const newStats = {
         totalUsers: usersWithBalanceData.length,
         totalBalance: totalBalanceSum,
@@ -525,22 +449,23 @@ export default function AdminBillingPage() {
         overdueUsersCount: usersWithOverdue,
         activeCyclesCount: activeCycles,
         pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: proRatedResult?.data?.length || 0,
-        pendingActivationsCount: activationsResult?.data?.length || 0,
+        pendingProRatedCount: proRatedData.length,
+        pendingActivationsCount: activationsData.length,
       };
 
       setUsers(usersWithBalanceData);
       setStats(newStats);
-      setPendingProRated(proRatedResult?.data || []);
-      setPendingActivations(activationsResult?.data || []);
 
-      billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
-        users: usersWithBalanceData,
-        billingCycles: cyclesData,
-        bills: billsList,
-      });
-      billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
-      billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
+      // Update billing flow settings from summary if available
+      if (summaryData) {
+        setBillingFlowSettings((prev) => ({
+          ...prev,
+          proRatedDueDay: summaryData.proRatedDueDay || prev.proRatedDueDay,
+          monthlyDueDay: summaryData.monthlyDueDay || prev.monthlyDueDay,
+          billingCutoffDay:
+            summaryData.billingCutoffDay || prev.billingCutoffDay,
+        }));
+      }
 
       loadedRef.current = true;
     } catch (error) {
@@ -619,7 +544,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== FIXED: START BILLING FOR APPLICATION - USES AUTHENTICATED API ====================
   const handleStartBillingForApplication = async (
     applicationId: string,
     userEmail: string,
@@ -635,37 +559,30 @@ export default function AdminBillingPage() {
 
     try {
       toast.loading("Starting billing...", { id: "start-billing-app" });
-
-      // Use the authenticated API function, NOT direct fetch
-      const result = await startBillingForApplication(applicationId, {});
-
+      const response = await fetch(
+        `/api/billing/applications/${applicationId}/start-billing`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const result = await response.json();
       toast.dismiss("start-billing-app");
 
       if (result.success) {
         toast.success(
           `✅ Billing started for ${customerName}! Invoice sent to ${userEmail}`,
         );
-        // Refresh the data
         loadedRef.current = false;
         loadData(true);
-        // Close the modal if open
         setShowExistingCustomersModal(false);
       } else {
         toast.error(result.message || "Failed to start billing");
       }
     } catch (error: any) {
       toast.dismiss("start-billing-app");
-      console.error("Start billing error:", error);
-
-      const errorMsg =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to start billing";
-      toast.error(errorMsg);
-
-      if (error.response?.status === 401) {
-        toast.error("Session expired. Please login again.");
-      }
+      toast.error(error.response?.data?.message || "Failed to start billing");
     }
   };
 
@@ -1311,7 +1228,6 @@ export default function AdminBillingPage() {
                 <FiX className="w-6 h-6" />
               </button>
             </div>
-
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1352,7 +1268,6 @@ export default function AdminBillingPage() {
                   </button>
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Subject *
@@ -1362,10 +1277,8 @@ export default function AdminBillingPage() {
                   value={emailSubject}
                   onChange={(e) => setEmailSubject(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter email subject"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message *
@@ -1375,17 +1288,14 @@ export default function AdminBillingPage() {
                   onChange={(e) => setEmailMessage(e.target.value)}
                   rows={8}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                  placeholder="Enter your email message here..."
                 />
               </div>
-
               <div className="bg-blue-50 p-3 rounded-lg">
                 <p className="text-sm text-blue-800">
                   📧 This email will be sent to {emailUser.email}. The email
                   will include your signature automatically.
                 </p>
               </div>
-
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => {
@@ -1434,7 +1344,6 @@ export default function AdminBillingPage() {
                 <FiX className="w-6 h-6" />
               </button>
             </div>
-
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1470,7 +1379,6 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1505,7 +1413,6 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <FiHome className="inline mr-1 w-4 h-4" /> Building (Optional)
@@ -1524,40 +1431,7 @@ export default function AdminBillingPage() {
                     </option>
                   ))}
                 </select>
-                {loadingBuildings && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Loading buildings...
-                  </p>
-                )}
-                {buildings.length === 0 && !loadingBuildings && (
-                  <p className="text-xs text-yellow-600 mt-1">
-                    No buildings found. You can still proceed without selecting
-                    a building.
-                  </p>
-                )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Building Name
-                </label>
-                <input
-                  type="text"
-                  value={manualCustomerForm.buildingName}
-                  onChange={(e) =>
-                    setManualCustomerForm({
-                      ...manualCustomerForm,
-                      buildingName: e.target.value,
-                    })
-                  }
-                  placeholder="Enter building name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Auto-filled when you select a building above, or type manually
-                </p>
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1594,7 +1468,6 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Plan *
@@ -1612,53 +1485,11 @@ export default function AdminBillingPage() {
                   <option value="">Select a plan</option>
                   {plans.map((plan) => (
                     <option key={plan._id} value={plan._id}>
-                      {plan.name} - ₱{plan.price?.toLocaleString()}/month (
-                      {plan.speed?.download} Mbps)
+                      {plan.name} - ₱{plan.price?.toLocaleString()}/month
                     </option>
                   ))}
                 </select>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ID Type
-                </label>
-                <select
-                  value={manualCustomerForm.idType}
-                  onChange={(e) =>
-                    setManualCustomerForm({
-                      ...manualCustomerForm,
-                      idType: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option>Valid ID</option>
-                  <option>Driver's License</option>
-                  <option>Passport</option>
-                  <option>National ID</option>
-                  <option>Postal ID</option>
-                  <option>UMID</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ID Number
-                </label>
-                <input
-                  type="text"
-                  value={manualCustomerForm.idNumber}
-                  onChange={(e) =>
-                    setManualCustomerForm({
-                      ...manualCustomerForm,
-                      idNumber: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-
               <div className="bg-blue-50 p-3 rounded-lg">
                 <label className="flex items-center gap-2">
                   <input
@@ -1677,7 +1508,6 @@ export default function AdminBillingPage() {
                   </span>
                 </label>
               </div>
-
               {manualCustomerForm.startBillingImmediately && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1696,7 +1526,6 @@ export default function AdminBillingPage() {
                   />
                 </div>
               )}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes (Optional)
@@ -1713,7 +1542,6 @@ export default function AdminBillingPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
-
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowManualCustomerModal(false)}
@@ -1733,7 +1561,7 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Existing Customers Without Accounts Modal - FIXED BUTTON */}
+      {/* Existing Customers Without Accounts Modal */}
       {showExistingCustomersModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -1905,19 +1733,6 @@ export default function AdminBillingPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
                   </div>
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                  <p className="text-sm text-blue-800">
-                    <strong>📌 How it works:</strong>
-                    <br />• Install on Day 1-
-                    {billingFlowSettings.billingCutoffDay}: Pro-rated bill from
-                    install date to end of month, due on{" "}
-                    {billingFlowSettings.proRatedDueDay}th
-                    <br />• Install on Day{" "}
-                    {billingFlowSettings.billingCutoffDay + 1}-31: Combined bill
-                    (pro-rated for remaining days + next month's full bill), due
-                    on {billingFlowSettings.monthlyDueDay}th of next month
-                  </p>
                 </div>
                 <div className="space-y-2 mb-4">
                   <label className="flex items-center gap-2">

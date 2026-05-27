@@ -1,4 +1,4 @@
-// services/payment.ts - COMPLETE WITH MANUAL PAYMENT
+// services/payment.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 export interface CreatePaymentData {
@@ -40,6 +40,7 @@ export const createPayment = async (
 export const getPayments = async (params?: {
   page?: number;
   limit?: number;
+  status?: string;
 }): Promise<any> => {
   try {
     const response = await api.get("/payments", { params });
@@ -70,9 +71,59 @@ export const verifyPayment = async (reference: string): Promise<any> => {
   }
 };
 
+export const confirmPayment = async (
+  paymentId: string,
+  notes?: string,
+): Promise<any> => {
+  try {
+    const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
+    return response.data;
+  } catch (error) {
+    console.error("Error confirming payment:", error);
+    throw error;
+  }
+};
+
+export const rejectPayment = async (
+  paymentId: string,
+  reason: string,
+): Promise<any> => {
+  try {
+    const response = await api.put(`/payments/${paymentId}/reject`, { reason });
+    return response.data;
+  } catch (error) {
+    console.error("Error rejecting payment:", error);
+    throw error;
+  }
+};
+
+export const getPendingPayments = async (): Promise<any> => {
+  try {
+    const response = await api.get("/payments/admin/pending");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending payments:", error);
+    throw error;
+  }
+};
+
+export const getPaymentStats = async (): Promise<any> => {
+  try {
+    const response = await api.get("/payments/stats");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching payment stats:", error);
+    throw error;
+  }
+};
+
 export default {
   createPayment,
   getPayments,
   getPayment,
   verifyPayment,
+  confirmPayment,
+  rejectPayment,
+  getPendingPayments,
+  getPaymentStats,
 };
