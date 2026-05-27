@@ -1,4 +1,4 @@
-// services/admin.ts - COMPLETE UPDATED VERSION
+// services/admin.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -193,6 +193,18 @@ export const rejectApplication = async (id: string, adminNotes?: string) => {
   return response.data;
 };
 
+export const getApplicationBillingStatus = async (applicationId: string) => {
+  try {
+    const response = await api.get(
+      `/applications/billing-status/${applicationId}`,
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching application billing status:", error);
+    return { data: null };
+  }
+};
+
 // ==================== PAYMENT MANAGEMENT ====================
 export const getAllPayments = async (params?: {
   page?: number;
@@ -304,7 +316,6 @@ export const createManualCustomer = async (data: {
   return response.data;
 };
 
-// ==================== CUSTOMERS WITHOUT ACCOUNTS (APPLICATION-BASED) ====================
 export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
   try {
     console.log("🔍 Fetching customers without accounts from API...");
@@ -588,19 +599,6 @@ export const getUserBillingHistory = async (params?: {
   } catch (error) {
     console.error("Error fetching user billing history:", error);
     return { data: { billingHistory: [], total: 0, page: 1, pages: 0 } };
-  }
-};
-
-// ==================== APPLICATION BILLING STATUS ====================
-export const getApplicationBillingStatus = async (applicationId: string) => {
-  try {
-    const response = await api.get(
-      `/applications/billing-status/${applicationId}`,
-    );
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching application billing status:", error);
-    return { data: null };
   }
 };
 
