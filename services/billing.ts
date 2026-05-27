@@ -24,7 +24,11 @@ export interface BillingCycle {
   manuallyStartedAt?: string;
   isAfterCutoff: boolean;
   cutoffDayUsed: number;
-  paymentHistory: Array<{ billingId: string; amount: number; paidAt: string }>;
+  paymentHistory: Array<{
+    billingId: string;
+    amount: number;
+    paidAt: string;
+  }>;
   serviceSuspendedAt?: string;
   pausedAt?: string;
   resumedAt?: string;
@@ -37,6 +41,7 @@ export interface BillingCycle {
     effectiveDate: string;
     status: "pending" | "approved" | "rejected";
   };
+  applicationId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,7 +68,11 @@ export interface Bill {
   _id: string;
   invoiceNumber: string;
   userId: any;
-  billingPeriod: { start: string; end: string };
+  applicationId?: any;
+  billingPeriod: {
+    start: string;
+    end: string;
+  };
   dueDate: string;
   items: Array<{
     description: string;
@@ -91,10 +100,31 @@ export interface Bill {
   updatedAt: string;
 }
 
+export interface Payment {
+  _id: string;
+  userId: any;
+  amount: number;
+  paymentMethod: string;
+  paymentType: string;
+  status: "pending" | "processing" | "completed" | "failed" | "refunded";
+  referenceNumber: string;
+  billingId: string;
+  paymentDetails: {
+    gateway: string;
+    gatewayResponse: any;
+    notes?: string;
+  };
+  paidAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const CACHE_KEYS = {
   BILLING_CYCLES: "billing_cycles_cache",
   BILLS: "bills_cache",
   SETTINGS: "billing_settings_cache",
+  USERS: "users_cache",
+  PAYMENTS: "payments_cache",
   BILLING_STATS: "billing_stats_cache",
 };
 
@@ -132,6 +162,39 @@ function setCachedData<T>(key: string, data: T): void {
 export function clearBillingCache(): void {
   Object.values(CACHE_KEYS).forEach((key) => localStorage.removeItem(key));
 }
+
+// ==================== APPLICATION BILLING FUNCTIONS (PRIORITY) ====================
+
+export const startBillingForApplication = async (
+  applicationId: string,
+  data?: { installationDate?: string; notes?: string },
+): Promise<any> => {
+  try {
+    const response = await api.post(
+      `/applications/${applicationId}/start-billing`,
+      data || {},
+    );
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error starting billing for application:", error);
+    throw error;
+  }
+};
+
+export const getApplicationBillingStatus = async (
+  applicationId: string,
+): Promise<any> => {
+  try {
+    const response = await api.get(
+      `/applications/billing-status/${applicationId}`,
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching application billing status:", error);
+    return { data: null };
+  }
+};
 
 // ==================== USER BILLING FUNCTIONS ====================
 
@@ -186,6 +249,21 @@ export const getBillingHistory = async (params?: {
   }
 };
 
+export const getUserBillingSummary = async (): Promise<any> => {
+  try {
+    const response = await api.get("/billing/user/current");
+    return response.data.data;
+  } catch (error) {
+    console.error("Error fetching billing summary:", error);
+    return {
+      currentBill: null,
+      lastPayment: null,
+      paymentHistory: [],
+      billingHistory: [],
+    };
+  }
+};
+
 // ==================== ADMIN BILLING FUNCTIONS ====================
 
 export const getAllBillingCycles = async (params?: {
@@ -237,6 +315,7 @@ export const getAllBills = async (params?: {
   limit?: number;
   status?: string;
   userId?: string;
+  applicationId?: string;
   forceRefresh?: boolean;
 }): Promise<{
   data: Bill[];
@@ -365,7 +444,9 @@ export const reconnectClient = async (data: {
 
 export const getBillingSettings = async (
   forceRefresh?: boolean,
-): Promise<{ data: BillingSettings }> => {
+): Promise<{
+  data: BillingSettings;
+}> => {
   try {
     if (!forceRefresh) {
       const cached = getCachedData<{ data: BillingSettings }>(
@@ -423,7 +504,10 @@ export const updateBillingSettingsAdmin = async (
 
 export const markBillAsPaid = async (
   billId: string,
-  paymentData: { referenceNumber?: string; notes?: string },
+  paymentData: {
+    referenceNumber?: string;
+    notes?: string;
+  },
 ): Promise<any> => {
   try {
     const response = await api.put(`/billing/mark-paid/${billId}`, paymentData);
@@ -435,7 +519,9 @@ export const markBillAsPaid = async (
   }
 };
 
-export const getPendingProRatedBills = async (): Promise<{ data: any[] }> => {
+export const getPendingProRatedBills = async (): Promise<{
+  data: any[];
+}> => {
   try {
     const response = await api.get("/billing/pending-pro-rated");
     return response.data;
@@ -445,7 +531,9 @@ export const getPendingProRatedBills = async (): Promise<{ data: any[] }> => {
   }
 };
 
-export const getPendingActivations = async (): Promise<{ data: any[] }> => {
+export const getPendingActivations = async (): Promise<{
+  data: any[];
+}> => {
   try {
     const response = await api.get("/billing/pending-activations");
     return response.data;

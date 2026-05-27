@@ -1,10 +1,11 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION WITH APPLICATION ID PRIORITY (NO EMAIL)
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE UPDATED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllBillingCycles,
   getAllBills,
+  getBillingSettings,
   startBilling,
   stopBilling,
   pauseBilling,
@@ -20,7 +21,13 @@ import {
   getBillingSettingsAdmin,
   updateBillingSettingsAdmin,
   getBillingSummaryAdmin,
+  startBillingForApplication,
 } from "@/services/billing";
+import {
+  getPendingPayments,
+  confirmPayment,
+  rejectPayment,
+} from "@/services/payment";
 import {
   getAllUsers,
   createManualCustomer,
@@ -47,17 +54,26 @@ import {
   FiInfo,
   FiUserPlus,
   FiHome,
-  FiHash,
+  FiMail,
+  FiSend,
+  FiDollarSign,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-interface CustomerWithBilling {
-  // Primary identifier - Application ID
-  applicationId: string;
-  _id?: string;
+const CACHE_KEYS = {
+  BILLING_DATA: "misterfyber_billing_data",
+  BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
+  BILLING_STATS: "misterfyber_billing_stats",
+};
+
+const CACHE_DURATION = 5 * 60 * 1000;
+
+interface UserWithBalance {
+  _id: string;
   firstName: string;
   lastName: string;
   email: string;
+  username: string;
   phoneNumber: string;
   status: string;
   planId?: {
@@ -69,10 +85,6 @@ interface CustomerWithBilling {
   unpaidBills: any[];
   overdueBills: any[];
   billingCycle?: any;
-  hasUserAccount: boolean;
-  userId?: string;
-  billingStarted: boolean;
-  billingCycleId?: string;
 }
 
 interface Building {
@@ -99,35 +111,68 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
+const billingStorage = {
+  setItem: (key: string, value: any): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error("Failed to save billing data:", e);
+    }
+  },
+  getItem: (key: string): any => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  },
+};
+
 export default function AdminBillingPage() {
-  const [customers, setCustomers] = useState<CustomerWithBilling[]>([]);
+  const [users, setUsers] = useState<UserWithBalance[]>([]);
   const [billingCycles, setBillingCycles] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
-  const [applications, setApplications] = useState<any[]>([]);
+  const [allPayments, setAllPayments] = useState<any[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedCustomer, setSelectedCustomer] =
-    useState<CustomerWithBilling | null>(null);
-  const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserWithBalance | null>(
+    null,
+  );
+  const [showUserDetailModal, setShowUserDetailModal] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showManualCustomerModal, setShowManualCustomerModal] = useState(false);
-  const [selectedCustomerId, setSelectedCustomerId] = useState("");
-  const [selectedApplicationId, setSelectedApplicationId] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [customAmount, setCustomAmount] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
   const [pauseReason, setPauseReason] = useState("");
   const [pauseUntilDate, setPauseUntilDate] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
   const [pendingProRated, setPendingProRated] = useState<any[]>([]);
   const [pendingActivations, setPendingActivations] = useState<any[]>([]);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [pendingModalType, setPendingModalType] = useState<
-    "pro-rated" | "activation"
+    "pro-rated" | "activation" | "payments"
   >("pro-rated");
+
+  // Email Modal States
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailUser, setEmailUser] = useState<UserWithBalance | null>(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailType, setEmailType] = useState("custom");
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   // Manual Customer Form State
   const [manualCustomerForm, setManualCustomerForm] = useState({
@@ -168,15 +213,15 @@ export default function AdminBillingPage() {
   });
 
   const [stats, setStats] = useState({
-    totalCustomers: 0,
+    totalUsers: 0,
     totalBalance: 0,
-    customersWithBalanceCount: 0,
-    overdueCustomersCount: 0,
+    usersWithBalanceCount: 0,
+    overdueUsersCount: 0,
     activeCyclesCount: 0,
     pausedCyclesCount: 0,
     pendingProRatedCount: 0,
     pendingActivationsCount: 0,
-    customersWithoutAccountsCount: 0,
+    pendingPaymentsCount: 0,
   });
 
   const isMountedRef = useRef(true);
@@ -199,6 +244,7 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
+      console.log("Buildings loaded:", data.data);
       setBuildings(data.data || []);
     } catch (error) {
       console.error("Failed to load buildings:", error);
@@ -207,20 +253,7 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Load all applications (including those without user accounts)
-  const loadAllApplications = async () => {
-    try {
-      const response = await fetch("/api/applications?limit=1000");
-      const data = await response.json();
-      const allApps = data.data || [];
-      console.log(`📋 Loaded ${allApps.length} total applications`);
-      return allApps;
-    } catch (error) {
-      console.error("Failed to load applications:", error);
-      return [];
-    }
-  };
-
+  // Handle building selection - auto-fill building name
   const handleBuildingChange = (buildingId: string) => {
     const selectedBuilding = buildings.find((b) => b._id === buildingId);
     if (selectedBuilding) {
@@ -270,10 +303,96 @@ export default function AdminBillingPage() {
     }
   };
 
-  // MAIN LOAD DATA FUNCTION - Prioritizes Application ID
+  // Handle sending manual email
+  const handleSendManualEmail = async () => {
+    if (!emailUser) return;
+
+    if (!emailSubject.trim()) {
+      toast.error("Please enter an email subject");
+      return;
+    }
+
+    if (!emailMessage.trim()) {
+      toast.error("Please enter an email message");
+      return;
+    }
+
+    setSendingEmail(true);
+
+    try {
+      const response = await fetch("/api/email/send-manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: emailUser._id,
+          emailType: emailType,
+          subject: emailSubject,
+          message: emailMessage,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`📧 Email sent successfully to ${emailUser.email}`);
+        setShowEmailModal(false);
+        setEmailUser(null);
+        setEmailSubject("");
+        setEmailMessage("");
+        setEmailType("custom");
+      } else {
+        toast.error(data.message || "Failed to send email");
+      }
+    } catch (error: any) {
+      console.error("Failed to send email:", error);
+      toast.error(error.message || "Failed to send email");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  // Open email modal with pre-filled template
+  const openEmailModal = (user: UserWithBalance, templateType: string) => {
+    setEmailUser(user);
+    setEmailType(templateType);
+
+    switch (templateType) {
+      case "invoice":
+        setEmailSubject(`Invoice Reminder - MisterFyber`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${user.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "payment_confirmation":
+        setEmailSubject(`Payment Confirmation - MisterFyber`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "disconnection":
+        setEmailSubject(
+          `Important: Service Disconnection Notice - MisterFyber`,
+        );
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${user.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      case "welcome":
+        setEmailSubject(`Welcome to MisterFyber!`);
+        setEmailMessage(
+          `Dear ${user.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
+        );
+        break;
+      default:
+        setEmailSubject(`Message from MisterFyber`);
+        setEmailMessage(`Dear ${user.firstName},\n\n`);
+    }
+
+    setShowEmailModal(true);
+  };
+
   const loadData = useCallback(async (forceRefresh = false) => {
     if (!isMountedRef.current) return;
-
     if (loadedRef.current && !forceRefresh) return;
 
     if (forceRefresh) {
@@ -284,222 +403,154 @@ export default function AdminBillingPage() {
     }
 
     try {
-      console.log("🔄 Loading billing data by Application ID...");
+      if (!forceRefresh) {
+        const cachedData = billingStorage.getItem(CACHE_KEYS.BILLING_DATA);
+        const cachedTimestamp = billingStorage.getItem(
+          CACHE_KEYS.BILLING_TIMESTAMP,
+        );
+        if (
+          cachedData &&
+          cachedTimestamp &&
+          Date.now() - cachedTimestamp < CACHE_DURATION
+        ) {
+          setUsers(cachedData.users || []);
+          setBillingCycles(cachedData.billingCycles || []);
+          setBills(cachedData.bills || []);
+          const cachedStats = billingStorage.getItem(CACHE_KEYS.BILLING_STATS);
+          if (cachedStats) setStats(cachedStats);
+          setLoading(false);
+          loadedRef.current = true;
+          return;
+        }
+      }
 
       const [
         cyclesResult,
         billsResult,
+        settingsResult,
         allUsersResult,
+        pendingPaymentsResult,
         summaryResult,
         customersWithoutAccountsResult,
-        proRatedResult,
-        activationsResult,
-        allApplicationsResult,
       ] = await Promise.all([
-        getAllBillingCycles({ limit: 1000, forceRefresh }),
-        getAllBills({ limit: 1000, forceRefresh }),
-        getAllUsers({ limit: 1000 }),
+        getAllBillingCycles({ limit: 100, forceRefresh }),
+        getAllBills({ limit: 100, forceRefresh }),
+        getBillingSettings(forceRefresh),
+        getAllUsers({ limit: 100 }),
+        getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
         getBillingSummaryAdmin().catch(() => ({ data: {} })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-        getPendingProRatedBills().catch(() => ({ data: [] })),
-        getPendingActivations().catch(() => ({ data: [] })),
-        loadAllApplications(),
       ]);
 
       if (!isMountedRef.current) return;
 
       const cyclesData = cyclesResult?.data || [];
       const billsList = billsResult?.data || [];
+      const settingsData = settingsResult?.data || null;
       const usersData = allUsersResult?.data || [];
+      const pendingPaymentsList = pendingPaymentsResult?.data || [];
       const summaryData = summaryResult?.data || {};
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
-      const proRatedData = proRatedResult?.data || [];
-      const activationsData = activationsResult?.data || [];
-      const applicationsData = allApplicationsResult || [];
-
-      console.log(
-        `📊 Data loaded: ${cyclesData.length} cycles, ${billsList.length} bills, ${usersData.length} users, ${applicationsData.length} applications`,
-      );
 
       setBillingCycles(cyclesData);
       setBills(billsList);
-      setPendingProRated(proRatedData);
-      setPendingActivations(activationsData);
+      if (settingsData) setSettings(settingsData);
+      setPendingPayments(pendingPaymentsList);
       setCustomersWithoutAccounts(customersWithoutAccountsData);
-      setApplications(applicationsData);
 
-      // Build a map of user accounts by email/applicationId for quick lookup
-      const userByEmail = new Map();
-      const userByApplicationId = new Map();
-
-      for (const user of usersData) {
-        if (user.email) userByEmail.set(user.email.toLowerCase(), user);
-        if (user.applicationId)
-          userByApplicationId.set(user.applicationId, user);
+      if (summaryData) {
+        setStats((prev) => ({
+          ...prev,
+          activeCyclesCount:
+            summaryData.activeSubscriptions || prev.activeCyclesCount,
+          pausedCyclesCount:
+            summaryData.pausedSubscriptions || prev.pausedCyclesCount,
+          pendingProRatedCount:
+            summaryData.pendingProRated || prev.pendingProRatedCount,
+          pendingActivationsCount:
+            summaryData.pendingActivations || prev.pendingActivationsCount,
+          overdueUsersCount:
+            summaryData.overdueAccounts || prev.overdueUsersCount,
+          totalBalance: summaryData.totalOutstanding || prev.totalBalance,
+          pendingPaymentsCount: pendingPaymentsList.length,
+        }));
       }
 
-      // Create a map of bills by userId and by applicationId
-      const billsByUserId = new Map();
-      const billsByApplicationId = new Map();
+      const usersWithBalanceData: UserWithBalance[] = usersData.map(
+        (user: any) => {
+          const userBills = billsList.filter(
+            (bill: any) =>
+              bill.userId?._id === user._id && bill.status !== "paid",
+          );
+          const totalBalance = userBills.reduce(
+            (sum: number, bill: any) => sum + (bill.total || 0),
+            0,
+          );
+          const overdueBills = userBills.filter(
+            (bill: any) =>
+              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+          );
+          const userCycle = cyclesData.find(
+            (cycle: any) => cycle.userId?._id === user._id,
+          );
+          return {
+            ...user,
+            currentBalance: totalBalance,
+            unpaidBills: userBills,
+            overdueBills,
+            billingCycle: userCycle,
+          };
+        },
+      );
 
-      for (const bill of billsList) {
-        // Group by userId if exists
-        if (bill.userId?._id) {
-          if (!billsByUserId.has(bill.userId._id))
-            billsByUserId.set(bill.userId._id, []);
-          billsByUserId.get(bill.userId._id).push(bill);
-        }
-        // Group by applicationId if exists
-        if (bill.applicationId) {
-          if (!billsByApplicationId.has(bill.applicationId))
-            billsByApplicationId.set(bill.applicationId, []);
-          billsByApplicationId.get(bill.applicationId).push(bill);
-        }
+      usersWithBalanceData.sort((a, b) => b.currentBalance - a.currentBalance);
+
+      let totalBalanceSum = 0,
+        usersWithPositiveBalance = 0,
+        usersWithOverdue = 0;
+      let activeCycles = 0,
+        pausedCycles = 0;
+
+      for (const user of usersWithBalanceData) {
+        totalBalanceSum += user.currentBalance;
+        if (user.currentBalance > 0) usersWithPositiveBalance++;
+        if (user.overdueBills.length > 0) usersWithOverdue++;
       }
-
-      // Create a map of cycles by userId and by applicationId
-      const cyclesByUserId = new Map();
-      const cyclesByApplicationId = new Map();
-
       for (const cycle of cyclesData) {
-        if (cycle.userId?._id) {
-          cyclesByUserId.set(cycle.userId._id, cycle);
-        }
-        if (cycle.applicationId) {
-          cyclesByApplicationId.set(cycle.applicationId.toString(), cycle);
-        }
+        if (cycle.status === "active") activeCycles++;
+        if (cycle.status === "paused") pausedCycles++;
       }
 
-      // Build customer list - PRIORITIZE APPLICATIONS (customers without accounts)
-      const customerMap = new Map<string, CustomerWithBilling>();
-
-      // First, add all applications (approved applications that may or may not have billing)
-      for (const app of applicationsData) {
-        if (app.status === "approved" || app.status === "pending") {
-          const appId = app.applicationId;
-          const userAccount =
-            userByEmail.get(app.email?.toLowerCase()) ||
-            userByApplicationId.get(appId);
-          const userBills = userAccount
-            ? billsByUserId.get(userAccount._id) || []
-            : billsByApplicationId.get(app._id) || [];
-          const userCycle = userAccount
-            ? cyclesByUserId.get(userAccount._id)
-            : cyclesByApplicationId.get(app._id);
-
-          const totalBalance = userBills.reduce(
-            (sum: number, bill: any) => sum + (bill.total || 0),
-            0,
-          );
-          const overdueBills = userBills.filter(
-            (bill: any) =>
-              bill.status === "overdue" ||
-              (bill.status === "sent" && new Date(bill.dueDate) < new Date()),
-          );
-
-          customerMap.set(appId, {
-            applicationId: appId,
-            _id: app._id,
-            firstName: app.firstName,
-            lastName: app.lastName,
-            email: app.email,
-            phoneNumber: app.phoneNumber,
-            status: app.billingStarted
-              ? userCycle?.status || "active"
-              : "pending_activation",
-            planId: app.planId,
-            currentBalance: totalBalance,
-            unpaidBills: userBills,
-            overdueBills: overdueBills,
-            billingCycle: userCycle,
-            hasUserAccount: !!userAccount,
-            userId: userAccount?._id,
-            billingStarted: app.billingStarted || false,
-            billingCycleId: app.billingCycleId,
-          });
-        }
-      }
-
-      // Then, add any users that don't have associated applications (legacy users)
-      for (const user of usersData) {
-        const found = Array.from(customerMap.values()).some(
-          (c) => c.email === user.email,
-        );
-        if (!found) {
-          const userBills = billsByUserId.get(user._id) || [];
-          const totalBalance = userBills.reduce(
-            (sum: number, bill: any) => sum + (bill.total || 0),
-            0,
-          );
-          const overdueBills = userBills.filter(
-            (bill: any) =>
-              bill.status === "overdue" ||
-              (bill.status === "sent" && new Date(bill.dueDate) < new Date()),
-          );
-          const userCycle = cyclesByUserId.get(user._id);
-
-          customerMap.set(user._id, {
-            applicationId: `USER-${user._id.slice(-8)}`,
-            _id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            phoneNumber: user.phoneNumber,
-            status: user.status,
-            planId: user.planId,
-            currentBalance: totalBalance,
-            unpaidBills: userBills,
-            overdueBills: overdueBills,
-            billingCycle: userCycle,
-            hasUserAccount: true,
-            userId: user._id,
-            billingStarted: !!userCycle,
-            billingCycleId: userCycle?._id,
-          });
-        }
-      }
-
-      // Convert map to array and sort
-      let customersList = Array.from(customerMap.values());
-      customersList.sort((a, b) => b.currentBalance - a.currentBalance);
-
-      // Calculate statistics
-      let totalBalanceSum = 0;
-      let customersWithPositiveBalance = 0;
-      let customersWithOverdue = 0;
-      let activeCycles = 0;
-      let pausedCycles = 0;
-
-      for (const customer of customersList) {
-        totalBalanceSum += customer.currentBalance;
-        if (customer.currentBalance > 0) customersWithPositiveBalance++;
-        if (customer.overdueBills.length > 0) customersWithOverdue++;
-        if (customer.billingCycle?.status === "active") activeCycles++;
-        if (customer.billingCycle?.status === "paused") pausedCycles++;
-      }
+      const [proRatedResult, activationsResult] = await Promise.all([
+        getPendingProRatedBills(),
+        getPendingActivations(),
+      ]);
 
       const newStats = {
-        totalCustomers: customersList.length,
+        totalUsers: usersWithBalanceData.length,
         totalBalance: totalBalanceSum,
-        customersWithBalanceCount: customersWithPositiveBalance,
-        overdueCustomersCount: customersWithOverdue,
+        usersWithBalanceCount: usersWithPositiveBalance,
+        overdueUsersCount: usersWithOverdue,
         activeCyclesCount: activeCycles,
         pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: proRatedData.length,
-        pendingActivationsCount: activationsData.length,
-        customersWithoutAccountsCount: customersWithoutAccountsData.length,
+        pendingProRatedCount: proRatedResult?.data?.length || 0,
+        pendingActivationsCount: activationsResult?.data?.length || 0,
+        pendingPaymentsCount: pendingPaymentsList.length,
       };
 
-      setCustomers(customersList);
+      setUsers(usersWithBalanceData);
       setStats(newStats);
+      setPendingProRated(proRatedResult?.data || []);
+      setPendingActivations(activationsResult?.data || []);
 
-      console.log(
-        `✅ Stats calculated: Total customers: ${customersList.length}, Total balance: ₱${totalBalanceSum.toLocaleString()}`,
-      );
-      console.log(
-        `📋 Customers without accounts: ${customersWithoutAccountsData.length}`,
-      );
+      billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
+        users: usersWithBalanceData,
+        billingCycles: cyclesData,
+        bills: billsList,
+      });
+      billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
+      billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
 
       loadedRef.current = true;
     } catch (error) {
@@ -578,14 +629,15 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Start billing for application (priority)
   const handleStartBillingForApplication = async (
     applicationId: string,
-    customerEmail: string,
+    userEmail: string,
     customerName: string,
   ) => {
     if (
       !confirm(
-        `Start billing for ${customerName} (Application ID: ${applicationId})?\n\nAn invoice will be generated and sent to ${customerEmail}.`,
+        `Start billing for ${customerName} (${applicationId})?\n\nAn invoice will be generated and sent to ${userEmail}.`,
       )
     ) {
       return;
@@ -593,20 +645,14 @@ export default function AdminBillingPage() {
 
     try {
       toast.loading("Starting billing...", { id: "start-billing-app" });
-      const response = await fetch(
-        `/api/applications/${applicationId}/start-billing`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      const result = await response.json();
+
+      const result = await startBillingForApplication(applicationId, {});
+
       toast.dismiss("start-billing-app");
 
       if (result.success) {
         toast.success(
-          `✅ Billing started for ${customerName}! Invoice sent to ${customerEmail}`,
+          `✅ Billing started for ${customerName}! Invoice sent to ${userEmail}`,
         );
         loadedRef.current = false;
         loadData(true);
@@ -616,17 +662,50 @@ export default function AdminBillingPage() {
       }
     } catch (error: any) {
       toast.dismiss("start-billing-app");
-      toast.error(error.response?.data?.message || "Failed to start billing");
+      console.error("Start billing error:", error);
+
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to start billing";
+      toast.error(errorMsg);
+
+      if (error.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      }
     }
   };
 
-  const handleMarkBillAsPaid = async (
-    bill: any,
-    customer: CustomerWithBilling,
-  ) => {
+  const handleConfirmPayment = async (paymentId: string) => {
+    if (!confirm("Confirm this payment? This will mark the bill as paid."))
+      return;
+
+    try {
+      await confirmPayment(paymentId);
+      toast.success("Payment confirmed! User notified.");
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to confirm payment");
+    }
+  };
+
+  const handleRejectPayment = async (paymentId: string) => {
+    const reason = prompt("Enter reason for rejection:");
+    if (reason === null) return;
+
+    try {
+      await rejectPayment(paymentId, reason);
+      toast.success("Payment rejected");
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to reject payment");
+    }
+  };
+
+  const handleMarkBillAsPaid = async (bill: any, user: any) => {
     if (
       !confirm(
-        `Mark invoice ${bill.invoiceNumber} as paid? This will update ${customer.firstName}'s balance.`,
+        `Mark invoice ${bill.invoiceNumber} as paid? This will update ${user.firstName}'s balance.`,
       )
     )
       return;
@@ -636,6 +715,7 @@ export default function AdminBillingPage() {
         notes: `Manually marked as paid by admin`,
       });
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
+      toast.success(`📧 Payment confirmation email sent to ${user.email}`);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -646,26 +726,19 @@ export default function AdminBillingPage() {
   };
 
   const handleStartBilling = async () => {
-    if (!selectedApplicationId && !selectedCustomerId) {
-      toast.error("Please select a customer by Application ID");
+    if (!selectedUserId) {
+      toast.error("Please select a user");
       return;
     }
     try {
-      const payload: any = {};
-      if (selectedApplicationId) {
-        payload.applicationId = selectedApplicationId;
-      } else if (selectedCustomerId) {
-        payload.userId = selectedCustomerId;
-      }
-      payload.startDate = startDate || undefined;
-      payload.customAmount = customAmount
-        ? parseFloat(customAmount)
-        : undefined;
-      payload.notes = billingNotes;
+      const response = await startBilling({
+        userId: selectedUserId,
+        startDate: startDate || undefined,
+        customAmount: customAmount ? parseFloat(customAmount) : undefined,
+        notes: billingNotes,
+      });
 
-      const response = await startBilling(payload);
       const data = response.data;
-
       if (data.isAfterCutoff) {
         toast.success(
           `✅ Installation after cutoff. Combined bill of ₱${(data.proRatedAmount + data.monthlyRate).toFixed(2)} generated!`,
@@ -678,8 +751,7 @@ export default function AdminBillingPage() {
       toast.success(`📧 Invoice sent to customer`);
 
       setShowStartModal(false);
-      setSelectedCustomerId("");
-      setSelectedApplicationId("");
+      setSelectedUserId("");
       setStartDate("");
       setCustomAmount("");
       setBillingNotes("");
@@ -691,20 +763,19 @@ export default function AdminBillingPage() {
   };
 
   const handlePauseBilling = async () => {
-    if (!selectedCustomerId && !selectedApplicationId) {
-      toast.error("Please select a customer");
+    if (!selectedUserId) {
+      toast.error("Please select a user");
       return;
     }
     try {
       await pauseBilling({
-        userId: selectedCustomerId,
+        userId: selectedUserId,
         reason: pauseReason || "Admin initiated pause",
         pauseUntilDate: pauseUntilDate || undefined,
       });
       toast.success("⏸️ Billing paused successfully!");
       setShowPauseModal(false);
-      setSelectedCustomerId("");
-      setSelectedApplicationId("");
+      setSelectedUserId("");
       setPauseReason("");
       setPauseUntilDate("");
       loadedRef.current = false;
@@ -714,14 +785,11 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleResumeBilling = async (
-    customerId: string,
-    customerName: string,
-  ) => {
-    if (!confirm(`Resume billing for ${customerName}?`)) return;
+  const handleResumeBilling = async (userId: string, userFirstName: string) => {
+    if (!confirm(`Resume billing for ${userFirstName}?`)) return;
     try {
-      await resumeBilling({ userId: customerId });
-      toast.success(`✅ Billing resumed for ${customerName}!`);
+      await resumeBilling({ userId });
+      toast.success(`✅ Billing resumed for ${userFirstName}!`);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -729,19 +797,16 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleStopBilling = async (
-    customerId: string,
-    customerName: string,
-  ) => {
+  const handleStopBilling = async (userId: string, userFirstName: string) => {
     if (
       !confirm(
-        `Stop billing for ${customerName}? This will cancel their active billing cycle permanently.`,
+        `Stop billing for ${userFirstName}? This will cancel their active billing cycle permanently.`,
       )
     )
       return;
     try {
-      await stopBilling({ userId: customerId, reason: "Admin action" });
-      toast.success(`⛔ Billing stopped for ${customerName}.`);
+      await stopBilling({ userId, reason: "Admin action" });
+      toast.success(`⛔ Billing stopped for ${userFirstName}.`);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -749,12 +814,14 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleDisconnect = async (customerId: string, customerName: string) => {
+  const handleDisconnect = async (userId: string, userFirstName: string) => {
     const reason = prompt("Enter reason for disconnection:");
     if (reason === null) return;
     try {
-      await disconnectClient({ userId: customerId, reason });
-      toast.success(`🔌 ${customerName} disconnected.`);
+      await disconnectClient({ userId, reason });
+      toast.success(
+        `🔌 ${userFirstName} disconnected. User has been notified via email.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -764,10 +831,12 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleReconnect = async (customerId: string, customerName: string) => {
+  const handleReconnect = async (userId: string, userFirstName: string) => {
     try {
-      await reconnectClient({ userId: customerId });
-      toast.success(`🔌 ${customerName} reconnected.`);
+      await reconnectClient({ userId });
+      toast.success(
+        `🔌 ${userFirstName} reconnected. User has been notified via email.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -778,23 +847,23 @@ export default function AdminBillingPage() {
   };
 
   const handleConfirmProRatedPayment = async (
-    customerId: string,
+    userId: string,
     billId: string,
-    customerEmail: string,
+    userEmail: string,
   ) => {
     if (
       !confirm(
-        `Confirm pro-rated payment for ${customerEmail}? This will activate their service.`,
+        `Confirm pro-rated payment for ${userEmail}? This will activate their service.`,
       )
     )
       return;
     try {
       await confirmProRatedPayment({
-        userId: customerId,
+        userId,
         paymentDetails: { confirmedBy: "admin", confirmedAt: new Date() },
       });
       toast.success(
-        `✅ Pro-rated payment confirmed! ${customerEmail}'s service is now active.`,
+        `✅ Pro-rated payment confirmed! ${userEmail}'s service is now active.`,
       );
       loadedRef.current = false;
       loadData(true);
@@ -804,13 +873,13 @@ export default function AdminBillingPage() {
   };
 
   const handleStartMonthlyBilling = async (
-    customerId: string,
-    customerEmail: string,
+    userId: string,
+    userEmail: string,
   ) => {
-    if (!confirm(`Start monthly billing for ${customerEmail}?`)) return;
+    if (!confirm(`Start monthly billing for ${userEmail}?`)) return;
     try {
-      await startMonthlyBilling({ userId: customerId });
-      toast.success(`✅ Monthly billing started for ${customerEmail}!`);
+      await startMonthlyBilling({ userId });
+      toast.success(`✅ Monthly billing started for ${userEmail}!`);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -828,7 +897,6 @@ export default function AdminBillingPage() {
       cancelled: "bg-red-100 text-red-800",
       suspended: "bg-red-100 text-red-800",
       pending_activation: "bg-purple-100 text-purple-800",
-      pending: "bg-yellow-100 text-yellow-800",
     };
     return styles[status] || "bg-gray-100 text-gray-800";
   };
@@ -839,37 +907,34 @@ export default function AdminBillingPage() {
     return "text-orange-600";
   };
 
-  const filteredCustomers = customers.filter((customer) => {
+  const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      customer.applicationId
-        ?.toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.username?.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (statusFilter === "all") return matchesSearch;
     if (statusFilter === "has_balance")
-      return matchesSearch && customer.currentBalance > 0;
+      return matchesSearch && user.currentBalance > 0;
     if (statusFilter === "overdue")
-      return matchesSearch && customer.overdueBills.length > 0;
+      return matchesSearch && user.overdueBills.length > 0;
     if (statusFilter === "active")
-      return matchesSearch && customer.status === "active";
+      return matchesSearch && user.status === "active";
     if (statusFilter === "suspended")
-      return matchesSearch && customer.status === "suspended";
+      return matchesSearch && user.status === "suspended";
     if (statusFilter === "paused")
-      return matchesSearch && customer.billingCycle?.status === "paused";
-    if (statusFilter === "no_account")
-      return matchesSearch && !customer.hasUserAccount;
+      return matchesSearch && user.billingCycle?.status === "paused";
     return matchesSearch;
   });
 
   const totalPendingCount =
     pendingProRated.length +
     pendingActivations.length +
+    pendingPayments.length +
     customersWithoutAccounts.length;
 
-  if (loading && customers.length === 0) {
+  if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -889,8 +954,7 @@ export default function AdminBillingPage() {
               Billing Management
             </h1>
             <p className="text-gray-600">
-              Manage customer balances, bills, and subscriptions by Application
-              ID
+              Manage customer balances, bills, payments, and subscriptions
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
@@ -905,7 +969,7 @@ export default function AdminBillingPage() {
                 onClick={() => setShowExistingCustomersModal(true)}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
               >
-                <FiUser className="w-4 h-4" /> Pending (
+                <FiUser className="w-4 h-4" /> Existing (
                 {customersWithoutAccounts.length})
               </button>
             )}
@@ -947,7 +1011,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Total Customers</p>
               <p className="text-2xl font-bold text-blue-600">
-                {stats.totalCustomers}
+                {stats.totalUsers}
               </p>
             </div>
             <FiUser className="w-8 h-8 text-blue-100" />
@@ -961,7 +1025,7 @@ export default function AdminBillingPage() {
                 ₱{stats.totalBalance.toLocaleString()}
               </p>
             </div>
-            <FiClipboard className="w-8 h-8 text-red-100" />
+            <FiDollarSign className="w-8 h-8 text-red-100" />
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
@@ -969,7 +1033,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">With Balance</p>
               <p className="text-2xl font-bold text-orange-600">
-                {stats.customersWithBalanceCount}
+                {stats.usersWithBalanceCount}
               </p>
             </div>
             <FiAlertCircle className="w-8 h-8 text-orange-100" />
@@ -980,7 +1044,7 @@ export default function AdminBillingPage() {
             <div>
               <p className="text-sm text-gray-500">Overdue</p>
               <p className="text-2xl font-bold text-red-600">
-                {stats.overdueCustomersCount}
+                {stats.overdueUsersCount}
               </p>
             </div>
             <FiClock className="w-8 h-8 text-red-100" />
@@ -1011,23 +1075,22 @@ export default function AdminBillingPage() {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Pro-rated Due</p>
+              <p className="text-sm text-gray-500">Pending Payments</p>
               <p className="text-2xl font-bold text-purple-600">
-                {billingFlowSettings.proRatedDueDay}
+                {stats.pendingPaymentsCount}
               </p>
-              <p className="text-xs text-gray-400">Day of month</p>
             </div>
-            <FiCalendar className="w-8 h-8 text-purple-100" />
+            <FiClock className="w-8 h-8 text-purple-100" />
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Cutoff Day</p>
+              <p className="text-sm text-gray-500">Pro-rated Due</p>
               <p className="text-2xl font-bold text-indigo-600">
-                {billingFlowSettings.billingCutoffDay}
+                {billingFlowSettings.proRatedDueDay}
               </p>
-              <p className="text-xs text-gray-400">After = next month</p>
+              <p className="text-xs text-gray-400">Day of month</p>
             </div>
             <FiCalendar className="w-8 h-8 text-indigo-100" />
           </div>
@@ -1035,13 +1098,13 @@ export default function AdminBillingPage() {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">No Account</p>
-              <p className="text-2xl font-bold text-pink-600">
-                {stats.customersWithoutAccountsCount}
+              <p className="text-sm text-gray-500">Cutoff Day</p>
+              <p className="text-2xl font-bold text-teal-600">
+                {billingFlowSettings.billingCutoffDay}
               </p>
-              <p className="text-xs text-gray-400">Need billing start</p>
+              <p className="text-xs text-gray-400">After = next month</p>
             </div>
-            <FiHash className="w-8 h-8 text-pink-100" />
+            <FiCalendar className="w-8 h-8 text-teal-100" />
           </div>
         </div>
       </div>
@@ -1054,22 +1117,20 @@ export default function AdminBillingPage() {
             <p className="text-sm font-semibold text-blue-800">
               📋 Current Billing Flow Settings:
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2 text-xs text-blue-700">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-xs text-blue-700">
               <div>
                 • Install Day 1-{billingFlowSettings.billingCutoffDay}:
-                Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th
+                Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th of
+                current month
               </div>
               <div>
                 • Install Day {billingFlowSettings.billingCutoffDay + 1}-31:
-                Combined bill (pro-rated + next month)
+                Combined bill (pro-rated + next month) due on{" "}
+                {billingFlowSettings.monthlyDueDay}th
               </div>
               <div>
                 • {billingFlowSettings.gracePeriodDays} day(s) grace period
                 before suspension
-              </div>
-              <div>
-                • Primary ID: <strong>Application ID</strong> (user account
-                optional)
               </div>
             </div>
           </div>
@@ -1083,7 +1144,7 @@ export default function AdminBillingPage() {
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by Application ID, name, email..."
+              placeholder="Search by name, email, or username..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
@@ -1100,20 +1161,16 @@ export default function AdminBillingPage() {
             <option value="active">Active</option>
             <option value="paused">Paused</option>
             <option value="suspended">Suspended</option>
-            <option value="no_account">No Account Yet</option>
           </select>
         </div>
       </div>
 
-      {/* Customers Table - Prioritizes Application ID */}
+      {/* Users Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Application ID
-                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Customer
                 </th>
@@ -1135,136 +1192,98 @@ export default function AdminBillingPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredCustomers.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     No customers found
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer) => (
-                  <tr key={customer.applicationId} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <FiHash className="w-4 h-4 text-gray-400" />
-                        <code className="font-mono text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                          {customer.applicationId}
-                        </code>
-                      </div>
-                      {!customer.hasUserAccount && (
-                        <span className="inline-block mt-1 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
-                          No account
-                        </span>
-                      )}
-                    </td>
+                filteredUsers.map((user) => (
+                  <tr key={user._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <p className="font-medium text-gray-900">
-                        {customer.firstName} {customer.lastName}
+                        {user.firstName} {user.lastName}
                       </p>
-                      <p className="text-sm text-gray-500">{customer.email}</p>
-                      <p className="text-xs text-gray-400">
-                        {customer.phoneNumber}
-                      </p>
+                      <p className="text-sm text-gray-500">{user.email}</p>
+                      <p className="text-xs text-gray-400">@{user.username}</p>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {customer.planId?.name || "No Plan"}
-                      {customer.planId?.price && (
-                        <p className="text-xs text-gray-500">
-                          ₱{customer.planId.price.toLocaleString()}/mo
-                        </p>
-                      )}
+                      {user.planId?.name || "No Plan"}
                     </td>
                     <td className="px-6 py-4">
                       <p
-                        className={`text-lg font-bold ${getBalanceColor(customer.currentBalance)}`}
+                        className={`text-lg font-bold ${getBalanceColor(user.currentBalance)}`}
                       >
-                        ₱{customer.currentBalance.toLocaleString()}
+                        ₱{user.currentBalance.toLocaleString()}
                       </p>
-                      {customer.overdueBills.length > 0 && (
+                      {user.overdueBills.length > 0 && (
                         <p className="text-xs text-red-500">
-                          {customer.overdueBills.length} overdue
+                          {user.overdueBills.length} overdue
                         </p>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {customer.unpaidBills.length} bill(s)
-                      {customer.unpaidBills.length > 0 && (
-                        <div className="text-xs text-gray-400 mt-1">
-                          {customer.unpaidBills
-                            .map((b) => b.invoiceNumber)
-                            .join(", ")}
-                        </div>
-                      )}
+                      {user.unpaidBills.length} bill(s)
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(customer.billingCycle?.status || customer.status)}`}
+                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(user.billingCycle?.status || user.status)}`}
                       >
-                        {customer.billingCycle?.status === "paused"
+                        {user.billingCycle?.status === "paused"
                           ? "Paused"
-                          : customer.status}
+                          : user.status}
                       </span>
-                      {customer.billingCycle?.proRatedPaid === false && (
-                        <p className="text-xs text-purple-600 mt-1">
-                          Awaiting payment
-                        </p>
-                      )}
-                      {customer.billingStarted && !customer.hasUserAccount && (
-                        <p className="text-xs text-green-600 mt-1">
-                          Billing started
-                        </p>
-                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={() => {
-                            setSelectedCustomer(customer);
-                            setShowCustomerDetailModal(true);
+                            setSelectedUser(user);
+                            setShowUserDetailModal(true);
                           }}
                           className="p-1 text-blue-600 hover:text-blue-800"
                           title="View Details"
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
-                        {!customer.billingStarted ? (
+                        <button
+                          onClick={() => openEmailModal(user, "custom")}
+                          className="p-1 text-purple-600 hover:text-purple-800"
+                          title="Send Email"
+                        >
+                          <FiMail className="w-4 h-4" />
+                        </button>
+                        {user.billingCycle?.status === "paused" ? (
                           <button
                             onClick={() =>
-                              handleStartBillingForApplication(
-                                customer.applicationId,
-                                customer.email,
-                                `${customer.firstName} ${customer.lastName}`,
-                              )
-                            }
-                            className="p-1 text-green-600 hover:text-green-800"
-                            title="Start Billing"
-                          >
-                            <FiPlay className="w-4 h-4" />
-                          </button>
-                        ) : customer.billingCycle?.status === "paused" ? (
-                          <button
-                            onClick={() =>
-                              handleResumeBilling(
-                                customer.userId!,
-                                customer.firstName,
-                              )
+                              handleResumeBilling(user._id, user.firstName)
                             }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Resume Billing"
                           >
                             <FiPlay className="w-4 h-4" />
                           </button>
-                        ) : customer.billingCycle?.status === "active" ? (
+                        ) : !user.billingCycle ||
+                          user.billingCycle?.status === "cancelled" ? (
+                          <button
+                            onClick={() => {
+                              setSelectedUserId(user._id);
+                              setShowStartModal(true);
+                            }}
+                            className="p-1 text-green-600 hover:text-green-800"
+                            title="Start Billing"
+                          >
+                            <FiPlay className="w-4 h-4" />
+                          </button>
+                        ) : user.billingCycle?.status === "active" ? (
                           <>
                             <button
                               onClick={() => {
-                                setSelectedCustomerId(customer.userId!);
-                                setSelectedApplicationId(
-                                  customer.applicationId,
-                                );
+                                setSelectedUserId(user._id);
                                 setShowPauseModal(true);
                               }}
                               className="p-1 text-yellow-600 hover:text-yellow-800"
@@ -1274,10 +1293,7 @@ export default function AdminBillingPage() {
                             </button>
                             <button
                               onClick={() =>
-                                handleStopBilling(
-                                  customer.userId!,
-                                  customer.firstName,
-                                )
+                                handleStopBilling(user._id, user.firstName)
                               }
                               className="p-1 text-red-600 hover:text-red-800"
                               title="Stop Billing"
@@ -1286,26 +1302,20 @@ export default function AdminBillingPage() {
                             </button>
                           </>
                         ) : null}
-                        {customer.status === "active" ? (
+                        {user.status === "active" ? (
                           <button
                             onClick={() =>
-                              handleDisconnect(
-                                customer.userId!,
-                                customer.firstName,
-                              )
+                              handleDisconnect(user._id, user.firstName)
                             }
                             className="p-1 text-red-600 hover:text-red-800"
                             title="Disconnect"
                           >
                             <FiWifiOff className="w-4 h-4" />
                           </button>
-                        ) : customer.status === "suspended" ? (
+                        ) : user.status === "suspended" ? (
                           <button
                             onClick={() =>
-                              handleReconnect(
-                                customer.userId!,
-                                customer.firstName,
-                              )
+                              handleReconnect(user._id, user.firstName)
                             }
                             className="p-1 text-green-600 hover:text-green-800"
                             title="Reconnect"
@@ -1323,464 +1333,386 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Pending Modals */}
+      {/* EMAIL MODAL */}
+      {showEmailModal && emailUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Send Email to
+                </h2>
+                <p className="text-gray-600">
+                  {emailUser.firstName} {emailUser.lastName} ({emailUser.email})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailUser(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quick Templates
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => openEmailModal(emailUser, "invoice")}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                  >
+                    Invoice Reminder
+                  </button>
+                  <button
+                    onClick={() =>
+                      openEmailModal(emailUser, "payment_confirmation")
+                    }
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                  >
+                    Payment Confirmation
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "disconnection")}
+                    className="px-3 py-1 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200"
+                  >
+                    Disconnection Notice
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "welcome")}
+                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                  >
+                    Welcome Email
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(emailUser, "custom")}
+                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    Custom Message
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject *
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter email subject"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message *
+                </label>
+                <textarea
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                  placeholder="Enter your email message here..."
+                />
+              </div>
+
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  📧 This email will be sent to {emailUser.email}. The email
+                  will include your signature automatically.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailUser(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendManualEmail}
+                  disabled={sendingEmail}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {sendingEmail ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiSend className="w-4 h-4" />
+                      Send Email
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PENDING MODAL */}
       {showPendingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                {pendingModalType === "pro-rated"
-                  ? "Pending Pro-rated Payments"
-                  : "Pending Activations"}
-              </h2>
-              <button
-                onClick={() => setShowPendingModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
+              <h2 className="text-xl font-bold text-gray-900">Pending Items</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPendingModalType("pro-rated")}
+                  className={`px-3 py-1 text-sm rounded-lg ${
+                    pendingModalType === "pro-rated"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-200 text-gray-700"
+                  }`}
+                >
+                  Pro-rated ({pendingProRated.length})
+                </button>
+                <button
+                  onClick={() => setPendingModalType("activation")}
+                  className={`px-3 py-1 text-sm rounded-lg ${
+                    pendingModalType === "activation"
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-200 text-gray-700"
+                  }`}
+                >
+                  Activations ({pendingActivations.length})
+                </button>
+                <button
+                  onClick={() => setPendingModalType("payments")}
+                  className={`px-3 py-1 text-sm rounded-lg ${
+                    pendingModalType === "payments"
+                      ? "bg-yellow-600 text-white"
+                      : "bg-gray-200 text-gray-700"
+                  }`}
+                >
+                  Payments ({pendingPayments.length})
+                </button>
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="px-3 py-1 bg-red-600 text-white rounded-lg"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="space-y-3">
-              {pendingModalType === "pro-rated" &&
-                pendingProRated.length === 0 && (
+
+            {/* Pro-rated Bills */}
+            {pendingModalType === "pro-rated" && (
+              <div>
+                {pendingProRated.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No pending pro-rated payments
+                    No pending pro-rated bills
                   </p>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Customer
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Amount
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Submitted
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingProRated.map((bill) => (
+                        <tr key={bill._id} className="border-t">
+                          <td className="px-4 py-3">
+                            <p className="font-medium">
+                              {bill.userId?.firstName} {bill.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {bill.userId?.email}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 font-semibold">
+                            ₱{bill.total?.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {new Date(bill.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() =>
+                                handleConfirmProRatedPayment(
+                                  bill.userId?._id,
+                                  bill._id,
+                                  bill.userId?.email,
+                                )
+                              }
+                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+                            >
+                              Confirm Payment
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
-              {pendingModalType === "activation" &&
-                pendingActivations.length === 0 && (
+              </div>
+            )}
+
+            {/* Pending Activations */}
+            {pendingModalType === "activation" && (
+              <div>
+                {pendingActivations.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
                     No pending activations
                   </p>
-                )}
-              {pendingModalType === "pro-rated" &&
-                pendingProRated.map((bill) => (
-                  <div key={bill._id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">
-                          {bill.userId?.firstName} {bill.userId?.lastName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {bill.userId?.email}
-                        </p>
-                        <p className="text-sm">Invoice: {bill.invoiceNumber}</p>
-                        <p className="text-sm">
-                          Amount: ₱{bill.total?.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Due: {formatDateFixed(bill.dueDate)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleConfirmProRatedPayment(
-                            bill.userId?._id,
-                            bill._id,
-                            bill.userId?.email,
-                          )
-                        }
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                      >
-                        Confirm Payment & Activate
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              {pendingModalType === "activation" &&
-                pendingActivations.map((cycle) => (
-                  <div key={cycle._id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">
-                          {cycle.userId?.firstName} {cycle.userId?.lastName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {cycle.userId?.email}
-                        </p>
-                        <p className="text-sm">Plan: {cycle.planId?.name}</p>
-                        <p className="text-sm">
-                          Monthly Rate: ₱{cycle.monthlyRate?.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-green-600">
-                          Pro-rated paid:{" "}
-                          {cycle.proRatedPaidAt
-                            ? formatDateFixed(cycle.proRatedPaidAt)
-                            : "N/A"}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleStartMonthlyBilling(
-                            cycle.userId?._id,
-                            cycle.userId?.email,
-                          )
-                        }
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                      >
-                        Start Monthly Billing
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setShowPendingModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Existing Customers Without Accounts Modal */}
-      {showExistingCustomersModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Customers Without Accounts (Approved Applications)
-              </h2>
-              <button
-                onClick={() => setShowExistingCustomersModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              {customersWithoutAccounts.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
-                  No customers without accounts
-                </p>
-              ) : (
-                customersWithoutAccounts.map((customer) => (
-                  <div
-                    key={customer._id}
-                    className="border rounded-lg p-4 hover:bg-gray-50"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">
-                          {customer.firstName} {customer.lastName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {customer.email}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {customer.phoneNumber}
-                        </p>
-                        <p className="text-xs font-mono text-blue-600">
-                          Application ID: {customer.applicationId}
-                        </p>
-                        <p className="text-sm font-semibold text-blue-600 mt-1">
-                          Plan: {customer.planId?.name || "N/A"} - ₱
-                          {customer.planId?.price?.toLocaleString() || 0}
-                        </p>
-                        {customer.billingStarted && (
-                          <p className="text-xs text-green-600 mt-1">
-                            ✅ Billing already started - Invoice sent to email
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleStartBillingForApplication(
-                            customer.applicationId,
-                            customer.email,
-                            `${customer.firstName} ${customer.lastName}`,
-                          )
-                        }
-                        disabled={customer.billingStarted}
-                        className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-                          customer.billingStarted
-                            ? "bg-gray-400 cursor-not-allowed"
-                            : "bg-green-600 hover:bg-green-700"
-                        } text-white`}
-                      >
-                        <FiPlay className="w-4 h-4" />
-                        {customer.billingStarted
-                          ? "Billing Started"
-                          : "Start Billing"}
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setShowExistingCustomersModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Start Billing Modal */}
-      {showStartModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Start Billing
-            </h2>
-            <div className="space-y-4">
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  Billing will be associated with the Application ID. Customer
-                  can register later using their Application ID.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Installation Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={billingNotes}
-                  onChange={(e) => setBillingNotes(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowStartModal(false);
-                    setSelectedCustomerId("");
-                    setSelectedApplicationId("");
-                    setStartDate("");
-                    setCustomAmount("");
-                    setBillingNotes("");
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleStartBilling}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
-                >
-                  Start Billing
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* User Detail Modal */}
-      {showCustomerDetailModal && selectedCustomer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {selectedCustomer.firstName} {selectedCustomer.lastName}
-                </h2>
-                <p className="text-gray-500">{selectedCustomer.email}</p>
-                <p className="text-sm font-mono text-blue-600 mt-1">
-                  Application ID: {selectedCustomer.applicationId}
-                </p>
-                {!selectedCustomer.hasUserAccount && (
-                  <span className="inline-block mt-1 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
-                    No user account created yet
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Balance</p>
-                  <p
-                    className={`text-2xl font-bold ${getBalanceColor(selectedCustomer.currentBalance)}`}
-                  >
-                    ₱{selectedCustomer.currentBalance.toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Unpaid Bills</p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {selectedCustomer.unpaidBills.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Overdue</p>
-                  <p className="text-2xl font-bold text-red-600">
-                    {selectedCustomer.overdueBills.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Status</p>
-                  <span
-                    className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedCustomer.billingCycle?.status || selectedCustomer.status)}`}
-                  >
-                    {selectedCustomer.billingCycle?.status === "paused"
-                      ? "Paused"
-                      : selectedCustomer.status}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Unpaid Bills
-            </h3>
-            <div className="overflow-x-auto mb-6">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Invoice #
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Period
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Due Date
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Amount
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedCustomer.unpaidBills.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-8 text-center text-gray-500"
-                      >
-                        No unpaid bills
-                      </td>
-                    </tr>
-                  ) : (
-                    selectedCustomer.unpaidBills.map((bill) => (
-                      <tr key={bill._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {bill.invoiceNumber}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {bill.billingPeriod
-                            ? `${formatDateFixed(bill.billingPeriod.start)} - ${formatDateFixed(bill.billingPeriod.end)}`
-                            : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {formatDateFixed(bill.dueDate)}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                          ₱{bill.total?.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() =>
-                              handleMarkBillAsPaid(bill, selectedCustomer)
-                            }
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-1"
-                          >
-                            <FiCheckCircle className="w-3 h-3" /> Mark Paid
-                          </button>
-                        </td>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Customer
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Plan
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Pro-rated Paid
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Actions
+                        </th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                    </thead>
+                    <tbody>
+                      {pendingActivations.map((cycle) => (
+                        <tr key={cycle._id} className="border-t">
+                          <td className="px-4 py-3">
+                            <p className="font-medium">
+                              {cycle.userId?.firstName} {cycle.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {cycle.userId?.email}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">{cycle.planId?.name}</td>
+                          <td className="px-4 py-3 text-sm">
+                            {cycle.proRatedPaidAt
+                              ? new Date(
+                                  cycle.proRatedPaidAt,
+                                ).toLocaleDateString()
+                              : "-"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() =>
+                                handleStartMonthlyBilling(
+                                  cycle.userId?._id,
+                                  cycle.userId?.email,
+                                )
+                              }
+                              className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                            >
+                              Start Monthly Billing
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
 
-      {/* Pause Billing Modal */}
-      {showPauseModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Pause Billing
-            </h2>
-            <div className="space-y-4">
+            {/* Pending Payments */}
+            {pendingModalType === "payments" && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason
-                </label>
-                <input
-                  type="text"
-                  value={pauseReason}
-                  onChange={(e) => setPauseReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                {pendingPayments.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    No pending payments
+                  </p>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Customer
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Amount
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Reference
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Date
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingPayments.map((payment) => (
+                        <tr key={payment._id} className="border-t">
+                          <td className="px-4 py-3">
+                            <p className="font-medium">
+                              {payment.userId?.firstName}{" "}
+                              {payment.userId?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {payment.userId?.email}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 font-semibold">
+                            ₱{payment.amount?.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {payment.referenceNumber}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {new Date(payment.createdAt).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() =>
+                                  handleConfirmPayment(payment._id)
+                                }
+                                className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => handleRejectPayment(payment._id)}
+                                className="px-2 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Auto-resume Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={pauseUntilDate}
-                  onChange={(e) => setPauseUntilDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="bg-yellow-50 p-3 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  ⚠️ When paused: No bills will be generated, service will be
-                  disconnected.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowPauseModal(false);
-                    setSelectedCustomerId("");
-                    setSelectedApplicationId("");
-                    setPauseReason("");
-                    setPauseUntilDate("");
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handlePauseBilling}
-                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700"
-                >
-                  Pause Billing
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1800,6 +1732,7 @@ export default function AdminBillingPage() {
                 <FiX className="w-6 h-6" />
               </button>
             </div>
+
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1835,6 +1768,7 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1869,6 +1803,7 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <FiHome className="inline mr-1 w-4 h-4" /> Building (Optional)
@@ -1887,7 +1822,40 @@ export default function AdminBillingPage() {
                     </option>
                   ))}
                 </select>
+                {loadingBuildings && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Loading buildings...
+                  </p>
+                )}
+                {buildings.length === 0 && !loadingBuildings && (
+                  <p className="text-xs text-yellow-600 mt-1">
+                    No buildings found. You can still proceed without selecting
+                    a building.
+                  </p>
+                )}
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Building Name
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.buildingName}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      buildingName: e.target.value,
+                    })
+                  }
+                  placeholder="Enter building name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Auto-filled when you select a building above, or type manually
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1924,6 +1892,7 @@ export default function AdminBillingPage() {
                   />
                 </div>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Plan *
@@ -1941,11 +1910,53 @@ export default function AdminBillingPage() {
                   <option value="">Select a plan</option>
                   {plans.map((plan) => (
                     <option key={plan._id} value={plan._id}>
-                      {plan.name} - ₱{plan.price?.toLocaleString()}/month
+                      {plan.name} - ₱{plan.price?.toLocaleString()}/month (
+                      {plan.speed?.download} Mbps)
                     </option>
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ID Type
+                </label>
+                <select
+                  value={manualCustomerForm.idType}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      idType: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option>Valid ID</option>
+                  <option>Driver's License</option>
+                  <option>Passport</option>
+                  <option>National ID</option>
+                  <option>Postal ID</option>
+                  <option>UMID</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ID Number
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.idNumber}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      idNumber: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+
               <div className="bg-blue-50 p-3 rounded-lg">
                 <label className="flex items-center gap-2">
                   <input
@@ -1964,6 +1975,7 @@ export default function AdminBillingPage() {
                   </span>
                 </label>
               </div>
+
               {manualCustomerForm.startBillingImmediately && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1982,6 +1994,7 @@ export default function AdminBillingPage() {
                   />
                 </div>
               )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes (Optional)
@@ -1998,6 +2011,7 @@ export default function AdminBillingPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowManualCustomerModal(false)}
@@ -2012,6 +2026,80 @@ export default function AdminBillingPage() {
                   Create Customer
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing Customers Without Accounts Modal */}
+      {showExistingCustomersModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Customers Without Accounts
+              </h2>
+              <button
+                onClick={() => setShowExistingCustomersModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {customersWithoutAccounts.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">
+                  No customers without accounts
+                </p>
+              ) : (
+                customersWithoutAccounts.map((customer) => (
+                  <div
+                    key={customer._id}
+                    className="border rounded-lg p-4 hover:bg-gray-50"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">
+                          {customer.firstName} {customer.lastName}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {customer.email}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {customer.phoneNumber}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Application ID: {customer.applicationId}
+                        </p>
+                        <p className="text-sm font-semibold text-blue-600 mt-1">
+                          Plan: {customer.planId?.name || "N/A"} - ₱
+                          {customer.planId?.price?.toLocaleString() || 0}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          handleStartBillingForApplication(
+                            customer.applicationId,
+                            customer.email,
+                            `${customer.firstName} ${customer.lastName}`,
+                          )
+                        }
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                      >
+                        <FiPlay className="w-4 h-4" /> Start Billing
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowExistingCustomersModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
@@ -2116,6 +2204,19 @@ export default function AdminBillingPage() {
                     />
                   </div>
                 </div>
+                <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>📌 How it works:</strong>
+                    <br />• Install on Day 1-
+                    {billingFlowSettings.billingCutoffDay}: Pro-rated bill from
+                    install date to end of month, due on{" "}
+                    {billingFlowSettings.proRatedDueDay}th
+                    <br />• Install on Day{" "}
+                    {billingFlowSettings.billingCutoffDay + 1}-31: Combined bill
+                    (pro-rated for remaining days + next month's full bill), due
+                    on {billingFlowSettings.monthlyDueDay}th of next month
+                  </p>
+                </div>
                 <div className="space-y-2 mb-4">
                   <label className="flex items-center gap-2">
                     <input
@@ -2165,6 +2266,270 @@ export default function AdminBillingPage() {
                   Save All Settings
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Billing Modal */}
+      {showStartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              Start Billing
+            </h2>
+            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+              <p className="text-sm text-blue-800">
+                Billing will be calculated based on the installation date and
+                current billing flow settings.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Installation Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Custom Amount (Optional)
+                </label>
+                <input
+                  type="number"
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                  placeholder="Leave empty for auto-calculation"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  value={billingNotes}
+                  onChange={(e) => setBillingNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowStartModal(false);
+                    setSelectedUserId("");
+                    setStartDate("");
+                    setCustomAmount("");
+                    setBillingNotes("");
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartBilling}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                >
+                  Start Billing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Billing Modal */}
+      {showPauseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              Pause Billing
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason
+                </label>
+                <input
+                  type="text"
+                  value={pauseReason}
+                  onChange={(e) => setPauseReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Auto-resume Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={pauseUntilDate}
+                  onChange={(e) => setPauseUntilDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ When paused: No bills will be generated, service will be
+                  disconnected.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowPauseModal(false);
+                    setSelectedUserId("");
+                    setPauseReason("");
+                    setPauseUntilDate("");
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePauseBilling}
+                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700"
+                >
+                  Pause Billing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Detail Modal */}
+      {showUserDetailModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {selectedUser.firstName} {selectedUser.lastName}
+                </h2>
+                <p className="text-gray-500">{selectedUser.email}</p>
+              </div>
+              <button
+                onClick={() => setShowUserDetailModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Balance</p>
+                  <p
+                    className={`text-2xl font-bold ${getBalanceColor(selectedUser.currentBalance)}`}
+                  >
+                    ₱{selectedUser.currentBalance.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Unpaid Bills</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {selectedUser.unpaidBills.length}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Overdue</p>
+                  <p className="text-2xl font-bold text-red-600">
+                    {selectedUser.overdueBills.length}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Status</p>
+                  <span
+                    className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedUser.billingCycle?.status || selectedUser.status)}`}
+                  >
+                    {selectedUser.billingCycle?.status === "paused"
+                      ? "Paused"
+                      : selectedUser.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Unpaid Bills
+            </h3>
+            <div className="overflow-x-auto mb-6">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Invoice #
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Period
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Due Date
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Amount
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedUser.unpaidBills.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-8 text-center text-gray-500"
+                      >
+                        No unpaid bills
+                      </td>
+                    </tr>
+                  ) : (
+                    selectedUser.unpaidBills.map((bill) => (
+                      <tr key={bill._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          {bill.invoiceNumber}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {bill.billingPeriod
+                            ? `${formatDateFixed(bill.billingPeriod.start)} - ${formatDateFixed(bill.billingPeriod.end)}`
+                            : "-"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {formatDateFixed(bill.dueDate)}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                          ₱{bill.total?.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() =>
+                              handleMarkBillAsPaid(bill, selectedUser)
+                            }
+                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-1"
+                          >
+                            <FiCheckCircle className="w-3 h-3" /> Mark Paid
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUserDetailModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

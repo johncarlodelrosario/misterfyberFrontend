@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/payments/page.tsx - COMPLETE WITH PRE-LOADING AND CACHING (FIXED)
+// app/(dashboard)/admin/payments/page.tsx - COMPLETE WITH APPLICATION ID PRIORITY
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -19,6 +19,9 @@ import {
   FiClock,
   FiClipboard,
   FiX,
+  FiUser,
+  FiFileText,
+  FiInfo,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -67,6 +70,7 @@ export default function AdminPaymentsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [confirming, setConfirming] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -126,14 +130,14 @@ export default function AdminPaymentsPage() {
         }
 
         try {
-          // FIXED: Removed forceRefresh from getAllPayments params since it's not supported
           const [allPaymentsResult, pendingResult] = await Promise.all([
             getAllPayments({
               page: currentPage,
               limit: 10,
               status: status || undefined,
+              forceRefresh: forceRefresh,
             }),
-            getPendingPayments().catch(() => ({ data: [] })),
+            getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
           ]);
 
           if (!isMountedRef.current) return;
@@ -198,7 +202,7 @@ export default function AdminPaymentsPage() {
   const handleConfirmPayment = async (paymentId: string) => {
     if (
       !confirm(
-        "Confirm this payment? This will mark the bill as paid and notify the user.",
+        "Confirm this payment? This will:\n✓ Mark the bill as paid\n✓ Update customer's balance\n✓ Send confirmation email to customer\n✓ Reactivate service if suspended",
       )
     )
       return;
@@ -206,27 +210,45 @@ export default function AdminPaymentsPage() {
     setConfirming(true);
     try {
       await confirmPayment(paymentId);
-      toast.success("Payment confirmed! User has been notified via email.");
+      toast.success(
+        "✅ Payment confirmed! Customer has been notified via email.",
+      );
       loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to confirm payment");
+      const errorMsg =
+        error.response?.data?.message || "Failed to confirm payment";
+      toast.error(errorMsg);
+      console.error("Confirm payment error:", error);
     } finally {
       setConfirming(false);
     }
   };
 
   const handleRejectPayment = async (paymentId: string) => {
-    const reason = prompt("Enter reason for rejection:");
+    const reason = prompt(
+      "Enter reason for rejection (this will be sent to the customer):",
+    );
     if (reason === null) return;
 
+    if (reason.trim() === "") {
+      toast.error("Please provide a reason for rejection");
+      return;
+    }
+
+    setRejecting(true);
     try {
       await rejectPayment(paymentId, reason);
-      toast.success("Payment rejected");
+      toast.success("❌ Payment rejected. Customer has been notified.");
       loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to reject payment");
+      const errorMsg =
+        error.response?.data?.message || "Failed to reject payment";
+      toast.error(errorMsg);
+      console.error("Reject payment error:", error);
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -236,6 +258,8 @@ export default function AdminPaymentsPage() {
         return "bg-green-100 text-green-800";
       case "pending":
         return "bg-yellow-100 text-yellow-800";
+      case "processing":
+        return "bg-blue-100 text-blue-800";
       case "failed":
         return "bg-red-100 text-red-800";
       case "refunded":
@@ -245,19 +269,53 @@ export default function AdminPaymentsPage() {
     }
   };
 
+  const getPaymentMethodIcon = (method: string) => {
+    switch (method) {
+      case "manual":
+        return "💰";
+      case "gcash":
+        return "📱";
+      case "maya":
+        return "💳";
+      case "paymongo":
+        return "🏦";
+      case "dragonpay":
+        return "🐉";
+      default:
+        return "💵";
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const filteredPayments = payments.filter(
     (payment) =>
       payment.userId?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
       payment.userId?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
       payment.userId?.email?.toLowerCase().includes(search.toLowerCase()) ||
-      payment.referenceNumber?.toLowerCase().includes(search.toLowerCase()),
+      payment.referenceNumber?.toLowerCase().includes(search.toLowerCase()) ||
+      payment.applicationId?.toLowerCase().includes(search.toLowerCase()),
   );
 
   if (loading && payments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading payments...</p>
         </div>
       </div>
@@ -268,7 +326,9 @@ export default function AdminPaymentsPage() {
     <div className="p-6">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Payment Management</h1>
-        <p className="text-gray-600">View and confirm customer payments</p>
+        <p className="text-gray-600">
+          View, confirm, and manage customer payments
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -278,7 +338,7 @@ export default function AdminPaymentsPage() {
             <div>
               <p className="text-sm text-gray-500">Total Revenue</p>
               <p className="text-2xl font-bold text-green-600">
-                ₱{stats.totalAmount.toLocaleString()}
+                {formatCurrency(stats.totalAmount)}
               </p>
             </div>
             <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -295,7 +355,7 @@ export default function AdminPaymentsPage() {
             <div>
               <p className="text-sm text-gray-500">Monthly Revenue</p>
               <p className="text-2xl font-bold text-blue-600">
-                ₱{stats.monthlyAmount.toLocaleString()}
+                {formatCurrency(stats.monthlyAmount)}
               </p>
             </div>
             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -346,10 +406,12 @@ export default function AdminPaymentsPage() {
             <div className="flex-1">
               <p className="font-semibold text-yellow-800">
                 {pendingPayments.length} Pending Payment
-                {pendingPayments.length !== 1 ? "s" : ""}
+                {pendingPayments.length !== 1 ? "s" : ""} Need Confirmation
               </p>
               <p className="text-sm text-yellow-700">
-                Please review and confirm these payments to update user accounts
+                Please review and confirm these payments to update customer
+                accounts. Confirmed payments will automatically mark bills as
+                paid and send email notifications.
               </p>
             </div>
             <button
@@ -373,10 +435,10 @@ export default function AdminPaymentsPage() {
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by name, email, or reference..."
+              placeholder="Search by name, email, reference, or application ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
           <select
@@ -385,10 +447,11 @@ export default function AdminPaymentsPage() {
               setStatus(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">All Status</option>
             <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
             <option value="refunded">Refunded</option>
@@ -409,7 +472,8 @@ export default function AdminPaymentsPage() {
       {/* Pending Payments Table */}
       {pendingPayments.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiClock className="w-5 h-5 text-yellow-600" />
             Pending Confirmation
           </h2>
           <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
@@ -421,13 +485,16 @@ export default function AdminPaymentsPage() {
                       Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Customer
+                      Customer / Application
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Reference
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Amount
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Method
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Notes
@@ -441,24 +508,40 @@ export default function AdminPaymentsPage() {
                   {pendingPayments.map((payment) => (
                     <tr key={payment._id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(payment.createdAt).toLocaleString()}
+                        {formatDate(payment.createdAt)}
                       </td>
                       <td className="px-6 py-4">
                         <div>
                           <p className="font-medium text-gray-900">
-                            {payment.userId?.firstName}{" "}
-                            {payment.userId?.lastName}
+                            {payment.userId?.firstName || "—"}{" "}
+                            {payment.userId?.lastName || ""}
                           </p>
                           <p className="text-sm text-gray-500">
-                            {payment.userId?.email}
+                            {payment.userId?.email || "No email"}
                           </p>
+                          {payment.applicationId && (
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                              <FiFileText className="w-3 h-3" />
+                              App ID: {payment.applicationId}
+                            </p>
+                          )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
+                      <td className="px-6 py-4 text-sm font-mono text-gray-900">
                         {payment.referenceNumber}
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        ₱{payment.amount?.toLocaleString()}
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                          <span>
+                            {getPaymentMethodIcon(payment.paymentMethod)}
+                          </span>
+                          <span className="capitalize">
+                            {payment.paymentMethod}
+                          </span>
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
                         {payment.paymentDetails?.notes || "-"}
@@ -468,14 +551,15 @@ export default function AdminPaymentsPage() {
                           <button
                             onClick={() => handleConfirmPayment(payment._id)}
                             disabled={confirming}
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1"
+                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50"
                           >
                             <FiCheckCircle className="w-4 h-4" />
                             Confirm
                           </button>
                           <button
                             onClick={() => handleRejectPayment(payment._id)}
-                            className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1"
+                            disabled={rejecting}
+                            className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50"
                           >
                             <FiXCircle className="w-4 h-4" />
                             Reject
@@ -483,6 +567,7 @@ export default function AdminPaymentsPage() {
                           <button
                             onClick={() => setSelectedPayment(payment)}
                             className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
+                            title="View Details"
                           >
                             <FiEye className="w-4 h-4" />
                           </button>
@@ -499,7 +584,8 @@ export default function AdminPaymentsPage() {
 
       {/* All Payments Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-900 p-6 border-b">
+        <h2 className="text-lg font-semibold text-gray-900 p-6 border-b flex items-center gap-2">
+          <FiClipboard className="w-5 h-5 text-gray-500" />
           All Payments
         </h2>
         <div className="overflow-x-auto">
@@ -513,7 +599,7 @@ export default function AdminPaymentsPage() {
                   Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Reference
+                  Reference / App ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Amount
@@ -536,49 +622,91 @@ export default function AdminPaymentsPage() {
                     colSpan={7}
                     className="px-6 py-12 text-center text-gray-500"
                   >
-                    No payments found
+                    <div className="flex flex-col items-center gap-2">
+                      <FiInfo className="w-8 h-8 text-gray-300" />
+                      <p>No payments found</p>
+                      <p className="text-xs text-gray-400">
+                        Try adjusting your search or filter
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
                 filteredPayments.map((payment) => (
                   <tr key={payment._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {new Date(payment.createdAt).toLocaleDateString()}
+                      {formatDate(payment.createdAt)}
                     </td>
                     <td className="px-6 py-4">
                       <div>
                         <p className="font-medium text-gray-900">
-                          {payment.userId?.firstName} {payment.userId?.lastName}
+                          {payment.userId?.firstName || "—"}{" "}
+                          {payment.userId?.lastName || ""}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {payment.userId?.email}
+                          {payment.userId?.email || "No email"}
                         </p>
+                        {payment.applicationId && (
+                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                            <FiFileText className="w-3 h-3" />
+                            App: {payment.applicationId}
+                          </p>
+                        )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {payment.referenceNumber}
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-mono text-gray-900">
+                        {payment.referenceNumber}
+                      </p>
+                      {payment.billingId?.invoiceNumber && (
+                        <p className="text-xs text-gray-400">
+                          Invoice: {payment.billingId.invoiceNumber}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                      ₱{payment.amount?.toLocaleString()}
+                      {formatCurrency(payment.amount)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      <span className="capitalize">
-                        {payment.paymentMethod}
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                        <span>
+                          {getPaymentMethodIcon(payment.paymentMethod)}
+                        </span>
+                        <span className="capitalize">
+                          {payment.paymentMethod}
+                        </span>
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
                       >
-                        {payment.status}
+                        {payment.status === "pending"
+                          ? "Pending"
+                          : payment.status === "processing"
+                            ? "Processing"
+                            : payment.status === "completed"
+                              ? "Completed"
+                              : payment.status === "failed"
+                                ? "Failed"
+                                : payment.status === "refunded"
+                                  ? "Refunded"
+                                  : payment.status}
                       </span>
+                      {payment.paidAt && payment.status === "completed" && (
+                        <p className="text-xs text-green-600 mt-1">
+                          Paid: {formatDate(payment.paidAt)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => setSelectedPayment(payment)}
-                        className="text-primary-600 hover:text-primary-900"
+                        className="text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
+                        title="View Details"
                       >
                         <FiEye className="w-5 h-5" />
+                        <span className="text-sm">View</span>
                       </button>
                     </td>
                   </tr>
@@ -614,11 +742,12 @@ export default function AdminPaymentsPage() {
 
       {/* Payment Details Modal */}
       {selectedPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FiClipboard className="w-5 h-5" />
                   Payment Details
                 </h2>
                 <button
@@ -632,12 +761,12 @@ export default function AdminPaymentsPage() {
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-500">Amount:</span>
                   <span className="font-semibold text-gray-900">
-                    ₱{selectedPayment.amount?.toLocaleString()}
+                    {formatCurrency(selectedPayment.amount)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-500">Reference:</span>
-                  <span className="text-gray-900">
+                  <span className="font-mono text-gray-900">
                     {selectedPayment.referenceNumber}
                   </span>
                 </div>
@@ -658,15 +787,50 @@ export default function AdminPaymentsPage() {
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-500">Date:</span>
                   <span className="text-gray-900">
-                    {new Date(selectedPayment.createdAt).toLocaleString()}
+                    {formatDate(selectedPayment.createdAt)}
                   </span>
                 </div>
                 {selectedPayment.paidAt && (
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-500">Paid Date:</span>
                     <span className="text-gray-900">
-                      {new Date(selectedPayment.paidAt).toLocaleString()}
+                      {formatDate(selectedPayment.paidAt)}
                     </span>
+                  </div>
+                )}
+                {selectedPayment.billingId && (
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">Invoice:</span>
+                    <span className="font-mono text-gray-900">
+                      {selectedPayment.billingId.invoiceNumber}
+                    </span>
+                  </div>
+                )}
+                {selectedPayment.applicationId && (
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">Application ID:</span>
+                    <span className="font-mono text-gray-900">
+                      {selectedPayment.applicationId}
+                    </span>
+                  </div>
+                )}
+                {selectedPayment.userId && (
+                  <div className="py-2 border-b">
+                    <span className="text-gray-500">Customer:</span>
+                    <div className="mt-1">
+                      <p className="font-medium text-gray-900">
+                        {selectedPayment.userId.firstName || "—"}{" "}
+                        {selectedPayment.userId.lastName || ""}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {selectedPayment.userId.email || "No email"}
+                      </p>
+                      {selectedPayment.userId.phoneNumber && (
+                        <p className="text-sm text-gray-500">
+                          {selectedPayment.userId.phoneNumber}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
                 {selectedPayment.paymentDetails?.notes && (
@@ -674,6 +838,18 @@ export default function AdminPaymentsPage() {
                     <span className="text-gray-500">Notes:</span>
                     <p className="mt-1 text-sm bg-gray-100 p-2 rounded text-gray-700">
                       {selectedPayment.paymentDetails.notes}
+                    </p>
+                  </div>
+                )}
+                {selectedPayment.paymentDetails?.gatewayResponse
+                  ?.confirmationNotes && (
+                  <div className="py-2">
+                    <span className="text-gray-500">Admin Notes:</span>
+                    <p className="mt-1 text-sm bg-blue-50 p-2 rounded text-blue-700">
+                      {
+                        selectedPayment.paymentDetails.gatewayResponse
+                          .confirmationNotes
+                      }
                     </p>
                   </div>
                 )}
@@ -685,19 +861,21 @@ export default function AdminPaymentsPage() {
                       onClick={() => {
                         handleConfirmPayment(selectedPayment._id);
                       }}
-                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2"
+                      disabled={confirming}
+                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       <FiCheckCircle className="w-4 h-4" />
-                      Confirm Payment
+                      {confirming ? "Processing..." : "Confirm Payment"}
                     </button>
                     <button
                       onClick={() => {
                         handleRejectPayment(selectedPayment._id);
                       }}
-                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2"
+                      disabled={rejecting}
+                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       <FiXCircle className="w-4 h-4" />
-                      Reject
+                      {rejecting ? "Processing..." : "Reject"}
                     </button>
                   </>
                 )}

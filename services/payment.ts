@@ -18,6 +18,65 @@ export interface PaymentResponse {
   };
 }
 
+export interface Payment {
+  _id: string;
+  userId: any;
+  applicationId?: any;
+  amount: number;
+  paymentMethod: string;
+  paymentType: string;
+  status: "pending" | "processing" | "completed" | "failed" | "refunded";
+  referenceNumber: string;
+  billingId: string;
+  paymentDetails: {
+    gateway: string;
+    gatewayResponse: any;
+    notes?: string;
+    confirmedBy?: string;
+    confirmedAt?: string;
+  };
+  paidAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const PAYMENT_CACHE_KEYS = {
+  PAYMENTS_DATA: "misterfyber_payments_data",
+  PAYMENTS_TIMESTAMP: "misterfyber_payments_timestamp",
+  PENDING_PAYMENTS: "misterfyber_pending_payments",
+};
+
+const PAYMENT_CACHE_DURATION = 5 * 60 * 1000;
+
+function getCachedPayments<T>(key: string): T | null {
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+    const item = JSON.parse(cached);
+    if (Date.now() - item.timestamp > PAYMENT_CACHE_DURATION) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return item.data;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedPayments<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (error) {
+    console.error("Failed to cache payments data:", error);
+  }
+}
+
+export function clearPaymentsCache(): void {
+  Object.values(PAYMENT_CACHE_KEYS).forEach((key) =>
+    localStorage.removeItem(key),
+  );
+}
+
 export const createPayment = async (
   data: CreatePaymentData,
 ): Promise<PaymentResponse> => {
@@ -30,6 +89,7 @@ export const createPayment = async (
       referenceNumber: data.referenceNumber,
       notes: data.notes,
     });
+    clearPaymentsCache();
     return response.data;
   } catch (error) {
     console.error("Error creating payment:", error);
@@ -41,10 +101,17 @@ export const getPayments = async (params?: {
   page?: number;
   limit?: number;
   status?: string;
+  forceRefresh?: boolean;
 }): Promise<any> => {
   try {
+    if (!params?.forceRefresh) {
+      const cached = getCachedPayments(PAYMENT_CACHE_KEYS.PAYMENTS_DATA);
+      if (cached) return cached;
+    }
     const response = await api.get("/payments", { params });
-    return response.data;
+    const result = response.data;
+    setCachedPayments(PAYMENT_CACHE_KEYS.PAYMENTS_DATA, result);
+    return result;
   } catch (error) {
     console.error("Error fetching payments:", error);
     throw error;
@@ -77,6 +144,7 @@ export const confirmPayment = async (
 ): Promise<any> => {
   try {
     const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
+    clearPaymentsCache();
     return response.data;
   } catch (error) {
     console.error("Error confirming payment:", error);
@@ -90,6 +158,7 @@ export const rejectPayment = async (
 ): Promise<any> => {
   try {
     const response = await api.put(`/payments/${paymentId}/reject`, { reason });
+    clearPaymentsCache();
     return response.data;
   } catch (error) {
     console.error("Error rejecting payment:", error);
@@ -97,10 +166,18 @@ export const rejectPayment = async (
   }
 };
 
-export const getPendingPayments = async (): Promise<any> => {
+export const getPendingPayments = async (
+  forceRefresh?: boolean,
+): Promise<any> => {
   try {
+    if (!forceRefresh) {
+      const cached = getCachedPayments(PAYMENT_CACHE_KEYS.PENDING_PAYMENTS);
+      if (cached) return cached;
+    }
     const response = await api.get("/payments/admin/pending");
-    return response.data;
+    const result = response.data;
+    setCachedPayments(PAYMENT_CACHE_KEYS.PENDING_PAYMENTS, result);
+    return result;
   } catch (error) {
     console.error("Error fetching pending payments:", error);
     throw error;
@@ -126,4 +203,5 @@ export default {
   rejectPayment,
   getPendingPayments,
   getPaymentStats,
+  clearPaymentsCache,
 };
