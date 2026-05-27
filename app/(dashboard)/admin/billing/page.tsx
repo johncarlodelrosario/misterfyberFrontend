@@ -1,4 +1,3 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH EMAIL BUTTON FUNCTIONALITY
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -26,6 +25,7 @@ import {
   getAllUsers,
   createManualCustomer,
   getCustomersWithoutAccounts,
+  startBillingForApplication,
 } from "@/services/admin";
 import { getAllPayments } from "@/services/admin";
 import {
@@ -295,7 +295,7 @@ export default function AdminBillingPage() {
     }
   };
 
-  // NEW: Handle sending manual email
+  // Handle sending manual email
   const handleSendManualEmail = async () => {
     if (!emailUser) return;
 
@@ -327,7 +327,6 @@ export default function AdminBillingPage() {
 
       if (data.success) {
         toast.success(`📧 Email sent successfully to ${emailUser.email}`);
-        // Reset form and close modal
         setShowEmailModal(false);
         setEmailUser(null);
         setEmailSubject("");
@@ -349,7 +348,6 @@ export default function AdminBillingPage() {
     setEmailUser(user);
     setEmailType(templateType);
 
-    // Pre-fill subject and message based on template type
     switch (templateType) {
       case "invoice":
         setEmailSubject(`Invoice Reminder - MisterFyber`);
@@ -621,37 +619,53 @@ export default function AdminBillingPage() {
     }
   };
 
+  // ==================== FIXED: START BILLING FOR APPLICATION - USES AUTHENTICATED API ====================
   const handleStartBillingForApplication = async (
     applicationId: string,
     userEmail: string,
+    customerName: string,
   ) => {
     if (
       !confirm(
-        `Start billing for application ${applicationId}? An invoice will be generated.`,
+        `Start billing for ${customerName} (${applicationId})?\n\nAn invoice will be generated and sent to ${userEmail}.`,
       )
-    )
+    ) {
       return;
+    }
+
     try {
-      const response = await fetch(
-        `/api/applications/${applicationId}/start-billing`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      const data = await response.json();
-      if (data.success) {
+      toast.loading("Starting billing...", { id: "start-billing-app" });
+
+      // Use the authenticated API function, NOT direct fetch
+      const result = await startBillingForApplication(applicationId, {});
+
+      toast.dismiss("start-billing-app");
+
+      if (result.success) {
         toast.success(
-          `✅ Billing started for application ${applicationId}! Invoice sent to ${userEmail}`,
+          `✅ Billing started for ${customerName}! Invoice sent to ${userEmail}`,
         );
+        // Refresh the data
         loadedRef.current = false;
         loadData(true);
+        // Close the modal if open
+        setShowExistingCustomersModal(false);
       } else {
-        toast.error(data.message || "Failed to start billing");
+        toast.error(result.message || "Failed to start billing");
       }
     } catch (error: any) {
-      toast.error(error.message || "Failed to start billing");
+      toast.dismiss("start-billing-app");
+      console.error("Start billing error:", error);
+
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to start billing";
+      toast.error(errorMsg);
+
+      if (error.response?.status === 401) {
+        toast.error("Session expired. Please login again.");
+      }
     }
   };
 
@@ -1191,7 +1205,6 @@ export default function AdminBillingPage() {
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
-                        {/* NEW: Email Button */}
                         <button
                           onClick={() => openEmailModal(user, "custom")}
                           className="p-1 text-purple-600 hover:text-purple-800"
@@ -1300,7 +1313,6 @@ export default function AdminBillingPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Quick Template Buttons */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Quick Templates
@@ -1341,7 +1353,6 @@ export default function AdminBillingPage() {
                 </div>
               </div>
 
-              {/* Email Subject */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Subject *
@@ -1355,7 +1366,6 @@ export default function AdminBillingPage() {
                 />
               </div>
 
-              {/* Email Message */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message *
@@ -1369,7 +1379,6 @@ export default function AdminBillingPage() {
                 />
               </div>
 
-              {/* Preview Note */}
               <div className="bg-blue-50 p-3 rounded-lg">
                 <p className="text-sm text-blue-800">
                   📧 This email will be sent to {emailUser.email}. The email
@@ -1377,7 +1386,6 @@ export default function AdminBillingPage() {
                 </p>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => {
@@ -1498,7 +1506,6 @@ export default function AdminBillingPage() {
                 </div>
               </div>
 
-              {/* Building Selection - DROPDOWN */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <FiHome className="inline mr-1 w-4 h-4" /> Building (Optional)
@@ -1530,7 +1537,6 @@ export default function AdminBillingPage() {
                 )}
               </div>
 
-              {/* Building Name - Auto-filled or manual entry */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Building Name
@@ -1727,7 +1733,7 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* Existing Customers Without Accounts Modal */}
+      {/* Existing Customers Without Accounts Modal - FIXED BUTTON */}
       {showExistingCustomersModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -1777,6 +1783,7 @@ export default function AdminBillingPage() {
                           handleStartBillingForApplication(
                             customer.applicationId,
                             customer.email,
+                            `${customer.firstName} ${customer.lastName}`,
                           )
                         }
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
