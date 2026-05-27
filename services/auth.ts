@@ -44,6 +44,15 @@ interface ApplicationStatusResponse {
     firstName?: string;
     lastName?: string;
     applicationId: string;
+    planName?: string;
+    billingStarted?: boolean;
+    hasBill?: boolean;
+    billInfo?: {
+      invoiceNumber: string;
+      total: number;
+      dueDate: string;
+      isProRated: boolean;
+    };
   };
   message?: string;
 }
@@ -235,7 +244,6 @@ export const checkApplicationStatus = async (
         Accept: "application/json",
       },
       signal: controller.signal,
-      // Do NOT include 'Origin' header - browser adds it automatically
     });
 
     clearTimeout(timeoutId);
@@ -275,6 +283,10 @@ export const checkApplicationStatus = async (
           firstName: responseData.firstName || "",
           lastName: responseData.lastName || "",
           applicationId: responseData.applicationId || applicationId,
+          planName: responseData.planName,
+          billingStarted: responseData.billingStarted || false,
+          hasBill: responseData.hasBill || false,
+          billInfo: responseData.billInfo,
         },
       };
     }

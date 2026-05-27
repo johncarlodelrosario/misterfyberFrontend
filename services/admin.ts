@@ -161,6 +161,7 @@ export const createManualCustomer = async (data: {
   return response.data;
 };
 
+// ==================== CUSTOMERS WITHOUT ACCOUNTS ====================
 export const getCustomersWithoutAccounts = async () => {
   try {
     console.log("🔍 Fetching customers without accounts from API...");
@@ -176,6 +177,7 @@ export const getCustomersWithoutAccounts = async () => {
   }
 };
 
+// ==================== BILLING FOR APPLICATIONS ====================
 export const startBillingForApplication = async (
   applicationId: string,
   data?: { installationDate?: string; notes?: string },
@@ -187,6 +189,7 @@ export const startBillingForApplication = async (
   return response.data;
 };
 
+// ==================== BILLING CYCLE MANAGEMENT ====================
 export interface BillingCycle {
   _id: string;
   userId: any;
@@ -202,15 +205,31 @@ export interface BillingCycle {
     | "pending_activation";
   monthlyRate: number;
   currentProRatedAmount: number;
-  reminderSent: boolean;
-  reminderSentAt: string;
-  serviceSuspendedAt: string;
-  pendingPlanChange: {
+  proRatedPaid: boolean;
+  proRatedPaidAt?: string;
+  freeDays: number;
+  actualBillableDays: number;
+  manualBillStart: boolean;
+  manuallyStartedAt?: string;
+  isAfterCutoff: boolean;
+  cutoffDayUsed: number;
+  paymentHistory: Array<{
+    billingId: string;
+    amount: number;
+    paidAt: string;
+  }>;
+  serviceSuspendedAt?: string;
+  pausedAt?: string;
+  resumedAt?: string;
+  pauseReason?: string;
+  pauseUntil?: string;
+  disconnectReason?: string;
+  pendingPlanChange?: {
     newPlanId: any;
     requestedAt: string;
     effectiveDate: string;
-    status: "pending" | "approved" | "rejected" | "cancelled";
-  } | null;
+    status: "pending" | "approved" | "rejected";
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -224,6 +243,7 @@ export interface BillingSettings {
   autoSendReminders: boolean;
   autoSuspendOnNonPayment: boolean;
   billingCycleDay: number;
+  freeDays: number;
   proRatedDueDay: number;
   monthlyDueDay: number;
   billingCutoffDay: number;
@@ -295,6 +315,7 @@ export const reconnectClient = async (data: { userId: string }) => {
   return response.data;
 };
 
+// ==================== BILLING SETTINGS ====================
 export const getBillingSettings = async (forceRefresh?: boolean) => {
   const response = await api.get("/billing/settings");
   return response.data;
@@ -317,6 +338,7 @@ export const updateBillingSettingsAdmin = async (
   return response.data;
 };
 
+// ==================== BILLING SUMMARY & STATS ====================
 export const getBillingSummaryAdmin = async () => {
   try {
     const response = await api.get("/billing/summary");
@@ -327,6 +349,7 @@ export const getBillingSummaryAdmin = async () => {
   }
 };
 
+// ==================== BILL PAYMENT MANAGEMENT ====================
 export const markBillAsPaid = async (
   billId: string,
   data: { referenceNumber?: string; notes?: string },
@@ -335,6 +358,7 @@ export const markBillAsPaid = async (
   return response.data;
 };
 
+// ==================== PENDING BILLS & ACTIVATIONS ====================
 export const getPendingProRatedBills = async () => {
   try {
     const response = await api.get("/billing/pending-pro-rated");
@@ -355,6 +379,7 @@ export const getPendingActivations = async () => {
   }
 };
 
+// ==================== PAYMENT CONFIRMATIONS ====================
 export const confirmProRatedPayment = async (data: {
   userId: string;
   paymentDetails?: any;
@@ -368,6 +393,7 @@ export const startMonthlyBilling = async (data: { userId: string }) => {
   return response.data;
 };
 
+// ==================== CACHE MANAGEMENT ====================
 export const clearBillingCache = () => {
   const keys = [
     "billing_cycles_cache",
@@ -385,6 +411,7 @@ export const clearBillingCache = () => {
   });
 };
 
+// ==================== DEFAULT EXPORT ====================
 export default {
   getDashboardStats,
   getRecentActivities,
