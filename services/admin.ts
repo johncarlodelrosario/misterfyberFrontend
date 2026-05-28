@@ -313,7 +313,8 @@ export const createManualCustomer = async (data: {
 }) => {
   try {
     console.log("📝 Creating manual customer with data:", data);
-    const response = await api.post("/admin/customers/manual", data);
+    // FIXED: Use /admin/manual-customer (matches backend route)
+    const response = await api.post("/admin/manual-customer", data);
     console.log("✅ Manual customer created:", response.data);
     clearAdminCache();
     return response.data;
@@ -326,6 +327,8 @@ export const createManualCustomer = async (data: {
   }
 };
 
+// ==================== FIXED: GET CUSTOMERS WITHOUT ACCOUNTS ====================
+// BACKEND ROUTE: /api/admin/customers-without-accounts (with hyphens)
 export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
   try {
     console.log("🔍 Fetching customers without accounts from API...");
@@ -335,7 +338,8 @@ export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
       if (cached) return cached;
     }
 
-    const response = await api.get("/admin/customers/without-accounts");
+    // FIXED: Use customers-without-accounts (hyphens) NOT customers/without-accounts (slash)
+    const response = await api.get("/admin/customers-without-accounts");
     console.log("📦 API Response:", response.data);
     const result = response.data;
 
