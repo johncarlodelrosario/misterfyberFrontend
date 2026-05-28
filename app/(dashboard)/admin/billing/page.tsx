@@ -58,6 +58,7 @@ import {
   FiSend,
   FiDollarSign,
   FiFileText,
+  FiTrash2,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -197,6 +198,10 @@ export default function AdminBillingPage() {
   >([]);
   const [showExistingCustomersModal, setShowExistingCustomersModal] =
     useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<CustomerItem | null>(
+    null,
+  );
 
   const [billingFlowSettings, setBillingFlowSettings] = useState({
     proRatedDueDay: 25,
@@ -297,6 +302,50 @@ export default function AdminBillingPage() {
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
+    }
+  };
+
+  // DELETE BILLING CYCLE FUNCTION
+  const handleDeleteBillingCycle = async (customer: CustomerItem) => {
+    if (!customer.billingCycle?._id) {
+      toast.error("No billing cycle found to delete");
+      return;
+    }
+
+    if (
+      !confirm(
+        `⚠️ Are you sure you want to delete the billing cycle for ${customer.firstName} ${customer.lastName}?\n\nThis action cannot be undone and will remove all billing records for this customer.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/billing/delete-cycle", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          billingCycleId: customer.billingCycle._id,
+          customerId: customer._id,
+          customerType: customer.type,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(
+          `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
+        );
+        loadedRef.current = false;
+        loadData(true);
+      } else {
+        toast.error(data.message || "Failed to delete billing cycle");
+      }
+    } catch (error: any) {
+      console.error("Delete error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to delete billing cycle",
+      );
     }
   };
 
@@ -486,7 +535,6 @@ export default function AdminBillingPage() {
             app.status === "approved" || app.billingStarted === true,
         )
         .map((app: any) => {
-          // CRITICAL FIX: Match bills by applicationId (MongoDB _id) not by userId
           const appBills = billsList.filter(
             (bill: any) =>
               bill.applicationId?._id === app._id && bill.status !== "paid",
@@ -804,7 +852,12 @@ export default function AdminBillingPage() {
   };
 
   const handleStopBilling = async (userId: string, customerName: string) => {
-    if (!confirm(`Stop billing for ${customerName}?`)) return;
+    if (
+      !confirm(
+        `Stop billing for ${customerName}? This will cancel the subscription.`,
+      )
+    )
+      return;
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success(`⛔ Billing stopped for ${customerName}.`);
@@ -815,28 +868,68 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleDisconnect = async (userId: string, customerName: string) => {
-    const reason = prompt("Enter reason for disconnection:");
+  // FIXED: Disconnect function - checks user status properly
+  const handleDisconnect = async (customer: CustomerItem) => {
+    const reason = prompt(
+      "Enter reason for disconnection (e.g., non-payment, violation):",
+    );
     if (reason === null) return;
+
+    if (
+      !confirm(
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?\n\nReason: ${reason}\n\nThis will disable their internet access immediately.`,
+      )
+    )
+      return;
+
     try {
-      await disconnectClient({ userId, reason });
-      toast.success(`🔌 ${customerName} disconnected.`);
+      if (customer.type === "user") {
+        await disconnectClient({ userId: customer._id, reason });
+      } else {
+        // For applications, we need to handle differently or show message
+        toast.error(
+          "Disconnect for applications is handled through user accounts",
+        );
+        return;
+      }
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
+      console.error("Disconnect error:", error);
       toast.error(
         error.response?.data?.message || "Failed to disconnect client",
       );
     }
   };
 
-  const handleReconnect = async (userId: string, customerName: string) => {
+  // FIXED: Reconnect function
+  const handleReconnect = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
+      )
+    )
+      return;
+
     try {
-      await reconnectClient({ userId });
-      toast.success(`🔌 ${customerName} reconnected.`);
+      if (customer.type === "user") {
+        await reconnectClient({ userId: customer._id });
+      } else {
+        toast.error(
+          "Reconnect for applications is handled through user accounts",
+        );
+        return;
+      }
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
+      );
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
+      console.error("Reconnect error:", error);
       toast.error(
         error.response?.data?.message || "Failed to reconnect client",
       );
@@ -882,6 +975,7 @@ export default function AdminBillingPage() {
   };
 
   const getStatusBadge = (customer: CustomerItem) => {
+    // Check for application type first
     if (customer.type === "application") {
       if (customer.billingCycle?.status === "pending_activation")
         return "bg-purple-100 text-purple-800";
@@ -889,8 +983,13 @@ export default function AdminBillingPage() {
         return "bg-indigo-100 text-indigo-800";
       return "bg-blue-100 text-blue-800";
     }
+    // For users - check billing cycle status first
     if (customer.billingCycle?.status === "paused")
       return "bg-yellow-100 text-yellow-800";
+    if (customer.status === "active") return "bg-green-100 text-green-800";
+    if (customer.status === "suspended") return "bg-red-100 text-red-800";
+    if (customer.status === "pending_activation")
+      return "bg-purple-100 text-purple-800";
     const styles: Record<string, string> = {
       active: "bg-green-100 text-green-800",
       suspended: "bg-red-100 text-red-800",
@@ -908,7 +1007,13 @@ export default function AdminBillingPage() {
       return "Approved";
     }
     if (customer.billingCycle?.status === "paused") return "Paused";
-    return customer.status;
+    return customer.status === "active"
+      ? "Active"
+      : customer.status === "suspended"
+        ? "Suspended"
+        : customer.status === "pending_activation"
+          ? "Pending Activation"
+          : customer.status || "Inactive";
   };
 
   const getBalanceColor = (balance: number) => {
@@ -1320,12 +1425,12 @@ export default function AdminBillingPage() {
                         >
                           <FiMail className="w-4 h-4" />
                         </button>
+
                         {/* Start Billing - For applications without billing cycle */}
                         {customer.type === "application" &&
                           !customer.billingCycle && (
                             <button
                               onClick={() => {
-                                // Use applicationId (string ID like SLK2503...) or MongoDB _id
                                 const appId =
                                   customer.applicationId || customer._id;
                                 console.log(
@@ -1345,9 +1450,46 @@ export default function AdminBillingPage() {
                               <FiPlay className="w-4 h-4" />
                             </button>
                           )}
+
+                        {/* User actions */}
                         {customer.type === "user" && (
                           <>
-                            {customer.billingCycle?.status === "paused" ? (
+                            {/* Start Billing - For users without billing cycle */}
+                            {(!customer.billingCycle ||
+                              customer.billingCycle?.status ===
+                                "cancelled") && (
+                              <button
+                                onClick={() => {
+                                  setSelectedUserId(customer._id);
+                                  setSelectedCustomerName(
+                                    `${customer.firstName} ${customer.lastName}`,
+                                  );
+                                  setSelectedCustomerEmail(customer.email);
+                                  setShowStartModal(true);
+                                }}
+                                className="p-1 text-green-600 hover:text-green-800"
+                                title="Start Billing"
+                              >
+                                <FiPlay className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Pause button - for active billing cycles */}
+                            {customer.billingCycle?.status === "active" && (
+                              <button
+                                onClick={() => {
+                                  setSelectedUserId(customer._id);
+                                  setShowPauseModal(true);
+                                }}
+                                className="p-1 text-yellow-600 hover:text-yellow-800"
+                                title="Pause Billing"
+                              >
+                                <FiPause className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Resume button - for paused billing cycles */}
+                            {customer.billingCycle?.status === "paused" && (
                               <button
                                 onClick={() =>
                                   handleResumeBilling(
@@ -1360,73 +1502,76 @@ export default function AdminBillingPage() {
                               >
                                 <FiPlay className="w-4 h-4" />
                               </button>
-                            ) : !customer.billingCycle ||
-                              customer.billingCycle?.status === "cancelled" ? (
-                              <button
-                                onClick={() => {
-                                  setSelectedUserId(customer._id);
-                                  setShowStartModal(true);
-                                }}
-                                className="p-1 text-green-600 hover:text-green-800"
-                                title="Start Billing"
-                              >
-                                <FiPlay className="w-4 h-4" />
-                              </button>
-                            ) : customer.billingCycle?.status === "active" ? (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedUserId(customer._id);
-                                    setShowPauseModal(true);
-                                  }}
-                                  className="p-1 text-yellow-600 hover:text-yellow-800"
-                                  title="Pause Billing"
-                                >
-                                  <FiPause className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    handleStopBilling(
-                                      customer._id,
-                                      customer.firstName,
-                                    )
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800"
-                                  title="Stop Billing"
-                                >
-                                  <FiX className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : null}
-                            {customer.status === "active" ? (
+                            )}
+
+                            {/* Stop/Cancel button - for active billing cycles */}
+                            {customer.billingCycle?.status === "active" && (
                               <button
                                 onClick={() =>
-                                  handleDisconnect(
+                                  handleStopBilling(
                                     customer._id,
                                     customer.firstName,
                                   )
                                 }
                                 className="p-1 text-red-600 hover:text-red-800"
-                                title="Disconnect"
+                                title="Cancel Subscription"
+                              >
+                                <FiX className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* DISCONNECT button - for active users (non-suspended) */}
+                            {customer.status === "active" && (
+                              <button
+                                onClick={() => handleDisconnect(customer)}
+                                className="p-1 text-red-600 hover:text-red-800"
+                                title="Disconnect from Network"
                               >
                                 <FiWifiOff className="w-4 h-4" />
                               </button>
-                            ) : customer.status === "suspended" ? (
+                            )}
+
+                            {/* RECONNECT button - for suspended users */}
+                            {customer.status === "suspended" && (
                               <button
-                                onClick={() =>
-                                  handleReconnect(
-                                    customer._id,
-                                    customer.firstName,
-                                  )
-                                }
+                                onClick={() => handleReconnect(customer)}
                                 className="p-1 text-green-600 hover:text-green-800"
-                                title="Reconnect"
+                                title="Reconnect to Network"
                               >
                                 <FiWifi className="w-4 h-4" />
                               </button>
-                            ) : null}
+                            )}
+
+                            {/* DELETE button - for users with billing cycles */}
+                            {customer.billingCycle && (
+                              <button
+                                onClick={() => {
+                                  setCustomerToDelete(customer);
+                                  setShowDeleteConfirmModal(true);
+                                }}
+                                className="p-1 text-gray-600 hover:text-red-800"
+                                title="Delete Billing Cycle"
+                              >
+                                <FiTrash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </>
                         )}
+
+                        {/* Delete button for applications with billing cycles */}
+                        {customer.type === "application" &&
+                          customer.billingCycle && (
+                            <button
+                              onClick={() => {
+                                setCustomerToDelete(customer);
+                                setShowDeleteConfirmModal(true);
+                              }}
+                              className="p-1 text-gray-600 hover:text-red-800"
+                              title="Delete Billing Cycle"
+                            >
+                              <FiTrash2 className="w-4 h-4" />
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -1442,6 +1587,83 @@ export default function AdminBillingPage() {
           applications)
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmModal && customerToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Delete Billing Cycle
+              </h2>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirmModal(false);
+                  setCustomerToDelete(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                <p className="text-red-800 font-semibold mb-2">
+                  ⚠️ Warning: This action cannot be undone!
+                </p>
+                <p className="text-red-700 text-sm">
+                  You are about to delete the billing cycle for:
+                </p>
+                <p className="font-medium text-gray-900 mt-2">
+                  {customerToDelete.firstName} {customerToDelete.lastName}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {customerToDelete.email}
+                </p>
+                {customerToDelete.billingCycle && (
+                  <div className="mt-3 pt-3 border-t border-red-200">
+                    <p className="text-xs text-gray-600">
+                      Billing Cycle ID: {customerToDelete.billingCycle._id}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Status: {customerToDelete.billingCycle.status}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Current Balance: ₱
+                      {customerToDelete.currentBalance.toLocaleString()}
+                    </p>
+                  </div>
+                )}
+                <p className="text-red-600 text-sm mt-3">
+                  This will delete the billing cycle AND all associated bills
+                  and records.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirmModal(false);
+                    setCustomerToDelete(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    handleDeleteBillingCycle(customerToDelete);
+                    setShowDeleteConfirmModal(false);
+                    setCustomerToDelete(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
+                >
+                  Delete Permanently
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Start Billing Modal */}
       {showStartModal && (
