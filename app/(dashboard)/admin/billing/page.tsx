@@ -435,6 +435,7 @@ export default function AdminBillingPage() {
       console.log(
         `📊 Cycles: ${cyclesData.length}, Bills: ${billsList.length}`,
       );
+      console.log("📋 Bills list sample:", billsList.slice(0, 2));
 
       setBillingCycles(cyclesData);
       setBills(billsList);
@@ -485,9 +486,10 @@ export default function AdminBillingPage() {
             app.status === "approved" || app.billingStarted === true,
         )
         .map((app: any) => {
+          // CRITICAL FIX: Match bills by applicationId (MongoDB _id) not by userId
           const appBills = billsList.filter(
             (bill: any) =>
-              bill.applicationId === app._id && bill.status !== "paid",
+              bill.applicationId?._id === app._id && bill.status !== "paid",
           );
           const totalBalance = appBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
@@ -499,6 +501,10 @@ export default function AdminBillingPage() {
           );
           const appCycle = cyclesData.find(
             (cycle: any) => cycle.applicationId === app._id,
+          );
+
+          console.log(
+            `📊 App ${app.applicationId}: ${appBills.length} bills, balance ₱${totalBalance}`,
           );
 
           return {
@@ -659,14 +665,17 @@ export default function AdminBillingPage() {
       return;
     }
 
-    console.log("🚀 Starting billing with ID:", selectedApplicationId);
+    console.log(
+      "🚀 Starting billing with applicationId:",
+      selectedApplicationId,
+    );
 
     try {
       toast.loading("Starting billing...", { id: "start-billing-app" });
-      const result = await startBillingForApplication(
-        selectedApplicationId,
-        {},
-      );
+      const result = await startBillingForApplication(selectedApplicationId, {
+        installationDate: startDate || undefined,
+        notes: billingNotes,
+      });
       toast.dismiss("start-billing-app");
 
       if (result.success) {
@@ -677,6 +686,9 @@ export default function AdminBillingPage() {
         setSelectedApplicationId("");
         setSelectedCustomerName("");
         setSelectedCustomerEmail("");
+        setStartDate("");
+        setCustomAmount("");
+        setBillingNotes("");
         loadedRef.current = false;
         loadData(true);
       } else {
@@ -718,12 +730,13 @@ export default function AdminBillingPage() {
     try {
       await markBillAsPaid(bill._id, {
         referenceNumber: `ADMIN-${Date.now()}`,
-        notes: `Manually marked as paid by admin`,
+        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
       });
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
+      console.error("Mark bill as paid error:", error);
       toast.error(
         error.response?.data?.message || "Failed to mark bill as paid",
       );
@@ -1307,11 +1320,12 @@ export default function AdminBillingPage() {
                         >
                           <FiMail className="w-4 h-4" />
                         </button>
-                        {/* FIXED: Use customer.applicationId (string ID) */}
+                        {/* Start Billing - For applications without billing cycle */}
                         {customer.type === "application" &&
                           !customer.billingCycle && (
                             <button
                               onClick={() => {
+                                // Use applicationId (string ID like SLK2503...) or MongoDB _id
                                 const appId =
                                   customer.applicationId || customer._id;
                                 console.log(
@@ -1440,6 +1454,9 @@ export default function AdminBillingPage() {
                   setShowStartModal(false);
                   setSelectedUserId("");
                   setSelectedApplicationId("");
+                  setStartDate("");
+                  setCustomAmount("");
+                  setBillingNotes("");
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1454,9 +1471,11 @@ export default function AdminBillingPage() {
                 <p className="text-sm text-blue-800">
                   <strong>Email:</strong> {selectedCustomerEmail}
                 </p>
-                <p className="text-sm text-blue-800 font-mono">
-                  <strong>Application ID:</strong> {selectedApplicationId}
-                </p>
+                {selectedApplicationId && (
+                  <p className="text-sm text-blue-800 font-mono">
+                    <strong>Application ID:</strong> {selectedApplicationId}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1468,6 +1487,9 @@ export default function AdminBillingPage() {
                   onChange={(e) => setStartDate(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to use today's date
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1477,7 +1499,7 @@ export default function AdminBillingPage() {
                   type="number"
                   value={customAmount}
                   onChange={(e) => setCustomAmount(e.target.value)}
-                  placeholder="Leave empty"
+                  placeholder="Leave empty for auto-calculation"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -1490,7 +1512,32 @@ export default function AdminBillingPage() {
                   onChange={(e) => setBillingNotes(e.target.value)}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Optional notes about this billing..."
                 />
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-lg">
+                <p className="text-xs text-yellow-800">
+                  <strong>ℹ️ How billing works:</strong>
+                </p>
+                <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                  <li>
+                    If installation is on or before day{" "}
+                    {billingFlowSettings.billingCutoffDay}: Pro-rated bill only
+                  </li>
+                  <li>
+                    If installation is after day{" "}
+                    {billingFlowSettings.billingCutoffDay}: Combined bill
+                    (pro-rated + next month)
+                  </li>
+                  <li>
+                    Pro-rated bills are due on day{" "}
+                    {billingFlowSettings.proRatedDueDay}
+                  </li>
+                  <li>
+                    Monthly bills are due on day{" "}
+                    {billingFlowSettings.monthlyDueDay}
+                  </li>
+                </ul>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
@@ -1538,12 +1585,13 @@ export default function AdminBillingPage() {
                   type="text"
                   value={pauseReason}
                   onChange={(e) => setPauseReason(e.target.value)}
+                  placeholder="e.g., Customer request, Maintenance"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Auto-resume Date
+                  Auto-resume Date (Optional)
                 </label>
                 <input
                   type="date"
@@ -1745,6 +1793,9 @@ export default function AdminBillingPage() {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Days after due date before suspension
+                  </p>
                 </div>
               </div>
               <div className="border-t pt-4">
@@ -1758,6 +1809,8 @@ export default function AdminBillingPage() {
                     </label>
                     <input
                       type="number"
+                      min="1"
+                      max="31"
                       value={billingFlowSettings.proRatedDueDay}
                       onChange={(e) =>
                         setBillingFlowSettings({
@@ -1767,6 +1820,9 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
+                    <p className="text-xs text-gray-500">
+                      Day of month for pro-rated bills
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1774,6 +1830,8 @@ export default function AdminBillingPage() {
                     </label>
                     <input
                       type="number"
+                      min="1"
+                      max="31"
                       value={billingFlowSettings.monthlyDueDay}
                       onChange={(e) =>
                         setBillingFlowSettings({
@@ -1783,6 +1841,9 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
+                    <p className="text-xs text-gray-500">
+                      Day of month for monthly bills
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1790,6 +1851,8 @@ export default function AdminBillingPage() {
                     </label>
                     <input
                       type="number"
+                      min="1"
+                      max="31"
                       value={billingFlowSettings.billingCutoffDay}
                       onChange={(e) =>
                         setBillingFlowSettings({
@@ -1799,6 +1862,9 @@ export default function AdminBillingPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
+                    <p className="text-xs text-gray-500">
+                      After this day = combined bill
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1829,6 +1895,29 @@ export default function AdminBillingPage() {
                     <span>Send Invoice Email on Installation</span>
                   </label>
                 </div>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm font-semibold text-blue-800 mb-2">
+                  ℹ️ How Billing Works:
+                </p>
+                <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                  <li>
+                    Installation on days 1-
+                    {billingFlowSettings.billingCutoffDay}:{" "}
+                    <strong>Pro-rated bill only</strong> due on day{" "}
+                    {billingFlowSettings.proRatedDueDay}
+                  </li>
+                  <li>
+                    Installation on days{" "}
+                    {billingFlowSettings.billingCutoffDay + 1}-31:{" "}
+                    <strong>Combined bill</strong> (pro-rated + next month) due
+                    on day {billingFlowSettings.monthlyDueDay}
+                  </li>
+                  <li>
+                    After {billingFlowSettings.gracePeriodDays} days grace
+                    period, service may be suspended
+                  </li>
+                </ul>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
