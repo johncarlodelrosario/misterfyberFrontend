@@ -60,12 +60,6 @@ import {
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-const CACHE_KEYS = {
-  BILLING_DATA: "misterfyber_billing_data",
-  BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
-  BILLING_STATS: "misterfyber_billing_stats",
-};
-
 interface CustomerItem {
   _id: string;
   firstName: string;
@@ -393,22 +387,18 @@ export default function AdminBillingPage() {
       const [
         cyclesResult,
         billsResult,
-        settingsResult,
         usersResult,
         applicationsResult,
         pendingPaymentsResult,
-        summaryResult,
         customersWithoutAccountsResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
-        getBillingSettings(forceRefresh),
         getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
         getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
           data: [],
         })),
         getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-        getBillingSummaryAdmin().catch(() => ({ data: {} })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
       ]);
 
@@ -491,16 +481,11 @@ export default function AdminBillingPage() {
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
 
-          // Find billing cycle by applicationId
           const appCycle = cyclesData.find(
             (cycle: any) =>
               cycle.applicationId === app.applicationId ||
               cycle.applicationId === app._id ||
               cycle.applicationId?._id === app._id,
-          );
-
-          console.log(
-            `Application: ${app.email}, appId: ${app.applicationId}, has cycle: ${!!appCycle}`,
           );
 
           return {
@@ -523,11 +508,6 @@ export default function AdminBillingPage() {
 
       const allCustomers = [...userCustomers, ...applicationCustomers];
       allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
-
-      const customersWithCycles = allCustomers.filter((c) => c.billingCycle);
-      console.log(
-        `📊 Total customers: ${allCustomers.length}, With billing cycles: ${customersWithCycles.length}`,
-      );
 
       setCustomers(allCustomers);
 
@@ -870,9 +850,25 @@ export default function AdminBillingPage() {
   };
 
   const getStatusBadge = (customer: CustomerItem) => {
+    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
+    const hasUnpaidProRated =
+      customer.unpaidBills && customer.unpaidBills.length > 0;
+
     if (customer.type === "application") {
-      if (customer.billingCycle?.status === "pending_activation")
+      // Only show "Awaiting Payment" if there are actually unpaid bills
+      if (
+        customer.billingCycle?.status === "pending_activation" &&
+        hasUnpaidProRated
+      ) {
         return "bg-purple-100 text-purple-800";
+      }
+      // If status is pending_activation but no unpaid bills, treat as active
+      if (
+        customer.billingCycle?.status === "pending_activation" &&
+        !hasUnpaidProRated
+      ) {
+        return "bg-green-100 text-green-800";
+      }
       if (customer.status === "billing_started")
         return "bg-indigo-100 text-indigo-800";
       return "bg-blue-100 text-blue-800";
@@ -887,9 +883,25 @@ export default function AdminBillingPage() {
   };
 
   const getStatusText = (customer: CustomerItem) => {
+    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
+    const hasUnpaidProRated =
+      customer.unpaidBills && customer.unpaidBills.length > 0;
+
     if (customer.type === "application") {
-      if (customer.billingCycle?.status === "pending_activation")
+      // Only show "Awaiting Payment" if there are actually unpaid bills
+      if (
+        customer.billingCycle?.status === "pending_activation" &&
+        hasUnpaidProRated
+      ) {
         return "Awaiting Payment";
+      }
+      // If status is pending_activation but no unpaid bills, show as active
+      if (
+        customer.billingCycle?.status === "pending_activation" &&
+        !hasUnpaidProRated
+      ) {
+        return "Active";
+      }
       if (customer.status === "billing_started") return "Billing Started";
       return "Approved";
     }
@@ -927,10 +939,15 @@ export default function AdminBillingPage() {
       return matchesSearch && customer.status === "suspended";
     if (statusFilter === "paused")
       return matchesSearch && customer.billingCycle?.status === "paused";
-    if (statusFilter === "pending_activation")
+    if (statusFilter === "pending_activation") {
+      // Only show if there are actually unpaid bills
+      const hasUnpaid = customer.unpaidBills && customer.unpaidBills.length > 0;
       return (
-        matchesSearch && customer.billingCycle?.status === "pending_activation"
+        matchesSearch &&
+        customer.billingCycle?.status === "pending_activation" &&
+        hasUnpaid
       );
+    }
     if (statusFilter === "applications")
       return matchesSearch && customer.type === "application";
     return matchesSearch;
@@ -1225,161 +1242,117 @@ export default function AdminBillingPage() {
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer) => (
-                  <tr
-                    key={`${customer.type}-${customer._id}`}
-                    className="hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {customer.type === "application" ? (
-                          <FiFileText className="w-4 h-4 text-purple-500" />
-                        ) : (
-                          <FiUser className="w-4 h-4 text-blue-500" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {customer.firstName} {customer.lastName}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {customer.email}
-                          </p>
-                          {customer.applicationId && (
-                            <p className="text-xs text-gray-400 font-mono">
-                              App ID: {customer.applicationId}
-                            </p>
+                filteredCustomers.map((customer) => {
+                  const hasUnpaidBills =
+                    customer.unpaidBills && customer.unpaidBills.length > 0;
+                  return (
+                    <tr
+                      key={`${customer.type}-${customer._id}`}
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          {customer.type === "application" ? (
+                            <FiFileText className="w-4 h-4 text-purple-500" />
+                          ) : (
+                            <FiUser className="w-4 h-4 text-blue-500" />
                           )}
-                          {customer.username && (
-                            <p className="text-xs text-gray-400">
-                              @{customer.username}
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {customer.firstName} {customer.lastName}
                             </p>
-                          )}
+                            <p className="text-sm text-gray-500">
+                              {customer.email}
+                            </p>
+                            {customer.applicationId && (
+                              <p className="text-xs text-gray-400 font-mono">
+                                App ID: {customer.applicationId}
+                              </p>
+                            )}
+                            {customer.username && (
+                              <p className="text-xs text-gray-400">
+                                @{customer.username}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-medium text-gray-900">
-                        {customer.planName}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        ₱{customer.planPrice.toLocaleString()}/mo
-                      </p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p
-                        className={`text-lg font-bold ${getBalanceColor(customer.currentBalance)}`}
-                      >
-                        ₱{customer.currentBalance.toLocaleString()}
-                      </p>
-                      {customer.unpaidBills.length > 0 && (
-                        <p className="text-xs text-red-500">
-                          {customer.unpaidBills.length} unpaid bill(s)
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-medium text-gray-900">
+                          {customer.planName}
                         </p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
-                      >
-                        {getStatusText(customer)}
-                      </span>
-                      {customer.billingCycle?.status ===
-                        "pending_activation" && (
-                        <p className="text-xs text-purple-600 mt-1">
-                          Awaiting first payment
+                        <p className="text-xs text-gray-500">
+                          ₱{customer.planPrice.toLocaleString()}/mo
                         </p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => {
-                            setSelectedCustomer(customer);
-                            setShowCustomerDetailModal(true);
-                          }}
-                          className="p-1 text-blue-600 hover:text-blue-800"
-                          title="View Details"
+                      </td>
+                      <td className="px-6 py-4">
+                        <p
+                          className={`text-lg font-bold ${getBalanceColor(customer.currentBalance)}`}
                         >
-                          <FiEye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEmailModal(customer, "custom")}
-                          className="p-1 text-purple-600 hover:text-purple-800"
-                          title="Send Email"
-                        >
-                          <FiMail className="w-4 h-4" />
-                        </button>
-
-                        {/* APPLICATIONS */}
-                        {customer.type === "application" && (
-                          <>
-                            {!customer.billingCycle ? (
-                              <button
-                                onClick={() => {
-                                  const appId =
-                                    customer.applicationId || customer._id;
-                                  setSelectedApplicationId(appId);
-                                  setSelectedCustomerName(
-                                    `${customer.firstName} ${customer.lastName}`,
-                                  );
-                                  setSelectedCustomerEmail(customer.email);
-                                  setShowStartModal(true);
-                                }}
-                                className="p-1 text-green-600 hover:text-green-800"
-                                title="Start Billing"
-                              >
-                                <FiPlay className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <button
-                                disabled
-                                className="p-1 text-gray-300 cursor-not-allowed opacity-50"
-                                title="Billing already started"
-                              >
-                                <FiPlay className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {/* Delete button for applications with billing cycles */}
-                            {customer.billingCycle && (
-                              <button
-                                onClick={() => {
-                                  setCustomerToDelete(customer);
-                                  setShowDeleteConfirmModal(true);
-                                }}
-                                className="p-1 text-red-600 hover:text-red-800"
-                                title="Delete Billing Cycle"
-                              >
-                                <FiTrash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </>
+                          ₱{customer.currentBalance.toLocaleString()}
+                        </p>
+                        {customer.unpaidBills.length > 0 && (
+                          <p className="text-xs text-red-500">
+                            {customer.unpaidBills.length} unpaid bill(s)
+                          </p>
                         )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
+                        >
+                          {getStatusText(customer)}
+                        </span>
+                        {/* Only show "Awaiting first payment" if there are actual unpaid bills */}
+                        {customer.billingCycle?.status ===
+                          "pending_activation" &&
+                          hasUnpaidBills && (
+                            <p className="text-xs text-purple-600 mt-1">
+                              Awaiting first payment
+                            </p>
+                          )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setShowCustomerDetailModal(true);
+                            }}
+                            className="p-1 text-blue-600 hover:text-blue-800"
+                            title="View Details"
+                          >
+                            <FiEye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEmailModal(customer, "custom")}
+                            className="p-1 text-purple-600 hover:text-purple-800"
+                            title="Send Email"
+                          >
+                            <FiMail className="w-4 h-4" />
+                          </button>
 
-                        {/* USERS */}
-                        {customer.type === "user" && (
-                          <>
-                            {(!customer.billingCycle ||
-                              customer.billingCycle?.status ===
-                                "cancelled") && (
-                              <button
-                                onClick={() => {
-                                  setSelectedUserId(customer._id);
-                                  setSelectedCustomerName(
-                                    `${customer.firstName} ${customer.lastName}`,
-                                  );
-                                  setSelectedCustomerEmail(customer.email);
-                                  setShowStartModal(true);
-                                }}
-                                className="p-1 text-green-600 hover:text-green-800"
-                                title="Start Billing"
-                              >
-                                <FiPlay className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {customer.billingCycle &&
-                              customer.billingCycle?.status !== "cancelled" && (
+                          {/* APPLICATIONS */}
+                          {customer.type === "application" && (
+                            <>
+                              {!customer.billingCycle ? (
+                                <button
+                                  onClick={() => {
+                                    const appId =
+                                      customer.applicationId || customer._id;
+                                    setSelectedApplicationId(appId);
+                                    setSelectedCustomerName(
+                                      `${customer.firstName} ${customer.lastName}`,
+                                    );
+                                    setSelectedCustomerEmail(customer.email);
+                                    setShowStartModal(true);
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Start Billing"
+                                >
+                                  <FiPlay className="w-4 h-4" />
+                                </button>
+                              ) : (
                                 <button
                                   disabled
                                   className="p-1 text-gray-300 cursor-not-allowed opacity-50"
@@ -1389,87 +1362,138 @@ export default function AdminBillingPage() {
                                 </button>
                               )}
 
-                            {customer.billingCycle?.status === "active" && (
-                              <button
-                                onClick={() => {
-                                  setSelectedUserId(customer._id);
-                                  setShowPauseModal(true);
-                                }}
-                                className="p-1 text-yellow-600 hover:text-yellow-800"
-                                title="Pause Billing"
-                              >
-                                <FiPause className="w-4 h-4" />
-                              </button>
-                            )}
+                              {/* Delete button for applications with billing cycles */}
+                              {customer.billingCycle && (
+                                <button
+                                  onClick={() => {
+                                    setCustomerToDelete(customer);
+                                    setShowDeleteConfirmModal(true);
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Delete Billing Cycle"
+                                >
+                                  <FiTrash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </>
+                          )}
 
-                            {customer.billingCycle?.status === "paused" && (
-                              <button
-                                onClick={() =>
-                                  handleResumeBilling(
-                                    customer._id,
-                                    customer.firstName,
-                                  )
-                                }
-                                className="p-1 text-green-600 hover:text-green-800"
-                                title="Resume Billing"
-                              >
-                                <FiPlay className="w-4 h-4" />
-                              </button>
-                            )}
+                          {/* USERS */}
+                          {customer.type === "user" && (
+                            <>
+                              {(!customer.billingCycle ||
+                                customer.billingCycle?.status ===
+                                  "cancelled") && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedUserId(customer._id);
+                                    setSelectedCustomerName(
+                                      `${customer.firstName} ${customer.lastName}`,
+                                    );
+                                    setSelectedCustomerEmail(customer.email);
+                                    setShowStartModal(true);
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Start Billing"
+                                >
+                                  <FiPlay className="w-4 h-4" />
+                                </button>
+                              )}
 
-                            {customer.billingCycle?.status === "active" && (
-                              <button
-                                onClick={() =>
-                                  handleStopBilling(
-                                    customer._id,
-                                    customer.firstName,
-                                  )
-                                }
-                                className="p-1 text-red-600 hover:text-red-800"
-                                title="Cancel Subscription"
-                              >
-                                <FiX className="w-4 h-4" />
-                              </button>
-                            )}
+                              {customer.billingCycle &&
+                                customer.billingCycle?.status !==
+                                  "cancelled" && (
+                                  <button
+                                    disabled
+                                    className="p-1 text-gray-300 cursor-not-allowed opacity-50"
+                                    title="Billing already started"
+                                  >
+                                    <FiPlay className="w-4 h-4" />
+                                  </button>
+                                )}
 
-                            {customer.status === "active" && (
-                              <button
-                                onClick={() => handleDisconnect(customer)}
-                                className="p-1 text-red-600 hover:text-red-800"
-                                title="Disconnect from Network"
-                              >
-                                <FiWifiOff className="w-4 h-4" />
-                              </button>
-                            )}
+                              {customer.billingCycle?.status === "active" && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedUserId(customer._id);
+                                    setShowPauseModal(true);
+                                  }}
+                                  className="p-1 text-yellow-600 hover:text-yellow-800"
+                                  title="Pause Billing"
+                                >
+                                  <FiPause className="w-4 h-4" />
+                                </button>
+                              )}
 
-                            {customer.status === "suspended" && (
-                              <button
-                                onClick={() => handleReconnect(customer)}
-                                className="p-1 text-green-600 hover:text-green-800"
-                                title="Reconnect to Network"
-                              >
-                                <FiWifi className="w-4 h-4" />
-                              </button>
-                            )}
+                              {customer.billingCycle?.status === "paused" && (
+                                <button
+                                  onClick={() =>
+                                    handleResumeBilling(
+                                      customer._id,
+                                      customer.firstName,
+                                    )
+                                  }
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Resume Billing"
+                                >
+                                  <FiPlay className="w-4 h-4" />
+                                </button>
+                              )}
 
-                            {customer.billingCycle && (
-                              <button
-                                onClick={() => {
-                                  setCustomerToDelete(customer);
-                                  setShowDeleteConfirmModal(true);
-                                }}
-                                className="p-1 text-red-600 hover:text-red-800"
-                                title="Delete Billing Cycle"
-                              >
-                                <FiTrash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                              {customer.billingCycle?.status === "active" && (
+                                <button
+                                  onClick={() =>
+                                    handleStopBilling(
+                                      customer._id,
+                                      customer.firstName,
+                                    )
+                                  }
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Cancel Subscription"
+                                >
+                                  <FiX className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {customer.status === "active" && (
+                                <button
+                                  onClick={() => handleDisconnect(customer)}
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Disconnect from Network"
+                                >
+                                  <FiWifiOff className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {customer.status === "suspended" && (
+                                <button
+                                  onClick={() => handleReconnect(customer)}
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Reconnect to Network"
+                                >
+                                  <FiWifi className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {customer.billingCycle && (
+                                <button
+                                  onClick={() => {
+                                    setCustomerToDelete(customer);
+                                    setShowDeleteConfirmModal(true);
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Delete Billing Cycle"
+                                >
+                                  <FiTrash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
