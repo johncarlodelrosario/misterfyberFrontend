@@ -478,7 +478,7 @@ export default function AdminBillingPage() {
         };
       });
 
-      // Build customers from APPLICATIONS - FIXED: properly set applicationId
+      // Build customers from APPLICATIONS
       const applicationCustomers: CustomerItem[] = applicationsList
         .filter(
           (app: any) =>
@@ -515,7 +515,7 @@ export default function AdminBillingPage() {
             unpaidBills: appBills,
             overdueBills: overdueBills,
             billingCycle: appCycle,
-            applicationId: app.applicationId, // FIXED: Use app.applicationId (string ID)
+            applicationId: app.applicationId,
           };
         });
 
@@ -659,6 +659,8 @@ export default function AdminBillingPage() {
       return;
     }
 
+    console.log("🚀 Starting billing with ID:", selectedApplicationId);
+
     try {
       toast.loading("Starting billing...", { id: "start-billing-app" });
       const result = await startBillingForApplication(
@@ -682,6 +684,7 @@ export default function AdminBillingPage() {
       }
     } catch (error: any) {
       toast.dismiss("start-billing-app");
+      console.error("Error:", error);
       toast.error(error.response?.data?.message || "Failed to start billing");
     }
   };
@@ -1304,14 +1307,18 @@ export default function AdminBillingPage() {
                         >
                           <FiMail className="w-4 h-4" />
                         </button>
-                        {/* FIXED: Use customer.applicationId (string ID) instead of customer._id */}
+                        {/* FIXED: Use customer.applicationId (string ID) */}
                         {customer.type === "application" &&
                           !customer.billingCycle && (
                             <button
                               onClick={() => {
-                                setSelectedApplicationId(
-                                  customer.applicationId || "",
+                                const appId =
+                                  customer.applicationId || customer._id;
+                                console.log(
+                                  "🔍 Starting billing for app:",
+                                  appId,
                                 );
+                                setSelectedApplicationId(appId);
                                 setSelectedCustomerName(
                                   `${customer.firstName} ${customer.lastName}`,
                                 );
@@ -1446,6 +1453,9 @@ export default function AdminBillingPage() {
                 </p>
                 <p className="text-sm text-blue-800">
                   <strong>Email:</strong> {selectedCustomerEmail}
+                </p>
+                <p className="text-sm text-blue-800 font-mono">
+                  <strong>Application ID:</strong> {selectedApplicationId}
                 </p>
               </div>
               <div>
