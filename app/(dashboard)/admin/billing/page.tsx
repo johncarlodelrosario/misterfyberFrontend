@@ -1,4 +1,3 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -479,7 +478,7 @@ export default function AdminBillingPage() {
         };
       });
 
-      // Build customers from APPLICATIONS
+      // Build customers from APPLICATIONS - FIXED: properly set applicationId
       const applicationCustomers: CustomerItem[] = applicationsList
         .filter(
           (app: any) =>
@@ -516,7 +515,7 @@ export default function AdminBillingPage() {
             unpaidBills: appBills,
             overdueBills: overdueBills,
             billingCycle: appCycle,
-            applicationId: app.applicationId,
+            applicationId: app.applicationId, // FIXED: Use app.applicationId (string ID)
           };
         });
 
@@ -1305,11 +1304,14 @@ export default function AdminBillingPage() {
                         >
                           <FiMail className="w-4 h-4" />
                         </button>
+                        {/* FIXED: Use customer.applicationId (string ID) instead of customer._id */}
                         {customer.type === "application" &&
                           !customer.billingCycle && (
                             <button
                               onClick={() => {
-                                setSelectedApplicationId(customer._id);
+                                setSelectedApplicationId(
+                                  customer.applicationId || "",
+                                );
                                 setSelectedCustomerName(
                                   `${customer.firstName} ${customer.lastName}`,
                                 );
