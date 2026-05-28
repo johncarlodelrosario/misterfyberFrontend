@@ -21,6 +21,11 @@ import {
   FiClock,
   FiBell,
   FiPlay,
+  FiPhone,
+  FiMail,
+  FiUser,
+  FiHome,
+  FiCreditCard,
 } from "react-icons/fi";
 
 // ==================== PERSISTENT STORAGE CONFIGURATION ====================
@@ -466,13 +471,12 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle start billing for application - FIXED: use applicationId string
+  // Handle start billing for application
   const handleStartBilling = async (app: any) => {
     try {
       setProcessingId(app._id);
       toast.loading("Starting billing...", { id: "start-billing" });
 
-      // FIXED: Use app.applicationId (string like "SIL26051540128") NOT app._id
       const result = await startBillingForApplication(app.applicationId, {});
 
       toast.dismiss("start-billing");
@@ -823,7 +827,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Details Modal */}
+      {/* Details Modal - FIXED to show all data properly */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -847,8 +851,10 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Personal Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiUser className="w-4 h-4" />
                   Personal Information
                 </h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -865,30 +871,45 @@ export default function ApplicationsPage() {
                   <div>
                     <span className="text-gray-500">Phone:</span>{" "}
                     <span className="font-medium">
-                      {selectedApp.phoneNumber}
+                      {selectedApp.phoneNumber || "Not provided"}
                     </span>
                   </div>
                 </div>
               </div>
 
+              {/* Address Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">Address</h3>
-                <div className="space-y-1 text-sm">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiHome className="w-4 h-4" />
+                  Address
+                </h3>
+                <div className="space-y-2 text-sm">
                   <div>
                     <span className="text-gray-500">Building:</span>{" "}
-                    {selectedApp.buildingId?.buildingName || "N/A"}
+                    {selectedApp.buildingId?.buildingName ||
+                      selectedApp.buildingName ||
+                      "Not provided"}
                   </div>
                   <div>
                     <span className="text-gray-500">Floor:</span>{" "}
-                    {selectedApp.floor || "N/A"}
+                    {selectedApp.floor &&
+                    selectedApp.floor !== "undefined" &&
+                    selectedApp.floor !== "null"
+                      ? selectedApp.floor
+                      : "Not provided"}
                   </div>
                   <div>
                     <span className="text-gray-500">Unit Number:</span>{" "}
-                    {selectedApp.unitNumber || "N/A"}
+                    {selectedApp.unitNumber &&
+                    selectedApp.unitNumber !== "undefined" &&
+                    selectedApp.unitNumber !== "null"
+                      ? selectedApp.unitNumber
+                      : "Not provided"}
                   </div>
                 </div>
               </div>
 
+              {/* Plan Details */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   Plan Details
@@ -909,9 +930,11 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
+              {/* ID Verification */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-gray-900">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <FiCreditCard className="w-4 h-4" />
                     ID Verification
                   </h3>
                   {selectedApp.idImage && (
@@ -935,15 +958,29 @@ export default function ApplicationsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">ID Type:</span>{" "}
-                    {selectedApp.idType || "N/A"}
+                    {selectedApp.idType && selectedApp.idType !== "undefined"
+                      ? selectedApp.idType
+                      : "Not provided"}
                   </div>
                   <div>
                     <span className="text-gray-500">ID Number:</span>{" "}
-                    {selectedApp.idNumber || "N/A"}
+                    {selectedApp.idNumber &&
+                    selectedApp.idNumber !== "undefined"
+                      ? selectedApp.idNumber
+                      : "Not provided"}
                   </div>
                 </div>
               </div>
 
+              {/* Notes if any */}
+              {selectedApp.notes && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2">Notes</h3>
+                  <p className="text-sm text-gray-700">{selectedApp.notes}</p>
+                </div>
+              )}
+
+              {/* Start Billing Button for Approved Apps without billing */}
               {selectedApp.status === "approved" &&
                 !selectedApp.billingStarted && (
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
@@ -961,6 +998,7 @@ export default function ApplicationsPage() {
                   </div>
                 )}
 
+              {/* Approve/Reject buttons for Pending Apps */}
               {selectedApp.status === "pending" && (
                 <>
                   <div>
