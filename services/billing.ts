@@ -1,4 +1,4 @@
-// services/billing.ts - COMPLETE FIXED VERSION
+// services/billing.ts - COMPLETE FIXED VERSION WITH DELETE
 import api from "./api";
 
 export interface BillingCycle {
@@ -438,6 +438,22 @@ export const reconnectClient = async (data: {
     return response.data;
   } catch (error) {
     console.error("Error reconnecting client:", error);
+    throw error;
+  }
+};
+
+// DELETE BILLING CYCLE FUNCTION
+export const deleteBillingCycle = async (data: {
+  billingCycleId: string;
+  customerId: string;
+  customerType: string;
+}): Promise<any> => {
+  try {
+    const response = await api.delete("/billing/delete-cycle", { data });
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting billing cycle:", error);
     throw error;
   }
 };
