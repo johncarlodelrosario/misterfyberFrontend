@@ -41,7 +41,6 @@ import {
   FiX,
   FiSettings,
   FiUser,
-  FiClipboard,
   FiActivity,
   FiAlertCircle,
   FiWifi,
@@ -54,9 +53,7 @@ import {
   FiCalendar,
   FiInfo,
   FiUserPlus,
-  FiHome,
   FiMail,
-  FiSend,
   FiDollarSign,
   FiFileText,
   FiTrash2,
@@ -68,8 +65,6 @@ const CACHE_KEYS = {
   BILLING_TIMESTAMP: "misterfyber_billing_timestamp",
   BILLING_STATS: "misterfyber_billing_stats",
 };
-
-const CACHE_DURATION = 5 * 60 * 1000;
 
 interface CustomerItem {
   _id: string;
@@ -107,34 +102,10 @@ interface Plan {
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  return `${month}/${day}/${year}`;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${month}/${day}/${date.getFullYear()}`;
 }
-
-const billingStorage = {
-  setItem: (key: string, value: any): void => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error("Failed to save billing data:", e);
-    }
-  },
-  getItem: (key: string): any => {
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-  removeItem: (key: string): void => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {}
-  },
-};
 
 export default function AdminBillingPage() {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
@@ -162,7 +133,6 @@ export default function AdminBillingPage() {
   const [pauseReason, setPauseReason] = useState("");
   const [pauseUntilDate, setPauseUntilDate] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settings, setSettings] = useState<any>(null);
   const [pendingProRated, setPendingProRated] = useState<any[]>([]);
   const [pendingActivations, setPendingActivations] = useState<any[]>([]);
   const [showPendingModal, setShowPendingModal] = useState(false);
@@ -232,7 +202,6 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Load plans
   const loadPlans = async () => {
     try {
       const response = await fetch("/api/plans");
@@ -243,7 +212,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Load buildings
   const loadBuildings = async () => {
     setLoadingBuildings(true);
     try {
@@ -254,23 +222,6 @@ export default function AdminBillingPage() {
       console.error("Failed to load buildings:", error);
     } finally {
       setLoadingBuildings(false);
-    }
-  };
-
-  const handleBuildingChange = (buildingId: string) => {
-    const selectedBuilding = buildings.find((b) => b._id === buildingId);
-    if (selectedBuilding) {
-      setManualCustomerForm({
-        ...manualCustomerForm,
-        buildingId: buildingId,
-        buildingName: selectedBuilding.buildingName,
-      });
-    } else {
-      setManualCustomerForm({
-        ...manualCustomerForm,
-        buildingId: buildingId,
-        buildingName: "",
-      });
     }
   };
 
@@ -306,7 +257,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // DELETE BILLING CYCLE FUNCTION
   const handleDeleteBillingCycle = async (customer: CustomerItem) => {
     if (!customer.billingCycle?._id) {
       toast.error("No billing cycle found to delete");
@@ -466,11 +416,9 @@ export default function AdminBillingPage() {
 
       const cyclesData = cyclesResult?.data || [];
       const billsList = billsResult?.data || [];
-      const settingsData = settingsResult?.data || null;
       const usersList = usersResult?.data || [];
       const applicationsList = applicationsResult?.data || [];
       const pendingPaymentsList = pendingPaymentsResult?.data || [];
-      const summaryData = summaryResult?.data || {};
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
 
@@ -480,11 +428,9 @@ export default function AdminBillingPage() {
       console.log(
         `📊 Cycles: ${cyclesData.length}, Bills: ${billsList.length}`,
       );
-      console.log("📋 Bills list sample:", billsList.slice(0, 2));
 
       setBillingCycles(cyclesData);
       setBills(billsList);
-      if (settingsData) setSettings(settingsData);
       setPendingPayments(pendingPaymentsList);
       setCustomersWithoutAccounts(customersWithoutAccountsData);
 
@@ -503,7 +449,8 @@ export default function AdminBillingPage() {
             bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
         );
         const userCycle = cyclesData.find(
-          (cycle: any) => cycle.userId?._id === user._id,
+          (cycle: any) =>
+            cycle.userId?._id === user._id || cycle.userId === user._id,
         );
 
         return {
@@ -520,7 +467,7 @@ export default function AdminBillingPage() {
           currentBalance: totalBalance,
           unpaidBills: userBills,
           overdueBills: overdueBills,
-          billingCycle: userCycle,
+          billingCycle: userCycle || null,
         };
       });
 
@@ -543,8 +490,17 @@ export default function AdminBillingPage() {
             (bill: any) =>
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
+
+          // Find billing cycle by applicationId
           const appCycle = cyclesData.find(
-            (cycle: any) => cycle.applicationId === app._id,
+            (cycle: any) =>
+              cycle.applicationId === app.applicationId ||
+              cycle.applicationId === app._id ||
+              cycle.applicationId?._id === app._id,
+          );
+
+          console.log(
+            `Application: ${app.email}, appId: ${app.applicationId}, has cycle: ${!!appCycle}`,
           );
 
           return {
@@ -560,13 +516,19 @@ export default function AdminBillingPage() {
             currentBalance: totalBalance,
             unpaidBills: appBills,
             overdueBills: overdueBills,
-            billingCycle: appCycle,
+            billingCycle: appCycle || null,
             applicationId: app.applicationId,
           };
         });
 
       const allCustomers = [...userCustomers, ...applicationCustomers];
       allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+
+      const customersWithCycles = allCustomers.filter((c) => c.billingCycle);
+      console.log(
+        `📊 Total customers: ${allCustomers.length}, With billing cycles: ${customersWithCycles.length}`,
+      );
+
       setCustomers(allCustomers);
 
       // Calculate stats
@@ -612,19 +574,8 @@ export default function AdminBillingPage() {
       };
 
       setStats(newStats);
-
-      billingStorage.setItem(CACHE_KEYS.BILLING_DATA, {
-        customers: allCustomers,
-        billingCycles: cyclesData,
-        bills: billsList,
-      });
-      billingStorage.setItem(CACHE_KEYS.BILLING_TIMESTAMP, Date.now());
-      billingStorage.setItem(CACHE_KEYS.BILLING_STATS, newStats);
-
       loadedRef.current = true;
-      console.log(
-        `✅ Loaded ${allCustomers.length} customers (${userCustomers.length} users, ${applicationCustomers.length} applications)`,
-      );
+      console.log(`✅ Loaded ${allCustomers.length} customers`);
     } catch (error) {
       console.error("Failed to load billing data:", error);
       if (isMountedRef.current) {
@@ -918,44 +869,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleConfirmProRatedPayment = async (
-    userId: string,
-    billId: string,
-    userEmail: string,
-  ) => {
-    if (!confirm(`Confirm pro-rated payment for ${userEmail}?`)) return;
-    try {
-      await confirmProRatedPayment({
-        userId,
-        paymentDetails: { confirmedBy: "admin", confirmedAt: new Date() },
-      });
-      toast.success(
-        `✅ Pro-rated payment confirmed! ${userEmail}'s service is now active.`,
-      );
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to confirm payment");
-    }
-  };
-
-  const handleStartMonthlyBilling = async (
-    userId: string,
-    userEmail: string,
-  ) => {
-    if (!confirm(`Start monthly billing for ${userEmail}?`)) return;
-    try {
-      await startMonthlyBilling({ userId });
-      toast.success(`✅ Monthly billing started for ${userEmail}!`);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.message || "Failed to start monthly billing",
-      );
-    }
-  };
-
   const getStatusBadge = (customer: CustomerItem) => {
     if (customer.type === "application") {
       if (customer.billingCycle?.status === "pending_activation")
@@ -970,13 +883,7 @@ export default function AdminBillingPage() {
     if (customer.status === "suspended") return "bg-red-100 text-red-800";
     if (customer.status === "pending_activation")
       return "bg-purple-100 text-purple-800";
-    const styles: Record<string, string> = {
-      active: "bg-green-100 text-green-800",
-      suspended: "bg-red-100 text-red-800",
-      pending: "bg-orange-100 text-orange-800",
-      inactive: "bg-gray-100 text-gray-800",
-    };
-    return styles[customer.status] || "bg-gray-100 text-gray-800";
+    return "bg-gray-100 text-gray-800";
   };
 
   const getStatusText = (customer: CustomerItem) => {
@@ -987,13 +894,10 @@ export default function AdminBillingPage() {
       return "Approved";
     }
     if (customer.billingCycle?.status === "paused") return "Paused";
-    return customer.status === "active"
-      ? "Active"
-      : customer.status === "suspended"
-        ? "Suspended"
-        : customer.status === "pending_activation"
-          ? "Pending Activation"
-          : customer.status || "Inactive";
+    if (customer.status === "active") return "Active";
+    if (customer.status === "suspended") return "Suspended";
+    if (customer.status === "pending_activation") return "Pending Activation";
+    return customer.status || "Inactive";
   };
 
   const getBalanceColor = (balance: number) => {
@@ -1406,7 +1310,7 @@ export default function AdminBillingPage() {
                           <FiMail className="w-4 h-4" />
                         </button>
 
-                        {/* APPLICATIONS - Start Billing (only if no billing cycle) */}
+                        {/* APPLICATIONS */}
                         {customer.type === "application" && (
                           <>
                             {!customer.billingCycle ? (
@@ -1427,10 +1331,9 @@ export default function AdminBillingPage() {
                                 <FiPlay className="w-4 h-4" />
                               </button>
                             ) : (
-                              // If has billing cycle, show disabled play button
                               <button
                                 disabled
-                                className="p-1 text-gray-300 cursor-not-allowed"
+                                className="p-1 text-gray-300 cursor-not-allowed opacity-50"
                                 title="Billing already started"
                               >
                                 <FiPlay className="w-4 h-4" />
@@ -1444,7 +1347,7 @@ export default function AdminBillingPage() {
                                   setCustomerToDelete(customer);
                                   setShowDeleteConfirmModal(true);
                                 }}
-                                className="p-1 text-gray-600 hover:text-red-800"
+                                className="p-1 text-red-600 hover:text-red-800"
                                 title="Delete Billing Cycle"
                               >
                                 <FiTrash2 className="w-4 h-4" />
@@ -1453,10 +1356,9 @@ export default function AdminBillingPage() {
                           </>
                         )}
 
-                        {/* USER actions */}
+                        {/* USERS */}
                         {customer.type === "user" && (
                           <>
-                            {/* Start Billing - Only if no billing cycle or cancelled */}
                             {(!customer.billingCycle ||
                               customer.billingCycle?.status ===
                                 "cancelled") && (
@@ -1476,19 +1378,17 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* If has billing cycle, show disabled play button */}
                             {customer.billingCycle &&
                               customer.billingCycle?.status !== "cancelled" && (
                                 <button
                                   disabled
-                                  className="p-1 text-gray-300 cursor-not-allowed"
+                                  className="p-1 text-gray-300 cursor-not-allowed opacity-50"
                                   title="Billing already started"
                                 >
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
 
-                            {/* Pause button - for active billing cycles */}
                             {customer.billingCycle?.status === "active" && (
                               <button
                                 onClick={() => {
@@ -1502,7 +1402,6 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* Resume button - for paused billing cycles */}
                             {customer.billingCycle?.status === "paused" && (
                               <button
                                 onClick={() =>
@@ -1518,7 +1417,6 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* Stop/Cancel button - for active billing cycles */}
                             {customer.billingCycle?.status === "active" && (
                               <button
                                 onClick={() =>
@@ -1534,7 +1432,6 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* DISCONNECT button - for active users */}
                             {customer.status === "active" && (
                               <button
                                 onClick={() => handleDisconnect(customer)}
@@ -1545,7 +1442,6 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* RECONNECT button - for suspended users */}
                             {customer.status === "suspended" && (
                               <button
                                 onClick={() => handleReconnect(customer)}
@@ -1556,14 +1452,13 @@ export default function AdminBillingPage() {
                               </button>
                             )}
 
-                            {/* DELETE button - for users with billing cycles */}
                             {customer.billingCycle && (
                               <button
                                 onClick={() => {
                                   setCustomerToDelete(customer);
                                   setShowDeleteConfirmModal(true);
                                 }}
-                                className="p-1 text-gray-600 hover:text-red-800"
+                                className="p-1 text-red-600 hover:text-red-800"
                                 title="Delete Billing Cycle"
                               >
                                 <FiTrash2 className="w-4 h-4" />
