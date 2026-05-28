@@ -311,9 +311,19 @@ export const createManualCustomer = async (data: {
   installationDate?: string;
   notes?: string;
 }) => {
-  const response = await api.post("/admin/manual-customer", data);
-  clearAdminCache();
-  return response.data;
+  try {
+    console.log("📝 Creating manual customer with data:", data);
+    const response = await api.post("/admin/customers/manual", data);
+    console.log("✅ Manual customer created:", response.data);
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "❌ Error creating manual customer:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
@@ -325,7 +335,7 @@ export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
       if (cached) return cached;
     }
 
-    const response = await api.get("/admin/customers-without-accounts");
+    const response = await api.get("/admin/customers/without-accounts");
     console.log("📦 API Response:", response.data);
     const result = response.data;
 
