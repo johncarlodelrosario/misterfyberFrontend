@@ -22,6 +22,9 @@ import {
   FiUser,
   FiFileText,
   FiInfo,
+  FiMail,
+  FiPhone,
+  FiHash,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -79,6 +82,46 @@ export default function AdminPaymentsPage() {
   });
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
+
+  // Helper function to get customer info from application
+  const getCustomerInfoFromPayment = useCallback((payment: any) => {
+    // Priority 1: Get from application object (populated)
+    if (payment.application) {
+      const app = payment.application;
+      return {
+        name:
+          app.applicantName ||
+          `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
+          "—",
+        email: app.email || "—",
+        phone: app.phoneNumber || "—",
+        applicationId: payment.applicationId || app._id || "—",
+        address: app.address || "—",
+      };
+    }
+
+    // Priority 2: Get from userId if available (fallback)
+    if (payment.userId && typeof payment.userId === "object") {
+      return {
+        name:
+          `${payment.userId.firstName || ""} ${payment.userId.lastName || ""}`.trim() ||
+          "—",
+        email: payment.userId.email || "—",
+        phone: payment.userId.phoneNumber || "—",
+        applicationId: payment.applicationId || "—",
+        address: "—",
+      };
+    }
+
+    // Priority 3: Only applicationId available
+    return {
+      name: "—",
+      email: "—",
+      phone: "—",
+      applicationId: payment.applicationId || "—",
+      address: "—",
+    };
+  }, []);
 
   // Load from cache first
   const loadFromCache = useCallback(() => {
@@ -302,14 +345,19 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  const filteredPayments = payments.filter(
-    (payment) =>
-      payment.userId?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
-      payment.userId?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
-      payment.userId?.email?.toLowerCase().includes(search.toLowerCase()) ||
-      payment.referenceNumber?.toLowerCase().includes(search.toLowerCase()) ||
-      payment.applicationId?.toLowerCase().includes(search.toLowerCase()),
-  );
+  // Search based on application data
+  const filteredPayments = payments.filter((payment) => {
+    const customerInfo = getCustomerInfoFromPayment(payment);
+    const searchLower = search.toLowerCase();
+
+    return (
+      customerInfo.name.toLowerCase().includes(searchLower) ||
+      customerInfo.email.toLowerCase().includes(searchLower) ||
+      customerInfo.applicationId.toLowerCase().includes(searchLower) ||
+      payment.referenceNumber?.toLowerCase().includes(searchLower) ||
+      payment.billingId?.invoiceNumber?.toLowerCase().includes(searchLower)
+    );
+  });
 
   if (loading && payments.length === 0) {
     return (
@@ -435,7 +483,7 @@ export default function AdminPaymentsPage() {
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by name, email, reference, or application ID..."
+              placeholder="Search by customer name, email, application ID, or reference number..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
@@ -505,76 +553,84 @@ export default function AdminPaymentsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {pendingPayments.map((payment) => (
-                    <tr key={payment._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {formatDate(payment.createdAt)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {payment.userId?.firstName || "—"}{" "}
-                            {payment.userId?.lastName || ""}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {payment.userId?.email || "No email"}
-                          </p>
-                          {payment.applicationId && (
-                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                              <FiFileText className="w-3 h-3" />
-                              App ID: {payment.applicationId}
+                  {pendingPayments.map((payment) => {
+                    const customerInfo = getCustomerInfoFromPayment(payment);
+                    return (
+                      <tr key={payment._id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {formatDate(payment.createdAt)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            <p className="font-medium text-gray-900 flex items-center gap-2">
+                              <FiUser className="w-4 h-4 text-gray-400" />
+                              {customerInfo.name}
                             </p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-mono text-gray-900">
-                        {payment.referenceNumber}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        {formatCurrency(payment.amount)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
-                          <span>
-                            {getPaymentMethodIcon(payment.paymentMethod)}
+                            <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                              <FiMail className="w-3 h-3" />
+                              {customerInfo.email}
+                            </p>
+                            {customerInfo.phone !== "—" && (
+                              <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                                <FiPhone className="w-3 h-3" />
+                                {customerInfo.phone}
+                              </p>
+                            )}
+                            <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                              <FiHash className="w-3 h-3" />
+                              App ID: {customerInfo.applicationId}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-mono text-gray-900">
+                          {payment.referenceNumber}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                          {formatCurrency(payment.amount)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                            <span>
+                              {getPaymentMethodIcon(payment.paymentMethod)}
+                            </span>
+                            <span className="capitalize">
+                              {payment.paymentMethod}
+                            </span>
                           </span>
-                          <span className="capitalize">
-                            {payment.paymentMethod}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                        {payment.paymentDetails?.notes || "-"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleConfirmPayment(payment._id)}
-                            disabled={confirming}
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <FiCheckCircle className="w-4 h-4" />
-                            Confirm
-                          </button>
-                          <button
-                            onClick={() => handleRejectPayment(payment._id)}
-                            disabled={rejecting}
-                            className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <FiXCircle className="w-4 h-4" />
-                            Reject
-                          </button>
-                          <button
-                            onClick={() => setSelectedPayment(payment)}
-                            className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
-                            title="View Details"
-                          >
-                            <FiEye className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                          {payment.paymentDetails?.notes || "-"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleConfirmPayment(payment._id)}
+                              disabled={confirming}
+                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50"
+                            >
+                              <FiCheckCircle className="w-4 h-4" />
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => handleRejectPayment(payment._id)}
+                              disabled={rejecting}
+                              className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50"
+                            >
+                              <FiXCircle className="w-4 h-4" />
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => setSelectedPayment(payment)}
+                              className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
+                              title="View Details"
+                            >
+                              <FiEye className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -596,10 +652,10 @@ export default function AdminPaymentsPage() {
                   Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Customer
+                  Customer / Application
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Reference / App ID
+                  Reference / Invoice
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Amount
@@ -632,85 +688,93 @@ export default function AdminPaymentsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredPayments.map((payment) => (
-                  <tr key={payment._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {formatDate(payment.createdAt)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {payment.userId?.firstName || "—"}{" "}
-                          {payment.userId?.lastName || ""}
+                filteredPayments.map((payment) => {
+                  const customerInfo = getCustomerInfoFromPayment(payment);
+                  return (
+                    <tr key={payment._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {formatDate(payment.createdAt)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div>
+                          <p className="font-medium text-gray-900 flex items-center gap-2">
+                            <FiUser className="w-4 h-4 text-gray-400" />
+                            {customerInfo.name}
+                          </p>
+                          <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                            <FiMail className="w-3 h-3" />
+                            {customerInfo.email}
+                          </p>
+                          {customerInfo.phone !== "—" && (
+                            <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                              <FiPhone className="w-3 h-3" />
+                              {customerInfo.phone}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                            <FiHash className="w-3 h-3" />
+                            App ID: {customerInfo.applicationId}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-mono text-gray-900">
+                          {payment.referenceNumber}
                         </p>
-                        <p className="text-sm text-gray-500">
-                          {payment.userId?.email || "No email"}
-                        </p>
-                        {payment.applicationId && (
-                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                            <FiFileText className="w-3 h-3" />
-                            App: {payment.applicationId}
+                        {payment.billingId?.invoiceNumber && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Invoice: {payment.billingId.invoiceNumber}
                           </p>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-mono text-gray-900">
-                        {payment.referenceNumber}
-                      </p>
-                      {payment.billingId?.invoiceNumber && (
-                        <p className="text-xs text-gray-400">
-                          Invoice: {payment.billingId.invoiceNumber}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                      {formatCurrency(payment.amount)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
-                        <span>
-                          {getPaymentMethodIcon(payment.paymentMethod)}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                          <span>
+                            {getPaymentMethodIcon(payment.paymentMethod)}
+                          </span>
+                          <span className="capitalize">
+                            {payment.paymentMethod}
+                          </span>
                         </span>
-                        <span className="capitalize">
-                          {payment.paymentMethod}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
+                        >
+                          {payment.status === "pending"
+                            ? "Pending"
+                            : payment.status === "processing"
+                              ? "Processing"
+                              : payment.status === "completed"
+                                ? "Completed"
+                                : payment.status === "failed"
+                                  ? "Failed"
+                                  : payment.status === "refunded"
+                                    ? "Refunded"
+                                    : payment.status}
                         </span>
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
-                      >
-                        {payment.status === "pending"
-                          ? "Pending"
-                          : payment.status === "processing"
-                            ? "Processing"
-                            : payment.status === "completed"
-                              ? "Completed"
-                              : payment.status === "failed"
-                                ? "Failed"
-                                : payment.status === "refunded"
-                                  ? "Refunded"
-                                  : payment.status}
-                      </span>
-                      {payment.paidAt && payment.status === "completed" && (
-                        <p className="text-xs text-green-600 mt-1">
-                          Paid: {formatDate(payment.paidAt)}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedPayment(payment)}
-                        className="text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
-                        title="View Details"
-                      >
-                        <FiEye className="w-5 h-5" />
-                        <span className="text-sm">View</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                        {payment.paidAt && payment.status === "completed" && (
+                          <p className="text-xs text-green-600 mt-1">
+                            Paid: {formatDate(payment.paidAt)}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => setSelectedPayment(payment)}
+                          className="text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
+                          title="View Details"
+                        >
+                          <FiEye className="w-5 h-5" />
+                          <span className="text-sm">View</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -806,33 +870,75 @@ export default function AdminPaymentsPage() {
                     </span>
                   </div>
                 )}
-                {selectedPayment.applicationId && (
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-500">Application ID:</span>
-                    <span className="font-mono text-gray-900">
-                      {selectedPayment.applicationId}
-                    </span>
+
+                {/* Customer Information Section - Based on Application */}
+                <div className="py-2 border-b">
+                  <span className="text-gray-500 font-semibold">
+                    Customer Information:
+                  </span>
+                  <div className="mt-2 space-y-2">
+                    {(() => {
+                      const customerInfo =
+                        getCustomerInfoFromPayment(selectedPayment);
+                      return (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <FiUser className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500">Name</p>
+                              <p className="font-medium text-gray-900">
+                                {customerInfo.name}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <FiMail className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500">Email</p>
+                              <p className="text-gray-900">
+                                {customerInfo.email}
+                              </p>
+                            </div>
+                          </div>
+                          {customerInfo.phone !== "—" && (
+                            <div className="flex items-start gap-2">
+                              <FiPhone className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <div>
+                                <p className="text-sm text-gray-500">Phone</p>
+                                <p className="text-gray-900">
+                                  {customerInfo.phone}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex items-start gap-2">
+                            <FiHash className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <div>
+                              <p className="text-sm text-gray-500">
+                                Application ID
+                              </p>
+                              <p className="font-mono text-gray-900">
+                                {customerInfo.applicationId}
+                              </p>
+                            </div>
+                          </div>
+                          {customerInfo.address !== "—" && (
+                            <div className="flex items-start gap-2">
+                              <FiFileText className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <div>
+                                <p className="text-sm text-gray-500">Address</p>
+                                <p className="text-gray-900">
+                                  {customerInfo.address}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
-                )}
-                {selectedPayment.userId && (
-                  <div className="py-2 border-b">
-                    <span className="text-gray-500">Customer:</span>
-                    <div className="mt-1">
-                      <p className="font-medium text-gray-900">
-                        {selectedPayment.userId.firstName || "—"}{" "}
-                        {selectedPayment.userId.lastName || ""}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {selectedPayment.userId.email || "No email"}
-                      </p>
-                      {selectedPayment.userId.phoneNumber && (
-                        <p className="text-sm text-gray-500">
-                          {selectedPayment.userId.phoneNumber}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                </div>
+
                 {selectedPayment.paymentDetails?.notes && (
                   <div className="py-2">
                     <span className="text-gray-500">Notes:</span>
