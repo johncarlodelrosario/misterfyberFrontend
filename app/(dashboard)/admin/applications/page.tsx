@@ -5,7 +5,9 @@ import {
   getAllApplications,
   approveApplication,
   rejectApplication,
+  getApplicationBillingStatus,
 } from "@/services/admin";
+import { startBillingForApplication } from "@/services/billing";
 import toast from "react-hot-toast";
 import {
   FiEye,
@@ -18,6 +20,7 @@ import {
   FiDatabase,
   FiClock,
   FiBell,
+  FiPlay,
 } from "react-icons/fi";
 
 // ==================== PERSISTENT STORAGE CONFIGURATION ====================
@@ -126,6 +129,8 @@ export default function ApplicationsPage() {
   );
   const [hasNewApplicant, setHasNewApplicant] = useState(false);
   const [newApplicantCount, setNewApplicantCount] = useState(0);
+  const [showBillingModal, setShowBillingModal] = useState(false);
+  const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
   const [filter, setFilter] = useState<FilterState>(() => {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
     return savedFilter || { searchTerm: "", statusFilter: "all" };
@@ -461,6 +466,35 @@ export default function ApplicationsPage() {
     }
   };
 
+  // Handle start billing for application - FIXED: use applicationId string
+  const handleStartBilling = async (app: any) => {
+    try {
+      setProcessingId(app._id);
+      toast.loading("Starting billing...", { id: "start-billing" });
+
+      // FIXED: Use app.applicationId (string like "SIL26051540128") NOT app._id
+      const result = await startBillingForApplication(app.applicationId, {});
+
+      toast.dismiss("start-billing");
+
+      if (result.success) {
+        toast.success(
+          `✅ Billing started for ${app.firstName} ${app.lastName}! Invoice sent to ${app.email}`,
+        );
+        fetchApplications();
+        setSelectedAppForBilling(null);
+        setShowBillingModal(false);
+      } else {
+        toast.error(result.message || "Failed to start billing");
+      }
+    } catch (error: any) {
+      toast.dismiss("start-billing");
+      toast.error(error.response?.data?.message || "Failed to start billing");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   // Get image URL
   const getImageUrl = useCallback(
     (imagePath: string) => {
@@ -754,13 +788,28 @@ export default function ApplicationsPage() {
                       {new Date(app.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => setSelectedApp(app)}
-                        className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
-                      >
-                        <FiEye className="w-4 h-4" />
-                        View
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedApp(app)}
+                          className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
+                        >
+                          <FiEye className="w-4 h-4" />
+                          View
+                        </button>
+                        {app.status === "approved" && !app.billingStarted && (
+                          <button
+                            onClick={() => {
+                              setSelectedAppForBilling(app);
+                              setShowBillingModal(true);
+                            }}
+                            className="text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
+                            title="Start Billing"
+                          >
+                            <FiPlay className="w-4 h-4" />
+                            Start Billing
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -895,6 +944,23 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
+              {selectedApp.status === "approved" &&
+                !selectedApp.billingStarted && (
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => {
+                        setSelectedAppForBilling(selectedApp);
+                        setShowBillingModal(true);
+                        setSelectedApp(null);
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                    >
+                      <FiPlay className="w-4 h-4" />
+                      Start Billing
+                    </button>
+                  </div>
+                )}
+
               {selectedApp.status === "pending" && (
                 <>
                   <div>
@@ -956,6 +1022,79 @@ export default function ApplicationsPage() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Billing Modal */}
+      {showBillingModal && selectedAppForBilling && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Start Billing</h2>
+              <button
+                onClick={() => {
+                  setShowBillingModal(false);
+                  setSelectedAppForBilling(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>Customer:</strong> {selectedAppForBilling.firstName}{" "}
+                  {selectedAppForBilling.lastName}
+                </p>
+                <p className="text-sm text-blue-800">
+                  <strong>Email:</strong> {selectedAppForBilling.email}
+                </p>
+                <p className="text-sm text-blue-800 font-mono">
+                  <strong>Application ID:</strong>{" "}
+                  {selectedAppForBilling.applicationId}
+                </p>
+                <p className="text-sm text-blue-800">
+                  <strong>Plan:</strong>{" "}
+                  {selectedAppForBilling.planId?.name || "N/A"} - ₱
+                  {selectedAppForBilling.planId?.price || 0}/month
+                </p>
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ Starting billing will:
+                </p>
+                <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                  <li>Generate pro-rated bill based on current date</li>
+                  <li>Send invoice to customer's email</li>
+                  <li>Create billing cycle for this application</li>
+                </ul>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowBillingModal(false);
+                    setSelectedAppForBilling(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleStartBilling(selectedAppForBilling)}
+                  disabled={processingId === selectedAppForBilling._id}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {processingId === selectedAppForBilling._id ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <FiPlay className="w-4 h-4" />
+                  )}
+                  Start Billing
+                </button>
+              </div>
             </div>
           </div>
         </div>
