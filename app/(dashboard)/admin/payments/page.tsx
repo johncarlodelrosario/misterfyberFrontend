@@ -291,7 +291,7 @@ export default function AdminPaymentsPage() {
   const getPaymentMethodIcon = (method: string) => {
     switch (method) {
       case "manual":
-        return "💰";
+
       case "gcash":
         return "📱";
       case "maya":
