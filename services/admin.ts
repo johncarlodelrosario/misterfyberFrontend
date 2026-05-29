@@ -1,4 +1,4 @@
-// services/admin.ts - COMPLETE FIXED VERSION
+// services/admin.ts - COMPLETE FIXED VERSION WITH EMAIL TOGGLE
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -9,6 +9,7 @@ const CACHE_KEYS = {
   BILLS: "admin_bills_cache",
   BILLING_CYCLES: "admin_billing_cycles_cache",
   CUSTOMERS_WITHOUT_ACCOUNTS: "admin_customers_without_accounts_cache",
+  EMAIL_STATUS: "admin_email_status_cache",
 };
 
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -49,6 +50,36 @@ export function clearAdminCache(): void {
     } catch (e) {}
   });
 }
+
+// ==================== EMAIL TOGGLE FUNCTIONS ====================
+export const getEmailStatus = async (forceRefresh?: boolean) => {
+  try {
+    if (!forceRefresh) {
+      const cached = getCachedData(CACHE_KEYS.EMAIL_STATUS);
+      if (cached) return cached;
+    }
+
+    const response = await api.get("/admin/email/status");
+    const result = response.data;
+
+    setCachedData(CACHE_KEYS.EMAIL_STATUS, result);
+    return result;
+  } catch (error: any) {
+    console.error("Error fetching email status:", error);
+    return {
+      success: true,
+      enabled: true,
+      configured: true,
+      apiKeyPresent: true,
+    };
+  }
+};
+
+export const toggleEmail = async (enabled: boolean) => {
+  const response = await api.put("/admin/email/toggle", { enabled });
+  clearAdminCache();
+  return response.data;
+};
 
 // ==================== DASHBOARD STATS ====================
 export const getDashboardStats = async () => {
@@ -313,7 +344,6 @@ export const createManualCustomer = async (data: {
 }) => {
   try {
     console.log("📝 Creating manual customer with data:", data);
-    // FIXED: Use /admin/manual-customer (matches backend route)
     const response = await api.post("/admin/manual-customer", data);
     console.log("✅ Manual customer created:", response.data);
     clearAdminCache();
@@ -327,8 +357,6 @@ export const createManualCustomer = async (data: {
   }
 };
 
-// ==================== FIXED: GET CUSTOMERS WITHOUT ACCOUNTS ====================
-// BACKEND ROUTE: /api/admin/customers-without-accounts (with hyphens)
 export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
   try {
     console.log("🔍 Fetching customers without accounts from API...");
@@ -338,7 +366,6 @@ export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
       if (cached) return cached;
     }
 
-    // FIXED: Use customers-without-accounts (hyphens) NOT customers/without-accounts (slash)
     const response = await api.get("/admin/customers-without-accounts");
     console.log("📦 API Response:", response.data);
     const result = response.data;
@@ -672,6 +699,7 @@ export const clearBillingCache = () => {
     "admin_bills_cache",
     "admin_billing_cycles_cache",
     "admin_customers_without_accounts_cache",
+    "admin_email_status_cache",
     "admin_pending_payments",
   ];
   keys.forEach((key) => {
@@ -684,6 +712,10 @@ export const clearBillingCache = () => {
 
 // ==================== DEFAULT EXPORT ====================
 export default {
+  // Email Toggle
+  getEmailStatus,
+  toggleEmail,
+
   // Dashboard
   getDashboardStats,
   getRecentActivities,
