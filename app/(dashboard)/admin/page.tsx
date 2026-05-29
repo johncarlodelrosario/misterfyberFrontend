@@ -13,6 +13,8 @@ import {
   FiCheckCircle,
   FiAlertCircle,
   FiLoader,
+  FiBell,
+  FiXCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import {
@@ -20,12 +22,16 @@ import {
   getAllUsers,
   getAllBills,
   getDashboardStats,
+  getEmailStatus,
+  toggleEmail,
 } from "@/services/admin";
 import * as XLSX from "xlsx";
 
 export default function AdminReportsPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [togglingEmail, setTogglingEmail] = useState(false);
   const [dateRange, setDateRange] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       .toISOString()
@@ -46,6 +52,7 @@ export default function AdminReportsPage() {
 
   useEffect(() => {
     fetchStats();
+    fetchEmailStatus();
   }, []);
 
   const fetchStats = async () => {
@@ -63,6 +70,35 @@ export default function AdminReportsPage() {
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
+    }
+  };
+
+  const fetchEmailStatus = async () => {
+    try {
+      const result = await getEmailStatus();
+      setEmailEnabled(result.enabled);
+    } catch (error) {
+      console.error("Failed to fetch email status:", error);
+      setEmailEnabled(true);
+    }
+  };
+
+  const handleToggleEmail = async () => {
+    setTogglingEmail(true);
+    try {
+      const newState = !emailEnabled;
+      const result = await toggleEmail(newState);
+      if (result.success) {
+        setEmailEnabled(newState);
+        toast.success(
+          `Email sending ${newState ? "enabled" : "disabled"} successfully`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to toggle email:", error);
+      toast.error("Failed to toggle email settings");
+    } finally {
+      setTogglingEmail(false);
     }
   };
 
@@ -164,28 +200,15 @@ export default function AdminReportsPage() {
         ],
       ];
 
-      const wsData = [...summary, [], ...reportData.map(Object.values)];
-      const wsHeaders = [
-        ...summary.map(() => []),
-        [],
-        Object.keys(reportData[0] || {}),
-      ];
-
-      const ws = XLSX.utils.aoa_to_sheet(wsHeaders);
-      const wsDataOnly = XLSX.utils.aoa_to_sheet(wsData);
-
-      // Merge headers with data
-      const finalWs = XLSX.utils.book_new();
       const finalData = [
         ...summary,
         [],
         Object.keys(reportData[0] || {}),
         ...reportData.map(Object.values),
       ];
-      const finalSheet = XLSX.utils.aoa_to_sheet(finalData);
+      const ws = XLSX.utils.aoa_to_sheet(finalData);
 
-      // Set column widths
-      finalSheet["!cols"] = [
+      ws["!cols"] = [
         { wch: 25 },
         { wch: 25 },
         { wch: 15 },
@@ -201,7 +224,7 @@ export default function AdminReportsPage() {
       ];
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, finalSheet, "Payments Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Payments Report");
       XLSX.writeFile(
         wb,
         `payments_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
@@ -471,10 +494,6 @@ export default function AdminReportsPage() {
       payments.forEach((payment: any) => {
         const date = new Date(payment.createdAt);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const monthName = date.toLocaleDateString("en-PH", {
-          year: "numeric",
-          month: "long",
-        });
         if (!monthlyData[monthKey]) {
           monthlyData[monthKey] = { payments: 0, bills: 0, revenue: 0 };
         }
@@ -607,7 +626,7 @@ export default function AdminReportsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
+      {/* Page Header with Email Toggle */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 text-white">
         <div className="flex justify-between items-start flex-wrap gap-4">
           <div>
@@ -617,6 +636,43 @@ export default function AdminReportsPage() {
             </p>
           </div>
           <div className="flex gap-3">
+            {/* Email Toggle Button */}
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <FiMail className="w-5 h-5 text-white" />
+                  <span className="text-sm font-medium text-white">
+                    Email Alerts
+                  </span>
+                </div>
+                <button
+                  onClick={handleToggleEmail}
+                  disabled={togglingEmail}
+                  className={`
+                    relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                    ${emailEnabled ? "bg-green-500" : "bg-gray-400"}
+                    ${togglingEmail ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+                  `}
+                >
+                  <span
+                    className={`
+                      inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                      ${emailEnabled ? "translate-x-6" : "translate-x-1"}
+                    `}
+                  />
+                </button>
+                <span
+                  className={`text-xs ${emailEnabled ? "text-green-300" : "text-gray-300"}`}
+                >
+                  {emailEnabled ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p className="text-xs text-blue-200 mt-1">
+                {emailEnabled
+                  ? "All email notifications will be sent"
+                  : "No emails will be sent to customers"}
+              </p>
+            </div>
             <button
               onClick={handlePrint}
               className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -980,6 +1036,51 @@ export default function AdminReportsPage() {
               generate.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Email Status Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Email Notification Status
+          </h3>
+          <FiBell className="w-5 h-5 text-gray-400" />
+        </div>
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            {emailEnabled ? (
+              <FiCheckCircle className="w-8 h-8 text-green-500" />
+            ) : (
+              <FiXCircle className="w-8 h-8 text-red-500" />
+            )}
+            <div>
+              <p className="font-medium text-gray-900">
+                Email sending is currently{" "}
+                {emailEnabled ? "ENABLED" : "DISABLED"}
+              </p>
+              <p className="text-sm text-gray-500">
+                {emailEnabled
+                  ? "All system emails will be sent to customers"
+                  : "No emails will be sent. This is useful for testing or maintenance."}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleToggleEmail}
+            disabled={togglingEmail}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              emailEnabled
+                ? "bg-red-100 text-red-700 hover:bg-red-200"
+                : "bg-green-100 text-green-700 hover:bg-green-200"
+            } ${togglingEmail ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            {togglingEmail
+              ? "Updating..."
+              : emailEnabled
+                ? "Disable Emails"
+                : "Enable Emails"}
+          </button>
         </div>
       </div>
     </div>
