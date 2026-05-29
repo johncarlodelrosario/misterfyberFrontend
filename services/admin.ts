@@ -1,4 +1,4 @@
-// services/admin.ts - COMPLETE FIXED VERSION WITH EMAIL TOGGLE
+// services/admin.ts - Updated getAllPayments to use correct endpoint
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -50,6 +50,67 @@ export function clearAdminCache(): void {
     } catch (e) {}
   });
 }
+
+// ==================== PAYMENT MANAGEMENT (UPDATED) ====================
+export const getAllPayments = async (params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  forceRefresh?: boolean;
+}) => {
+  try {
+    if (!params?.forceRefresh) {
+      const cached = getCachedData(CACHE_KEYS.PAYMENTS);
+      if (cached) return cached;
+    }
+
+    // Use the admin/all endpoint which returns populated data
+    const response = await api.get("/payments/admin/all", { params });
+    const result = response.data;
+
+    setCachedData(CACHE_KEYS.PAYMENTS, result);
+    return result;
+  } catch (error: any) {
+    console.error(
+      "Error fetching payments:",
+      error.response?.data || error.message,
+    );
+    return { data: [], totalPages: 0, currentPage: 1, total: 0, stats: {} };
+  }
+};
+
+export const getPendingPayments = async (forceRefresh?: boolean) => {
+  try {
+    if (!forceRefresh) {
+      const cached = getCachedData("admin_pending_payments");
+      if (cached) return cached;
+    }
+
+    const response = await api.get("/payments/admin/pending");
+    const result = response.data;
+
+    setCachedData("admin_pending_payments", result);
+    return result;
+  } catch (error: any) {
+    console.error(
+      "Error fetching pending payments:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: [] };
+  }
+};
+
+export const confirmPayment = async (paymentId: string, notes?: string) => {
+  const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
+  clearAdminCache();
+  return response.data;
+};
+
+export const rejectPayment = async (paymentId: string, reason?: string) => {
+  const response = await api.put(`/payments/${paymentId}/reject`, { reason });
+  clearAdminCache();
+  return response.data;
+};
 
 // ==================== EMAIL TOGGLE FUNCTIONS ====================
 export const getEmailStatus = async (forceRefresh?: boolean) => {
@@ -234,66 +295,6 @@ export const getApplicationBillingStatus = async (applicationId: string) => {
     console.error("Error fetching application billing status:", error);
     return { data: null };
   }
-};
-
-// ==================== PAYMENT MANAGEMENT ====================
-export const getAllPayments = async (params?: {
-  page?: number;
-  limit?: number;
-  status?: string;
-  forceRefresh?: boolean;
-}) => {
-  try {
-    if (!params?.forceRefresh) {
-      const cached = getCachedData(CACHE_KEYS.PAYMENTS);
-      if (cached) return cached;
-    }
-
-    const response = await api.get("/admin/payments", { params });
-    const result = response.data;
-
-    setCachedData(CACHE_KEYS.PAYMENTS, result);
-    return result;
-  } catch (error: any) {
-    console.error(
-      "Error fetching payments:",
-      error.response?.data || error.message,
-    );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0, stats: {} };
-  }
-};
-
-export const getPendingPayments = async (forceRefresh?: boolean) => {
-  try {
-    if (!forceRefresh) {
-      const cached = getCachedData("admin_pending_payments");
-      if (cached) return cached;
-    }
-
-    const response = await api.get("/payments/admin/pending");
-    const result = response.data;
-
-    setCachedData("admin_pending_payments", result);
-    return result;
-  } catch (error: any) {
-    console.error(
-      "Error fetching pending payments:",
-      error.response?.data || error.message,
-    );
-    return { success: true, data: [] };
-  }
-};
-
-export const confirmPayment = async (paymentId: string, notes?: string) => {
-  const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
-  clearAdminCache();
-  return response.data;
-};
-
-export const rejectPayment = async (paymentId: string, reason?: string) => {
-  const response = await api.put(`/payments/${paymentId}/reject`, { reason });
-  clearAdminCache();
-  return response.data;
 };
 
 // ==================== BILL MANAGEMENT ====================

@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/payments/page.tsx - COMPLETE WITH APPLICATION ID PRIORITY
+// app/(dashboard)/admin/payments/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -25,43 +25,99 @@ import {
   FiMail,
   FiPhone,
   FiHash,
+  FiDollarSign,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-// ==================== CACHE KEYS ====================
-const CACHE_KEYS = {
-  PAYMENTS_DATA: "misterfyber_payments_data",
-  PAYMENTS_TIMESTAMP: "misterfyber_payments_timestamp",
-  PAYMENTS_STATS: "misterfyber_payments_stats",
-  PENDING_PAYMENTS: "misterfyber_pending_payments",
-};
+// ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
+// This function handles both populated application object and applicationId
+function getCustomerInfo(payment: any): {
+  name: string;
+  email: string;
+  phone: string;
+  applicationId: string;
+  address: string;
+} {
+  // Priority 1: Check if application object is populated (from backend fix)
+  if (payment.application) {
+    const app = payment.application;
+    return {
+      name:
+        app.applicantName ||
+        `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
+        "—",
+      email: app.email || "—",
+      phone: app.phoneNumber || "—",
+      applicationId: app.applicationId || payment.applicationId || "—",
+      address: app.address || "—",
+    };
+  }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  // Priority 2: Check if applicationId is populated as object (from populate)
+  if (payment.applicationId && typeof payment.applicationId === "object") {
+    const app = payment.applicationId;
+    return {
+      name: `${app.firstName || ""} ${app.lastName || ""}`.trim() || "—",
+      email: app.email || "—",
+      phone: app.phoneNumber || "—",
+      applicationId: app.applicationId || app._id || "—",
+      address: app.address || "—",
+    };
+  }
 
-// Storage wrapper
-const paymentsStorage = {
-  setItem: (key: string, value: any): void => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error("Failed to save payments data:", e);
-    }
-  },
-  getItem: (key: string): any => {
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-  removeItem: (key: string): void => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {}
-  },
-};
+  // Priority 3: Check if userId is populated
+  if (payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId;
+    return {
+      name:
+        `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+        user.username ||
+        "—",
+      email: user.email || "—",
+      phone: user.phoneNumber || "—",
+      applicationId: payment.applicationId || "—",
+      address: "—",
+    };
+  }
 
+  // Priority 4: Check if user object is populated
+  if (payment.user) {
+    const user = payment.user;
+    return {
+      name:
+        `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+        user.username ||
+        "—",
+      email: user.email || "—",
+      phone: user.phoneNumber || "—",
+      applicationId: payment.applicationId || "—",
+      address: "—",
+    };
+  }
+
+  // Priority 5: Check paymentDetails for applicationId
+  if (payment.paymentDetails?.gatewayResponse?.applicationId) {
+    return {
+      name: "—",
+      email: "—",
+      phone: "—",
+      applicationId: payment.paymentDetails.gatewayResponse.applicationId,
+      address: "—",
+    };
+  }
+
+  // Fallback: use raw applicationId string
+  return {
+    name: "—",
+    email: "—",
+    phone: "—",
+    applicationId:
+      payment.applicationId || payment.readableApplicationId || "—",
+    address: "—",
+  };
+}
+
+// ==================== MAIN COMPONENT ====================
 export default function AdminPaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
@@ -83,83 +139,9 @@ export default function AdminPaymentsPage() {
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
 
-  // Helper function to get customer info from application
-  const getCustomerInfoFromPayment = useCallback((payment: any) => {
-    // Priority 1: Get from application object (populated)
-    if (payment.application) {
-      const app = payment.application;
-      return {
-        name:
-          app.applicantName ||
-          `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
-          "—",
-        email: app.email || "—",
-        phone: app.phoneNumber || "—",
-        applicationId: payment.applicationId || app._id || "—",
-        address: app.address || "—",
-      };
-    }
-
-    // Priority 2: Get from userId if available (fallback)
-    if (payment.userId && typeof payment.userId === "object") {
-      return {
-        name:
-          `${payment.userId.firstName || ""} ${payment.userId.lastName || ""}`.trim() ||
-          "—",
-        email: payment.userId.email || "—",
-        phone: payment.userId.phoneNumber || "—",
-        applicationId: payment.applicationId || "—",
-        address: "—",
-      };
-    }
-
-    // Priority 3: Only applicationId available
-    return {
-      name: "—",
-      email: "—",
-      phone: "—",
-      applicationId: payment.applicationId || "—",
-      address: "—",
-    };
-  }, []);
-
-  // Load from cache first
-  const loadFromCache = useCallback(() => {
-    try {
-      const cachedPayments = paymentsStorage.getItem(CACHE_KEYS.PAYMENTS_DATA);
-      const cachedTimestamp = paymentsStorage.getItem(
-        CACHE_KEYS.PAYMENTS_TIMESTAMP,
-      );
-      const cachedStats = paymentsStorage.getItem(CACHE_KEYS.PAYMENTS_STATS);
-      const cachedPending = paymentsStorage.getItem(
-        CACHE_KEYS.PENDING_PAYMENTS,
-      );
-
-      if (
-        cachedPayments &&
-        cachedTimestamp &&
-        Date.now() - cachedTimestamp < CACHE_DURATION
-      ) {
-        console.log("📦 Loading payments data from cache");
-        setPayments(cachedPayments);
-        if (cachedPending) setPendingPayments(cachedPending);
-        if (cachedStats) setStats(cachedStats);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("Failed to load from cache:", error);
-      return false;
-    }
-  }, []);
-
+  // Load payments from API
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
-      // Try cache first if not force refresh
-      if (!forceRefresh && loadFromCache()) {
-        setLoading(false);
-      }
-
       // Prevent duplicate loads
       if (loadPromiseRef.current && !forceRefresh) {
         return loadPromiseRef.current;
@@ -173,6 +155,7 @@ export default function AdminPaymentsPage() {
         }
 
         try {
+          // Fetch both all payments and pending payments in parallel
           const [allPaymentsResult, pendingResult] = await Promise.all([
             getAllPayments({
               page: currentPage,
@@ -193,25 +176,18 @@ export default function AdminPaymentsPage() {
           setPendingPayments(pendingList);
 
           if (allPaymentsResult.stats) {
-            const newStats = {
+            setStats({
               totalAmount: allPaymentsResult.stats.total || 0,
               totalCount: allPaymentsResult.stats.totalCount || 0,
               monthlyAmount: allPaymentsResult.stats.monthly || 0,
               monthlyCount: allPaymentsResult.stats.monthlyCount || 0,
-            };
-            setStats(newStats);
-
-            // Save to cache
-            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_DATA, paymentsList);
-            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_TIMESTAMP, Date.now());
-            paymentsStorage.setItem(CACHE_KEYS.PAYMENTS_STATS, newStats);
-            paymentsStorage.setItem(CACHE_KEYS.PENDING_PAYMENTS, pendingList);
+            });
           }
         } catch (error: any) {
           console.error("Failed to load payments:", error);
           if (error.response?.status === 403) {
             toast.error("You don't have permission to view payments");
-          } else if (!forceRefresh && !loadFromCache()) {
+          } else if (!forceRefresh) {
             toast.error("Failed to load payments");
           }
         } finally {
@@ -226,7 +202,7 @@ export default function AdminPaymentsPage() {
       loadPromiseRef.current = loadPromise;
       return loadPromise;
     },
-    [currentPage, status, loadFromCache],
+    [currentPage, status],
   );
 
   useEffect(() => {
@@ -345,9 +321,9 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  // Search based on application data
+  // Filter payments based on search
   const filteredPayments = payments.filter((payment) => {
-    const customerInfo = getCustomerInfoFromPayment(payment);
+    const customerInfo = getCustomerInfo(payment);
     const searchLower = search.toLowerCase();
 
     return (
@@ -390,7 +366,7 @@ export default function AdminPaymentsPage() {
               </p>
             </div>
             <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-              <FiClipboard className="w-5 h-5 text-green-600" />
+              <FiDollarSign className="w-5 h-5 text-green-600" />
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-2">
@@ -554,7 +530,7 @@ export default function AdminPaymentsPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {pendingPayments.map((payment) => {
-                    const customerInfo = getCustomerInfoFromPayment(payment);
+                    const customerInfo = getCustomerInfo(payment);
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 text-sm text-gray-500">
@@ -689,7 +665,7 @@ export default function AdminPaymentsPage() {
                 </tr>
               ) : (
                 filteredPayments.map((payment) => {
-                  const customerInfo = getCustomerInfoFromPayment(payment);
+                  const customerInfo = getCustomerInfo(payment);
                   return (
                     <tr key={payment._id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-500">
@@ -871,15 +847,14 @@ export default function AdminPaymentsPage() {
                   </div>
                 )}
 
-                {/* Customer Information Section - Based on Application */}
+                {/* Customer Information Section */}
                 <div className="py-2 border-b">
                   <span className="text-gray-500 font-semibold">
                     Customer Information:
                   </span>
                   <div className="mt-2 space-y-2">
                     {(() => {
-                      const customerInfo =
-                        getCustomerInfoFromPayment(selectedPayment);
+                      const customerInfo = getCustomerInfo(selectedPayment);
                       return (
                         <>
                           <div className="flex items-start gap-2">
@@ -964,9 +939,7 @@ export default function AdminPaymentsPage() {
                 {selectedPayment.status === "pending" && (
                   <>
                     <button
-                      onClick={() => {
-                        handleConfirmPayment(selectedPayment._id);
-                      }}
+                      onClick={() => handleConfirmPayment(selectedPayment._id)}
                       disabled={confirming}
                       className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
@@ -974,9 +947,7 @@ export default function AdminPaymentsPage() {
                       {confirming ? "Processing..." : "Confirm Payment"}
                     </button>
                     <button
-                      onClick={() => {
-                        handleRejectPayment(selectedPayment._id);
-                      }}
+                      onClick={() => handleRejectPayment(selectedPayment._id)}
                       disabled={rejecting}
                       className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
