@@ -1354,38 +1354,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Address Information */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <FiHome className="w-4 h-4" />
-                  Address
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="text-gray-500">Building:</span>{" "}
-                    {selectedApp.buildingId?.buildingName ||
-                      selectedApp.buildingName ||
-                      "Not provided"}
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Floor:</span>{" "}
-                    {selectedApp.floor &&
-                    selectedApp.floor !== "undefined" &&
-                    selectedApp.floor !== "null"
-                      ? selectedApp.floor
-                      : "Not provided"}
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Unit Number:</span>{" "}
-                    {selectedApp.unitNumber &&
-                    selectedApp.unitNumber !== "undefined" &&
-                    selectedApp.unitNumber !== "null"
-                      ? selectedApp.unitNumber
-                      : "Not provided"}
-                  </div>
-                </div>
-              </div>
-
               {/* Plan Details */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
