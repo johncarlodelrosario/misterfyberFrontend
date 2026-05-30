@@ -44,6 +44,7 @@ import {
   FiUpload,
   FiDownload,
   FiFileText,
+  FiWifi,
 } from "react-icons/fi";
 
 // ==================== PERSISTENT STORAGE CONFIGURATION ====================
@@ -210,6 +211,7 @@ export default function ApplicationsPage() {
     planId: "",
     idType: "",
     idNumber: "",
+    macAddress: "", // ADDED - OPTIONAL FIELD
     idImage: null as File | null,
   });
 
@@ -354,6 +356,7 @@ export default function ApplicationsPage() {
       planId: "",
       idType: "",
       idNumber: "",
+      macAddress: "", // RESET MAC ADDRESS
       idImage: null,
     });
     resetAddressForm();
@@ -421,6 +424,7 @@ export default function ApplicationsPage() {
       "planName",
       "idType",
       "idNumber",
+      "macAddress", // ADDED MAC ADDRESS TO TEMPLATE
       "notes",
     ];
 
@@ -435,6 +439,7 @@ export default function ApplicationsPage() {
       "Fiber 100 Mbps",
       "Philippine National ID",
       "1234-5678-9012",
+      "AA:BB:CC:DD:EE:FF", // EXAMPLE MAC ADDRESS
       "Interested in installation",
     ];
 
@@ -528,6 +533,7 @@ export default function ApplicationsPage() {
               planId: planId,
               idType: row.idType || ID_TYPES[0],
               idNumber: row.idNumber || "N/A",
+              macAddress: row.macAddress || "", // ADDED - OPTIONAL
             });
           }
 
@@ -984,7 +990,8 @@ export default function ApplicationsPage() {
           ?.toLowerCase()
           .includes(filter.searchTerm.toLowerCase()) ||
         app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase());
+        app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
+        app.macAddress?.toLowerCase().includes(filter.searchTerm.toLowerCase());
       const matchesStatus =
         filter.statusFilter === "all" || app.status === filter.statusFilter;
       return matchesSearch && matchesStatus;
@@ -1176,7 +1183,7 @@ export default function ApplicationsPage() {
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by ID, name, or email..."
+              placeholder="Search by ID, name, email, or MAC address..."
               value={filter.searchTerm}
               onChange={(e) =>
                 setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
@@ -1218,6 +1225,9 @@ export default function ApplicationsPage() {
                   Plan
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  MAC Address
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1232,7 +1242,7 @@ export default function ApplicationsPage() {
               {filteredApplications.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     {applications.length === 0
@@ -1257,6 +1267,9 @@ export default function ApplicationsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {app.planId?.name || "N/A"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
+                      {app.macAddress || "—"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -1349,6 +1362,12 @@ export default function ApplicationsPage() {
                     <span className="text-gray-500">Phone:</span>{" "}
                     <span className="font-medium">
                       {selectedApp.phoneNumber || "Not provided"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">MAC Address:</span>{" "}
+                    <span className="font-mono font-medium">
+                      {selectedApp.macAddress || "Not provided"}
                     </span>
                   </div>
                 </div>
@@ -1544,6 +1563,12 @@ export default function ApplicationsPage() {
                   {selectedAppForBilling.planId?.name || "N/A"} - ₱
                   {selectedAppForBilling.planId?.price || 0}/month
                 </p>
+                {selectedAppForBilling.macAddress && (
+                  <p className="text-sm text-blue-800 font-mono">
+                    <strong>MAC Address:</strong>{" "}
+                    {selectedAppForBilling.macAddress}
+                  </p>
+                )}
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-sm text-yellow-800">
@@ -1820,6 +1845,36 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
+              {/* MAC Address - OPTIONAL */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <FiWifi className="w-4 h-4" />
+                  Network Configuration
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    MAC Address{" "}
+                    <span className="text-gray-400 text-xs">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customerForm.macAddress}
+                    onChange={(e) =>
+                      setCustomerForm({
+                        ...customerForm,
+                        macAddress: e.target.value,
+                      })
+                    }
+                    placeholder="e.g., AA:BB:CC:DD:EE:FF"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter the customer's device MAC address if available
+                    (optional)
+                  </p>
+                </div>
+              </div>
+
               {/* ID Verification */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -1974,6 +2029,7 @@ export default function ApplicationsPage() {
                     Fill in customer data (building name and plan name must
                     exactly match existing records)
                   </li>
+                  <li>MAC address is optional</li>
                   <li>Upload the completed CSV file</li>
                   <li>
                     System will automatically map building and plan names to IDs
@@ -2042,6 +2098,7 @@ export default function ApplicationsPage() {
                             {bulkResults.success.map((app, idx) => (
                               <li key={idx}>
                                 {app.firstName} {app.lastName} - {app.email}
+                                {app.macAddress && ` (MAC: ${app.macAddress})`}
                               </li>
                             ))}
                           </ul>

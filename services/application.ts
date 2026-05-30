@@ -1,4 +1,4 @@
-// src/services/application.ts
+// src/services/application.ts - COMPLETE WITH MAC ADDRESS (OPTIONAL)
 import api from "./api";
 
 export interface Building {
@@ -25,6 +25,7 @@ export interface ApplicationData {
   planId: string;
   idType: string;
   idNumber: string;
+  macAddress?: string; // ADDED - OPTIONAL
   idImage?: File;
 }
 
@@ -84,7 +85,7 @@ export const getActiveBuildings = async (): Promise<Building[]> => {
   return response.data.data;
 };
 
-// Application submission
+// Application submission with MAC ADDRESS (OPTIONAL)
 export const submitApplication = async (data: ApplicationData) => {
   const formData = new FormData();
 
@@ -101,6 +102,11 @@ export const submitApplication = async (data: ApplicationData) => {
   formData.append("planId", data.planId);
   formData.append("idType", data.idType);
   formData.append("idNumber", data.idNumber);
+
+  // MAC ADDRESS - OPTIONAL
+  if (data.macAddress && data.macAddress.trim()) {
+    formData.append("macAddress", data.macAddress);
+  }
 
   if (data.idImage) {
     formData.append("idImage", data.idImage);
