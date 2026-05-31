@@ -368,7 +368,7 @@ export default function AdminLayout({
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading dashboard...</p>
         </div>
       </div>
@@ -385,11 +385,11 @@ export default function AdminLayout({
   if (!isAdminUser) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Mobile Sidebar Toggle */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300"
       >
         {sidebarOpen ? (
           <FiX size={22} className="text-gray-600" />
@@ -408,14 +408,14 @@ export default function AdminLayout({
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-gradient-to-b from-blue-800 to-blue-900 text-white shadow-2xl ${
+        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white shadow-lg ${
           sidebarCollapsed ? "w-20" : "w-72"
         } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
       >
         <div className="flex flex-col h-full">
           {/* Logo Area */}
           <div
-            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-24 border-b border-blue-700/50`}
+            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-24 border-b border-gray-200`}
           >
             {!sidebarCollapsed && (
               <div className="flex justify-center w-full">
@@ -429,7 +429,7 @@ export default function AdminLayout({
               </div>
             )}
             {sidebarCollapsed && (
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-sm">
                 <Image
                   src="/Logo.png"
                   alt="Logo"
@@ -441,7 +441,7 @@ export default function AdminLayout({
             )}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg bg-blue-700/50 hover:bg-blue-600 transition-all duration-200"
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 transition-all duration-200 text-gray-600"
             >
               {sidebarCollapsed ? (
                 <FiChevronRight size={18} />
@@ -453,22 +453,22 @@ export default function AdminLayout({
 
           {/* User Info */}
           <div
-            className={`px-4 py-5 border-b border-blue-700/50 ${sidebarCollapsed ? "text-center" : ""}`}
+            className={`px-4 py-5 border-b border-gray-200 ${sidebarCollapsed ? "text-center" : ""}`}
           >
             <div
               className={`flex ${sidebarCollapsed ? "flex-col" : "items-center"} gap-3`}
             >
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg ring-2 ring-blue-400/30">
+              <div className="w-12 h-12 bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl flex items-center justify-center shadow-sm ring-2 ring-gray-300">
                 <span className="text-white font-bold text-xl">
                   {user?.firstName?.[0] || user?.username?.[0] || "A"}
                 </span>
               </div>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">
+                  <p className="text-sm font-semibold text-gray-800 truncate">
                     {user?.firstName} {user?.lastName}
                   </p>
-                  <p className="text-xs text-blue-300 truncate">
+                  <p className="text-xs text-gray-500 truncate">
                     {user?.role === "super_admin"
                       ? "Super Admin"
                       : user?.role === "admin"
@@ -476,8 +476,8 @@ export default function AdminLayout({
                         : "Staff"}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-blue-300">Active</span>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-500">Active</span>
                   </div>
                 </div>
               )}
@@ -502,8 +502,8 @@ export default function AdminLayout({
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-3 py-3 rounded-xl transition-all duration-200 group ${
                       isActive
-                        ? "bg-blue-700 text-white shadow-lg"
-                        : "text-blue-200 hover:bg-blue-700/50 hover:text-white"
+                        ? "bg-gray-900 text-white shadow-md"
+                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                     }`}
                   >
                     <div className="flex items-center">
@@ -528,10 +528,10 @@ export default function AdminLayout({
           </nav>
 
           {/* Bottom Section */}
-          <div className="p-4 border-t border-blue-700/50">
+          <div className="p-4 border-t border-gray-200">
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-3 py-3 text-sm text-red-300 hover:bg-red-600 hover:text-white rounded-xl transition-all duration-200 group`}
+              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-3 py-3 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 rounded-xl transition-all duration-200 group`}
               title="Logout"
             >
               <FiLogOut
@@ -548,7 +548,7 @@ export default function AdminLayout({
         className={`transition-all duration-300 ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-72"} min-h-screen`}
       >
         {/* Top Header */}
-        <header className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-20 border-b border-gray-100">
+        <header className="bg-white shadow-sm sticky top-0 z-20 border-b border-gray-200">
           <div className="flex items-center justify-between px-4 py-3 lg:px-8">
             <div className="flex items-center lg:hidden">
               <div className="w-8"></div>
@@ -557,9 +557,9 @@ export default function AdminLayout({
             <div className="flex-1 flex justify-end items-center space-x-4">
               {/* System Status */}
               <div className="hidden md:flex items-center space-x-3">
-                <div className="flex items-center space-x-2 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full">
+                <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 rounded-full">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-green-700 font-medium">
+                  <span className="text-sm text-gray-700 font-medium">
                     Online
                   </span>
                 </div>
@@ -581,15 +581,15 @@ export default function AdminLayout({
 
                 {/* Notification Panel */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fadeInDown">
-                    <div className="flex justify-between items-center px-5 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                  <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden z-50 animate-fadeInDown">
+                    <div className="flex justify-between items-center px-5 py-4 bg-gray-50 border-b border-gray-200">
                       <h3 className="font-semibold text-gray-900">
                         Notifications
                       </h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                          className="text-xs text-gray-600 hover:text-gray-800 font-medium transition-colors"
                         >
                           Mark all read
                         </button>
@@ -628,12 +628,12 @@ export default function AdminLayout({
                               }
                             }}
                             className={`block px-5 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 ${
-                              !notification.read ? "bg-blue-50/30" : ""
+                              !notification.read ? "bg-gray-50" : ""
                             }`}
                           >
                             <div className="flex items-start gap-3">
                               <div
-                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-blue-500" : "bg-gray-300"}`}
+                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-gray-600" : "bg-gray-300"}`}
                               ></div>
                               <div className="flex-1">
                                 <p className="font-medium text-gray-900 text-sm">
@@ -667,7 +667,7 @@ export default function AdminLayout({
                       )}
                     </div>
 
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 text-center">
+                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-center">
                       <button
                         onClick={() => setShowNotifications(false)}
                         className="text-xs text-gray-500 hover:text-gray-700 font-medium"
@@ -680,9 +680,9 @@ export default function AdminLayout({
               </div>
 
               {/* Admin Badge */}
-              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-full">
-                <FiActivity className="w-4 h-4 text-blue-600" />
-                <span className="text-sm text-blue-700 font-medium">
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-full">
+                <FiActivity className="w-4 h-4 text-gray-600" />
+                <span className="text-sm text-gray-700 font-medium">
                   {user?.role === "super_admin"
                     ? "Super Admin"
                     : user?.role === "admin"

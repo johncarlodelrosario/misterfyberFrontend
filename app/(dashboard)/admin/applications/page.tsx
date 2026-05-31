@@ -5,16 +5,13 @@ import {
   getAllApplications,
   approveApplication,
   rejectApplication,
+  getApplication,
 } from "@/services/admin";
 import { startBillingForApplication } from "@/services/billing";
 import {
   submitApplication,
   getActiveBuildings,
   Building,
-  Region,
-  Province,
-  City,
-  Barangay,
   getRegions,
   getProvincesByRegion,
   getCitiesByProvince,
@@ -497,6 +494,50 @@ export default function ApplicationsPage() {
       persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
     }
   }, [applications, initialLoading]);
+
+  // Function to fetch full application details
+  const fetchFullApplicationDetails = async (appId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `${PRODUCTION_URL}/api/applications/${appId}`,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+        },
+      );
+      const result = await response.json();
+      if (result.success && result.data) {
+        return result.data;
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to fetch application details:", error);
+      return null;
+    }
+  };
+
+  const handleViewApplication = async (app: any) => {
+    const loadingToast = toast.loading("Loading application details...");
+
+    try {
+      const fullDetails = await fetchFullApplicationDetails(app._id);
+      toast.dismiss(loadingToast);
+
+      if (fullDetails) {
+        setSelectedApp(fullDetails);
+      } else {
+        // Fallback to the data we have
+        setSelectedApp(app);
+        toast.error("Could not load full details, showing partial data");
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      setSelectedApp(app);
+      toast.error("Error loading details");
+    }
+  };
 
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
@@ -1248,7 +1289,7 @@ export default function ApplicationsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setSelectedApp(app)}
+                          onClick={() => handleViewApplication(app)}
                           className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
                         >
                           <FiEye className="w-4 h-4" />
@@ -1337,6 +1378,34 @@ export default function ApplicationsPage() {
 
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
+                  Building & Unit Information
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">Building:</span>{" "}
+                    <span className="font-medium">
+                      {selectedApp.buildingId?.buildingName ||
+                        selectedApp.buildingName ||
+                        "Not specified"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Floor:</span>{" "}
+                    <span className="font-medium">
+                      {selectedApp.floor || "Not provided"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Unit Number:</span>{" "}
+                    <span className="font-medium">
+                      {selectedApp.unitNumber || "Not provided"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3">
                   Plan Details
                 </h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1361,44 +1430,62 @@ export default function ApplicationsPage() {
                     <FiCreditCard className="w-4 h-4" />
                     ID Verification
                   </h3>
-                  {selectedApp.idImage && (
-                    <button
-                      onClick={() => {
-                        const url = getImageUrl(selectedApp.idImage);
-                        if (url) {
-                          setImagePreview(url);
-                          setShowImageModal(true);
-                        } else {
-                          toast.error("Could not load image URL");
-                        }
-                      }}
-                      className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-                    >
-                      <FiImage className="w-4 h-4" />
-                      View ID
-                    </button>
-                  )}
+                  {selectedApp.idImage &&
+                    selectedApp.idImage !==
+                      "uploads/id-cards/placeholder.jpg" && (
+                      <button
+                        onClick={() => {
+                          const url = getImageUrl(selectedApp.idImage);
+                          if (url) {
+                            setImagePreview(url);
+                            setShowImageModal(true);
+                          } else {
+                            toast.error("Could not load image URL");
+                          }
+                        }}
+                        className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+                      >
+                        <FiImage className="w-4 h-4" />
+                        View ID
+                      </button>
+                    )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">ID Type:</span>{" "}
-                    {selectedApp.idType && selectedApp.idType !== "undefined"
+                    {selectedApp.idType &&
+                    selectedApp.idType !== "undefined" &&
+                    selectedApp.idType !== "Not Provided"
                       ? selectedApp.idType
                       : "Not provided"}
                   </div>
                   <div>
                     <span className="text-gray-500">ID Number:</span>{" "}
                     {selectedApp.idNumber &&
-                    selectedApp.idNumber !== "undefined"
+                    selectedApp.idNumber !== "undefined" &&
+                    selectedApp.idNumber !== "Not Provided"
                       ? selectedApp.idNumber
                       : "Not provided"}
                   </div>
                 </div>
               </div>
 
+              {selectedApp.adminNotes && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Admin Notes
+                  </h3>
+                  <p className="text-sm text-gray-700">
+                    {selectedApp.adminNotes}
+                  </p>
+                </div>
+              )}
+
               {selectedApp.notes && (
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">Notes</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Customer Notes
+                  </h3>
                   <p className="text-sm text-gray-700">{selectedApp.notes}</p>
                 </div>
               )}
