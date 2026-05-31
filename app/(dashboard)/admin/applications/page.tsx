@@ -5,7 +5,6 @@ import {
   getAllApplications,
   approveApplication,
   rejectApplication,
-  getApplicationBillingStatus,
 } from "@/services/admin";
 import { startBillingForApplication } from "@/services/billing";
 import {
@@ -35,19 +34,17 @@ import {
   FiClock,
   FiBell,
   FiPlay,
-  FiPhone,
-  FiMail,
   FiUser,
-  FiHome,
   FiCreditCard,
   FiPlus,
   FiUpload,
   FiDownload,
   FiFileText,
   FiWifi,
+  FiEdit2,
+  FiSave,
 } from "react-icons/fi";
 
-// ==================== PERSISTENT STORAGE CONFIGURATION ====================
 const STORAGE_KEYS = {
   APPLICATIONS: "misterfyber_applications_data",
   LAST_FETCH: "misterfyber_last_fetch",
@@ -59,9 +56,9 @@ const STORAGE_KEYS = {
   LAST_KNOWN_PENDING: "misterfyber_last_known_pending",
 };
 
-const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
+const CACHE_DURATION = 60 * 60 * 1000;
 const MAX_STORED_APPLICATIONS = 500;
-const CHECK_INTERVAL = 15000; // Check every 15 seconds for new applicants
+const CHECK_INTERVAL = 15000;
 
 interface StoredApplicationsData {
   applications: any[];
@@ -122,7 +119,6 @@ const persistentStorage = {
   },
 };
 
-// Helper function to safely format price
 const formatPrice = (price: number | undefined | null): string => {
   if (price === undefined || price === null || isNaN(price)) {
     return "0.00";
@@ -130,7 +126,6 @@ const formatPrice = (price: number | undefined | null): string => {
   return price.toFixed(2);
 };
 
-// Helper function to safely get speed
 const getSpeed = (plan: any): string => {
   if (!plan) return "N/A";
   if (plan.speed?.download) return `${plan.speed.download} Mbps`;
@@ -138,7 +133,6 @@ const getSpeed = (plan: any): string => {
   return "N/A";
 };
 
-// ID Types
 const ID_TYPES = [
   "Philippine National ID",
   "Driver's License",
@@ -173,8 +167,11 @@ export default function ApplicationsPage() {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
     return savedFilter || { searchTerm: "", statusFilter: "all" };
   });
+  const [editingMacAddress, setEditingMacAddress] = useState<string | null>(
+    null,
+  );
+  const [tempMacAddress, setTempMacAddress] = useState("");
 
-  // Add Customer Modal State
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -187,7 +184,6 @@ export default function ApplicationsPage() {
     failed: any[];
   } | null>(null);
 
-  // Address state for Add Customer form
   const [regions, setRegions] = useState<Region[]>([]);
   const [provinces, setProvinces] = useState<Province[]>([]);
   const [cities, setCities] = useState<City[]>([]);
@@ -198,7 +194,6 @@ export default function ApplicationsPage() {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [streetAddress, setStreetAddress] = useState("");
 
-  // Form state for Add Customer
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -211,7 +206,7 @@ export default function ApplicationsPage() {
     planId: "",
     idType: "",
     idNumber: "",
-    macAddress: "", // ADDED - OPTIONAL FIELD
+    macAddress: "",
     idImage: null as File | null,
   });
 
@@ -219,12 +214,10 @@ export default function ApplicationsPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
-  // Save filter to storage
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
   }, [filter]);
 
-  // Monitor online status
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
@@ -245,7 +238,6 @@ export default function ApplicationsPage() {
     };
   }, []);
 
-  // Load buildings and plans for modals
   useEffect(() => {
     if (showAddCustomerModal) {
       loadBuildingsAndPlans();
@@ -356,7 +348,7 @@ export default function ApplicationsPage() {
       planId: "",
       idType: "",
       idNumber: "",
-      macAddress: "", // RESET MAC ADDRESS
+      macAddress: "",
       idImage: null,
     });
     resetAddressForm();
@@ -386,7 +378,7 @@ export default function ApplicationsPage() {
       toast.success("Customer application submitted successfully!");
       setShowAddCustomerModal(false);
       resetCustomerForm();
-      fetchApplications(); // Refresh the list
+      fetchApplications();
     } catch (error: any) {
       console.error("Failed to submit application:", error);
       toast.error(
@@ -397,7 +389,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle CSV file upload for bulk upload
   const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -411,7 +402,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Download CSV template
   const downloadCsvTemplate = () => {
     const headers = [
       "firstName",
@@ -424,7 +414,7 @@ export default function ApplicationsPage() {
       "planName",
       "idType",
       "idNumber",
-      "macAddress", // ADDED MAC ADDRESS TO TEMPLATE
+      "macAddress",
       "notes",
     ];
 
@@ -439,7 +429,7 @@ export default function ApplicationsPage() {
       "Fiber 100 Mbps",
       "Philippine National ID",
       "1234-5678-9012",
-      "AA:BB:CC:DD:EE:FF", // EXAMPLE MAC ADDRESS
+      "AA:BB:CC:DD:EE:FF",
       "Interested in installation",
     ];
 
@@ -456,7 +446,6 @@ export default function ApplicationsPage() {
     toast.success("Template downloaded");
   };
 
-  // Parse CSV and map building/plan names to IDs
   const parseCsvAndPrepareData = async (file: File): Promise<any[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -468,7 +457,6 @@ export default function ApplicationsPage() {
             .split(",")
             .map((h) => h.trim().replace(/\r/g, ""));
 
-          // Get buildings and plans for mapping
           const [buildingsData, plansData] = await Promise.all([
             getActiveBuildings(),
             getAllPlans(),
@@ -495,7 +483,6 @@ export default function ApplicationsPage() {
               row[header] = values[index]?.trim() || "";
             });
 
-            // Map building name to ID
             const buildingId = buildingMap.get(
               row.buildingName?.toLowerCase().trim(),
             );
@@ -504,7 +491,6 @@ export default function ApplicationsPage() {
               continue;
             }
 
-            // Map plan name to ID
             const planId = planMap.get(row.planName?.toLowerCase().trim());
             if (!planId) {
               console.warn(`Plan not found: ${row.planName}`);
@@ -533,7 +519,7 @@ export default function ApplicationsPage() {
               planId: planId,
               idType: row.idType || ID_TYPES[0],
               idNumber: row.idNumber || "N/A",
-              macAddress: row.macAddress || "", // ADDED - OPTIONAL
+              macAddress: row.macAddress || "",
             });
           }
 
@@ -547,7 +533,6 @@ export default function ApplicationsPage() {
     });
   };
 
-  // Helper to parse CSV line with quoted values
   const parseCSVLine = (line: string): string[] => {
     const result: string[] = [];
     let current = "";
@@ -589,7 +574,6 @@ export default function ApplicationsPage() {
       const success: any[] = [];
       const failed: any[] = [];
 
-      // Submit each application
       for (let i = 0; i < applications.length; i++) {
         const app = applications[i];
         try {
@@ -610,7 +594,7 @@ export default function ApplicationsPage() {
 
       if (success.length > 0) {
         toast.success(`Successfully added ${success.length} customers`);
-        fetchApplications(); // Refresh the list
+        fetchApplications();
       }
 
       if (failed.length > 0) {
@@ -630,7 +614,6 @@ export default function ApplicationsPage() {
     setShowBulkUploadModal(false);
   };
 
-  // Check for new applicants function
   const checkForNewApplicants = useCallback(async () => {
     if (refreshInProgressRef.current) return;
 
@@ -674,7 +657,6 @@ export default function ApplicationsPage() {
     }
   }, [applications.length]);
 
-  // Periodically check for new applicants
   useEffect(() => {
     if (isOnline && !initialLoading) {
       intervalRef.current = setInterval(() => {
@@ -692,7 +674,6 @@ export default function ApplicationsPage() {
     };
   }, [isOnline, initialLoading, checkForNewApplicants]);
 
-  // Load from localStorage on mount
   useEffect(() => {
     const loadStoredData = () => {
       try {
@@ -759,7 +740,6 @@ export default function ApplicationsPage() {
     loadStoredData();
   }, []);
 
-  // Silent refresh
   const silentRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -805,7 +785,6 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Manual refresh
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -864,7 +843,6 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Update counts when applications change
   useEffect(() => {
     if (applications.length > 0 && !initialLoading) {
       const total = applications.length;
@@ -886,7 +864,6 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // Handle approve
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
@@ -908,7 +885,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle reject
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
@@ -930,7 +906,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle start billing for application
   const handleStartBilling = async (app: any) => {
     try {
       setProcessingId(app._id);
@@ -958,7 +933,41 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Get image URL
+  const handleUpdateMacAddress = async (
+    applicationId: string,
+    macAddress: string,
+  ) => {
+    try {
+      const response = await fetch(
+        `${PRODUCTION_URL}/api/applications/${applicationId}/mac-address`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ macAddress }),
+        },
+      );
+
+      if (response.ok) {
+        setApplications((prev) =>
+          prev.map((app) =>
+            app._id === applicationId ? { ...app, macAddress } : app,
+          ),
+        );
+        toast.success("MAC address updated successfully");
+      } else {
+        toast.error("Failed to update MAC address");
+      }
+    } catch (error) {
+      toast.error("Error updating MAC address");
+    } finally {
+      setEditingMacAddress(null);
+      setTempMacAddress("");
+    }
+  };
+
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
@@ -1049,7 +1058,6 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      {/* New Applicant Alert Banner */}
       {hasNewApplicant && (
         <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-4 rounded-lg shadow-md animate-pulse">
           <div className="flex items-center gap-3">
@@ -1071,7 +1079,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Header */}
       <div className="mb-6 flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
@@ -1081,7 +1088,6 @@ export default function ApplicationsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Add Customer Button */}
           <button
             onClick={() => {
               resetCustomerForm();
@@ -1093,7 +1099,6 @@ export default function ApplicationsPage() {
             Add Customer
           </button>
 
-          {/* Bulk Upload Button */}
           <button
             onClick={() => {
               resetBulkUpload();
@@ -1132,7 +1137,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Status Banner */}
       {!isOnline && (
         <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
           <div className="flex items-center gap-2">
@@ -1150,7 +1154,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div className="text-sm text-gray-600">Total Applications</div>
@@ -1176,7 +1179,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
@@ -1206,7 +1208,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Applications Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -1268,8 +1269,52 @@ export default function ApplicationsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {app.planId?.name || "N/A"}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
-                      {app.macAddress || "—"}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                      {editingMacAddress === app._id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={tempMacAddress}
+                            onChange={(e) => setTempMacAddress(e.target.value)}
+                            className="w-36 px-2 py-1 text-xs border border-gray-300 rounded font-mono"
+                            placeholder="AA:BB:CC:DD:EE:FF"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() =>
+                              handleUpdateMacAddress(app._id, tempMacAddress)
+                            }
+                            className="text-green-600 hover:text-green-800"
+                          >
+                            <FiSave className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingMacAddress(null);
+                              setTempMacAddress("");
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <FiX className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500">
+                            {app.macAddress || "—"}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingMacAddress(app._id);
+                              setTempMacAddress(app.macAddress || "");
+                            }}
+                            className="text-gray-400 hover:text-blue-600"
+                            title="Edit MAC Address"
+                          >
+                            <FiEdit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -1317,7 +1362,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Details Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1341,7 +1385,6 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Personal Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <FiUser className="w-4 h-4" />
@@ -1373,7 +1416,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Plan Details */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   Plan Details
@@ -1394,7 +1436,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* ID Verification */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -1436,7 +1477,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Notes if any */}
               {selectedApp.notes && (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h3 className="font-semibold text-gray-900 mb-2">Notes</h3>
@@ -1444,7 +1484,6 @@ export default function ApplicationsPage() {
                 </div>
               )}
 
-              {/* Start Billing Button for Approved Apps without billing */}
               {selectedApp.status === "approved" &&
                 !selectedApp.billingStarted && (
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
@@ -1462,7 +1501,6 @@ export default function ApplicationsPage() {
                   </div>
                 )}
 
-              {/* Approve/Reject buttons for Pending Apps */}
               {selectedApp.status === "pending" && (
                 <>
                   <div>
@@ -1529,7 +1567,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Start Billing Modal */}
       {showBillingModal && selectedAppForBilling && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -1608,7 +1645,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Image Modal */}
       {showImageModal && imagePreview && (
         <div
           className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
@@ -1645,7 +1681,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Add Customer Modal */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1670,7 +1705,6 @@ export default function ApplicationsPage() {
             </div>
 
             <form onSubmit={handleAddCustomerSubmit} className="p-6 space-y-6">
-              {/* Personal Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <FiUser className="w-4 h-4" />
@@ -1748,7 +1782,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Building and Unit Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4">
                   Building & Unit Information
@@ -1815,7 +1848,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Plan Selection */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4">
                   Internet Plan
@@ -1845,7 +1877,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* MAC Address - OPTIONAL */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <FiWifi className="w-4 h-4" />
@@ -1875,7 +1906,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* ID Verification */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <FiCreditCard className="w-4 h-4" />
@@ -1946,7 +1976,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Additional Notes */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-4">
                   Additional Notes
@@ -1962,7 +1991,6 @@ export default function ApplicationsPage() {
                 />
               </div>
 
-              {/* Form Actions */}
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
@@ -1992,7 +2020,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Bulk Upload Modal */}
       {showBulkUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -2017,7 +2044,6 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Instructions */}
               <div className="bg-blue-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
                   <FiFileText className="w-4 h-4" />
@@ -2037,7 +2063,6 @@ export default function ApplicationsPage() {
                 </ul>
               </div>
 
-              {/* CSV Template Download */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   1. Download Template
@@ -2051,7 +2076,6 @@ export default function ApplicationsPage() {
                 </button>
               </div>
 
-              {/* CSV File Upload */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-3">
                   2. Upload CSV File
@@ -2078,7 +2102,6 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Bulk Upload Results */}
               {bulkResults && (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h3 className="font-semibold text-gray-900 mb-3">
@@ -2128,7 +2151,6 @@ export default function ApplicationsPage() {
                 </div>
               )}
 
-              {/* Form Actions */}
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => {

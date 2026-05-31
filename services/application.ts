@@ -1,4 +1,3 @@
-// src/services/application.ts - COMPLETE WITH MAC ADDRESS (OPTIONAL)
 import api from "./api";
 
 export interface Building {
@@ -25,7 +24,7 @@ export interface ApplicationData {
   planId: string;
   idType: string;
   idNumber: string;
-  macAddress?: string; // ADDED - OPTIONAL
+  macAddress?: string;
   idImage?: File;
 }
 
@@ -48,7 +47,6 @@ export interface Barangay {
   name: string;
 }
 
-// Address lookup APIs
 export const getRegions = async (): Promise<Region[]> => {
   const response = await api.get("/applications/address/regions");
   return response.data.data;
@@ -79,13 +77,11 @@ export const getBarangaysByCity = async (
   return response.data.data;
 };
 
-// Get active buildings for client
 export const getActiveBuildings = async (): Promise<Building[]> => {
   const response = await api.get("/buildings/active");
   return response.data.data;
 };
 
-// Application submission with MAC ADDRESS (OPTIONAL)
 export const submitApplication = async (data: ApplicationData) => {
   const formData = new FormData();
 
@@ -103,7 +99,6 @@ export const submitApplication = async (data: ApplicationData) => {
   formData.append("idType", data.idType);
   formData.append("idNumber", data.idNumber);
 
-  // MAC ADDRESS - OPTIONAL
   if (data.macAddress && data.macAddress.trim()) {
     formData.append("macAddress", data.macAddress);
   }
