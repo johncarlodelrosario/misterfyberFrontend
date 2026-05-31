@@ -22,8 +22,9 @@ import {
   getAllUsers,
   getAllBills,
   getDashboardStats,
-  getEmailStatus,
-  toggleEmail,
+  getCustomerEmailAlertsPreference,
+  toggleCustomerEmailAlerts,
+  generateReport,
 } from "@/services/admin";
 import * as XLSX from "xlsx";
 
@@ -57,11 +58,7 @@ export default function AdminReportsPage() {
 
   const fetchStats = async () => {
     try {
-      const dashboardStats = await getDashboardStats().catch(() => ({
-        users: { total: 0 },
-        applications: { pending: 0 },
-        revenue: { total: 0, monthly: 0 },
-      }));
+      const dashboardStats = await getDashboardStats();
       setStats({
         totalUsers: dashboardStats?.users?.total || 0,
         totalPayments: dashboardStats?.revenue?.total || 0,
@@ -70,13 +67,20 @@ export default function AdminReportsPage() {
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
+      // Set default values on error
+      setStats({
+        totalUsers: 0,
+        totalPayments: 0,
+        monthlyRevenue: 0,
+        pendingApplications: 0,
+      });
     }
   };
 
   const fetchEmailStatus = async () => {
     try {
-      const result = await getEmailStatus();
-      setEmailEnabled(result.enabled);
+      const result = await getCustomerEmailAlertsPreference();
+      setEmailEnabled(result.data?.customerEmailAlertsEnabled ?? true);
     } catch (error) {
       console.error("Failed to fetch email status:", error);
       setEmailEnabled(true);
@@ -87,12 +91,14 @@ export default function AdminReportsPage() {
     setTogglingEmail(true);
     try {
       const newState = !emailEnabled;
-      const result = await toggleEmail(newState);
+      const result = await toggleCustomerEmailAlerts(newState);
       if (result.success) {
         setEmailEnabled(newState);
         toast.success(
-          `Email sending ${newState ? "enabled" : "disabled"} successfully`,
+          `Customer email alerts ${newState ? "enabled" : "disabled"} successfully`,
         );
+      } else {
+        toast.error(result.message || "Failed to toggle email settings");
       }
     } catch (error) {
       console.error("Failed to toggle email:", error);
@@ -123,7 +129,7 @@ export default function AdminReportsPage() {
     try {
       const result = await getAllPayments({
         forceRefresh: true,
-        limit: 1000,
+        limit: 10000,
       });
 
       let payments = result.data || [];
@@ -179,7 +185,7 @@ export default function AdminReportsPage() {
       ).length;
 
       const summary = [
-        ["REPORT SUMMARY"],
+        ["PAYMENTS REPORT SUMMARY"],
         ["Generated:", new Date().toLocaleString()],
         [
           "Date Range:",
@@ -244,10 +250,19 @@ export default function AdminReportsPage() {
     try {
       const result = await getAllUsers({
         forceRefresh: true,
-        limit: 1000,
+        limit: 10000,
       });
 
       let users = result.data || [];
+
+      // Filter by date range if needed (users don't have date filter by default, but we can add)
+      users = users.filter((user: any) => {
+        const userDate = new Date(user.createdAt);
+        const start = new Date(dateRange.startDate);
+        const end = new Date(dateRange.endDate);
+        end.setHours(23, 59, 59);
+        return userDate >= start && userDate <= end;
+      });
 
       const reportData = users.map((user: any) => ({
         "User ID": user._id,
@@ -281,6 +296,10 @@ export default function AdminReportsPage() {
       const summary = [
         ["USER REPORT SUMMARY"],
         ["Generated:", new Date().toLocaleString()],
+        [
+          "Date Range:",
+          `${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
+        ],
         [""],
         ["Total Users:", users.length],
         ["Active Users:", totalActive],
@@ -319,7 +338,10 @@ export default function AdminReportsPage() {
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Users Report");
-      XLSX.writeFile(wb, `users_report_${dateRange.startDate}.xlsx`);
+      XLSX.writeFile(
+        wb,
+        `users_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
+      );
 
       toast.success("Users report generated successfully");
     } catch (error) {
@@ -335,7 +357,7 @@ export default function AdminReportsPage() {
     try {
       const result = await getAllBills({
         forceRefresh: true,
-        limit: 1000,
+        limit: 10000,
       });
 
       let bills = result.data || [];
@@ -462,8 +484,8 @@ export default function AdminReportsPage() {
     setGenerating("revenue");
     try {
       const [paymentsResult, billsResult] = await Promise.all([
-        getAllPayments({ forceRefresh: true, limit: 1000 }),
-        getAllBills({ forceRefresh: true, limit: 1000 }),
+        getAllPayments({ forceRefresh: true, limit: 10000 }),
+        getAllBills({ forceRefresh: true, limit: 10000 }),
       ]);
 
       let payments = paymentsResult.data || [];
@@ -511,8 +533,9 @@ export default function AdminReportsPage() {
         monthlyData[monthKey].bills += bill.total || 0;
       });
 
-      const monthlyReport = Object.entries(monthlyData).map(
-        ([monthKey, data]) => ({
+      const monthlyReport = Object.entries(monthlyData)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([monthKey, data]) => ({
           Month: new Date(
             parseInt(monthKey.split("-")[0]),
             parseInt(monthKey.split("-")[1]) - 1,
@@ -522,8 +545,7 @@ export default function AdminReportsPage() {
           "Collected Revenue": formatCurrency(data.revenue),
           Outstanding: formatCurrency(data.bills - data.revenue),
           "Collection Rate": `${data.bills > 0 ? ((data.revenue / data.bills) * 100).toFixed(2) : 0}%`,
-        }),
-      );
+        }));
 
       const totalBills = bills.reduce(
         (sum: number, b: any) => sum + (b.total || 0),
@@ -642,7 +664,7 @@ export default function AdminReportsPage() {
                 <div className="flex items-center gap-2">
                   <FiMail className="w-5 h-5 text-white" />
                   <span className="text-sm font-medium text-white">
-                    Email Alerts
+                    Customer Email Alerts
                   </span>
                 </div>
                 <button
@@ -664,13 +686,13 @@ export default function AdminReportsPage() {
                 <span
                   className={`text-xs ${emailEnabled ? "text-green-300" : "text-gray-300"}`}
                 >
-                  {emailEnabled ? "ON" : "OFF"}
+                  {emailEnabled ? "Sending ON" : "Sending OFF"}
                 </span>
               </div>
-              <p className="text-xs text-blue-200 mt-1">
+              <p className="text-xs text-blue-200 mt-1 max-w-[200px]">
                 {emailEnabled
-                  ? "All email notifications will be sent"
-                  : "No emails will be sent to customers"}
+                  ? "Customers will receive email notifications"
+                  : "Customer emails are DISABLED. Admin emails still work."}
               </p>
             </div>
             <button
@@ -1056,13 +1078,13 @@ export default function AdminReportsPage() {
             )}
             <div>
               <p className="font-medium text-gray-900">
-                Email sending is currently{" "}
+                Customer email sending is currently{" "}
                 {emailEnabled ? "ENABLED" : "DISABLED"}
               </p>
               <p className="text-sm text-gray-500">
                 {emailEnabled
-                  ? "All system emails will be sent to customers"
-                  : "No emails will be sent. This is useful for testing or maintenance."}
+                  ? "Customers will receive all email notifications (invoices, reminders, approvals)"
+                  : "Customers will NOT receive any emails. Admin notifications are still sent."}
               </p>
             </div>
           </div>
@@ -1075,12 +1097,34 @@ export default function AdminReportsPage() {
                 : "bg-green-100 text-green-700 hover:bg-green-200"
             } ${togglingEmail ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            {togglingEmail
-              ? "Updating..."
-              : emailEnabled
-                ? "Disable Emails"
-                : "Enable Emails"}
+            {togglingEmail ? (
+              <>
+                <FiLoader className="w-4 h-4 inline animate-spin mr-2" />
+                Updating...
+              </>
+            ) : emailEnabled ? (
+              "Disable Customer Emails"
+            ) : (
+              "Enable Customer Emails"
+            )}
           </button>
+        </div>
+        <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+          <p className="text-sm text-yellow-700">
+            <strong>⚠️ Important:</strong> When disabled, customers will not
+            receive:
+          </p>
+          <ul className="text-sm text-yellow-600 mt-2 list-disc list-inside">
+            <li>Welcome emails after registration</li>
+            <li>Invoice and billing notifications</li>
+            <li>Payment confirmations</li>
+            <li>Application approval/rejection emails</li>
+            <li>Payment reminders and overdue notices</li>
+          </ul>
+          <p className="text-sm text-yellow-700 mt-2">
+            Admin email notifications are always sent regardless of this
+            setting.
+          </p>
         </div>
       </div>
     </div>

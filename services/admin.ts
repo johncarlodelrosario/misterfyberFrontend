@@ -1,4 +1,4 @@
-// services/admin.ts - Updated getAllPayments to use correct endpoint
+// services/admin.ts
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -9,7 +9,7 @@ const CACHE_KEYS = {
   BILLS: "admin_bills_cache",
   BILLING_CYCLES: "admin_billing_cycles_cache",
   CUSTOMERS_WITHOUT_ACCOUNTS: "admin_customers_without_accounts_cache",
-  EMAIL_STATUS: "admin_email_status_cache",
+  EMAIL_ALERTS_PREFERENCE: "admin_email_alerts_preference_cache",
 };
 
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -51,139 +51,71 @@ export function clearAdminCache(): void {
   });
 }
 
-// ==================== PAYMENT MANAGEMENT (UPDATED) ====================
-export const getAllPayments = async (params?: {
-  page?: number;
-  limit?: number;
-  status?: string;
-  forceRefresh?: boolean;
-}) => {
+// ==================== CUSTOMER EMAIL ALERTS TOGGLE ====================
+export const toggleCustomerEmailAlerts = async (enabled: boolean) => {
   try {
-    if (!params?.forceRefresh) {
-      const cached = getCachedData(CACHE_KEYS.PAYMENTS);
+    const response = await api.put("/admin/customer-email-alerts/toggle", {
+      enabled,
+    });
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error toggling customer email alerts:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+export const getCustomerEmailAlertsPreference = async (
+  forceRefresh?: boolean,
+) => {
+  try {
+    if (!forceRefresh) {
+      const cached = getCachedData(CACHE_KEYS.EMAIL_ALERTS_PREFERENCE);
       if (cached) return cached;
     }
 
-    // Use the admin/all endpoint which returns populated data
-    const response = await api.get("/payments/admin/all", { params });
+    const response = await api.get("/admin/customer-email-alerts/preference");
     const result = response.data;
 
-    setCachedData(CACHE_KEYS.PAYMENTS, result);
+    setCachedData(CACHE_KEYS.EMAIL_ALERTS_PREFERENCE, result);
     return result;
   } catch (error: any) {
     console.error(
-      "Error fetching payments:",
+      "Error fetching customer email alerts preference:",
       error.response?.data || error.message,
     );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0, stats: {} };
+    return { success: true, data: { customerEmailAlertsEnabled: true } };
   }
-};
-
-export const getPendingPayments = async (forceRefresh?: boolean) => {
-  try {
-    if (!forceRefresh) {
-      const cached = getCachedData("admin_pending_payments");
-      if (cached) return cached;
-    }
-
-    const response = await api.get("/payments/admin/pending");
-    const result = response.data;
-
-    setCachedData("admin_pending_payments", result);
-    return result;
-  } catch (error: any) {
-    console.error(
-      "Error fetching pending payments:",
-      error.response?.data || error.message,
-    );
-    return { success: true, data: [] };
-  }
-};
-
-export const confirmPayment = async (paymentId: string, notes?: string) => {
-  const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
-  clearAdminCache();
-  return response.data;
-};
-
-export const rejectPayment = async (paymentId: string, reason?: string) => {
-  const response = await api.put(`/payments/${paymentId}/reject`, { reason });
-  clearAdminCache();
-  return response.data;
-};
-
-// ==================== EMAIL TOGGLE FUNCTIONS ====================
-export const getEmailStatus = async (forceRefresh?: boolean) => {
-  try {
-    if (!forceRefresh) {
-      const cached = getCachedData(CACHE_KEYS.EMAIL_STATUS);
-      if (cached) return cached;
-    }
-
-    const response = await api.get("/admin/email/status");
-    const result = response.data;
-
-    setCachedData(CACHE_KEYS.EMAIL_STATUS, result);
-    return result;
-  } catch (error: any) {
-    console.error("Error fetching email status:", error);
-    return {
-      success: true,
-      enabled: true,
-      configured: true,
-      apiKeyPresent: true,
-    };
-  }
-};
-
-export const toggleEmail = async (enabled: boolean) => {
-  const response = await api.put("/admin/email/toggle", { enabled });
-  clearAdminCache();
-  return response.data;
 };
 
 // ==================== DASHBOARD STATS ====================
 export const getDashboardStats = async () => {
-  const response = await api.get("/admin/dashboard");
-  return response.data.data;
+  try {
+    const response = await api.get("/admin/dashboard");
+    return response.data.data;
+  } catch (error: any) {
+    console.error(
+      "Error fetching dashboard stats:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const getRecentActivities = async () => {
   try {
     const response = await api.get("/admin/recent-activities");
     return response.data.data;
-  } catch (error) {
-    console.log("Using mock recent activities");
-    return [
-      {
-        title: "New Payment",
-        description: "John Doe paid ₱1,499",
-        type: "payment",
-        icon: "💰",
-        time: "5 minutes ago",
-      },
-      {
-        title: "New User Registered",
-        description: "Jane Smith created an account",
-        type: "user",
-        icon: "👤",
-        time: "1 hour ago",
-      },
-      {
-        title: "Application Submitted",
-        description: "Mike Johnson applied for Premium plan",
-        type: "application",
-        icon: "📝",
-        time: "3 hours ago",
-      },
-      {
-        title: "Plan Change",
-        description: "Sarah Wilson upgraded to Ultimate",
-        type: "plan",
-        icon: "📡",
-        time: "5 hours ago",
-      },
-    ];
+  } catch (error: any) {
+    console.error(
+      "Error fetching recent activities:",
+      error.response?.data || error.message,
+    );
+    // Return empty array as fallback
+    return [];
   }
 };
 
@@ -211,41 +143,81 @@ export const getAllUsers = async (params?: {
       "Error fetching users:",
       error.response?.data || error.message,
     );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+    return { success: true, data: [], totalPages: 0, currentPage: 1, total: 0 };
   }
 };
 
 export const getUser = async (id: string) => {
-  const response = await api.get(`/admin/users/${id}`);
-  return response.data.data;
+  try {
+    const response = await api.get(`/admin/users/${id}`);
+    return response.data.data;
+  } catch (error: any) {
+    console.error(
+      "Error fetching user:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const updateUser = async (id: string, data: any) => {
-  const response = await api.put(`/admin/users/${id}`, data);
-  clearAdminCache();
-  return response.data.data;
+  try {
+    const response = await api.put(`/admin/users/${id}`, data);
+    clearAdminCache();
+    return response.data.data;
+  } catch (error: any) {
+    console.error(
+      "Error updating user:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const approveUser = async (id: string) => {
-  const response = await api.put(`/admin/users/${id}/approve`);
-  clearAdminCache();
-  return response.data;
+  try {
+    const response = await api.put(`/admin/users/${id}/approve`);
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error approving user:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const suspendUser = async (id: string) => {
-  const response = await api.put(`/admin/users/${id}/suspend`);
-  clearAdminCache();
-  return response.data;
+  try {
+    const response = await api.put(`/admin/users/${id}/suspend`);
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error suspending user:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 export const deleteUser = async (id: string) => {
-  const response = await api.delete(`/admin/users/${id}`);
-  clearAdminCache();
-  return response.data;
+  try {
+    const response = await api.delete(`/admin/users/${id}`);
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error deleting user:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
-// ==================== APPLICATION MANAGEMENT ====================
-export const getAllApplications = async (params?: {
+// ==================== PAYMENT MANAGEMENT ====================
+export const getAllPayments = async (params?: {
   page?: number;
   limit?: number;
   status?: string;
@@ -253,47 +225,28 @@ export const getAllApplications = async (params?: {
 }) => {
   try {
     if (!params?.forceRefresh) {
-      const cached = getCachedData(CACHE_KEYS.APPLICATIONS);
+      const cached = getCachedData(CACHE_KEYS.PAYMENTS);
       if (cached) return cached;
     }
 
-    const response = await api.get("/applications", { params });
+    const response = await api.get("/admin/payments", { params });
     const result = response.data;
 
-    setCachedData(CACHE_KEYS.APPLICATIONS, result);
+    setCachedData(CACHE_KEYS.PAYMENTS, result);
     return result;
   } catch (error: any) {
     console.error(
-      "Error fetching applications:",
+      "Error fetching payments:",
       error.response?.data || error.message,
     );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
-  }
-};
-
-export const approveApplication = async (id: string, adminNotes?: string) => {
-  const response = await api.put(`/applications/${id}/approve`, {
-    adminNotes,
-  });
-  clearAdminCache();
-  return response.data;
-};
-
-export const rejectApplication = async (id: string, adminNotes?: string) => {
-  const response = await api.put(`/applications/${id}/reject`, { adminNotes });
-  clearAdminCache();
-  return response.data;
-};
-
-export const getApplicationBillingStatus = async (applicationId: string) => {
-  try {
-    const response = await api.get(
-      `/applications/billing-status/${applicationId}`,
-    );
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching application billing status:", error);
-    return { data: null };
+    return {
+      success: true,
+      data: [],
+      totalPages: 0,
+      currentPage: 1,
+      total: 0,
+      stats: {},
+    };
   }
 };
 
@@ -303,7 +256,6 @@ export const getAllBills = async (params?: {
   limit?: number;
   status?: string;
   userId?: string;
-  applicationId?: string;
   forceRefresh?: boolean;
 }) => {
   try {
@@ -322,7 +274,14 @@ export const getAllBills = async (params?: {
       "Error fetching bills:",
       error.response?.data || error.message,
     );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0, stats: [] };
+    return {
+      success: true,
+      data: [],
+      totalPages: 0,
+      currentPage: 1,
+      total: 0,
+      stats: [],
+    };
   }
 };
 
@@ -378,22 +337,27 @@ export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
       "Error fetching customers without accounts:",
       error.response?.data || error.message,
     );
-    return { data: [], count: 0 };
+    return { success: true, data: [], count: 0 };
   }
 };
 
-// ==================== BILLING FOR APPLICATIONS (PRIORITY) ====================
-export const startBillingForApplication = async (
-  applicationId: string,
-  data?: { installationDate?: string; notes?: string },
-) => {
-  console.log(`🚀 Starting billing for application: ${applicationId}`);
-  const response = await api.post(
-    `/applications/${applicationId}/start-billing`,
-    data || {},
-  );
-  clearAdminCache();
-  return response.data;
+// ==================== REPORT GENERATION ====================
+export const generateReport = async (data: {
+  type: "revenue" | "users" | "plans" | "billing";
+  startDate: string;
+  endDate: string;
+  format?: "json" | "csv" | "pdf";
+}) => {
+  try {
+    const response = await api.post("/admin/reports", data);
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error generating report:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
 // ==================== BILLING CYCLE MANAGEMENT ====================
@@ -442,24 +406,6 @@ export interface BillingCycle {
   updatedAt: string;
 }
 
-export interface BillingSettings {
-  _id: string;
-  reminderDays: number[];
-  dueDateDaysAfterPeriod: number;
-  gracePeriodDays: number;
-  autoGenerateBills: boolean;
-  autoSendReminders: boolean;
-  autoSuspendOnNonPayment: boolean;
-  billingCycleDay: number;
-  freeDays: number;
-  proRatedDueDay: number;
-  monthlyDueDay: number;
-  billingCutoffDay: number;
-  enableAutoBilling: boolean;
-  sendInvoiceOnInstall: boolean;
-  requireAdminActivation: boolean;
-}
-
 export const getAllBillingCycles = async (params?: {
   page?: number;
   limit?: number;
@@ -482,206 +428,103 @@ export const getAllBillingCycles = async (params?: {
       "Error fetching billing cycles:",
       error.response?.data || error.message,
     );
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+    return { success: true, data: [], totalPages: 0, currentPage: 1, total: 0 };
   }
 };
 
-export const startBilling = async (data: {
-  userId: string;
-  startDate?: string;
-  customAmount?: number;
-  notes?: string;
-}) => {
-  const response = await api.post("/billing/start", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const stopBilling = async (data: {
-  userId: string;
-  reason?: string;
-}) => {
-  const response = await api.post("/billing/stop", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const pauseBilling = async (data: {
-  userId: string;
-  reason?: string;
-  pauseUntilDate?: string;
-}) => {
-  const response = await api.post("/billing/pause", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const resumeBilling = async (data: { userId: string }) => {
-  const response = await api.post("/billing/resume", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const disconnectClient = async (data: {
-  userId: string;
-  reason?: string;
-}) => {
-  const response = await api.post("/billing/disconnect", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const reconnectClient = async (data: { userId: string }) => {
-  const response = await api.post("/billing/reconnect", data);
-  clearAdminCache();
-  return response.data;
-};
-
-// ==================== BILLING SETTINGS ====================
-export const getBillingSettings = async (forceRefresh?: boolean) => {
-  const response = await api.get("/billing/settings");
-  return response.data;
-};
-
-export const updateBillingSettings = async (data: Partial<BillingSettings>) => {
-  const response = await api.put("/billing/settings", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const getBillingSettingsAdmin = async (forceRefresh?: boolean) => {
-  const response = await api.get("/billing/settings/admin");
-  return response.data;
-};
-
-export const updateBillingSettingsAdmin = async (
-  data: Partial<BillingSettings>,
-) => {
-  const response = await api.put("/billing/settings/admin", data);
-  clearAdminCache();
-  return response.data;
-};
-
-// ==================== BILLING SUMMARY & STATS ====================
-export const getBillingSummaryAdmin = async (forceRefresh?: boolean) => {
-  try {
-    const response = await api.get("/billing/summary");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching billing summary:", error);
-    return { data: {} };
-  }
-};
-
-// ==================== BILL PAYMENT MANAGEMENT ====================
-export const markBillAsPaid = async (
-  billId: string,
-  data: { referenceNumber?: string; notes?: string },
-) => {
-  const response = await api.put(`/billing/mark-paid/${billId}`, data);
-  clearAdminCache();
-  return response.data;
-};
-
-// ==================== PENDING BILLS & ACTIVATIONS ====================
-export const getPendingProRatedBills = async (forceRefresh?: boolean) => {
-  try {
-    const response = await api.get("/billing/pending-pro-rated");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching pending pro-rated bills:", error);
-    return { data: [] };
-  }
-};
-
-export const getPendingActivations = async (forceRefresh?: boolean) => {
-  try {
-    const response = await api.get("/billing/pending-activations");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching pending activations:", error);
-    return { data: [] };
-  }
-};
-
-// ==================== PAYMENT CONFIRMATIONS ====================
-export const confirmProRatedPayment = async (data: {
-  userId: string;
-  paymentDetails?: any;
-}) => {
-  const response = await api.post("/billing/confirm-pro-rated", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const startMonthlyBilling = async (data: { userId: string }) => {
-  const response = await api.post("/billing/start-monthly", data);
-  clearAdminCache();
-  return response.data;
-};
-
-// ==================== USER BILLING FUNCTIONS ====================
-export const getUserCurrentBilling = async () => {
-  try {
-    const response = await api.get("/billing/user/current");
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching user current billing:", error);
-    return { data: null };
-  }
-};
-
-export const getUserBillingHistory = async (params?: {
+// ==================== APPLICATION MANAGEMENT ====================
+export const getAllApplications = async (params?: {
   page?: number;
   limit?: number;
+  status?: string;
+  forceRefresh?: boolean;
 }) => {
   try {
-    const response = await api.get("/billing/user/history", { params });
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching user billing history:", error);
-    return { data: { billingHistory: [], total: 0, page: 1, pages: 0 } };
+    if (!params?.forceRefresh) {
+      const cached = getCachedData(CACHE_KEYS.APPLICATIONS);
+      if (cached) return cached;
+    }
+
+    const response = await api.get("/applications", { params });
+    const result = response.data;
+
+    setCachedData(CACHE_KEYS.APPLICATIONS, result);
+    return result;
+  } catch (error: any) {
+    console.error(
+      "Error fetching applications:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: [], totalPages: 0, currentPage: 1, total: 0 };
   }
 };
 
-// ==================== AUTO BILLING FUNCTIONS ====================
-export const autoGenerateMonthlyBills = async () => {
-  const response = await api.post("/billing/auto-generate");
-  clearAdminCache();
-  return response.data;
+export const approveApplication = async (id: string, adminNotes?: string) => {
+  try {
+    const response = await api.put(`/applications/${id}/approve`, {
+      adminNotes,
+    });
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error approving application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
-export const autoSendReminders = async () => {
-  const response = await api.post("/billing/auto-reminders");
-  clearAdminCache();
-  return response.data;
+export const rejectApplication = async (id: string, adminNotes?: string) => {
+  try {
+    const response = await api.put(`/applications/${id}/reject`, {
+      adminNotes,
+    });
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error rejecting application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
-export const autoSuspendOverdue = async () => {
-  const response = await api.post("/billing/auto-suspend");
-  clearAdminCache();
-  return response.data;
+export const startBillingForApplication = async (
+  applicationId: string,
+  data?: { installationDate?: string; notes?: string },
+) => {
+  try {
+    console.log(`🚀 Starting billing for application: ${applicationId}`);
+    const response = await api.post(
+      `/applications/${applicationId}/start-billing`,
+      data || {},
+    );
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error starting billing for application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
 };
 
-// ==================== SUBMIT PAYMENTS (USER) ====================
-export const submitProRatedPayment = async (data: {
-  billId: string;
-  referenceNumber: string;
-  notes?: string;
-}) => {
-  const response = await api.post("/billing/user/submit-pro-rated", data);
-  clearAdminCache();
-  return response.data;
-};
-
-export const submitMonthlyPayment = async (data: {
-  billId: string;
-  referenceNumber: string;
-  notes?: string;
-}) => {
-  const response = await api.post("/billing/user/submit-monthly", data);
-  clearAdminCache();
-  return response.data;
+export const getApplicationBillingStatus = async (applicationId: string) => {
+  try {
+    const response = await api.get(
+      `/applications/billing-status/${applicationId}`,
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error fetching application billing status:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: null };
+  }
 };
 
 // ==================== CACHE MANAGEMENT ====================
@@ -700,8 +543,7 @@ export const clearBillingCache = () => {
     "admin_bills_cache",
     "admin_billing_cycles_cache",
     "admin_customers_without_accounts_cache",
-    "admin_email_status_cache",
-    "admin_pending_payments",
+    "admin_email_alerts_preference_cache",
   ];
   keys.forEach((key) => {
     try {
@@ -713,9 +555,9 @@ export const clearBillingCache = () => {
 
 // ==================== DEFAULT EXPORT ====================
 export default {
-  // Email Toggle
-  getEmailStatus,
-  toggleEmail,
+  // Customer Email Alerts
+  toggleCustomerEmailAlerts,
+  getCustomerEmailAlertsPreference,
 
   // Dashboard
   getDashboardStats,
@@ -729,65 +571,28 @@ export default {
   suspendUser,
   deleteUser,
 
-  // Application Management
-  getAllApplications,
-  approveApplication,
-  rejectApplication,
-  getApplicationBillingStatus,
-
   // Payment Management
   getAllPayments,
-  getPendingPayments,
-  confirmPayment,
-  rejectPayment,
 
   // Bill Management
   getAllBills,
-  markBillAsPaid,
 
   // Customer Management
   createManualCustomer,
   getCustomersWithoutAccounts,
 
-  // Billing for Applications (Priority)
+  // Report Generation
+  generateReport,
+
+  // Application Management
+  getAllApplications,
+  approveApplication,
+  rejectApplication,
   startBillingForApplication,
+  getApplicationBillingStatus,
 
   // Billing Cycle Management
   getAllBillingCycles,
-  startBilling,
-  stopBilling,
-  pauseBilling,
-  resumeBilling,
-  disconnectClient,
-  reconnectClient,
-
-  // Billing Settings
-  getBillingSettings,
-  updateBillingSettings,
-  getBillingSettingsAdmin,
-  updateBillingSettingsAdmin,
-
-  // Billing Summary
-  getBillingSummaryAdmin,
-
-  // Pending Items
-  getPendingProRatedBills,
-  getPendingActivations,
-  confirmProRatedPayment,
-  startMonthlyBilling,
-
-  // User Billing
-  getUserCurrentBilling,
-  getUserBillingHistory,
-
-  // Auto Billing
-  autoGenerateMonthlyBills,
-  autoSendReminders,
-  autoSuspendOverdue,
-
-  // Submit Payments
-  submitProRatedPayment,
-  submitMonthlyPayment,
 
   // Cache Management
   clearBillingCache,
