@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import {
   FiDownload,
-  FiCalendar,
   FiFileText,
   FiUsers,
   FiCreditCard,
@@ -24,12 +23,10 @@ import {
   getDashboardStats,
   getCustomerEmailAlertsPreference,
   toggleCustomerEmailAlerts,
-  generateReport,
 } from "@/services/admin";
 import * as XLSX from "xlsx";
 
 export default function AdminReportsPage() {
-  const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [togglingEmail, setTogglingEmail] = useState(false);
@@ -43,7 +40,6 @@ export default function AdminReportsPage() {
     "payments" | "users" | "bills" | "revenue"
   >("payments");
 
-  // Stats for summary
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalPayments: 0,
@@ -67,7 +63,6 @@ export default function AdminReportsPage() {
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
-      // Set default values on error
       setStats({
         totalUsers: 0,
         totalPayments: 0,
@@ -117,6 +112,7 @@ export default function AdminReportsPage() {
   };
 
   const formatDate = (dateString: string) => {
+    if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString("en-PH", {
       year: "numeric",
       month: "short",
@@ -134,7 +130,6 @@ export default function AdminReportsPage() {
 
       let payments = result.data || [];
 
-      // Filter by date range
       payments = payments.filter((payment: any) => {
         const paymentDate = new Date(payment.createdAt);
         const start = new Date(dateRange.startDate);
@@ -169,7 +164,6 @@ export default function AdminReportsPage() {
             : "N/A",
       }));
 
-      // Calculate summary
       const totalAmount = payments.reduce(
         (sum: number, p: any) => sum + (p.amount || 0),
         0,
@@ -213,29 +207,12 @@ export default function AdminReportsPage() {
         ...reportData.map(Object.values),
       ];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
-
-      ws["!cols"] = [
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 30 },
-      ];
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Payments Report");
       XLSX.writeFile(
         wb,
         `payments_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-
       toast.success("Payments report generated successfully");
     } catch (error) {
       console.error("Error generating payments report:", error);
@@ -248,14 +225,9 @@ export default function AdminReportsPage() {
   const generateUsersReport = async () => {
     setGenerating("users");
     try {
-      const result = await getAllUsers({
-        forceRefresh: true,
-        limit: 10000,
-      });
-
+      const result = await getAllUsers({ forceRefresh: true, limit: 10000 });
       let users = result.data || [];
 
-      // Filter by date range if needed (users don't have date filter by default, but we can add)
       users = users.filter((user: any) => {
         const userDate = new Date(user.createdAt);
         const start = new Date(dateRange.startDate);
@@ -290,8 +262,6 @@ export default function AdminReportsPage() {
       const totalSuspended = users.filter(
         (u: any) => u.status === "suspended",
       ).length;
-      const adminCount = users.filter((u: any) => u.role === "admin").length;
-      const userCount = users.filter((u: any) => u.role === "user").length;
 
       const summary = [
         ["USER REPORT SUMMARY"],
@@ -305,12 +275,6 @@ export default function AdminReportsPage() {
         ["Active Users:", totalActive],
         ["Inactive Users:", totalInactive],
         ["Suspended Users:", totalSuspended],
-        [""],
-        ["Administrators:", adminCount],
-        ["Regular Users:", userCount],
-        [""],
-        ["Users with Plan:", users.filter((u: any) => u.planId).length],
-        ["Users without Plan:", users.filter((u: any) => !u.planId).length],
       ];
 
       const finalData = [
@@ -320,29 +284,12 @@ export default function AdminReportsPage() {
         ...reportData.map(Object.values),
       ];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
-
-      ws["!cols"] = [
-        { wch: 25 },
-        { wch: 20 },
-        { wch: 30 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 20 },
-        { wch: 35 },
-        { wch: 15 },
-        { wch: 15 },
-      ];
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Users Report");
       XLSX.writeFile(
         wb,
         `users_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-
       toast.success("Users report generated successfully");
     } catch (error) {
       console.error("Error generating users report:", error);
@@ -355,14 +302,9 @@ export default function AdminReportsPage() {
   const generateBillsReport = async () => {
     setGenerating("bills");
     try {
-      const result = await getAllBills({
-        forceRefresh: true,
-        limit: 10000,
-      });
-
+      const result = await getAllBills({ forceRefresh: true, limit: 10000 });
       let bills = result.data || [];
 
-      // Filter by date range
       bills = bills.filter((bill: any) => {
         const billDate = new Date(bill.createdAt);
         const start = new Date(dateRange.startDate);
@@ -379,23 +321,8 @@ export default function AdminReportsPage() {
         Discount: bill.discount || 0,
         Total: bill.total || 0,
         Status: bill.status?.toUpperCase() || "UNKNOWN",
-        "Is Pro-Rated": bill.isProRated ? "Yes" : "No",
         "Due Date": bill.dueDate ? formatDate(bill.dueDate) : "N/A",
-        "Billing Period Start": bill.billingPeriod?.start
-          ? formatDate(bill.billingPeriod.start)
-          : "N/A",
-        "Billing Period End": bill.billingPeriod?.end
-          ? formatDate(bill.billingPeriod.end)
-          : "N/A",
         "Created At": formatDate(bill.createdAt),
-        "User ID":
-          typeof bill.userId === "object" ? bill.userId?._id : bill.userId,
-        "User Name":
-          typeof bill.userId === "object"
-            ? `${bill.userId?.firstName || ""} ${bill.userId?.lastName || ""}`.trim() ||
-              bill.userId?.username ||
-              "N/A"
-            : "N/A",
       }));
 
       const totalAmount = bills.reduce(
@@ -403,18 +330,6 @@ export default function AdminReportsPage() {
         0,
       );
       const paidBills = bills.filter((b: any) => b.status === "paid").length;
-      const unpaidBills = bills.filter(
-        (b: any) => b.status === "sent" || b.status === "pending",
-      ).length;
-      const overdueBills = bills.filter(
-        (b: any) => b.status === "overdue",
-      ).length;
-      const paidAmount = bills
-        .filter((b: any) => b.status === "paid")
-        .reduce((sum: number, b: any) => sum + (b.total || 0), 0);
-      const unpaidAmount = bills
-        .filter((b: any) => b.status !== "paid")
-        .reduce((sum: number, b: any) => sum + (b.total || 0), 0);
 
       const summary = [
         ["BILLS REPORT SUMMARY"],
@@ -426,17 +341,7 @@ export default function AdminReportsPage() {
         [""],
         ["Total Bills:", bills.length],
         ["Total Amount:", formatCurrency(totalAmount)],
-        [""],
         ["Paid Bills:", paidBills],
-        ["Paid Amount:", formatCurrency(paidAmount)],
-        ["Unpaid Bills:", unpaidBills],
-        ["Unpaid Amount:", formatCurrency(unpaidAmount)],
-        ["Overdue Bills:", overdueBills],
-        [""],
-        [
-          "Collection Rate:",
-          `${bills.length > 0 ? ((paidAmount / totalAmount) * 100).toFixed(2) : 0}%`,
-        ],
       ];
 
       const finalData = [
@@ -446,31 +351,12 @@ export default function AdminReportsPage() {
         ...reportData.map(Object.values),
       ];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
-
-      ws["!cols"] = [
-        { wch: 25 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 25 },
-        { wch: 25 },
-      ];
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Bills Report");
       XLSX.writeFile(
         wb,
         `bills_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-
       toast.success("Bills report generated successfully");
     } catch (error) {
       console.error("Error generating bills report:", error);
@@ -491,7 +377,6 @@ export default function AdminReportsPage() {
       let payments = paymentsResult.data || [];
       let bills = billsResult.data || [];
 
-      // Filter by date range
       payments = payments.filter((payment: any) => {
         const paymentDate = new Date(payment.createdAt);
         const start = new Date(dateRange.startDate);
@@ -507,45 +392,6 @@ export default function AdminReportsPage() {
         end.setHours(23, 59, 59);
         return billDate >= start && billDate <= end;
       });
-
-      // Group by month
-      const monthlyData: {
-        [key: string]: { payments: number; bills: number; revenue: number };
-      } = {};
-
-      payments.forEach((payment: any) => {
-        const date = new Date(payment.createdAt);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { payments: 0, bills: 0, revenue: 0 };
-        }
-        monthlyData[monthKey].payments += payment.amount || 0;
-        monthlyData[monthKey].revenue +=
-          payment.status === "completed" ? payment.amount || 0 : 0;
-      });
-
-      bills.forEach((bill: any) => {
-        const date = new Date(bill.createdAt);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { payments: 0, bills: 0, revenue: 0 };
-        }
-        monthlyData[monthKey].bills += bill.total || 0;
-      });
-
-      const monthlyReport = Object.entries(monthlyData)
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([monthKey, data]) => ({
-          Month: new Date(
-            parseInt(monthKey.split("-")[0]),
-            parseInt(monthKey.split("-")[1]) - 1,
-          ).toLocaleDateString("en-PH", { year: "numeric", month: "long" }),
-          "Total Bills Generated": formatCurrency(data.bills),
-          "Total Payments Received": formatCurrency(data.payments),
-          "Collected Revenue": formatCurrency(data.revenue),
-          Outstanding: formatCurrency(data.bills - data.revenue),
-          "Collection Rate": `${data.bills > 0 ? ((data.revenue / data.bills) * 100).toFixed(2) : 0}%`,
-        }));
 
       const totalBills = bills.reduce(
         (sum: number, b: any) => sum + (b.total || 0),
@@ -570,7 +416,6 @@ export default function AdminReportsPage() {
         ["Total Bills Generated:", formatCurrency(totalBills)],
         ["Total Payments Received:", formatCurrency(totalPayments)],
         ["Confirmed/Completed Revenue:", formatCurrency(completedPayments)],
-        ["Pending Revenue:", formatCurrency(totalPayments - completedPayments)],
         [
           "Outstanding Balance:",
           formatCurrency(totalBills - completedPayments),
@@ -580,42 +425,16 @@ export default function AdminReportsPage() {
           "Overall Collection Rate:",
           `${totalBills > 0 ? ((completedPayments / totalBills) * 100).toFixed(2) : 0}%`,
         ],
-        ["Total Bills Count:", bills.length],
-        ["Total Payments Count:", payments.length],
-        [
-          "Completed Payments Count:",
-          payments.filter((p: any) => p.status === "completed").length,
-        ],
       ];
 
-      const finalData = [
-        ...summary,
-        [],
-        ["MONTHLY BREAKDOWN"],
-        [],
-        ...(monthlyReport.length > 0
-          ? [Object.keys(monthlyReport[0]), ...monthlyReport.map(Object.values)]
-          : [["No data available for selected period"]]),
-      ];
-
+      const finalData = [...summary];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
-
-      ws["!cols"] = [
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 18 },
-      ];
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Revenue Report");
       XLSX.writeFile(
         wb,
         `revenue_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-
       toast.success("Revenue report generated successfully");
     } catch (error) {
       console.error("Error generating revenue report:", error);
@@ -940,15 +759,7 @@ export default function AdminReportsPage() {
                 ) : (
                   <>
                     <FiDownload className="w-4 h-4" />
-                    Generate{" "}
-                    {reportType === "payments"
-                      ? "Payments"
-                      : reportType === "users"
-                        ? "Users"
-                        : reportType === "bills"
-                          ? "Bills"
-                          : "Revenue"}{" "}
-                    Report
+                    Generate Report
                   </>
                 )}
               </button>
