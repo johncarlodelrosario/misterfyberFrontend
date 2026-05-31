@@ -184,16 +184,6 @@ export default function ApplicationsPage() {
     failed: any[];
   } | null>(null);
 
-  const [regions, setRegions] = useState<Region[]>([]);
-  const [provinces, setProvinces] = useState<Province[]>([]);
-  const [cities, setCities] = useState<City[]>([]);
-  const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [selectedRegion, setSelectedRegion] = useState("");
-  const [selectedProvince, setSelectedProvince] = useState("");
-  const [selectedCity, setSelectedCity] = useState("");
-  const [selectedBarangay, setSelectedBarangay] = useState("");
-  const [streetAddress, setStreetAddress] = useState("");
-
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -241,7 +231,6 @@ export default function ApplicationsPage() {
   useEffect(() => {
     if (showAddCustomerModal) {
       loadBuildingsAndPlans();
-      loadRegions();
     }
   }, [showAddCustomerModal]);
 
@@ -257,361 +246,6 @@ export default function ApplicationsPage() {
       console.error("Failed to load buildings/plans:", error);
       toast.error("Failed to load buildings and plans");
     }
-  };
-
-  const loadRegions = async () => {
-    try {
-      const regionsData = await getRegions();
-      setRegions(regionsData);
-    } catch (error) {
-      console.error("Failed to load regions:", error);
-      toast.error("Failed to load address data");
-    }
-  };
-
-  const loadProvinces = async (regionCode: string) => {
-    try {
-      const provincesData = await getProvincesByRegion(regionCode);
-      setProvinces(provincesData);
-      setCities([]);
-      setBarangays([]);
-      setSelectedProvince("");
-      setSelectedCity("");
-      setSelectedBarangay("");
-    } catch (error) {
-      console.error("Failed to load provinces:", error);
-      toast.error("Failed to load provinces");
-    }
-  };
-
-  const loadCities = async (provinceCode: string) => {
-    try {
-      const citiesData = await getCitiesByProvince(provinceCode);
-      setCities(citiesData);
-      setBarangays([]);
-      setSelectedCity("");
-      setSelectedBarangay("");
-    } catch (error) {
-      console.error("Failed to load cities:", error);
-      toast.error("Failed to load cities");
-    }
-  };
-
-  const loadBarangays = async (cityCode: string) => {
-    try {
-      const barangaysData = await getBarangaysByCity(cityCode);
-      setBarangays(barangaysData);
-      setSelectedBarangay("");
-    } catch (error) {
-      console.error("Failed to load barangays:", error);
-      toast.error("Failed to load barangays");
-    }
-  };
-
-  const handleRegionChange = (regionCode: string) => {
-    setSelectedRegion(regionCode);
-    loadProvinces(regionCode);
-  };
-
-  const handleProvinceChange = (provinceCode: string) => {
-    setSelectedProvince(provinceCode);
-    loadCities(provinceCode);
-  };
-
-  const handleCityChange = (cityCode: string) => {
-    setSelectedCity(cityCode);
-    loadBarangays(cityCode);
-  };
-
-  const resetAddressForm = () => {
-    setSelectedRegion("");
-    setSelectedProvince("");
-    setSelectedCity("");
-    setSelectedBarangay("");
-    setStreetAddress("");
-    setRegions([]);
-    setProvinces([]);
-    setCities([]);
-    setBarangays([]);
-  };
-
-  const resetCustomerForm = () => {
-    setCustomerForm({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phoneNumber: "",
-      buildingId: "",
-      floor: "",
-      unitNumber: "",
-      notes: "",
-      planId: "",
-      idType: "",
-      idNumber: "",
-      macAddress: "",
-      idImage: null,
-    });
-    resetAddressForm();
-  };
-
-  const handleAddCustomerSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (
-      !customerForm.firstName ||
-      !customerForm.lastName ||
-      !customerForm.email ||
-      !customerForm.phoneNumber ||
-      !customerForm.buildingId ||
-      !customerForm.planId ||
-      !customerForm.idType ||
-      !customerForm.idNumber
-    ) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      await submitApplication(customerForm as any);
-      toast.success("Customer application submitted successfully!");
-      setShowAddCustomerModal(false);
-      resetCustomerForm();
-      fetchApplications();
-    } catch (error: any) {
-      console.error("Failed to submit application:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to submit application",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
-        setCsvFile(file);
-        setBulkResults(null);
-      } else {
-        toast.error("Please upload a valid CSV file");
-        setCsvFile(null);
-      }
-    }
-  };
-
-  const downloadCsvTemplate = () => {
-    const headers = [
-      "firstName",
-      "lastName",
-      "email",
-      "phoneNumber",
-      "buildingName",
-      "floor",
-      "unitNumber",
-      "planName",
-      "idType",
-      "idNumber",
-      "macAddress",
-      "notes",
-    ];
-
-    const exampleRow = [
-      "John",
-      "Doe",
-      "john.doe@example.com",
-      "09123456789",
-      "Tower 1",
-      "5th Floor",
-      "Unit 501",
-      "Fiber 100 Mbps",
-      "Philippine National ID",
-      "1234-5678-9012",
-      "AA:BB:CC:DD:EE:FF",
-      "Interested in installation",
-    ];
-
-    const csvContent = [headers.join(","), exampleRow.join(",")].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "customer_applications_template.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Template downloaded");
-  };
-
-  const parseCsvAndPrepareData = async (file: File): Promise<any[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const text = e.target?.result as string;
-          const lines = text.split("\n");
-          const headers = lines[0]
-            .split(",")
-            .map((h) => h.trim().replace(/\r/g, ""));
-
-          const [buildingsData, plansData] = await Promise.all([
-            getActiveBuildings(),
-            getAllPlans(),
-          ]);
-
-          const buildingMap = new Map();
-          buildingsData.forEach((b: Building) => {
-            buildingMap.set(b.buildingName.toLowerCase().trim(), b._id);
-          });
-
-          const planMap = new Map();
-          plansData.forEach((p: Plan) => {
-            planMap.set(p.name.toLowerCase().trim(), p._id);
-          });
-
-          const applications: any[] = [];
-
-          for (let i = 1; i < lines.length; i++) {
-            if (!lines[i].trim()) continue;
-
-            const values = parseCSVLine(lines[i]);
-            const row: any = {};
-            headers.forEach((header, index) => {
-              row[header] = values[index]?.trim() || "";
-            });
-
-            const buildingId = buildingMap.get(
-              row.buildingName?.toLowerCase().trim(),
-            );
-            if (!buildingId) {
-              console.warn(`Building not found: ${row.buildingName}`);
-              continue;
-            }
-
-            const planId = planMap.get(row.planName?.toLowerCase().trim());
-            if (!planId) {
-              console.warn(`Plan not found: ${row.planName}`);
-              continue;
-            }
-
-            if (
-              !row.firstName ||
-              !row.lastName ||
-              !row.email ||
-              !row.phoneNumber
-            ) {
-              console.warn(`Missing required fields for row ${i}`);
-              continue;
-            }
-
-            applications.push({
-              firstName: row.firstName,
-              lastName: row.lastName,
-              email: row.email,
-              phoneNumber: row.phoneNumber,
-              buildingId: buildingId,
-              floor: row.floor || "",
-              unitNumber: row.unitNumber || "",
-              notes: row.notes || "",
-              planId: planId,
-              idType: row.idType || ID_TYPES[0],
-              idNumber: row.idNumber || "N/A",
-              macAddress: row.macAddress || "",
-            });
-          }
-
-          resolve(applications);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
-
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === "," && !inQuotes) {
-        result.push(current);
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    result.push(current);
-    return result;
-  };
-
-  const handleBulkUpload = async () => {
-    if (!csvFile) {
-      toast.error("Please select a CSV file");
-      return;
-    }
-
-    setBulkSubmitting(true);
-    setBulkResults(null);
-
-    try {
-      const applications = await parseCsvAndPrepareData(csvFile);
-
-      if (applications.length === 0) {
-        toast.error("No valid applications found in CSV");
-        setBulkSubmitting(false);
-        return;
-      }
-
-      const success: any[] = [];
-      const failed: any[] = [];
-
-      for (let i = 0; i < applications.length; i++) {
-        const app = applications[i];
-        try {
-          const result = await submitApplication(app);
-          success.push({ ...app, result: result.data });
-          toast.success(`✓ ${app.firstName} ${app.lastName} added`);
-        } catch (error: any) {
-          failed.push({
-            ...app,
-            error:
-              error.response?.data?.message || error.message || "Unknown error",
-          });
-          toast.error(`✗ Failed: ${app.firstName} ${app.lastName}`);
-        }
-      }
-
-      setBulkResults({ success, failed });
-
-      if (success.length > 0) {
-        toast.success(`Successfully added ${success.length} customers`);
-        fetchApplications();
-      }
-
-      if (failed.length > 0) {
-        toast.error(`Failed to add ${failed.length} customers`);
-      }
-    } catch (error: any) {
-      console.error("Bulk upload failed:", error);
-      toast.error(error.message || "Bulk upload failed");
-    } finally {
-      setBulkSubmitting(false);
-    }
-  };
-
-  const resetBulkUpload = () => {
-    setCsvFile(null);
-    setBulkResults(null);
-    setShowBulkUploadModal(false);
   };
 
   const checkForNewApplicants = useCallback(async () => {
@@ -938,22 +572,26 @@ export default function ApplicationsPage() {
     macAddress: string,
   ) => {
     try {
+      const token = localStorage.getItem("token");
       const response = await fetch(
         `${PRODUCTION_URL}/api/applications/${applicationId}/mac-address`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            Authorization: token ? `Bearer ${token}` : "",
           },
           body: JSON.stringify({ macAddress }),
         },
       );
 
       if (response.ok) {
+        const result = await response.json();
         setApplications((prev) =>
           prev.map((app) =>
-            app._id === applicationId ? { ...app, macAddress } : app,
+            app._id === applicationId
+              ? { ...app, macAddress: result.data?.macAddress || macAddress }
+              : app,
           ),
         );
         toast.success("MAC address updated successfully");
@@ -1000,7 +638,10 @@ export default function ApplicationsPage() {
           .includes(filter.searchTerm.toLowerCase()) ||
         app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
         app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        app.macAddress?.toLowerCase().includes(filter.searchTerm.toLowerCase());
+        (app.macAddress &&
+          app.macAddress
+            .toLowerCase()
+            .includes(filter.searchTerm.toLowerCase()));
       const matchesStatus =
         filter.statusFilter === "all" || app.status === filter.statusFilter;
       return matchesSearch && matchesStatus;
@@ -1045,6 +686,284 @@ export default function ApplicationsPage() {
     [applications],
   );
 
+  const resetCustomerForm = () => {
+    setCustomerForm({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phoneNumber: "",
+      buildingId: "",
+      floor: "",
+      unitNumber: "",
+      notes: "",
+      planId: "",
+      idType: "",
+      idNumber: "",
+      macAddress: "",
+      idImage: null,
+    });
+  };
+
+  const handleAddCustomerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (
+      !customerForm.firstName ||
+      !customerForm.lastName ||
+      !customerForm.email ||
+      !customerForm.phoneNumber ||
+      !customerForm.buildingId ||
+      !customerForm.planId ||
+      !customerForm.idType ||
+      !customerForm.idNumber
+    ) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await submitApplication(customerForm as any);
+      toast.success("Customer application submitted successfully!");
+      setShowAddCustomerModal(false);
+      resetCustomerForm();
+      fetchApplications();
+    } catch (error: any) {
+      console.error("Failed to submit application:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to submit application",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        setCsvFile(file);
+        setBulkResults(null);
+      } else {
+        toast.error("Please upload a valid CSV file");
+        setCsvFile(null);
+      }
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const headers = [
+      "firstName",
+      "lastName",
+      "email",
+      "phoneNumber",
+      "buildingName",
+      "floor",
+      "unitNumber",
+      "planName",
+      "idType",
+      "idNumber",
+      "macAddress",
+      "notes",
+    ];
+
+    const exampleRow = [
+      "John",
+      "Doe",
+      "john.doe@example.com",
+      "09123456789",
+      "Tower 1",
+      "5th Floor",
+      "Unit 501",
+      "Fiber 100 Mbps",
+      "Philippine National ID",
+      "1234-5678-9012",
+      "AA:BB:CC:DD:EE:FF",
+      "Interested in installation",
+    ];
+
+    const csvContent = [headers.join(","), exampleRow.join(",")].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "customer_applications_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Template downloaded");
+  };
+
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        result.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const parseCsvAndPrepareData = async (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const text = e.target?.result as string;
+          const lines = text.split("\n");
+          const headers = lines[0]
+            .split(",")
+            .map((h) => h.trim().replace(/\r/g, ""));
+
+          const [buildingsData, plansData] = await Promise.all([
+            getActiveBuildings(),
+            getAllPlans(),
+          ]);
+
+          const buildingMap = new Map();
+          buildingsData.forEach((b: Building) => {
+            buildingMap.set(b.buildingName.toLowerCase().trim(), b._id);
+          });
+
+          const planMap = new Map();
+          plansData.forEach((p: Plan) => {
+            planMap.set(p.name.toLowerCase().trim(), p._id);
+          });
+
+          const applications: any[] = [];
+
+          for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+
+            const values = parseCSVLine(lines[i]);
+            const row: any = {};
+            headers.forEach((header, index) => {
+              row[header] = values[index]?.trim() || "";
+            });
+
+            const buildingId = buildingMap.get(
+              row.buildingName?.toLowerCase().trim(),
+            );
+            if (!buildingId) {
+              console.warn(`Building not found: ${row.buildingName}`);
+              continue;
+            }
+
+            const planId = planMap.get(row.planName?.toLowerCase().trim());
+            if (!planId) {
+              console.warn(`Plan not found: ${row.planName}`);
+              continue;
+            }
+
+            if (
+              !row.firstName ||
+              !row.lastName ||
+              !row.email ||
+              !row.phoneNumber
+            ) {
+              console.warn(`Missing required fields for row ${i}`);
+              continue;
+            }
+
+            applications.push({
+              firstName: row.firstName,
+              lastName: row.lastName,
+              email: row.email,
+              phoneNumber: row.phoneNumber,
+              buildingId: buildingId,
+              floor: row.floor || "",
+              unitNumber: row.unitNumber || "",
+              notes: row.notes || "",
+              planId: planId,
+              idType: row.idType || ID_TYPES[0],
+              idNumber: row.idNumber || "N/A",
+              macAddress: row.macAddress || "",
+            });
+          }
+
+          resolve(applications);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  const handleBulkUpload = async () => {
+    if (!csvFile) {
+      toast.error("Please select a CSV file");
+      return;
+    }
+
+    setBulkSubmitting(true);
+    setBulkResults(null);
+
+    try {
+      const applicationsList = await parseCsvAndPrepareData(csvFile);
+
+      if (applicationsList.length === 0) {
+        toast.error("No valid applications found in CSV");
+        setBulkSubmitting(false);
+        return;
+      }
+
+      const success: any[] = [];
+      const failed: any[] = [];
+
+      for (let i = 0; i < applicationsList.length; i++) {
+        const app = applicationsList[i];
+        try {
+          const result = await submitApplication(app);
+          success.push({ ...app, result: result.data });
+          toast.success(`✓ ${app.firstName} ${app.lastName} added`);
+        } catch (error: any) {
+          failed.push({
+            ...app,
+            error:
+              error.response?.data?.message || error.message || "Unknown error",
+          });
+          toast.error(`✗ Failed: ${app.firstName} ${app.lastName}`);
+        }
+      }
+
+      setBulkResults({ success, failed });
+
+      if (success.length > 0) {
+        toast.success(`Successfully added ${success.length} customers`);
+        fetchApplications();
+      }
+
+      if (failed.length > 0) {
+        toast.error(`Failed to add ${failed.length} customers`);
+      }
+    } catch (error: any) {
+      console.error("Bulk upload failed:", error);
+      toast.error(error.message || "Bulk upload failed");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
+  const resetBulkUpload = () => {
+    setCsvFile(null);
+    setBulkResults(null);
+    setShowBulkUploadModal(false);
+  };
+
   if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1087,7 +1006,7 @@ export default function ApplicationsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={() => {
               resetCustomerForm();
