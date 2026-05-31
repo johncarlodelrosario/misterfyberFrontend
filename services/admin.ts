@@ -250,6 +250,52 @@ export const getAllPayments = async (params?: {
   }
 };
 
+export const getPendingPayments = async (forceRefresh?: boolean) => {
+  try {
+    // Don't cache pending payments as they need real-time data
+    const response = await api.get("/admin/payments/pending");
+    const result = response.data;
+
+    return result;
+  } catch (error: any) {
+    console.error(
+      "Error fetching pending payments:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: [] };
+  }
+};
+
+export const confirmPayment = async (paymentId: string) => {
+  try {
+    const response = await api.post(`/admin/payments/${paymentId}/confirm`);
+    clearAdminCache(); // Clear cache to refresh data
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error confirming payment:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+export const rejectPayment = async (paymentId: string, reason: string) => {
+  try {
+    const response = await api.post(`/admin/payments/${paymentId}/reject`, {
+      reason,
+    });
+    clearAdminCache(); // Clear cache to refresh data
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error rejecting payment:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
 // ==================== BILL MANAGEMENT ====================
 export const getAllBills = async (params?: {
   page?: number;
@@ -573,6 +619,9 @@ export default {
 
   // Payment Management
   getAllPayments,
+  getPendingPayments,
+  confirmPayment,
+  rejectPayment,
 
   // Bill Management
   getAllBills,
