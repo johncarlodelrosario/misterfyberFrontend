@@ -1424,25 +1424,6 @@ export default function ApplicationsPage() {
                     <FiCreditCard className="w-4 h-4" />
                     ID Verification
                   </h3>
-                  {selectedApp.idImage &&
-                    selectedApp.idImage !==
-                      "uploads/id-cards/placeholder.jpg" && (
-                      <button
-                        onClick={() => {
-                          const url = getImageUrl(selectedApp.idImage);
-                          if (url) {
-                            setImagePreview(url);
-                            setShowImageModal(true);
-                          } else {
-                            toast.error("Could not load image URL");
-                          }
-                        }}
-                        className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-                      >
-                        <FiImage className="w-4 h-4" />
-                        View ID
-                      </button>
-                    )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -1462,6 +1443,42 @@ export default function ApplicationsPage() {
                       : "Not provided"}
                   </div>
                 </div>
+                {/* Display ID image directly here */}
+                {selectedApp.idImage &&
+                  selectedApp.idImage !== "uploads/id-cards/placeholder.jpg" &&
+                  selectedApp.idImage !== "" && (
+                    <div className="mt-3">
+                      <div className="text-sm text-gray-500 mb-2">
+                        ID Image:
+                      </div>
+                      <div
+                        className="relative border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => {
+                          const url = getImageUrl(selectedApp.idImage);
+                          if (url) {
+                            setImagePreview(url);
+                            setShowImageModal(true);
+                          } else {
+                            toast.error("Could not load image URL");
+                          }
+                        }}
+                      >
+                        <img
+                          src={getImageUrl(selectedApp.idImage) || ""}
+                          alt="ID Document"
+                          className="w-full max-h-64 object-contain bg-gray-100"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
+                        <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                          <FiImage className="w-3 h-3" />
+                          Click to enlarge
+                        </div>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               {selectedApp.adminNotes && (
