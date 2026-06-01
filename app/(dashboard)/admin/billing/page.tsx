@@ -370,6 +370,111 @@ export default function AdminBillingPage() {
     setShowEmailModal(true);
   };
 
+  // ==================== APPLICATION BILLING HANDLERS ====================
+
+  const handlePauseBillingForApplication = async (customer: CustomerItem) => {
+    const reason = prompt("Enter reason for pausing:");
+    if (reason === null) return;
+
+    try {
+      await pauseBilling({
+        applicationId: customer.applicationId,
+        reason: reason || "Admin initiated pause",
+      });
+      toast.success(
+        `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to pause billing");
+    }
+  };
+
+  const handleResumeBillingForApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(`Resume billing for ${customer.firstName} ${customer.lastName}?`)
+    )
+      return;
+
+    try {
+      await resumeBilling({ applicationId: customer.applicationId });
+      toast.success(
+        `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to resume billing");
+    }
+  };
+
+  const handleDisconnectApplication = async (customer: CustomerItem) => {
+    const reason = prompt("Enter reason for disconnection:");
+    if (reason === null) return;
+
+    if (
+      !confirm(
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?`,
+      )
+    )
+      return;
+
+    try {
+      await disconnectClient({ applicationId: customer.applicationId, reason });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to disconnect");
+    }
+  };
+
+  const handleReconnectApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
+      )
+    )
+      return;
+
+    try {
+      await reconnectClient({ applicationId: customer.applicationId });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to reconnect");
+    }
+  };
+
+  const handleStopBillingForApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Stop billing for ${customer.firstName} ${customer.lastName}? This will cancel the subscription.`,
+      )
+    )
+      return;
+
+    try {
+      await stopBilling({
+        applicationId: customer.applicationId,
+        reason: "Admin action",
+      });
+      toast.success(
+        `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to stop billing");
+    }
+  };
+
   const loadData = useCallback(async (forceRefresh = false) => {
     if (!isMountedRef.current) return;
     if (loadedRef.current && !forceRefresh) return;
@@ -470,7 +575,8 @@ export default function AdminBillingPage() {
         .map((app: any) => {
           const appBills = billsList.filter(
             (bill: any) =>
-              bill.applicationId?._id === app._id && bill.status !== "paid",
+              bill.applicationId === app.applicationId &&
+              bill.status !== "paid",
           );
           const totalBalance = appBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
@@ -482,10 +588,7 @@ export default function AdminBillingPage() {
           );
 
           const appCycle = cyclesData.find(
-            (cycle: any) =>
-              cycle.applicationId === app.applicationId ||
-              cycle.applicationId === app._id ||
-              cycle.applicationId?._id === app._id,
+            (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
           return {
@@ -646,7 +749,7 @@ export default function AdminBillingPage() {
 
       if (result.success) {
         toast.success(
-          `✅ Billing started for ${selectedCustomerName}! Invoice sent to ${selectedCustomerEmail}`,
+          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}`,
         );
         setShowStartModal(false);
         setSelectedApplicationId("");
@@ -808,9 +911,7 @@ export default function AdminBillingPage() {
         loadedRef.current = false;
         loadData(true);
       } else {
-        toast.error(
-          "Disconnect for applications is handled through user accounts",
-        );
+        await handleDisconnectApplication(customer);
       }
     } catch (error: any) {
       console.error("Disconnect error:", error);
@@ -837,9 +938,7 @@ export default function AdminBillingPage() {
         loadedRef.current = false;
         loadData(true);
       } else {
-        toast.error(
-          "Reconnect for applications is handled through user accounts",
-        );
+        await handleReconnectApplication(customer);
       }
     } catch (error: any) {
       console.error("Reconnect error:", error);
@@ -850,24 +949,27 @@ export default function AdminBillingPage() {
   };
 
   const getStatusBadge = (customer: CustomerItem) => {
-    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
-    const hasUnpaidProRated =
+    const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
 
     if (customer.type === "application") {
-      // Only show "Awaiting Payment" if there are actually unpaid bills
       if (
         customer.billingCycle?.status === "pending_activation" &&
-        hasUnpaidProRated
+        hasUnpaidBills
       ) {
         return "bg-purple-100 text-purple-800";
       }
-      // If status is pending_activation but no unpaid bills, treat as active
       if (
         customer.billingCycle?.status === "pending_activation" &&
-        !hasUnpaidProRated
+        !hasUnpaidBills
       ) {
         return "bg-green-100 text-green-800";
+      }
+      if (customer.billingCycle?.status === "active") {
+        return "bg-green-100 text-green-800";
+      }
+      if (customer.billingCycle?.status === "paused") {
+        return "bg-yellow-100 text-yellow-800";
       }
       if (customer.status === "billing_started")
         return "bg-indigo-100 text-indigo-800";
@@ -883,24 +985,27 @@ export default function AdminBillingPage() {
   };
 
   const getStatusText = (customer: CustomerItem) => {
-    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
-    const hasUnpaidProRated =
+    const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
 
     if (customer.type === "application") {
-      // Only show "Awaiting Payment" if there are actually unpaid bills
       if (
         customer.billingCycle?.status === "pending_activation" &&
-        hasUnpaidProRated
+        hasUnpaidBills
       ) {
         return "Awaiting Payment";
       }
-      // If status is pending_activation but no unpaid bills, show as active
       if (
         customer.billingCycle?.status === "pending_activation" &&
-        !hasUnpaidProRated
+        !hasUnpaidBills
       ) {
         return "Active";
+      }
+      if (customer.billingCycle?.status === "active") {
+        return "Active";
+      }
+      if (customer.billingCycle?.status === "paused") {
+        return "Paused";
       }
       if (customer.status === "billing_started") return "Billing Started";
       return "Approved";
@@ -940,7 +1045,6 @@ export default function AdminBillingPage() {
     if (statusFilter === "paused")
       return matchesSearch && customer.billingCycle?.status === "paused";
     if (statusFilter === "pending_activation") {
-      // Only show if there are actually unpaid bills
       const hasUnpaid = customer.unpaidBills && customer.unpaidBills.length > 0;
       return (
         matchesSearch &&
@@ -1245,6 +1349,12 @@ export default function AdminBillingPage() {
                 filteredCustomers.map((customer) => {
                   const hasUnpaidBills =
                     customer.unpaidBills && customer.unpaidBills.length > 0;
+                  const hasBillingCycle = !!customer.billingCycle;
+                  const isActive = customer.billingCycle?.status === "active";
+                  const isPaused = customer.billingCycle?.status === "paused";
+                  const isPendingActivation =
+                    customer.billingCycle?.status === "pending_activation";
+
                   return (
                     <tr
                       key={`${customer.type}-${customer._id}`}
@@ -1303,7 +1413,6 @@ export default function AdminBillingPage() {
                         >
                           {getStatusText(customer)}
                         </span>
-                        {/* Only show "Awaiting first payment" if there are actual unpaid bills */}
                         {customer.billingCycle?.status ===
                           "pending_activation" &&
                           hasUnpaidBills && (
@@ -1311,9 +1420,16 @@ export default function AdminBillingPage() {
                               Awaiting first payment
                             </p>
                           )}
+                        {customer.billingCycle?.status === "active" &&
+                          customer.type === "application" && (
+                            <p className="text-xs text-green-600 mt-1">
+                              ✅ Service ACTIVE
+                            </p>
+                          )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2 flex-wrap">
+                          {/* View Details Button */}
                           <button
                             onClick={() => {
                               setSelectedCustomer(customer);
@@ -1324,6 +1440,8 @@ export default function AdminBillingPage() {
                           >
                             <FiEye className="w-4 h-4" />
                           </button>
+
+                          {/* Send Email Button */}
                           <button
                             onClick={() => openEmailModal(customer, "custom")}
                             className="p-1 text-purple-600 hover:text-purple-800"
@@ -1332,10 +1450,11 @@ export default function AdminBillingPage() {
                             <FiMail className="w-4 h-4" />
                           </button>
 
-                          {/* APPLICATIONS */}
+                          {/* APPLICATIONS - Full Actions */}
                           {customer.type === "application" && (
                             <>
-                              {!customer.billingCycle ? (
+                              {/* Start Billing - only if no billing cycle exists */}
+                              {!hasBillingCycle && (
                                 <button
                                   onClick={() => {
                                     const appId =
@@ -1352,18 +1471,75 @@ export default function AdminBillingPage() {
                                 >
                                   <FiPlay className="w-4 h-4" />
                                 </button>
-                              ) : (
+                              )}
+
+                              {/* Pause Button - only if active */}
+                              {isActive && (
                                 <button
-                                  disabled
-                                  className="p-1 text-gray-300 cursor-not-allowed opacity-50"
-                                  title="Billing already started"
+                                  onClick={() =>
+                                    handlePauseBillingForApplication(customer)
+                                  }
+                                  className="p-1 text-yellow-600 hover:text-yellow-800"
+                                  title="Pause Billing"
+                                >
+                                  <FiPause className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Resume Button - only if paused */}
+                              {isPaused && (
+                                <button
+                                  onClick={() =>
+                                    handleResumeBillingForApplication(customer)
+                                  }
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Resume Billing"
                                 >
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
 
-                              {/* Delete button for applications with billing cycles */}
-                              {customer.billingCycle && (
+                              {/* Disconnect Button - only if active or pending activation */}
+                              {(isActive || isPendingActivation) && (
+                                <button
+                                  onClick={() =>
+                                    handleDisconnectApplication(customer)
+                                  }
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Disconnect from Network"
+                                >
+                                  <FiWifiOff className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Reconnect Button - if status is suspended */}
+                              {customer.status === "suspended" && (
+                                <button
+                                  onClick={() =>
+                                    handleReconnectApplication(customer)
+                                  }
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Reconnect to Network"
+                                >
+                                  <FiWifi className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Stop/Cancel Button - if has billing cycle */}
+                              {hasBillingCycle && (
+                                <button
+                                  onClick={() =>
+                                    handleStopBillingForApplication(customer)
+                                  }
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Cancel Subscription"
+                                >
+                                  <FiX className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Delete Button - if has billing cycle */}
+                              {hasBillingCycle && (
                                 <button
                                   onClick={() => {
                                     setCustomerToDelete(customer);
@@ -1378,7 +1554,7 @@ export default function AdminBillingPage() {
                             </>
                           )}
 
-                          {/* USERS */}
+                          {/* USERS - Existing actions */}
                           {customer.type === "user" && (
                             <>
                               {(!customer.billingCycle ||
@@ -1655,6 +1831,21 @@ export default function AdminBillingPage() {
                   placeholder="Optional notes about this billing..."
                 />
               </div>
+              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                <p className="text-xs text-green-800 font-semibold mb-1">
+                  ✅ When you start billing:
+                </p>
+                <ul className="text-xs text-green-700 mt-1 list-disc list-inside">
+                  <li>
+                    Billing cycle status will be set to <strong>ACTIVE</strong>
+                  </li>
+                  <li>
+                    Customer can use internet <strong>IMMEDIATELY</strong>
+                  </li>
+                  <li>No registration needed</li>
+                  <li>Bill will be sent via email</li>
+                </ul>
+              </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-xs text-yellow-800">
                   <strong>ℹ️ How billing works:</strong>
@@ -1701,7 +1892,7 @@ export default function AdminBillingPage() {
                   }
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
                 >
-                  Start Billing
+                  Start Billing (ACTIVE)
                 </button>
               </div>
             </div>
@@ -1816,6 +2007,12 @@ export default function AdminBillingPage() {
                   >
                     {getStatusText(selectedCustomer)}
                   </span>
+                  {selectedCustomer.billingCycle?.status === "active" &&
+                    selectedCustomer.type === "application" && (
+                      <p className="text-xs text-green-600 mt-1">
+                        ✅ Service ACTIVE
+                      </p>
+                    )}
                 </div>
               </div>
             </div>
@@ -2035,6 +2232,22 @@ export default function AdminBillingPage() {
                     <span>Send Invoice Email on Installation</span>
                   </label>
                 </div>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <p className="text-sm font-semibold text-green-800 mb-2">
+                  ✅ Current Behavior:
+                </p>
+                <ul className="text-xs text-green-700 space-y-1 list-disc list-inside">
+                  <li>
+                    When you start billing, status is set to{" "}
+                    <strong>ACTIVE</strong>
+                  </li>
+                  <li>
+                    Customer can use internet <strong>IMMEDIATELY</strong>
+                  </li>
+                  <li>No user account registration needed</li>
+                  <li>Email with bill is sent to customer</li>
+                </ul>
               </div>
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-sm font-semibold text-blue-800 mb-2">
