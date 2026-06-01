@@ -30,7 +30,7 @@ import {
 import toast from "react-hot-toast";
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
-// This function handles both populated application object and applicationId
+// This function handles both populated application object and applicationId (string)
 function getCustomerInfo(payment: any): {
   name: string;
   email: string;
@@ -53,7 +53,22 @@ function getCustomerInfo(payment: any): {
     };
   }
 
-  // Priority 2: Check if applicationId is populated as object (from populate)
+  // Priority 2: Check if applicationData is populated (alternative field)
+  if (payment.applicationData) {
+    const app = payment.applicationData;
+    return {
+      name:
+        app.applicantName ||
+        `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
+        "—",
+      email: app.email || "—",
+      phone: app.phoneNumber || "—",
+      applicationId: app.applicationId || payment.applicationId || "—",
+      address: app.address || "—",
+    };
+  }
+
+  // Priority 3: Check if applicationId is populated as object (from populate)
   if (payment.applicationId && typeof payment.applicationId === "object") {
     const app = payment.applicationId;
     return {
@@ -65,7 +80,7 @@ function getCustomerInfo(payment: any): {
     };
   }
 
-  // Priority 3: Check if userId is populated
+  // Priority 4: Check if userId is populated
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     return {
@@ -80,7 +95,7 @@ function getCustomerInfo(payment: any): {
     };
   }
 
-  // Priority 4: Check if user object is populated
+  // Priority 5: Check if user object is populated
   if (payment.user) {
     const user = payment.user;
     return {
@@ -95,7 +110,7 @@ function getCustomerInfo(payment: any): {
     };
   }
 
-  // Priority 5: Check paymentDetails for applicationId
+  // Priority 6: Check paymentDetails for applicationId
   if (payment.paymentDetails?.gatewayResponse?.applicationId) {
     return {
       name: "—",
@@ -106,13 +121,26 @@ function getCustomerInfo(payment: any): {
     };
   }
 
+  // Priority 7: Check readableApplicationId
+  if (payment.readableApplicationId) {
+    return {
+      name: "—",
+      email: "—",
+      phone: "—",
+      applicationId: payment.readableApplicationId,
+      address: "—",
+    };
+  }
+
   // Fallback: use raw applicationId string
   return {
     name: "—",
     email: "—",
     phone: "—",
     applicationId:
-      payment.applicationId || payment.readableApplicationId || "—",
+      typeof payment.applicationId === "string"
+        ? payment.applicationId
+        : payment.applicationId?._id || "—",
     address: "—",
   };
 }
@@ -291,7 +319,7 @@ export default function AdminPaymentsPage() {
   const getPaymentMethodIcon = (method: string) => {
     switch (method) {
       case "manual":
-
+        return "💵";
       case "gcash":
         return "📱";
       case "maya":
