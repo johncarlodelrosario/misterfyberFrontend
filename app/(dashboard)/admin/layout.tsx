@@ -366,10 +366,10 @@ export default function AdminLayout({
 
   if (!mounted || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading dashboard...</p>
+          <div className="w-16 h-16 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500 font-medium">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -389,33 +389,33 @@ export default function AdminLayout({
       {/* Mobile Sidebar Toggle */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300"
       >
         {sidebarOpen ? (
-          <FiX size={22} className="text-gray-600" />
+          <FiX size={22} className="text-gray-400" />
         ) : (
-          <FiMenu size={22} className="text-gray-600" />
+          <FiMenu size={22} className="text-gray-400" />
         )}
       </button>
 
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden backdrop-blur-sm transition-all duration-300"
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden backdrop-blur-sm transition-all duration-300"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white shadow-lg ${
+        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white border-r border-gray-100 ${
           sidebarCollapsed ? "w-20" : "w-72"
         } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
       >
         <div className="flex flex-col h-full">
           {/* Logo Area */}
           <div
-            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-24 border-b border-gray-200`}
+            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 h-24 border-b border-gray-100`}
           >
             {!sidebarCollapsed && (
               <div className="flex justify-center w-full">
@@ -429,7 +429,7 @@ export default function AdminLayout({
               </div>
             )}
             {sidebarCollapsed && (
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-sm">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center">
                 <Image
                   src="/Logo.png"
                   alt="Logo"
@@ -441,7 +441,7 @@ export default function AdminLayout({
             )}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 transition-all duration-200 text-gray-600"
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg bg-gray-50 hover:bg-gray-100 transition-all duration-200 text-gray-400 hover:text-gray-600"
             >
               {sidebarCollapsed ? (
                 <FiChevronRight size={18} />
@@ -453,22 +453,22 @@ export default function AdminLayout({
 
           {/* User Info */}
           <div
-            className={`px-4 py-5 border-b border-gray-200 ${sidebarCollapsed ? "text-center" : ""}`}
+            className={`px-4 py-5 border-b border-gray-100 ${sidebarCollapsed ? "text-center" : ""}`}
           >
             <div
               className={`flex ${sidebarCollapsed ? "flex-col" : "items-center"} gap-3`}
             >
-              <div className="w-12 h-12 bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl flex items-center justify-center shadow-sm ring-2 ring-gray-300">
+              <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl flex items-center justify-center shadow-sm">
                 <span className="text-white font-bold text-xl">
                   {user?.firstName?.[0] || user?.username?.[0] || "A"}
                 </span>
               </div>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 truncate">
+                  <p className="text-sm font-semibold text-gray-700 truncate">
                     {user?.firstName} {user?.lastName}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="text-xs text-gray-400 truncate">
                     {user?.role === "super_admin"
                       ? "Super Admin"
                       : user?.role === "admin"
@@ -476,8 +476,8 @@ export default function AdminLayout({
                         : "Staff"}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-500">Active</span>
+                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-400">Active</span>
                   </div>
                 </div>
               )}
@@ -502,8 +502,8 @@ export default function AdminLayout({
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-3 py-3 rounded-xl transition-all duration-200 group ${
                       isActive
-                        ? "bg-gray-900 text-white shadow-md"
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                        ? "bg-gray-100 text-gray-900"
+                        : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
                     }`}
                   >
                     <div className="flex items-center">
@@ -515,7 +515,7 @@ export default function AdminLayout({
                       )}
                     </div>
                     {!sidebarCollapsed && showBadge && (
-                      <span className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-xs px-2 py-0.5 rounded-full font-semibold shadow-sm">
+                      <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">
                         {item.name === "Applications"
                           ? pendingCount
                           : pendingPlanChanges}
@@ -528,10 +528,10 @@ export default function AdminLayout({
           </nav>
 
           {/* Bottom Section */}
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-100">
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-3 py-3 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 rounded-xl transition-all duration-200 group`}
+              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-3 py-3 text-sm text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 group`}
               title="Logout"
             >
               <FiLogOut
@@ -548,7 +548,7 @@ export default function AdminLayout({
         className={`transition-all duration-300 ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-72"} min-h-screen`}
       >
         {/* Top Header */}
-        <header className="bg-white shadow-sm sticky top-0 z-20 border-b border-gray-200">
+        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-20 border-b border-gray-100">
           <div className="flex items-center justify-between px-4 py-3 lg:px-8">
             <div className="flex items-center lg:hidden">
               <div className="w-8"></div>
@@ -558,8 +558,8 @@ export default function AdminLayout({
               {/* System Status */}
               <div className="hidden md:flex items-center space-x-3">
                 <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 rounded-full">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-gray-700 font-medium">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-gray-500 font-medium">
                     Online
                   </span>
                 </div>
@@ -569,11 +569,11 @@ export default function AdminLayout({
               <div className="relative" ref={notificationRef}>
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                  className="relative p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-all duration-200"
                 >
                   <FiBell className="w-5 h-5" />
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse shadow-md px-1">
+                    <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-400 text-white text-xs rounded-full flex items-center justify-center shadow-sm px-1">
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                   )}
@@ -581,15 +581,15 @@ export default function AdminLayout({
 
                 {/* Notification Panel */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden z-50 animate-fadeInDown">
-                    <div className="flex justify-between items-center px-5 py-4 bg-gray-50 border-b border-gray-200">
-                      <h3 className="font-semibold text-gray-900">
+                  <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-50 animate-fadeInDown">
+                    <div className="flex justify-between items-center px-5 py-4 bg-gray-50/50 border-b border-gray-100">
+                      <h3 className="font-semibold text-gray-700">
                         Notifications
                       </h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
-                          className="text-xs text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                          className="text-xs text-gray-400 hover:text-gray-600 font-medium transition-colors"
                         >
                           Mark all read
                         </button>
@@ -599,13 +599,13 @@ export default function AdminLayout({
                     <div className="max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
                         <div className="px-5 py-8 text-center">
-                          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <FiBell className="w-6 h-6 text-gray-400" />
+                          <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <FiBell className="w-6 h-6 text-gray-300" />
                           </div>
-                          <p className="text-gray-500 text-sm">
+                          <p className="text-gray-400 text-sm">
                             No new notifications
                           </p>
-                          <p className="text-gray-400 text-xs mt-1">
+                          <p className="text-gray-300 text-xs mt-1">
                             All caught up!
                           </p>
                         </div>
@@ -627,36 +627,36 @@ export default function AdminLayout({
                                 setUnreadCount((prev) => Math.max(0, prev - 1));
                               }
                             }}
-                            className={`block px-5 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 ${
-                              !notification.read ? "bg-gray-50" : ""
+                            className={`block px-5 py-3 hover:bg-gray-50/50 transition-colors border-b border-gray-50 last:border-0 ${
+                              !notification.read ? "bg-gray-50/30" : ""
                             }`}
                           >
                             <div className="flex items-start gap-3">
                               <div
-                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-gray-600" : "bg-gray-300"}`}
+                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-gray-500" : "bg-gray-200"}`}
                               ></div>
                               <div className="flex-1">
-                                <p className="font-medium text-gray-900 text-sm">
+                                <p className="font-medium text-gray-700 text-sm">
                                   {notification.title}
                                 </p>
-                                <p className="text-gray-500 text-xs mt-0.5">
+                                <p className="text-gray-400 text-xs mt-0.5">
                                   {notification.description}
                                 </p>
-                                <p className="text-gray-400 text-xs mt-1 flex items-center gap-1">
-                                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
+                                <p className="text-gray-300 text-xs mt-1 flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
                                   {notification.time}
                                 </p>
                               </div>
                               {notification.type === "application" && (
-                                <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                                  <span className="text-yellow-600 text-xs">
+                                <div className="w-8 h-8 bg-amber-50 rounded-full flex items-center justify-center">
+                                  <span className="text-amber-500 text-xs">
                                     📝
                                   </span>
                                 </div>
                               )}
                               {notification.type === "billing" && (
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                  <span className="text-blue-600 text-xs">
+                                <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+                                  <span className="text-blue-500 text-xs">
                                     ₱
                                   </span>
                                 </div>
@@ -667,10 +667,10 @@ export default function AdminLayout({
                       )}
                     </div>
 
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-center">
+                    <div className="px-5 py-3 bg-gray-50/50 border-t border-gray-100 text-center">
                       <button
                         onClick={() => setShowNotifications(false)}
-                        className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                        className="text-xs text-gray-400 hover:text-gray-600 font-medium"
                       >
                         Close
                       </button>
@@ -680,9 +680,9 @@ export default function AdminLayout({
               </div>
 
               {/* Admin Badge */}
-              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-full">
-                <FiActivity className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700 font-medium">
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 rounded-full">
+                <FiActivity className="w-4 h-4 text-gray-400" />
+                <span className="text-sm text-gray-500 font-medium">
                   {user?.role === "super_admin"
                     ? "Super Admin"
                     : user?.role === "admin"
