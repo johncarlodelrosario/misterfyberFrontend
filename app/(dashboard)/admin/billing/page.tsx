@@ -646,7 +646,7 @@ export default function AdminBillingPage() {
 
       if (result.success) {
         toast.success(
-          `✅ Billing started for ${selectedCustomerName}! Invoice sent to ${selectedCustomerEmail}`,
+          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}`,
         );
         setShowStartModal(false);
         setSelectedApplicationId("");
@@ -850,7 +850,7 @@ export default function AdminBillingPage() {
   };
 
   const getStatusBadge = (customer: CustomerItem) => {
-    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
+    // Check if there are actually unpaid bills
     const hasUnpaidProRated =
       customer.unpaidBills && customer.unpaidBills.length > 0;
 
@@ -869,6 +869,10 @@ export default function AdminBillingPage() {
       ) {
         return "bg-green-100 text-green-800";
       }
+      // ACTIVE status - FIXED: show green for active billing cycles
+      if (customer.billingCycle?.status === "active") {
+        return "bg-green-100 text-green-800";
+      }
       if (customer.status === "billing_started")
         return "bg-indigo-100 text-indigo-800";
       return "bg-blue-100 text-blue-800";
@@ -883,7 +887,7 @@ export default function AdminBillingPage() {
   };
 
   const getStatusText = (customer: CustomerItem) => {
-    // FIXED: Check if there are actually unpaid bills before showing "Awaiting Payment"
+    // Check if there are actually unpaid bills
     const hasUnpaidProRated =
       customer.unpaidBills && customer.unpaidBills.length > 0;
 
@@ -900,6 +904,10 @@ export default function AdminBillingPage() {
         customer.billingCycle?.status === "pending_activation" &&
         !hasUnpaidProRated
       ) {
+        return "Active";
+      }
+      // ACTIVE status - FIXED: show Active for active billing cycles
+      if (customer.billingCycle?.status === "active") {
         return "Active";
       }
       if (customer.status === "billing_started") return "Billing Started";
@@ -940,7 +948,6 @@ export default function AdminBillingPage() {
     if (statusFilter === "paused")
       return matchesSearch && customer.billingCycle?.status === "paused";
     if (statusFilter === "pending_activation") {
-      // Only show if there are actually unpaid bills
       const hasUnpaid = customer.unpaidBills && customer.unpaidBills.length > 0;
       return (
         matchesSearch &&
@@ -1303,12 +1310,17 @@ export default function AdminBillingPage() {
                         >
                           {getStatusText(customer)}
                         </span>
-                        {/* Only show "Awaiting first payment" if there are actual unpaid bills */}
                         {customer.billingCycle?.status ===
                           "pending_activation" &&
                           hasUnpaidBills && (
                             <p className="text-xs text-purple-600 mt-1">
                               Awaiting first payment
+                            </p>
+                          )}
+                        {customer.billingCycle?.status === "active" &&
+                          customer.type === "application" && (
+                            <p className="text-xs text-green-600 mt-1">
+                              ✅ Service ACTIVE
                             </p>
                           )}
                       </td>
@@ -1655,6 +1667,21 @@ export default function AdminBillingPage() {
                   placeholder="Optional notes about this billing..."
                 />
               </div>
+              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                <p className="text-xs text-green-800 font-semibold mb-1">
+                  ✅ When you start billing:
+                </p>
+                <ul className="text-xs text-green-700 mt-1 list-disc list-inside">
+                  <li>
+                    Billing cycle status will be set to <strong>ACTIVE</strong>
+                  </li>
+                  <li>
+                    Customer can use internet <strong>IMMEDIATELY</strong>
+                  </li>
+                  <li>No registration needed</li>
+                  <li>Bill will be sent via email</li>
+                </ul>
+              </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-xs text-yellow-800">
                   <strong>ℹ️ How billing works:</strong>
@@ -1701,7 +1728,7 @@ export default function AdminBillingPage() {
                   }
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
                 >
-                  Start Billing
+                  Start Billing (ACTIVE)
                 </button>
               </div>
             </div>
@@ -1816,6 +1843,12 @@ export default function AdminBillingPage() {
                   >
                     {getStatusText(selectedCustomer)}
                   </span>
+                  {selectedCustomer.billingCycle?.status === "active" &&
+                    selectedCustomer.type === "application" && (
+                      <p className="text-xs text-green-600 mt-1">
+                        ✅ Service ACTIVE
+                      </p>
+                    )}
                 </div>
               </div>
             </div>
@@ -2035,6 +2068,22 @@ export default function AdminBillingPage() {
                     <span>Send Invoice Email on Installation</span>
                   </label>
                 </div>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <p className="text-sm font-semibold text-green-800 mb-2">
+                  ✅ Current Behavior:
+                </p>
+                <ul className="text-xs text-green-700 space-y-1 list-disc list-inside">
+                  <li>
+                    When you start billing, status is set to{" "}
+                    <strong>ACTIVE</strong>
+                  </li>
+                  <li>
+                    Customer can use internet <strong>IMMEDIATELY</strong>
+                  </li>
+                  <li>No user account registration needed</li>
+                  <li>Email with bill is sent to customer</li>
+                </ul>
               </div>
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-sm font-semibold text-blue-800 mb-2">

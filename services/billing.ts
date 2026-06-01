@@ -1,9 +1,9 @@
-// services/billing.ts - COMPLETE FIXED VERSION WITH DELETE
 import api from "./api";
 
 export interface BillingCycle {
   _id: string;
   userId: any;
+  applicationId?: any;
   planId: any;
   billingStartDate: string;
   billingEndDate: string;
@@ -41,7 +41,6 @@ export interface BillingCycle {
     effectiveDate: string;
     status: "pending" | "approved" | "rejected";
   };
-  applicationId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,7 +162,7 @@ export function clearBillingCache(): void {
   Object.values(CACHE_KEYS).forEach((key) => localStorage.removeItem(key));
 }
 
-// ==================== APPLICATION BILLING FUNCTIONS (PRIORITY) ====================
+// ==================== APPLICATION BILLING FUNCTIONS ====================
 
 export const startBillingForApplication = async (
   applicationId: string,
@@ -186,9 +185,7 @@ export const getApplicationBillingStatus = async (
   applicationId: string,
 ): Promise<any> => {
   try {
-    const response = await api.get(
-      `/applications/billing-status/${applicationId}`,
-    );
+    const response = await api.get(`/billing/application/${applicationId}`);
     return response.data;
   } catch (error) {
     console.error("Error fetching application billing status:", error);
@@ -360,7 +357,8 @@ export const getAllBills = async (params?: {
 };
 
 export const startBilling = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
   startDate?: string;
   customAmount?: number;
   notes?: string;
@@ -376,7 +374,8 @@ export const startBilling = async (data: {
 };
 
 export const stopBilling = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
   reason?: string;
 }): Promise<any> => {
   try {
@@ -390,7 +389,8 @@ export const stopBilling = async (data: {
 };
 
 export const pauseBilling = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
   reason?: string;
   pauseUntilDate?: string;
 }): Promise<any> => {
@@ -404,7 +404,10 @@ export const pauseBilling = async (data: {
   }
 };
 
-export const resumeBilling = async (data: { userId: string }): Promise<any> => {
+export const resumeBilling = async (data: {
+  userId?: string;
+  applicationId?: string;
+}): Promise<any> => {
   try {
     const response = await api.post("/billing/resume", data);
     clearBillingCache();
@@ -416,7 +419,8 @@ export const resumeBilling = async (data: { userId: string }): Promise<any> => {
 };
 
 export const disconnectClient = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
   reason?: string;
 }): Promise<any> => {
   try {
@@ -430,7 +434,8 @@ export const disconnectClient = async (data: {
 };
 
 export const reconnectClient = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
 }): Promise<any> => {
   try {
     const response = await api.post("/billing/reconnect", data);
@@ -442,7 +447,6 @@ export const reconnectClient = async (data: {
   }
 };
 
-// DELETE BILLING CYCLE FUNCTION
 export const deleteBillingCycle = async (data: {
   billingCycleId: string;
   customerId: string;
@@ -560,7 +564,8 @@ export const getPendingActivations = async (): Promise<{
 };
 
 export const confirmProRatedPayment = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
   paymentDetails?: any;
 }): Promise<any> => {
   try {
@@ -574,7 +579,8 @@ export const confirmProRatedPayment = async (data: {
 };
 
 export const startMonthlyBilling = async (data: {
-  userId: string;
+  userId?: string;
+  applicationId?: string;
 }): Promise<any> => {
   try {
     const response = await api.post("/billing/start-monthly", data);
