@@ -490,7 +490,6 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // ✅ Direct fetch without getApplication - ITO ANG IMPORTANTE
   const fetchFullApplicationDetails = async (appId: string) => {
     try {
       const token = localStorage.getItem("token");
@@ -1011,46 +1010,49 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div>
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 max-w-full overflow-x-hidden">
       {hasNewApplicant && (
         <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-4 rounded-lg shadow-md animate-pulse">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
               <FiBell className="w-5 h-5 text-white" />
             </div>
-            <div className="flex-1">
-              <p className="font-bold text-green-800">
+            <div className="flex-1 min-w-[200px]">
+              <p className="font-bold text-green-800 text-sm sm:text-base">
                 🆕 New Applicant{newApplicantCount > 1 ? "s" : ""} Detected!
               </p>
-              <p className="text-sm text-green-700">
+              <p className="text-xs sm:text-sm text-green-700">
                 {newApplicantCount} new applicant
                 {newApplicantCount > 1 ? "s have" : " has"} been added. Page is
                 automatically refreshing...
               </p>
             </div>
-            <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
           </div>
         </div>
       )}
 
-      <div className="mb-6 flex justify-between items-center flex-wrap gap-4">
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
-          <p className="text-gray-600">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Applications
+          </h1>
+          <p className="text-sm sm:text-base text-gray-600">
             Review and manage customer applications
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <button
             onClick={() => {
               resetCustomerForm();
               setShowAddCustomerModal(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
           >
             <FiPlus className="w-4 h-4" />
-            Add Customer
+            <span className="hidden xs:inline">Add Customer</span>
+            <span className="xs:hidden">Add</span>
           </button>
 
           <button
@@ -1058,35 +1060,40 @@ export default function ApplicationsPage() {
               resetBulkUpload();
               setShowBulkUploadModal(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm sm:text-base"
           >
             <FiUpload className="w-4 h-4" />
-            Bulk Upload
+            <span className="hidden sm:inline">Bulk Upload</span>
+            <span className="sm:hidden">Bulk</span>
           </button>
 
-          <div className="text-sm text-gray-500 flex items-center gap-1">
+          <div className="hidden lg:flex text-xs sm:text-sm text-gray-500 items-center gap-1">
             <FiClock className="w-3 h-3" />
-            <span>
-              Auto-check: Every 15 seconds | Last updated:{" "}
-              {getLastFetchDisplay()}
-            </span>
+            <span>Auto-check: Every 15s | Last: {getLastFetchDisplay()}</span>
           </div>
+
           <button
             onClick={() => fetchApplications()}
             disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm sm:text-base"
           >
             <FiRefreshCw
               className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
             />
-            {refreshing ? "Refreshing..." : "Refresh"}
+            <span className="hidden xs:inline">
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </span>
+            <span className="xs:hidden">
+              <FiRefreshCw className="w-4 h-4" />
+            </span>
           </button>
+
           <button
             onClick={clearCache}
-            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm sm:text-base"
           >
             <FiDatabase className="w-4 h-4" />
-            Clear Cache
+            <span className="hidden sm:inline">Clear Cache</span>
           </button>
         </div>
       </div>
@@ -1095,7 +1102,7 @@ export default function ApplicationsPage() {
         <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
           <div className="flex items-center gap-2">
             <FiWifiOff className="w-4 h-4 text-yellow-400" />
-            <p className="text-sm text-yellow-700">
+            <p className="text-xs sm:text-sm text-yellow-700">
               Offline mode - showing cached data
             </p>
           </div>
@@ -1104,37 +1111,41 @@ export default function ApplicationsPage() {
 
       {error && applications.length > 0 && (
         <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
-          <p className="text-sm text-blue-700">{error}</p>
+          <p className="text-xs sm:text-sm text-blue-700">{error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-          <div className="text-sm text-gray-600">Total Applications</div>
-          <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <div className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200">
+          <div className="text-xs sm:text-sm text-gray-600">
+            Total Applications
+          </div>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900">
+            {stats.total}
+          </div>
         </div>
-        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-          <div className="text-sm text-yellow-600">Pending</div>
-          <div className="text-2xl font-bold text-yellow-700">
+        <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 border border-yellow-200">
+          <div className="text-xs sm:text-sm text-yellow-600">Pending</div>
+          <div className="text-xl sm:text-2xl font-bold text-yellow-700">
             {stats.pending}
           </div>
         </div>
-        <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-          <div className="text-sm text-green-600">Approved</div>
-          <div className="text-2xl font-bold text-green-700">
+        <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200">
+          <div className="text-xs sm:text-sm text-green-600">Approved</div>
+          <div className="text-xl sm:text-2xl font-bold text-green-700">
             {stats.approved}
           </div>
         </div>
-        <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-          <div className="text-sm text-red-600">Rejected</div>
-          <div className="text-2xl font-bold text-red-700">
+        <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200">
+          <div className="text-xs sm:text-sm text-red-600">Rejected</div>
+          <div className="text-xl sm:text-2xl font-bold text-red-700">
             {stats.rejected}
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
+      <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4 mb-6">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <div className="flex-1 relative">
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
@@ -1144,7 +1155,7 @@ export default function ApplicationsPage() {
               onChange={(e) =>
                 setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
               }
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
           <select
@@ -1152,7 +1163,7 @@ export default function ApplicationsPage() {
             onChange={(e) =>
               setFilter((prev) => ({ ...prev, statusFilter: e.target.value }))
             }
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+            className="px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
           >
             <option value="all">All Status ({stats.total})</option>
             <option value="pending">Pending ({stats.pending})</option>
@@ -1164,31 +1175,31 @@ export default function ApplicationsPage() {
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-[800px] lg:min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ID
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
                   Email
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                   Plan
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden xl:table-cell">
                   MAC Address
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
                   Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -1211,26 +1222,26 @@ export default function ApplicationsPage() {
                     key={app._id}
                     className="hover:bg-gray-50 transition-colors"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-mono text-gray-900">
                       {app.applicationId}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
                       {app.firstName} {app.lastName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 hidden md:table-cell">
                       {app.email}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 hidden lg:table-cell">
                       {app.planId?.name || "N/A"}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-mono hidden xl:table-cell">
                       {editingMacAddress === app._id ? (
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
                             value={tempMacAddress}
                             onChange={(e) => setTempMacAddress(e.target.value)}
-                            className="w-36 px-2 py-1 text-xs border border-gray-300 rounded font-mono"
+                            className="w-28 sm:w-36 px-2 py-1 text-xs border border-gray-300 rounded font-mono"
                             placeholder="AA:BB:CC:DD:EE:FF"
                             autoFocus
                           />
@@ -1240,7 +1251,7 @@ export default function ApplicationsPage() {
                             }
                             className="text-green-600 hover:text-green-800"
                           >
-                            <FiSave className="w-4 h-4" />
+                            <FiSave className="w-3 h-3 sm:w-4 sm:h-4" />
                           </button>
                           <button
                             onClick={() => {
@@ -1249,7 +1260,7 @@ export default function ApplicationsPage() {
                             }}
                             className="text-red-600 hover:text-red-800"
                           >
-                            <FiX className="w-4 h-4" />
+                            <FiX className="w-3 h-3 sm:w-4 sm:h-4" />
                           </button>
                         </div>
                       ) : (
@@ -1270,24 +1281,24 @@ export default function ApplicationsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(app.status)}`}
                       >
                         {app.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500 hidden sm:table-cell">
                       {new Date(app.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="flex gap-2">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm">
+                      <div className="flex gap-1 sm:gap-2">
                         <button
                           onClick={() => handleViewApplication(app)}
                           className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
                         >
-                          <FiEye className="w-4 h-4" />
-                          View
+                          <FiEye className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="hidden xs:inline">View</span>
                         </button>
                         {app.status === "approved" && !app.billingStarted && (
                           <button
@@ -1298,8 +1309,8 @@ export default function ApplicationsPage() {
                             className="text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
                             title="Start Billing"
                           >
-                            <FiPlay className="w-4 h-4" />
-                            Start Billing
+                            <FiPlay className="w-3 h-3 sm:w-4 sm:h-4" />
+                            <span className="hidden sm:inline">Billing</span>
                           </button>
                         )}
                       </div>
@@ -1310,23 +1321,23 @@ export default function ApplicationsPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-600">
+        <div className="px-3 sm:px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs sm:text-sm text-gray-600">
           Showing {filteredApplications.length} of {applications.length}{" "}
           applications
         </div>
       </div>
 
       {selectedApp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-                <h2 className="text-xl font-bold">
+                <h2 className="text-lg sm:text-xl font-bold">
                   {selectedApp.status === "pending"
                     ? "Review Application"
                     : "Application Details"}
                 </h2>
-                <p className="text-sm text-gray-500 font-mono">
+                <p className="text-xs sm:text-sm text-gray-500 font-mono">
                   {selectedApp.applicationId}
                 </p>
               </div>
@@ -1334,17 +1345,17 @@ export default function ApplicationsPage() {
                 onClick={() => setSelectedApp(null)}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <FiX className="w-6 h-6" />
+                <FiX className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm sm:text-base">
                   <FiUser className="w-4 h-4" />
                   Personal Information
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                   <div>
                     <span className="text-gray-500">Name:</span>{" "}
                     <span className="font-medium">
@@ -1370,11 +1381,11 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">
                   Building & Unit Information
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                   <div>
                     <span className="text-gray-500">Building:</span>{" "}
                     <span className="font-medium">
@@ -1398,11 +1409,11 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">
                   Plan Details
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                   <div>
                     <span className="text-gray-500">Plan:</span>{" "}
                     {selectedApp.planId?.name || "N/A"}
@@ -1418,14 +1429,14 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
                     <FiCreditCard className="w-4 h-4" />
                     ID Verification
                   </h3>
                 </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                   <div>
                     <span className="text-gray-500">ID Type:</span>{" "}
                     {selectedApp.idType &&
@@ -1443,12 +1454,11 @@ export default function ApplicationsPage() {
                       : "Not provided"}
                   </div>
                 </div>
-                {/* Display ID image directly here */}
                 {selectedApp.idImage &&
                   selectedApp.idImage !== "uploads/id-cards/placeholder.jpg" &&
                   selectedApp.idImage !== "" && (
                     <div className="mt-3">
-                      <div className="text-sm text-gray-500 mb-2">
+                      <div className="text-xs sm:text-sm text-gray-500 mb-2">
                         ID Image:
                       </div>
                       <div
@@ -1466,7 +1476,7 @@ export default function ApplicationsPage() {
                         <img
                           src={getImageUrl(selectedApp.idImage) || ""}
                           alt="ID Document"
-                          className="w-full max-h-64 object-contain bg-gray-100"
+                          className="w-full max-h-48 sm:max-h-64 object-contain bg-gray-100"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display =
                               "none";
@@ -1482,22 +1492,24 @@ export default function ApplicationsPage() {
               </div>
 
               {selectedApp.adminNotes && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">
+                <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">
                     Admin Notes
                   </h3>
-                  <p className="text-sm text-gray-700">
+                  <p className="text-xs sm:text-sm text-gray-700">
                     {selectedApp.adminNotes}
                   </p>
                 </div>
               )}
 
               {selectedApp.notes && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">
+                <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">
                     Customer Notes
                   </h3>
-                  <p className="text-sm text-gray-700">{selectedApp.notes}</p>
+                  <p className="text-xs sm:text-sm text-gray-700">
+                    {selectedApp.notes}
+                  </p>
                 </div>
               )}
 
@@ -1510,7 +1522,7 @@ export default function ApplicationsPage() {
                         setShowBillingModal(true);
                         setSelectedApp(null);
                       }}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                      className="px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base"
                     >
                       <FiPlay className="w-4 h-4" />
                       Start Billing
@@ -1527,14 +1539,14 @@ export default function ApplicationsPage() {
                     <textarea
                       id="adminNotes"
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       placeholder="Add notes about this application..."
                     />
                   </div>
-                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                  <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
                     <button
                       onClick={() => setSelectedApp(null)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm sm:text-base"
                     >
                       Cancel
                     </button>
@@ -1548,7 +1560,7 @@ export default function ApplicationsPage() {
                         handleReject(selectedApp._id, notes);
                       }}
                       disabled={processingId === selectedApp._id}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 text-sm sm:text-base"
                     >
                       {processingId === selectedApp._id ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1567,7 +1579,7 @@ export default function ApplicationsPage() {
                         handleApprove(selectedApp._id, notes);
                       }}
                       disabled={processingId === selectedApp._id}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 text-sm sm:text-base"
                     >
                       {processingId === selectedApp._id ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1585,10 +1597,12 @@ export default function ApplicationsPage() {
       )}
 
       {showBillingModal && selectedAppForBilling && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Start Billing</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                Start Billing
+              </h2>
               <button
                 onClick={() => {
                   setShowBillingModal(false);
@@ -1596,58 +1610,58 @@ export default function ApplicationsPage() {
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <FiX className="w-6 h-6" />
+                <FiX className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
             <div className="space-y-4">
               <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-blue-800">
+                <p className="text-xs sm:text-sm text-blue-800">
                   <strong>Customer:</strong> {selectedAppForBilling.firstName}{" "}
                   {selectedAppForBilling.lastName}
                 </p>
-                <p className="text-sm text-blue-800">
+                <p className="text-xs sm:text-sm text-blue-800">
                   <strong>Email:</strong> {selectedAppForBilling.email}
                 </p>
-                <p className="text-sm text-blue-800 font-mono">
+                <p className="text-xs sm:text-sm text-blue-800 font-mono">
                   <strong>Application ID:</strong>{" "}
                   {selectedAppForBilling.applicationId}
                 </p>
-                <p className="text-sm text-blue-800">
+                <p className="text-xs sm:text-sm text-blue-800">
                   <strong>Plan:</strong>{" "}
                   {selectedAppForBilling.planId?.name || "N/A"} - ₱
                   {selectedAppForBilling.planId?.price || 0}/month
                 </p>
                 {selectedAppForBilling.macAddress && (
-                  <p className="text-sm text-blue-800 font-mono">
+                  <p className="text-xs sm:text-sm text-blue-800 font-mono">
                     <strong>MAC Address:</strong>{" "}
                     {selectedAppForBilling.macAddress}
                   </p>
                 )}
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
-                <p className="text-sm text-yellow-800">
+                <p className="text-xs sm:text-sm text-yellow-800">
                   ⚠️ Starting billing will:
                 </p>
-                <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                <ul className="text-xs sm:text-sm text-yellow-700 mt-1 list-disc list-inside">
                   <li>Generate pro-rated bill based on current date</li>
                   <li>Send invoice to customer's email</li>
                   <li>Create billing cycle for this application</li>
                 </ul>
               </div>
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <button
                   onClick={() => {
                     setShowBillingModal(false);
                     setSelectedAppForBilling(null);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm sm:text-base"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleStartBilling(selectedAppForBilling)}
                   disabled={processingId === selectedAppForBilling._id}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 text-sm sm:text-base"
                 >
                   {processingId === selectedAppForBilling._id ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1676,9 +1690,9 @@ export default function ApplicationsPage() {
                 setShowImageModal(false);
                 setImagePreview(null);
               }}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300"
+              className="absolute -top-10 sm:-top-12 right-0 text-white hover:text-gray-300"
             >
-              <FiX className="w-8 h-8" />
+              <FiX className="w-6 h-6 sm:w-8 sm:h-8" />
             </button>
             <img
               src={imagePreview}
@@ -1699,14 +1713,14 @@ export default function ApplicationsPage() {
       )}
 
       {showAddCustomerModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
                   Add New Customer
                 </h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-xs sm:text-sm text-gray-500">
                   Create a new fiber internet application
                 </p>
               </div>
@@ -1717,19 +1731,22 @@ export default function ApplicationsPage() {
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <FiX className="w-6 h-6" />
+                <FiX className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
-            <form onSubmit={handleAddCustomerSubmit} className="p-6 space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <form
+              onSubmit={handleAddCustomerSubmit}
+              className="p-4 sm:p-6 space-y-4 sm:space-y-6"
+            >
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
                   <FiUser className="w-4 h-4" />
                   Personal Information
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       First Name *
                     </label>
                     <input
@@ -1741,12 +1758,12 @@ export default function ApplicationsPage() {
                           firstName: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Last Name *
                     </label>
                     <input
@@ -1758,12 +1775,12 @@ export default function ApplicationsPage() {
                           lastName: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Email *
                     </label>
                     <input
@@ -1775,12 +1792,12 @@ export default function ApplicationsPage() {
                           email: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Phone Number *
                     </label>
                     <input
@@ -1792,20 +1809,20 @@ export default function ApplicationsPage() {
                           phoneNumber: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">
                   Building & Unit Information
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Building *
                     </label>
                     <select
@@ -1816,7 +1833,7 @@ export default function ApplicationsPage() {
                           buildingId: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     >
                       <option value="">Select Building</option>
@@ -1828,7 +1845,7 @@ export default function ApplicationsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Floor
                     </label>
                     <input
@@ -1841,11 +1858,11 @@ export default function ApplicationsPage() {
                         })
                       }
                       placeholder="e.g., 5th Floor"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       Unit Number *
                     </label>
                     <input
@@ -1858,19 +1875,19 @@ export default function ApplicationsPage() {
                         })
                       }
                       placeholder="e.g., Unit 501"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">
                   Internet Plan
                 </h3>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     Select Plan *
                   </label>
                   <select
@@ -1881,7 +1898,7 @@ export default function ApplicationsPage() {
                         planId: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                     required
                   >
                     <option value="">Select Plan</option>
@@ -1894,13 +1911,13 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
                   <FiWifi className="w-4 h-4" />
                   Network Configuration
                 </h3>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     MAC Address{" "}
                     <span className="text-gray-400 text-xs">(Optional)</span>
                   </label>
@@ -1914,7 +1931,7 @@ export default function ApplicationsPage() {
                       })
                     }
                     placeholder="e.g., AA:BB:CC:DD:EE:FF"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 font-mono"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 font-mono"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Enter the customer's device MAC address if available
@@ -1923,14 +1940,14 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
                   <FiCreditCard className="w-4 h-4" />
                   ID Verification
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       ID Type *
                     </label>
                     <select
@@ -1941,7 +1958,7 @@ export default function ApplicationsPage() {
                           idType: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     >
                       <option value="">Select ID Type</option>
@@ -1953,7 +1970,7 @@ export default function ApplicationsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       ID Number *
                     </label>
                     <input
@@ -1965,12 +1982,12 @@ export default function ApplicationsPage() {
                           idNumber: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                       required
                     />
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                       ID Image (Optional)
                     </label>
                     <input
@@ -1984,7 +2001,7 @@ export default function ApplicationsPage() {
                           });
                         }
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Upload a clear photo of the ID (JPG, PNG, or PDF)
@@ -1993,8 +2010,8 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-4">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">
                   Additional Notes
                 </h3>
                 <textarea
@@ -2003,26 +2020,26 @@ export default function ApplicationsPage() {
                     setCustomerForm({ ...customerForm, notes: e.target.value })
                   }
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                   placeholder="Any additional information or special requests..."
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => {
                     setShowAddCustomerModal(false);
                     resetCustomerForm();
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm sm:text-base"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 text-sm sm:text-base"
                 >
                   {submitting ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -2038,14 +2055,14 @@ export default function ApplicationsPage() {
       )}
 
       {showBulkUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
                   Bulk Upload Customers
                 </h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-xs sm:text-sm text-gray-500">
                   Upload multiple applications via CSV file
                 </p>
               </div>
@@ -2056,17 +2073,17 @@ export default function ApplicationsPage() {
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <FiX className="w-6 h-6" />
+                <FiX className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-blue-800 mb-2 flex items-center gap-2 text-sm sm:text-base">
                   <FiFileText className="w-4 h-4" />
                   Instructions
                 </h3>
-                <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
+                <ul className="text-xs sm:text-sm text-blue-700 space-y-1 list-disc list-inside">
                   <li>Download the CSV template below</li>
                   <li>
                     Fill in customer data (building name and plan name must
@@ -2080,26 +2097,26 @@ export default function ApplicationsPage() {
                 </ul>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">
                   1. Download Template
                 </h3>
                 <button
                   onClick={downloadCsvTemplate}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm sm:text-base"
                 >
                   <FiDownload className="w-4 h-4" />
                   Download CSV Template
                 </button>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-3">
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">
                   2. Upload CSV File
                 </h3>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  <FiUpload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600 mb-2">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center">
+                  <FiUpload className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-xs sm:text-sm text-gray-600 mb-2">
                     {csvFile ? csvFile.name : "Click or drag CSV file here"}
                   </p>
                   <input
@@ -2111,7 +2128,7 @@ export default function ApplicationsPage() {
                   />
                   <label
                     htmlFor="csv-upload"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer"
+                    className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer text-sm sm:text-base"
                   >
                     <FiUpload className="w-4 h-4" />
                     Select CSV File
@@ -2120,21 +2137,21 @@ export default function ApplicationsPage() {
               </div>
 
               {bulkResults && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-3">
+                <div className="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">
                     Upload Results
                   </h3>
                   <div className="space-y-2">
                     <div className="bg-green-50 p-3 rounded-lg">
-                      <p className="text-green-800 font-medium">
+                      <p className="text-green-800 font-medium text-sm sm:text-base">
                         ✓ Success: {bulkResults.success.length} applications
                       </p>
                       {bulkResults.success.length > 0 && (
                         <details className="mt-2">
-                          <summary className="text-sm text-green-700 cursor-pointer">
+                          <summary className="text-xs sm:text-sm text-green-700 cursor-pointer">
                             View details
                           </summary>
-                          <ul className="mt-2 text-sm text-green-600 space-y-1">
+                          <ul className="mt-2 text-xs sm:text-sm text-green-600 space-y-1">
                             {bulkResults.success.map((app, idx) => (
                               <li key={idx}>
                                 {app.firstName} {app.lastName} - {app.email}
@@ -2147,14 +2164,14 @@ export default function ApplicationsPage() {
                     </div>
                     {bulkResults.failed.length > 0 && (
                       <div className="bg-red-50 p-3 rounded-lg">
-                        <p className="text-red-800 font-medium">
+                        <p className="text-red-800 font-medium text-sm sm:text-base">
                           ✗ Failed: {bulkResults.failed.length} applications
                         </p>
                         <details className="mt-2">
-                          <summary className="text-sm text-red-700 cursor-pointer">
+                          <summary className="text-xs sm:text-sm text-red-700 cursor-pointer">
                             View details
                           </summary>
-                          <ul className="mt-2 text-sm text-red-600 space-y-1">
+                          <ul className="mt-2 text-xs sm:text-sm text-red-600 space-y-1">
                             {bulkResults.failed.map((app, idx) => (
                               <li key={idx}>
                                 {app.firstName} {app.lastName} - {app.error}
@@ -2168,20 +2185,20 @@ export default function ApplicationsPage() {
                 </div>
               )}
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => {
                     setShowBulkUploadModal(false);
                     resetBulkUpload();
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm sm:text-base"
                 >
                   Close
                 </button>
                 <button
                   onClick={handleBulkUpload}
                   disabled={!csvFile || bulkSubmitting}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50 text-sm sm:text-base"
                 >
                   {bulkSubmitting ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

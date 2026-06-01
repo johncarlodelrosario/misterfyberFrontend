@@ -1,4 +1,3 @@
-// services/auth.ts - With direct fetch fallback for CORS issues
 import api from "./api";
 
 interface LoginResponse {
@@ -57,17 +56,22 @@ interface ApplicationStatusResponse {
   message?: string;
 }
 
+// FIXED: Supports both email and username
 export const login = async (
-  email: string,
+  identifier: string, // Can be email OR username
   password: string,
 ): Promise<LoginResponse> => {
   try {
-    console.log("[Auth] Attempting login for:", email);
+    console.log("[Auth] Attempting login for:", identifier);
 
-    const response = await api.post("/auth/login", {
-      email: email.trim(),
-      password: password,
-    });
+    // Check if identifier is email or username
+    const isEmail = identifier.includes("@") && identifier.includes(".");
+
+    const payload = isEmail
+      ? { email: identifier, password }
+      : { username: identifier, password };
+
+    const response = await api.post("/auth/login", payload);
 
     let token: string;
     let userData: any;
@@ -93,7 +97,7 @@ export const login = async (
       user: {
         id: userData._id || userData.id,
         _id: userData._id || userData.id,
-        username: userData.username || userData.email.split("@")[0],
+        username: userData.username || userData.email?.split("@")[0] || "",
         email: userData.email,
         firstName: userData.firstName || "",
         lastName: userData.lastName || "",
@@ -214,7 +218,6 @@ export const registerWithApplication = async (
   }
 };
 
-// COMPLETELY REWRITTEN - Uses fetch directly to avoid axios CORS preflight issues
 export const checkApplicationStatus = async (
   applicationId: string,
 ): Promise<ApplicationStatusResponse> => {
@@ -225,17 +228,13 @@ export const checkApplicationStatus = async (
     };
   }
 
-  console.log(
-    "[Auth] Checking application status directly with fetch:",
-    applicationId,
-  );
+  console.log("[Auth] Checking application status:", applicationId);
 
-  // Create abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const url = `https://misterfyberbackend.onrender.com/api/auth/check-application/${applicationId}`;
+    const url = `${process.env.NEXT_PUBLIC_API_URL || "https://misterfyberbackend.onrender.com/api"}/auth/check-application/${applicationId}`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -255,13 +254,6 @@ export const checkApplicationStatus = async (
           message: "Application ID not found. Please check and try again.",
         };
       }
-      if (response.status === 502 || response.status === 503) {
-        return {
-          success: false,
-          message:
-            "Server is temporarily unavailable. Please try again in a few moments.",
-        };
-      }
       return {
         success: false,
         message: `Server error: ${response.status}`,
@@ -271,7 +263,6 @@ export const checkApplicationStatus = async (
     const result = await response.json();
     console.log("[Auth] Application check result:", result);
 
-    // Handle different response structures
     const responseData = result.data || result;
 
     if (responseData.status === "approved") {
@@ -329,7 +320,7 @@ export const checkApplicationStatus = async (
       return {
         success: false,
         message:
-          "Cannot connect to server. The backend may be down or waking up from cold start.",
+          "Cannot connect to server. The backend may be down or waking up from cold start. Please wait a moment and try again.",
       };
     }
 
