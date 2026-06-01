@@ -5,17 +5,12 @@ import {
   getAllApplications,
   approveApplication,
   rejectApplication,
-  getApplication,
 } from "@/services/admin";
 import { startBillingForApplication } from "@/services/billing";
 import {
   submitApplication,
   getActiveBuildings,
   Building,
-  getRegions,
-  getProvincesByRegion,
-  getCitiesByProvince,
-  getBarangaysByCity,
 } from "@/services/application";
 import { getPlans as getAllPlans, Plan } from "@/services/plan";
 import toast from "react-hot-toast";
@@ -495,7 +490,7 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // Function to fetch full application details
+  // ✅ Direct fetch without getApplication - ITO ANG IMPORTANTE
   const fetchFullApplicationDetails = async (appId: string) => {
     try {
       const token = localStorage.getItem("token");
@@ -528,7 +523,6 @@ export default function ApplicationsPage() {
       if (fullDetails) {
         setSelectedApp(fullDetails);
       } else {
-        // Fallback to the data we have
         setSelectedApp(app);
         toast.error("Could not load full details, showing partial data");
       }
