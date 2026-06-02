@@ -93,12 +93,17 @@ interface Plan {
   speed: { download: number; upload: number };
 }
 
+function getLastDayOfMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
   const month = date.getMonth() + 1;
   const day = date.getDate();
-  return `${month}/${day}/${date.getFullYear()}`;
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
 }
 
 export default function AdminBillingPage() {
