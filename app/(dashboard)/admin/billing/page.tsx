@@ -1271,19 +1271,19 @@ export default function AdminBillingPage() {
           <div className="flex gap-3 flex-wrap">
             <button
               onClick={loadUnpaidBillsReport}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition flex items-center gap-2"
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition flex items-center gap-2 cursor-pointer"
             >
               <FiPrinter className="w-4 h-4" /> Unpaid Bills Report
             </button>
             <button
               onClick={() => setShowBackdatedModal(true)}
-              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2"
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2 cursor-pointer"
             >
               <FiCalendarIcon className="w-4 h-4" /> Backdated Billing
             </button>
             <button
               onClick={() => setShowManualCustomerModal(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 cursor-pointer"
             >
               <FiUserPlus className="w-4 h-4" /> Add Customer
             </button>
@@ -1291,7 +1291,7 @@ export default function AdminBillingPage() {
               stats.applicationsWithoutBilling > 0) && (
               <button
                 onClick={() => setShowExistingCustomersModal(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 cursor-pointer"
               >
                 <FiUser className="w-4 h-4" /> Existing (
                 {customersWithoutAccounts.length +
@@ -1305,21 +1305,21 @@ export default function AdminBillingPage() {
                   setPendingModalType("pro-rated");
                   setShowPendingModal(true);
                 }}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2 cursor-pointer"
               >
                 <FiBell className="w-4 h-4" /> Pending ({totalPendingCount})
               </button>
             )}
             <button
               onClick={() => setShowSettingsModal(true)}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2 cursor-pointer"
             >
               <FiSettings className="w-4 h-4" /> Settings
             </button>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               <FiRefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -1670,18 +1670,22 @@ export default function AdminBillingPage() {
                       <td className="px-6 py-4">
                         <div className="flex gap-2 flex-wrap">
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setSelectedCustomer(customer);
                               setShowCustomerDetailModal(true);
                             }}
-                            className="p-1 text-blue-600 hover:text-blue-800"
+                            className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors cursor-pointer"
                             title="View Details"
                           >
                             <FiEye className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => openEmailModal(customer, "custom")}
-                            className="p-1 text-purple-600 hover:text-purple-800"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEmailModal(customer, "custom");
+                            }}
+                            className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors cursor-pointer"
                             title="Send Email"
                           >
                             <FiMail className="w-4 h-4" />
@@ -1689,10 +1693,11 @@ export default function AdminBillingPage() {
                           {customer.type === "application" &&
                             hasBillingCycle && (
                               <button
-                                onClick={() =>
-                                  handleRecoverMissingBills(customer)
-                                }
-                                className="p-1 text-amber-600 hover:text-amber-800"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRecoverMissingBills(customer);
+                                }}
+                                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors cursor-pointer"
                                 title="Recover Missing Bills"
                               >
                                 <FiCalendarIcon className="w-4 h-4" />
@@ -1702,7 +1707,8 @@ export default function AdminBillingPage() {
                             <>
                               {!hasBillingCycle && (
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedApplicationId(
                                       customer.applicationId || customer._id,
                                     );
@@ -1713,7 +1719,7 @@ export default function AdminBillingPage() {
                                     setIncludeInstallationFee(true);
                                     setShowStartModal(true);
                                   }}
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Start Billing"
                                 >
                                   <FiPlay className="w-4 h-4" />
@@ -1721,10 +1727,11 @@ export default function AdminBillingPage() {
                               )}
                               {isActive && (
                                 <button
-                                  onClick={() =>
-                                    handlePauseBillingForApplication(customer)
-                                  }
-                                  className="p-1 text-yellow-600 hover:text-yellow-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePauseBillingForApplication(customer);
+                                  }}
+                                  className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors cursor-pointer"
                                   title="Pause Billing"
                                 >
                                   <FiPause className="w-4 h-4" />
@@ -1732,10 +1739,11 @@ export default function AdminBillingPage() {
                               )}
                               {isPaused && (
                                 <button
-                                  onClick={() =>
-                                    handleResumeBillingForApplication(customer)
-                                  }
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResumeBillingForApplication(customer);
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Resume Billing"
                                 >
                                   <FiPlay className="w-4 h-4" />
@@ -1743,10 +1751,11 @@ export default function AdminBillingPage() {
                               )}
                               {(isActive || isPendingActivation) && (
                                 <button
-                                  onClick={() =>
-                                    handleDisconnectApplication(customer)
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDisconnectApplication(customer);
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Disconnect from Network"
                                 >
                                   <FiWifiOff className="w-4 h-4" />
@@ -1754,10 +1763,11 @@ export default function AdminBillingPage() {
                               )}
                               {customer.status === "suspended" && (
                                 <button
-                                  onClick={() =>
-                                    handleReconnectApplication(customer)
-                                  }
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReconnectApplication(customer);
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Reconnect to Network"
                                 >
                                   <FiWifi className="w-4 h-4" />
@@ -1765,10 +1775,11 @@ export default function AdminBillingPage() {
                               )}
                               {hasBillingCycle && (
                                 <button
-                                  onClick={() =>
-                                    handleStopBillingForApplication(customer)
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStopBillingForApplication(customer);
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Cancel Subscription"
                                 >
                                   <FiX className="w-4 h-4" />
@@ -1776,11 +1787,12 @@ export default function AdminBillingPage() {
                               )}
                               {hasBillingCycle && (
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setCustomerToDelete(customer);
                                     setShowDeleteConfirmModal(true);
                                   }}
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Delete Billing Cycle"
                                 >
                                   <FiTrash2 className="w-4 h-4" />
@@ -1794,7 +1806,8 @@ export default function AdminBillingPage() {
                                 customer.billingCycle?.status ===
                                   "cancelled") && (
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedUserId(customer._id);
                                     setSelectedCustomerName(
                                       `${customer.firstName} ${customer.lastName}`,
@@ -1803,7 +1816,7 @@ export default function AdminBillingPage() {
                                     setIncludeInstallationFee(true);
                                     setShowStartModal(true);
                                   }}
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Start Billing"
                                 >
                                   <FiPlay className="w-4 h-4" />
@@ -1822,11 +1835,12 @@ export default function AdminBillingPage() {
                                 )}
                               {customer.billingCycle?.status === "active" && (
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedUserId(customer._id);
                                     setShowPauseModal(true);
                                   }}
-                                  className="p-1 text-yellow-600 hover:text-yellow-800"
+                                  className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors cursor-pointer"
                                   title="Pause Billing"
                                 >
                                   <FiPause className="w-4 h-4" />
@@ -1834,13 +1848,14 @@ export default function AdminBillingPage() {
                               )}
                               {customer.billingCycle?.status === "paused" && (
                                 <button
-                                  onClick={() =>
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     handleResumeBilling(
                                       customer._id,
                                       customer.firstName,
-                                    )
-                                  }
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                    );
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Resume Billing"
                                 >
                                   <FiPlay className="w-4 h-4" />
@@ -1848,13 +1863,14 @@ export default function AdminBillingPage() {
                               )}
                               {customer.billingCycle?.status === "active" && (
                                 <button
-                                  onClick={() =>
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     handleStopBilling(
                                       customer._id,
                                       customer.firstName,
-                                    )
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                    );
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Cancel Subscription"
                                 >
                                   <FiX className="w-4 h-4" />
@@ -1862,8 +1878,11 @@ export default function AdminBillingPage() {
                               )}
                               {customer.status === "active" && (
                                 <button
-                                  onClick={() => handleDisconnect(customer)}
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDisconnect(customer);
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Disconnect from Network"
                                 >
                                   <FiWifiOff className="w-4 h-4" />
@@ -1871,8 +1890,11 @@ export default function AdminBillingPage() {
                               )}
                               {customer.status === "suspended" && (
                                 <button
-                                  onClick={() => handleReconnect(customer)}
-                                  className="p-1 text-green-600 hover:text-green-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReconnect(customer);
+                                  }}
+                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors cursor-pointer"
                                   title="Reconnect to Network"
                                 >
                                   <FiWifi className="w-4 h-4" />
@@ -1880,11 +1902,12 @@ export default function AdminBillingPage() {
                               )}
                               {customer.billingCycle && (
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setCustomerToDelete(customer);
                                     setShowDeleteConfirmModal(true);
                                   }}
-                                  className="p-1 text-red-600 hover:text-red-800"
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Delete Billing Cycle"
                                 >
                                   <FiTrash2 className="w-4 h-4" />
@@ -1919,7 +1942,7 @@ export default function AdminBillingPage() {
               </h2>
               <button
                 onClick={() => setShowUnpaidBillsReportModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <FiX className="w-6 h-6" />
               </button>
@@ -2035,7 +2058,7 @@ export default function AdminBillingPage() {
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowUnpaidBillsReportModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer"
               >
                 Close
               </button>
@@ -2066,7 +2089,7 @@ export default function AdminBillingPage() {
                     includeInstallationFee: true,
                   });
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <FiX className="w-6 h-6" />
               </button>
@@ -2278,14 +2301,14 @@ export default function AdminBillingPage() {
                       includeInstallationFee: true,
                     });
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleBackdatedBilling}
                   disabled={backdatedLoading}
-                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {backdatedLoading ? (
                     <>
@@ -2318,7 +2341,7 @@ export default function AdminBillingPage() {
                   setShowDeleteConfirmModal(false);
                   setCustomerToDelete(null);
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <FiX className="w-6 h-6" />
               </button>
@@ -2362,7 +2385,7 @@ export default function AdminBillingPage() {
                     setShowDeleteConfirmModal(false);
                     setCustomerToDelete(null);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2372,7 +2395,7 @@ export default function AdminBillingPage() {
                     setShowDeleteConfirmModal(false);
                     setCustomerToDelete(null);
                   }}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 cursor-pointer"
                 >
                   Delete Permanently
                 </button>
@@ -2398,7 +2421,7 @@ export default function AdminBillingPage() {
                   setBillingNotes("");
                   setIncludeInstallationFee(true);
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <FiX className="w-6 h-6" />
               </button>
@@ -2531,7 +2554,7 @@ export default function AdminBillingPage() {
                     setBillingNotes("");
                     setIncludeInstallationFee(true);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2541,7 +2564,7 @@ export default function AdminBillingPage() {
                       ? handleStartBillingForApplication
                       : handleStartBillingForUser
                   }
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 cursor-pointer"
                 >
                   Start Billing (ACTIVE)
                 </button>
@@ -2561,7 +2584,7 @@ export default function AdminBillingPage() {
               </h2>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <FiX className="w-6 h-6" />
               </button>
@@ -2682,7 +2705,7 @@ export default function AdminBillingPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={billingFlowSettings.enableAutoBilling}
@@ -2695,7 +2718,7 @@ export default function AdminBillingPage() {
                     />{" "}
                     <span>Enable Automatic Billing Generation</span>
                   </label>
-                  <label className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={billingFlowSettings.sendInvoiceOnInstall}
@@ -2757,17 +2780,245 @@ export default function AdminBillingPage() {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowSettingsModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveBillingFlowSettings}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700"
                 >
                   Save Settings
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Detail Modal */}
+      {showCustomerDetailModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Customer Details
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCustomerDetailModal(false);
+                  setSelectedCustomer(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Customer Basic Info */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Full Name</p>
+                  <p className="font-medium">
+                    {selectedCustomer.firstName} {selectedCustomer.lastName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="font-medium">{selectedCustomer.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Phone Number</p>
+                  <p className="font-medium">{selectedCustomer.phoneNumber}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Customer Type</p>
+                  <p className="font-medium capitalize">
+                    {selectedCustomer.type}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Plan</p>
+                  <p className="font-medium">
+                    {selectedCustomer.planName} (₱
+                    {selectedCustomer.planPrice.toLocaleString()}/mo)
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Current Balance</p>
+                  <p
+                    className={`font-bold text-lg ${getBalanceColor(selectedCustomer.currentBalance)}`}
+                  >
+                    ₱{selectedCustomer.currentBalance.toLocaleString()}
+                  </p>
+                </div>
+                {selectedCustomer.applicationId && (
+                  <div>
+                    <p className="text-sm text-gray-500">Application ID</p>
+                    <p className="font-mono text-sm">
+                      {selectedCustomer.applicationId}
+                    </p>
+                  </div>
+                )}
+                {selectedCustomer.username && (
+                  <div>
+                    <p className="text-sm text-gray-500">Username</p>
+                    <p className="font-medium">@{selectedCustomer.username}</p>
+                  </div>
+                )}
+                {selectedCustomer.type === "application" && (
+                  <>
+                    <div>
+                      <p className="text-sm text-gray-500">Installation Fee</p>
+                      <p className="font-medium">
+                        ₱
+                        {(
+                          selectedCustomer.installationFee || 0
+                        ).toLocaleString()}
+                        <span
+                          className={`ml-2 text-xs ${selectedCustomer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
+                        >
+                          (
+                          {selectedCustomer.installationFeePaid
+                            ? "Paid"
+                            : "Unpaid"}
+                          )
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        Billing Cycle Status
+                      </p>
+                      <p className="font-medium capitalize">
+                        {selectedCustomer.billingCycle?.status || "Not started"}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Unpaid Bills */}
+            {selectedCustomer.unpaidBills.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FiAlertCircle className="text-red-500" /> Unpaid Bills (
+                  {selectedCustomer.unpaidBills.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-red-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Invoice #</th>
+                        <th className="px-4 py-2 text-left">Period</th>
+                        <th className="px-4 py-2 text-left">Due Date</th>
+                        <th className="px-4 py-2 text-left">Amount</th>
+                        <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {selectedCustomer.unpaidBills.map((bill: any) => (
+                        <tr key={bill._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-mono">
+                            {bill.invoiceNumber}
+                          </td>
+                          <td className="px-4 py-2">
+                            {formatDateFixed(bill.billingPeriod?.start)} -{" "}
+                            {formatDateFixed(bill.billingPeriod?.end)}
+                          </td>
+                          <td className="px-4 py-2">
+                            {formatDateFixed(bill.dueDate)}
+                          </td>
+                          <td className="px-4 py-2 font-medium text-red-600">
+                            ₱{bill.total.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2">
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
+                            >
+                              {bill.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() =>
+                                handleMarkBillAsPaid(bill, selectedCustomer)
+                              }
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                            >
+                              Mark Paid
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Billing Cycle Info */}
+            {selectedCustomer.billingCycle && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-900 mb-3">
+                  Billing Cycle Details
+                </h3>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-500">Cycle ID</p>
+                      <p className="font-mono text-xs">
+                        {selectedCustomer.billingCycle._id}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Status</p>
+                      <p className="font-medium capitalize">
+                        {selectedCustomer.billingCycle.status}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Billing Start Date</p>
+                      <p>
+                        {formatDateFixed(
+                          selectedCustomer.billingCycle.billingStartDate,
+                        )}
+                      </p>
+                    </div>
+                    {selectedCustomer.billingCycle.pausedUntilDate && (
+                      <div>
+                        <p className="text-gray-500">Paused Until</p>
+                        <p>
+                          {formatDateFixed(
+                            selectedCustomer.billingCycle.pausedUntilDate,
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    {selectedCustomer.billingCycle.pauseReason && (
+                      <div className="col-span-2">
+                        <p className="text-gray-500">Pause Reason</p>
+                        <p>{selectedCustomer.billingCycle.pauseReason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowCustomerDetailModal(false);
+                  setSelectedCustomer(null);
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
