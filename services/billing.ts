@@ -1,3 +1,4 @@
+// frontend/services/billing.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 export interface BillingCycle {
@@ -64,6 +65,7 @@ export interface BillingSettings {
   sendInvoiceOnInstall: boolean;
   requireAdminActivation: boolean;
   installationFee: number;
+  installationFeeDueDays: number;
 }
 
 export interface Bill {
@@ -513,8 +515,7 @@ export const reconnectClient = async (data: {
 
 export const deleteBillingCycle = async (data: {
   billingCycleId: string;
-  customerId?: string;
-  customerType?: string;
+  applicationId?: string;
 }): Promise<any> => {
   try {
     const response = await api.delete("/billing/delete-cycle", { data });
@@ -603,6 +604,26 @@ export const markBillAsPaid = async (
   }
 };
 
+export const markInstallationBillAsPaid = async (
+  billId: string,
+  paymentData: {
+    referenceNumber?: string;
+    notes?: string;
+  },
+): Promise<any> => {
+  try {
+    const response = await api.put(
+      `/billing/mark-installation-paid/${billId}`,
+      paymentData,
+    );
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error marking installation bill as paid:", error);
+    throw error;
+  }
+};
+
 export const getPendingProRatedBills = async (): Promise<{
   data: any[];
 }> => {
@@ -611,6 +632,18 @@ export const getPendingProRatedBills = async (): Promise<{
     return response.data;
   } catch (error) {
     console.error("Error fetching pending pro-rated bills:", error);
+    return { data: [] };
+  }
+};
+
+export const getPendingInstallationBills = async (): Promise<{
+  data: any[];
+}> => {
+  try {
+    const response = await api.get("/billing/pending-installation");
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending installation bills:", error);
     return { data: [] };
   }
 };
@@ -711,6 +744,24 @@ export const submitMonthlyPayment = async (data: {
     return response.data;
   } catch (error) {
     console.error("Error submitting monthly payment:", error);
+    throw error;
+  }
+};
+
+export const submitInstallationPayment = async (data: {
+  billId: string;
+  referenceNumber: string;
+  notes?: string;
+}): Promise<any> => {
+  try {
+    const response = await api.post(
+      "/billing/application/submit-installation",
+      data,
+    );
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error submitting installation payment:", error);
     throw error;
   }
 };

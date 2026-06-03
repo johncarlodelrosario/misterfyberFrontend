@@ -1,4 +1,4 @@
-// services/payment.ts - COMPLETE FIXED VERSION
+// frontend/services/payment.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 export interface CreatePaymentData {

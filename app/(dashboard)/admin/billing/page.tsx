@@ -1,3 +1,4 @@
+// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -14,7 +15,9 @@ import {
   deleteBillingCycle,
   clearBillingCache,
   markBillAsPaid,
+  markInstallationBillAsPaid,
   getPendingProRatedBills,
+  getPendingInstallationBills,
   getPendingActivations,
   confirmProRatedPayment,
   startMonthlyBilling,
@@ -137,10 +140,13 @@ export default function AdminBillingPage() {
   const [pauseUntilDate, setPauseUntilDate] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [pendingProRated, setPendingProRated] = useState<any[]>([]);
+  const [pendingInstallationBills, setPendingInstallationBills] = useState<
+    any[]
+  >([]);
   const [pendingActivations, setPendingActivations] = useState<any[]>([]);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [pendingModalType, setPendingModalType] = useState<
-    "pro-rated" | "activation" | "payments"
+    "pro-rated" | "activation" | "payments" | "installation"
   >("pro-rated");
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailCustomer, setEmailCustomer] = useState<CustomerItem | null>(null);
@@ -208,6 +214,9 @@ export default function AdminBillingPage() {
     gracePeriodDays: 5,
     reminderDays: [7, 3, 1],
     installationFee: 1500,
+    installationFeeDueDays: 7,
+    autoSendReminders: true,
+    autoSuspendOnNonPayment: true,
   });
 
   const [stats, setStats] = useState({
@@ -220,6 +229,7 @@ export default function AdminBillingPage() {
     pendingProRatedCount: 0,
     pendingActivationsCount: 0,
     pendingPaymentsCount: 0,
+    pendingInstallationBillsCount: 0,
     applicationsWithoutBilling: 0,
     totalInstallationFeesDue: 0,
     installationFeesPaidCount: 0,
@@ -263,10 +273,14 @@ export default function AdminBillingPage() {
           enableAutoBilling: settingsData.enableAutoBilling !== false,
           sendInvoiceOnInstall: settingsData.sendInvoiceOnInstall !== false,
           requireAdminActivation: settingsData.requireAdminActivation || false,
-          freeDays: 0,
+          freeDays: settingsData.freeDays || 0,
           gracePeriodDays: settingsData.gracePeriodDays || 5,
           reminderDays: settingsData.reminderDays || [7, 3, 1],
           installationFee: settingsData.installationFee || 1500,
+          installationFeeDueDays: settingsData.installationFeeDueDays || 7,
+          autoSendReminders: settingsData.autoSendReminders !== false,
+          autoSuspendOnNonPayment:
+            settingsData.autoSuspendOnNonPayment !== false,
         });
         setBillingSettingsState(settingsData);
       }
@@ -277,7 +291,7 @@ export default function AdminBillingPage() {
 
   const saveBillingFlowSettings = async () => {
     try {
-      await updateBillingSettingsAdmin({ ...billingFlowSettings, freeDays: 0 });
+      await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
       loadData(true);
     } catch (error: any) {
@@ -411,8 +425,7 @@ export default function AdminBillingPage() {
     try {
       const result = await deleteBillingCycle({
         billingCycleId: customer.billingCycle._id,
-        customerId: customer._id,
-        customerType: customer.type,
+        applicationId: customer.applicationId,
       });
 
       if (result.success) {
@@ -616,6 +629,31 @@ export default function AdminBillingPage() {
     }
   };
 
+  const handleMarkInstallationBillAsPaid = async (
+    bill: any,
+    customer: CustomerItem,
+  ) => {
+    if (!confirm(`Mark installation invoice ${bill.invoiceNumber} as paid?`))
+      return;
+    try {
+      await markInstallationBillAsPaid(bill._id, {
+        referenceNumber: `INST-ADMIN-${Date.now()}`,
+        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+      });
+      toast.success(
+        `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
+      );
+      loadedRef.current = false;
+      loadData(true);
+    } catch (error: any) {
+      console.error("Mark installation bill as paid error:", error);
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to mark installation bill as paid",
+      );
+    }
+  };
+
   const loadData = useCallback(async (forceRefresh = false) => {
     if (!isMountedRef.current) return;
     if (loadedRef.current && !forceRefresh) return;
@@ -637,6 +675,7 @@ export default function AdminBillingPage() {
         applicationsResult,
         pendingPaymentsResult,
         customersWithoutAccountsResult,
+        pendingInstallationBillsResult,
         unpaidReportResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
@@ -647,6 +686,7 @@ export default function AdminBillingPage() {
         })),
         getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+        getPendingInstallationBills().catch(() => ({ data: [] })),
         getUnpaidBillsReport({ includePaid: false }).catch(() => ({
           data: { summary: {} },
         })),
@@ -661,17 +701,22 @@ export default function AdminBillingPage() {
       const pendingPaymentsList = pendingPaymentsResult?.data || [];
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
+      const pendingInstallationBillsData =
+        pendingInstallationBillsResult?.data || [];
       const reportSummary = unpaidReportResult?.data?.summary || {};
 
       setBillingCycles(cyclesData);
       setBills(billsList);
       setPendingPayments(pendingPaymentsList);
       setCustomersWithoutAccounts(customersWithoutAccountsData);
+      setPendingInstallationBills(pendingInstallationBillsData);
 
       const userCustomers: CustomerItem[] = usersList.map((user: any) => {
         const userBills = billsList.filter(
           (bill: any) =>
-            bill.userId?._id === user._id && bill.status !== "paid",
+            bill.userId?._id === user._id &&
+            bill.status !== "paid" &&
+            !bill.isInstallationBill,
         );
         const totalBalance = userBills.reduce(
           (sum: number, bill: any) => sum + (bill.total || 0),
@@ -715,7 +760,8 @@ export default function AdminBillingPage() {
           const appBills = billsList.filter(
             (bill: any) =>
               bill.applicationId === app.applicationId &&
-              bill.status !== "paid",
+              bill.status !== "paid" &&
+              !bill.isInstallationBill,
           );
           const totalBalance = appBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
@@ -798,6 +844,7 @@ export default function AdminBillingPage() {
         pendingProRatedCount: proRatedResult?.data?.length || 0,
         pendingActivationsCount: activationsResult?.data?.length || 0,
         pendingPaymentsCount: pendingPaymentsList.length,
+        pendingInstallationBillsCount: pendingInstallationBillsData.length,
         applicationsWithoutBilling: applicationsWithoutBilling,
         totalInstallationFeesDue: totalInstallationFeesDue,
         installationFeesPaidCount: installationFeesPaidCount,
@@ -1240,6 +1287,7 @@ export default function AdminBillingPage() {
     pendingProRated.length +
     pendingActivations.length +
     pendingPayments.length +
+    pendingInstallationBills.length +
     customersWithoutAccounts.length +
     stats.applicationsWithoutBilling;
 
@@ -1331,7 +1379,7 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-11 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -1456,6 +1504,17 @@ export default function AdminBillingPage() {
             <FiAlertCircle className="w-8 h-8 text-amber-100" />
           </div>
         </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Pending Install Bills</p>
+              <p className="text-2xl font-bold text-amber-600">
+                {stats.pendingInstallationBillsCount}
+              </p>
+            </div>
+            <FiFileText className="w-8 h-8 text-amber-100" />
+          </div>
+        </div>
       </div>
 
       {/* Billing Flow Info */}
@@ -1484,7 +1543,8 @@ export default function AdminBillingPage() {
               <div>
                 • Installation Fee: ₱
                 {billingFlowSettings.installationFee.toLocaleString()}{" "}
-                (one-time)
+                (one-time, due in {billingFlowSettings.installationFeeDueDays}{" "}
+                days)
               </div>
             </div>
           </div>
@@ -2004,6 +2064,9 @@ export default function AdminBillingPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
                       Status
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2049,6 +2112,42 @@ export default function AdminBillingPage() {
                         >
                           {bill.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {bill.isInstallationBill &&
+                          !bill.installationFeePaid && (
+                            <button
+                              onClick={() => {
+                                const customer = customers.find(
+                                  (c) => c.applicationId === bill.applicationId,
+                                );
+                                if (customer) {
+                                  handleMarkInstallationBillAsPaid(
+                                    bill,
+                                    customer,
+                                  );
+                                }
+                              }}
+                              className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                            >
+                              Mark Install Paid
+                            </button>
+                          )}
+                        {!bill.isInstallationBill && bill.status !== "paid" && (
+                          <button
+                            onClick={() => {
+                              const customer = customers.find(
+                                (c) => c.applicationId === bill.applicationId,
+                              );
+                              if (customer) {
+                                handleMarkBillAsPaid(bill, customer);
+                              }
+                            }}
+                            className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -2482,7 +2581,8 @@ export default function AdminBillingPage() {
                   </span>
                 </label>
                 <p className="text-xs text-amber-700 mt-1 ml-6">
-                  One-time fee added to the first bill
+                  One-time fee added to the first bill, due in{" "}
+                  {billingFlowSettings.installationFeeDueDays} days
                 </p>
               </div>
               <div>
@@ -2514,7 +2614,7 @@ export default function AdminBillingPage() {
                     <li>
                       Installation fee of ₱
                       {billingFlowSettings.installationFee.toLocaleString()}{" "}
-                      will be added to first bill
+                      will be added as separate bill
                     </li>
                   )}
                 </ul>
@@ -2567,6 +2667,62 @@ export default function AdminBillingPage() {
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 cursor-pointer"
                 >
                   Start Billing (ACTIVE)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Modal */}
+      {showPauseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Pause Billing</h2>
+              <button
+                onClick={() => setShowPauseModal(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason
+                </label>
+                <input
+                  type="text"
+                  value={pauseReason}
+                  onChange={(e) => setPauseReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Enter reason for pausing"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Pause Until Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={pauseUntilDate}
+                  onChange={(e) => setPauseUntilDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowPauseModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePauseBilling}
+                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 cursor-pointer"
+                >
+                  Pause Billing
                 </button>
               </div>
             </div>
@@ -2630,7 +2786,26 @@ export default function AdminBillingPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      One-time fee charged on first bill
+                      One-time fee charged separately
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Installation Fee Due Days
+                    </label>
+                    <input
+                      type="number"
+                      value={billingFlowSettings.installationFeeDueDays}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          installationFeeDueDays: parseInt(e.target.value) || 7,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Days after installation to pay fee
                     </p>
                   </div>
                 </div>
@@ -2731,6 +2906,32 @@ export default function AdminBillingPage() {
                     />{" "}
                     <span>Send Invoice Email on Installation</span>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={billingFlowSettings.autoSendReminders}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          autoSendReminders: e.target.checked,
+                        })
+                      }
+                    />{" "}
+                    <span>Auto-send Payment Reminders</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={billingFlowSettings.autoSuspendOnNonPayment}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          autoSuspendOnNonPayment: e.target.checked,
+                        })
+                      }
+                    />{" "}
+                    <span>Auto-suspend Overdue Accounts</span>
+                  </label>
                 </div>
               </div>
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -2750,7 +2951,7 @@ export default function AdminBillingPage() {
                   <li>
                     Installation fee of ₱
                     {billingFlowSettings.installationFee.toLocaleString()} added
-                    to first bill
+                    as separate bill
                   </li>
                 </ul>
               </div>
@@ -2774,6 +2975,10 @@ export default function AdminBillingPage() {
                   <li>
                     After {billingFlowSettings.gracePeriodDays} days grace
                     period, service may be suspended
+                  </li>
+                  <li>
+                    Installation fee is a <strong>SEPARATE bill</strong> due in{" "}
+                    {billingFlowSettings.installationFeeDueDays} days
                   </li>
                 </ul>
               </div>
@@ -2916,6 +3121,7 @@ export default function AdminBillingPage() {
                         <th className="px-4 py-2 text-left">Due Date</th>
                         <th className="px-4 py-2 text-left">Amount</th>
                         <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Type</th>
                         <th className="px-4 py-2 text-left">Actions</th>
                       </tr>
                     </thead>
@@ -2943,14 +3149,46 @@ export default function AdminBillingPage() {
                             </span>
                           </td>
                           <td className="px-4 py-2">
-                            <button
-                              onClick={() =>
-                                handleMarkBillAsPaid(bill, selectedCustomer)
-                              }
-                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
-                            >
-                              Mark Paid
-                            </button>
+                            {bill.isInstallationBill ? (
+                              <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">
+                                Installation Fee
+                              </span>
+                            ) : bill.isProRated ? (
+                              <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                                Pro-rated
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                                Monthly
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2">
+                            {bill.isInstallationBill &&
+                              !bill.installationFeePaid && (
+                                <button
+                                  onClick={() =>
+                                    handleMarkInstallationBillAsPaid(
+                                      bill,
+                                      selectedCustomer,
+                                    )
+                                  }
+                                  className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                                >
+                                  Mark Install Paid
+                                </button>
+                              )}
+                            {!bill.isInstallationBill &&
+                              bill.status !== "paid" && (
+                                <button
+                                  onClick={() =>
+                                    handleMarkBillAsPaid(bill, selectedCustomer)
+                                  }
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
                           </td>
                         </tr>
                       ))}
@@ -2988,12 +3226,38 @@ export default function AdminBillingPage() {
                         )}
                       </p>
                     </div>
-                    {selectedCustomer.billingCycle.pausedUntilDate && (
+                    <div>
+                      <p className="text-gray-500">Next Billing Date</p>
+                      <p>
+                        {formatDateFixed(
+                          selectedCustomer.billingCycle.nextBillingDate,
+                        )}
+                      </p>
+                    </div>
+                    {selectedCustomer.billingCycle.installationFee > 0 && (
                       <div>
-                        <p className="text-gray-500">Paused Until</p>
+                        <p className="text-gray-500">Installation Fee</p>
+                        <p>
+                          ₱
+                          {selectedCustomer.billingCycle.installationFee.toLocaleString()}
+                          <span
+                            className={`ml-2 text-xs ${selectedCustomer.billingCycle.installationFeePaid ? "text-green-600" : "text-red-600"}`}
+                          >
+                            (
+                            {selectedCustomer.billingCycle.installationFeePaid
+                              ? "Paid"
+                              : "Unpaid"}
+                            )
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                    {selectedCustomer.billingCycle.pausedAt && (
+                      <div>
+                        <p className="text-gray-500">Paused At</p>
                         <p>
                           {formatDateFixed(
-                            selectedCustomer.billingCycle.pausedUntilDate,
+                            selectedCustomer.billingCycle.pausedAt,
                           )}
                         </p>
                       </div>
@@ -3019,6 +3283,799 @@ export default function AdminBillingPage() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Modal */}
+      {showPendingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Pending Items</h2>
+              <button
+                onClick={() => setShowPendingModal(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="flex border-b mb-4">
+              <button
+                onClick={() => setPendingModalType("pro-rated")}
+                className={`px-4 py-2 font-medium text-sm ${pendingModalType === "pro-rated" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
+              >
+                Pro-rated Bills ({pendingProRated.length})
+              </button>
+              <button
+                onClick={() => setPendingModalType("installation")}
+                className={`px-4 py-2 font-medium text-sm ${pendingModalType === "installation" ? "border-b-2 border-amber-500 text-amber-600" : "text-gray-500"}`}
+              >
+                Installation Bills ({pendingInstallationBills.length})
+              </button>
+              <button
+                onClick={() => setPendingModalType("activation")}
+                className={`px-4 py-2 font-medium text-sm ${pendingModalType === "activation" ? "border-b-2 border-purple-500 text-purple-600" : "text-gray-500"}`}
+              >
+                Pending Activations ({pendingActivations.length})
+              </button>
+              <button
+                onClick={() => setPendingModalType("payments")}
+                className={`px-4 py-2 font-medium text-sm ${pendingModalType === "payments" ? "border-b-2 border-green-500 text-green-600" : "text-gray-500"}`}
+              >
+                Pending Payments ({pendingPayments.length})
+              </button>
+            </div>
+
+            {/* Pro-rated Bills Content */}
+            {pendingModalType === "pro-rated" && (
+              <div>
+                {pendingProRated.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No pending pro-rated bills
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Invoice
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Customer
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Amount
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingProRated.map((bill: any) => (
+                          <tr key={bill._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-mono text-sm">
+                              {bill.invoiceNumber}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium">
+                                {bill.applicationData?.firstName}{" "}
+                                {bill.applicationData?.lastName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {bill.applicationData?.email}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-red-600">
+                              ₱{bill.total.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">
+                                {bill.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() =>
+                                  confirmProRatedPayment({
+                                    applicationId: bill.applicationId,
+                                  })
+                                }
+                                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                              >
+                                Confirm Payment
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Installation Bills Content */}
+            {pendingModalType === "installation" && (
+              <div>
+                {pendingInstallationBills.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No pending installation bills
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-amber-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Invoice
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Customer
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Amount
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Due Date
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingInstallationBills.map((bill: any) => (
+                          <tr key={bill._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-mono text-sm">
+                              {bill.invoiceNumber}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium">
+                                {bill.applicationData?.firstName}{" "}
+                                {bill.applicationData?.lastName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {bill.applicationData?.email}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-amber-600">
+                              ₱{bill.total.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {formatDateFixed(bill.dueDate)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
+                              >
+                                {bill.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() =>
+                                  markInstallationBillAsPaid(bill._id, {
+                                    notes: "Admin confirmed",
+                                  })
+                                }
+                                className="px-3 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                              >
+                                Mark Paid
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pending Activations Content */}
+            {pendingModalType === "activation" && (
+              <div>
+                {pendingActivations.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No pending activations
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-purple-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Customer
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Plan
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Monthly Rate
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingActivations.map((cycle: any) => (
+                          <tr key={cycle._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium">
+                                {cycle.applicationData?.firstName}{" "}
+                                {cycle.applicationData?.lastName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {cycle.applicationData?.email}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {cycle.planId?.name || "N/A"}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              ₱{cycle.monthlyRate?.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() =>
+                                  startMonthlyBilling({
+                                    applicationId: cycle.applicationId,
+                                  })
+                                }
+                                className="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 cursor-pointer"
+                              >
+                                Activate
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pending Payments Content */}
+            {pendingModalType === "payments" && (
+              <div>
+                {pendingPayments.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No pending payments
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-green-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Reference
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Customer
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Amount
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Type
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Submitted
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingPayments.map((payment: any) => (
+                          <tr key={payment._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-mono text-sm">
+                              {payment.referenceNumber}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium">
+                                {payment.application?.firstName}{" "}
+                                {payment.application?.lastName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {payment.application?.email}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-green-600">
+                              ₱{payment.amount?.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${payment.paymentType === "installation" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}
+                              >
+                                {payment.paymentType}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {formatDateFixed(payment.createdAt)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() =>
+                                    handleConfirmPayment(payment._id)
+                                  }
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleRejectPayment(payment._id)
+                                  }
+                                  className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 cursor-pointer"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowPendingModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Modal */}
+      {showEmailModal && emailCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Send Email to {emailCustomer.firstName} {emailCustomer.lastName}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailCustomer(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Template
+                </label>
+                <select
+                  value={emailType}
+                  onChange={(e) => {
+                    const newType = e.target.value;
+                    setEmailType(newType);
+                    switch (newType) {
+                      case "invoice":
+                        setEmailSubject(`Invoice Reminder - MisterFyber`);
+                        setEmailMessage(
+                          `Dear ${emailCustomer.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
+                        );
+                        break;
+                      case "payment_confirmation":
+                        setEmailSubject(`Payment Confirmation - MisterFyber`);
+                        setEmailMessage(
+                          `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+                        );
+                        break;
+                      case "disconnection":
+                        setEmailSubject(
+                          `Important: Service Disconnection Notice - MisterFyber`,
+                        );
+                        setEmailMessage(
+                          `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
+                        );
+                        break;
+                      case "welcome":
+                        setEmailSubject(`Welcome to MisterFyber!`);
+                        setEmailMessage(
+                          `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
+                        );
+                        break;
+                      default:
+                        setEmailSubject(`Message from MisterFyber`);
+                        setEmailMessage(`Dear ${emailCustomer.firstName},\n\n`);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="custom">Custom</option>
+                  <option value="invoice">Invoice Reminder</option>
+                  <option value="payment_confirmation">
+                    Payment Confirmation
+                  </option>
+                  <option value="disconnection">Disconnection Notice</option>
+                  <option value="welcome">Welcome Email</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Email subject"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message
+                </label>
+                <textarea
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  rows={10}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                  placeholder="Write your email message here..."
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailCustomer(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendManualEmail}
+                  disabled={sendingEmail}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {sendingEmail ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiMail className="w-4 h-4" /> Send Email
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing Customers Modal - Simplified version */}
+      {showExistingCustomersModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Existing Customers Without Billing
+              </h2>
+              <button
+                onClick={() => setShowExistingCustomersModal(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-purple-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Plan</th>
+                    <th className="px-4 py-3 text-left">Type</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customersWithoutAccounts.map((customer: any) => (
+                    <tr key={customer._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        {customer.firstName} {customer.lastName}
+                      </td>
+                      <td className="px-4 py-3">{customer.email}</td>
+                      <td className="px-4 py-3">{customer.planName}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                          Application
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => {
+                            setSelectedApplicationId(customer.applicationId);
+                            setSelectedCustomerName(
+                              `${customer.firstName} ${customer.lastName}`,
+                            );
+                            setSelectedCustomerEmail(customer.email);
+                            setIncludeInstallationFee(true);
+                            setShowStartModal(true);
+                            setShowExistingCustomersModal(false);
+                          }}
+                          className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                        >
+                          Start Billing
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {stats.applicationsWithoutBilling > 0 && (
+                    <tr className="bg-yellow-50">
+                      <td colSpan={5} className="px-4 py-3 text-center">
+                        <p className="text-sm text-yellow-800">
+                          Plus {stats.applicationsWithoutBilling} more approved
+                          applications without billing. Go to Applications page
+                          to start billing for them.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowExistingCustomersModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Customer Modal */}
+      {showManualCustomerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Add New Customer
+              </h2>
+              <button
+                onClick={() => setShowManualCustomerModal(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCustomerForm.firstName}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        firstName: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCustomerForm.lastName}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        lastName: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={manualCustomerForm.email}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.phoneNumber}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      phoneNumber: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Plan *
+                </label>
+                <select
+                  value={manualCustomerForm.planId}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      planId: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select a plan...</option>
+                  {plans.map((plan) => (
+                    <option key={plan._id} value={plan._id}>
+                      {plan.name} - ₱{plan.price.toLocaleString()}/mo
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Building
+                </label>
+                <select
+                  value={manualCustomerForm.buildingId}
+                  onChange={(e) => {
+                    const building = buildings.find(
+                      (b) => b._id === e.target.value,
+                    );
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      buildingId: e.target.value,
+                      buildingName: building?.buildingName || "",
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select a building...</option>
+                  {buildings.map((building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.buildingName} - {building.streetAddress}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Floor
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCustomerForm.floor}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        floor: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Number
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCustomerForm.unitNumber}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        unitNumber: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualCustomerForm.includeInstallationFee}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        includeInstallationFee: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-amber-600"
+                  />
+                  <span className="text-sm font-medium text-amber-800">
+                    Include Installation Fee (₱
+                    {billingFlowSettings.installationFee.toLocaleString()})
+                  </span>
+                </label>
+              </div>
+              <div className="bg-green-50 p-3 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualCustomerForm.startBillingImmediately}
+                    onChange={(e) =>
+                      setManualCustomerForm({
+                        ...manualCustomerForm,
+                        startBillingImmediately: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-green-600"
+                  />
+                  <span className="text-sm font-medium text-green-800">
+                    Start Billing Immediately (ACTIVE)
+                  </span>
+                </label>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowManualCustomerModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleManualCustomerSubmit}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 cursor-pointer"
+                >
+                  Create Customer
+                </button>
+              </div>
             </div>
           </div>
         </div>
