@@ -29,15 +29,52 @@ import {
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-// ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
-// This function handles both populated application object and applicationId (string)
-function getCustomerInfo(payment: any): {
+// ==================== TYPE DEFINITIONS ====================
+interface Payment {
+  _id: string;
+  amount: number;
+  referenceNumber: string;
+  paymentMethod: string;
+  status: string;
+  createdAt: string;
+  paidAt?: string;
+  applicationId?: any;
+  application?: any;
+  applicationData?: any;
+  userId?: any;
+  user?: any;
+  billingId?: {
+    invoiceNumber: string;
+  };
+  paymentDetails?: {
+    notes?: string;
+    gatewayResponse?: {
+      applicationId?: string;
+      confirmationNotes?: string;
+    };
+  };
+  readableApplicationId?: string;
+}
+
+interface CustomerInfo {
   name: string;
   email: string;
   phone: string;
   applicationId: string;
   address: string;
-} {
+}
+
+interface PaymentGroup {
+  customerInfo: CustomerInfo;
+  payments: Payment[];
+  totalAmount: number;
+  latestPaymentDate: string;
+  earliestPaymentDate: string;
+}
+
+// ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
+// This function handles both populated application object and applicationId (string)
+function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 1: Check if application object is populated (from backend fix)
   if (payment.application) {
     const app = payment.application;
@@ -145,19 +182,58 @@ function getCustomerInfo(payment: any): {
   };
 }
 
+// ==================== HELPER FUNCTION TO GROUP PAYMENTS BY CUSTOMER ====================
+function groupPaymentsByCustomer(payments: Payment[]): PaymentGroup[] {
+  const grouped = new Map<string, PaymentGroup>();
+
+  payments.forEach((payment) => {
+    const customerInfo = getCustomerInfo(payment);
+    const customerKey =
+      customerInfo.applicationId ||
+      customerInfo.email ||
+      payment.userId?._id ||
+      payment.userId ||
+      "unknown";
+
+    if (!grouped.has(customerKey)) {
+      grouped.set(customerKey, {
+        customerInfo,
+        payments: [],
+        totalAmount: 0,
+        latestPaymentDate: payment.createdAt,
+        earliestPaymentDate: payment.createdAt,
+      });
+    }
+
+    const group = grouped.get(customerKey)!;
+    group.payments.push(payment);
+    group.totalAmount += payment.amount || 0;
+
+    if (new Date(payment.createdAt) > new Date(group.latestPaymentDate)) {
+      group.latestPaymentDate = payment.createdAt;
+    }
+    if (new Date(payment.createdAt) < new Date(group.earliestPaymentDate)) {
+      group.earliestPaymentDate = payment.createdAt;
+    }
+  });
+
+  return Array.from(grouped.values());
+}
+
 // ==================== MAIN COMPONENT ====================
 export default function AdminPaymentsPage() {
-  const [payments, setPayments] = useState<any[]>([]);
-  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [selectedPayment, setSelectedPayment] = useState<any>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -349,19 +425,25 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  // Filter payments based on search
-  const filteredPayments = payments.filter((payment) => {
-    const customerInfo = getCustomerInfo(payment);
-    const searchLower = search.toLowerCase();
+  // Filter and group payments based on search
+  const filteredAndGroupedPayments: PaymentGroup[] = (() => {
+    // First filter individual payments
+    const filtered = payments.filter((payment: Payment) => {
+      const customerInfo = getCustomerInfo(payment);
+      const searchLower = search.toLowerCase();
 
-    return (
-      customerInfo.name.toLowerCase().includes(searchLower) ||
-      customerInfo.email.toLowerCase().includes(searchLower) ||
-      customerInfo.applicationId.toLowerCase().includes(searchLower) ||
-      payment.referenceNumber?.toLowerCase().includes(searchLower) ||
-      payment.billingId?.invoiceNumber?.toLowerCase().includes(searchLower)
-    );
-  });
+      return (
+        customerInfo.name.toLowerCase().includes(searchLower) ||
+        customerInfo.email.toLowerCase().includes(searchLower) ||
+        customerInfo.applicationId.toLowerCase().includes(searchLower) ||
+        payment.referenceNumber?.toLowerCase().includes(searchLower) ||
+        payment.billingId?.invoiceNumber?.toLowerCase().includes(searchLower)
+      );
+    });
+
+    // Then group by customer
+    return groupPaymentsByCustomer(filtered);
+  })();
 
   if (loading && payments.length === 0) {
     return (
@@ -557,7 +639,7 @@ export default function AdminPaymentsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {pendingPayments.map((payment) => {
+                  {pendingPayments.map((payment: Payment) => {
                     const customerInfo = getCustomerInfo(payment);
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
@@ -642,33 +724,34 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* All Payments Table */}
+      {/* All Payments Table - Grouped by Customer */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
         <h2 className="text-lg font-semibold text-gray-900 p-6 border-b flex items-center gap-2">
           <FiClipboard className="w-5 h-5 text-gray-500" />
           All Payments
+          <span className="text-sm text-gray-400 ml-2">
+            (Grouped by customer - {filteredAndGroupedPayments.length}{" "}
+            customers)
+          </span>
         </h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Date
+                  Customer Information
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Customer / Application
+                  Payment Summary
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Reference / Invoice
+                  Total Amount
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Amount
+                  Payment Count
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Method
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Status
+                  Date Range
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Actions
@@ -676,10 +759,10 @@ export default function AdminPaymentsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredPayments.length === 0 ? (
+              {filteredAndGroupedPayments.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -692,93 +775,225 @@ export default function AdminPaymentsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredPayments.map((payment) => {
-                  const customerInfo = getCustomerInfo(payment);
-                  return (
-                    <tr key={payment._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {formatDate(payment.createdAt)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900 flex items-center gap-2">
-                            <FiUser className="w-4 h-4 text-gray-400" />
-                            {customerInfo.name}
-                          </p>
-                          <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                            <FiMail className="w-3 h-3" />
-                            {customerInfo.email}
-                          </p>
-                          {customerInfo.phone !== "—" && (
-                            <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                              <FiPhone className="w-3 h-3" />
-                              {customerInfo.phone}
+                filteredAndGroupedPayments.map(
+                  (group: PaymentGroup, index: number) => {
+                    const isExpanded =
+                      expandedCustomer === group.customerInfo.applicationId;
+                    const hasMultiplePayments = group.payments.length > 1;
+
+                    return (
+                      <tbody key={index} className="divide-y divide-gray-200">
+                        {/* Customer Summary Row */}
+                        <tr className="hover:bg-gray-50">
+                          <td className="px-6 py-4">
+                            <div>
+                              <p className="font-medium text-gray-900 flex items-center gap-2">
+                                <FiUser className="w-4 h-4 text-gray-400" />
+                                {group.customerInfo.name}
+                              </p>
+                              <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                <FiMail className="w-3 h-3" />
+                                {group.customerInfo.email}
+                              </p>
+                              {group.customerInfo.phone !== "—" && (
+                                <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                                  <FiPhone className="w-3 h-3" />
+                                  {group.customerInfo.phone}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                                <FiHash className="w-3 h-3" />
+                                App ID: {group.customerInfo.applicationId}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div>
+                              {hasMultiplePayments ? (
+                                <>
+                                  <p className="text-sm text-gray-600">
+                                    {group.payments.length} payment records
+                                  </p>
+                                  <p className="text-xs text-blue-600 mt-1">
+                                    Click expand to view details
+                                  </p>
+                                </>
+                              ) : (
+                                <div className="space-y-1">
+                                  <p className="text-sm font-mono text-gray-900">
+                                    Ref: {group.payments[0].referenceNumber}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    Method:{" "}
+                                    <span className="capitalize">
+                                      {group.payments[0].paymentMethod}
+                                    </span>
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    Status:{" "}
+                                    <span
+                                      className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(group.payments[0].status)}`}
+                                    >
+                                      {group.payments[0].status}
+                                    </span>
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div>
+                              <p className="text-lg font-bold text-green-600">
+                                {formatCurrency(group.totalAmount)}
+                              </p>
+                              {hasMultiplePayments && (
+                                <p className="text-xs text-gray-400">
+                                  (Total of {group.payments.length} payments)
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {group.payments.length} payment
+                              {group.payments.length !== 1 ? "s" : ""}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="text-sm text-gray-600">
+                              {formatDate(group.earliestPaymentDate)}
+                              {group.payments.length > 1 && (
+                                <>
+                                  <br />
+                                  <span className="text-xs text-gray-400">
+                                    to
+                                  </span>
+                                  <br />
+                                  {formatDate(group.latestPaymentDate)}
+                                </>
+                              )}
                             </p>
-                          )}
-                          <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                            <FiHash className="w-3 h-3" />
-                            App ID: {customerInfo.applicationId}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-mono text-gray-900">
-                          {payment.referenceNumber}
-                        </p>
-                        {payment.billingId?.invoiceNumber && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            Invoice: {payment.billingId.invoiceNumber}
-                          </p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex gap-2">
+                              {hasMultiplePayments && (
+                                <button
+                                  onClick={() =>
+                                    setExpandedCustomer(
+                                      isExpanded
+                                        ? null
+                                        : group.customerInfo.applicationId,
+                                    )
+                                  }
+                                  className="text-blue-600 hover:text-blue-800 transition text-sm flex items-center gap-1"
+                                >
+                                  {isExpanded ? "Hide Details" : "Show Details"}
+                                </button>
+                              )}
+                              <button
+                                onClick={() =>
+                                  setSelectedPayment(group.payments[0])
+                                }
+                                className="text-gray-600 hover:text-gray-800 transition text-sm flex items-center gap-1"
+                                title="View Latest Payment"
+                              >
+                                <FiEye className="w-4 h-4" />
+                                View
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Expanded Details Row (shows all payments for this customer) */}
+                        {isExpanded && hasMultiplePayments && (
+                          <tr className="bg-gray-50">
+                            <td colSpan={6} className="px-6 py-4">
+                              <div className="border-l-4 border-blue-400 pl-4">
+                                <p className="font-semibold text-gray-900 mb-3">
+                                  All Payment Records:
+                                </p>
+                                <div className="space-y-3">
+                                  {group.payments.map(
+                                    (payment: Payment, idx: number) => (
+                                      <div
+                                        key={payment._id}
+                                        className="bg-white rounded-lg p-3 border border-gray-200"
+                                      >
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Date
+                                            </p>
+                                            <p className="text-sm font-medium">
+                                              {formatDate(payment.createdAt)}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Reference
+                                            </p>
+                                            <p className="text-sm font-mono">
+                                              {payment.referenceNumber}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Amount
+                                            </p>
+                                            <p className="text-sm font-semibold text-green-600">
+                                              {formatCurrency(payment.amount)}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Status
+                                            </p>
+                                            <span
+                                              className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
+                                            >
+                                              {payment.status}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Method
+                                            </p>
+                                            <p className="text-sm capitalize">
+                                              {payment.paymentMethod}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs text-gray-500">
+                                              Invoice
+                                            </p>
+                                            <p className="text-sm">
+                                              {payment.billingId
+                                                ?.invoiceNumber || "-"}
+                                            </p>
+                                          </div>
+                                          <div className="md:col-span-2">
+                                            <button
+                                              onClick={() =>
+                                                setSelectedPayment(payment)
+                                              }
+                                              className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                              View Full Details →
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        {formatCurrency(payment.amount)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
-                          <span>
-                            {getPaymentMethodIcon(payment.paymentMethod)}
-                          </span>
-                          <span className="capitalize">
-                            {payment.paymentMethod}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
-                        >
-                          {payment.status === "pending"
-                            ? "Pending"
-                            : payment.status === "processing"
-                              ? "Processing"
-                              : payment.status === "completed"
-                                ? "Completed"
-                                : payment.status === "failed"
-                                  ? "Failed"
-                                  : payment.status === "refunded"
-                                    ? "Refunded"
-                                    : payment.status}
-                        </span>
-                        {payment.paidAt && payment.status === "completed" && (
-                          <p className="text-xs text-green-600 mt-1">
-                            Paid: {formatDate(payment.paidAt)}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => setSelectedPayment(payment)}
-                          className="text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
-                          title="View Details"
-                        >
-                          <FiEye className="w-5 h-5" />
-                          <span className="text-sm">View</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
+                      </tbody>
+                    );
+                  },
+                )
               )}
             </tbody>
           </table>
