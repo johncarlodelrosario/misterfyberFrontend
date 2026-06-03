@@ -95,6 +95,7 @@ export interface Bill {
   isProRated: boolean;
   proRatedDays: number;
   billingCycleId: string;
+  applicationData?: any;
   createdAt: string;
   updatedAt: string;
 }
@@ -162,17 +163,36 @@ export function clearBillingCache(): void {
   Object.values(CACHE_KEYS).forEach((key) => localStorage.removeItem(key));
 }
 
-// ==================== APPLICATION BILLING FUNCTIONS ====================
+// ==================== BACKDATED BILLING FOR EXISTING CUSTOMERS ====================
+export const initializeBackdatedBilling = async (data: {
+  applicationId: string;
+  serviceStartDate: string;
+  customPlanName?: string;
+  monthlyRate?: number;
+  skipFirstBill?: boolean;
+  notes?: string;
+}): Promise<any> => {
+  try {
+    const response = await api.post("/billing/initialize-backdated", data);
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error initializing backdated billing:", error);
+    throw error;
+  }
+};
 
+// ==================== APPLICATION BILLING FUNCTIONS ====================
 export const startBillingForApplication = async (
   applicationId: string,
   data?: { installationDate?: string; notes?: string },
 ): Promise<any> => {
   try {
-    const response = await api.post(
-      `/applications/${applicationId}/start-billing`,
-      data || {},
-    );
+    const response = await api.post("/billing/start", {
+      applicationId,
+      startDate: data?.installationDate,
+      notes: data?.notes,
+    });
     clearBillingCache();
     return response.data;
   } catch (error) {
@@ -185,7 +205,9 @@ export const getApplicationBillingStatus = async (
   applicationId: string,
 ): Promise<any> => {
   try {
-    const response = await api.get(`/billing/application/${applicationId}`);
+    const response = await api.get(
+      `/billing/application/${applicationId}/status`,
+    );
     return response.data;
   } catch (error) {
     console.error("Error fetching application billing status:", error);
@@ -193,8 +215,37 @@ export const getApplicationBillingStatus = async (
   }
 };
 
-// ==================== USER BILLING FUNCTIONS ====================
+export const getApplicationCurrentBilling = async (
+  applicationId: string,
+): Promise<any> => {
+  try {
+    const response = await api.get(
+      `/billing/application/${applicationId}/current`,
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching application current billing:", error);
+    return { data: null };
+  }
+};
 
+export const getApplicationBillingHistory = async (
+  applicationId: string,
+  params?: { page?: number; limit?: number },
+): Promise<any> => {
+  try {
+    const response = await api.get(
+      `/billing/application/${applicationId}/history`,
+      { params },
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching application billing history:", error);
+    return { data: { billingHistory: [], total: 0, page: 1, pages: 0 } };
+  }
+};
+
+// ==================== USER BILLING FUNCTIONS ====================
 export const getUserBillingCycle = async (): Promise<{
   billingCycle: BillingCycle | null;
   upcomingBills: Bill[];
@@ -262,7 +313,6 @@ export const getUserBillingSummary = async (): Promise<any> => {
 };
 
 // ==================== ADMIN BILLING FUNCTIONS ====================
-
 export const getAllBillingCycles = async (params?: {
   page?: number;
   limit?: number;
@@ -449,8 +499,8 @@ export const reconnectClient = async (data: {
 
 export const deleteBillingCycle = async (data: {
   billingCycleId: string;
-  customerId: string;
-  customerType: string;
+  customerId?: string;
+  customerType?: string;
 }): Promise<any> => {
   try {
     const response = await api.delete("/billing/delete-cycle", { data });
@@ -621,7 +671,10 @@ export const submitProRatedPayment = async (data: {
   notes?: string;
 }): Promise<any> => {
   try {
-    const response = await api.post("/billing/user/submit-pro-rated", data);
+    const response = await api.post(
+      "/billing/application/submit-pro-rated",
+      data,
+    );
     clearBillingCache();
     return response.data;
   } catch (error) {
@@ -636,7 +689,10 @@ export const submitMonthlyPayment = async (data: {
   notes?: string;
 }): Promise<any> => {
   try {
-    const response = await api.post("/billing/user/submit-monthly", data);
+    const response = await api.post(
+      "/billing/application/submit-monthly",
+      data,
+    );
     clearBillingCache();
     return response.data;
   } catch (error) {
@@ -685,5 +741,32 @@ export const autoSuspendOverdue = async (): Promise<any> => {
   } catch (error) {
     console.error("Error auto-suspending overdue:", error);
     throw error;
+  }
+};
+
+export const recoverMissingBills = async (data: {
+  applicationId: string;
+  startFromDate?: string;
+}): Promise<any> => {
+  try {
+    const response = await api.post("/billing/recover-missing-bills", data);
+    clearBillingCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error recovering missing bills:", error);
+    throw error;
+  }
+};
+
+export const getUnpaidBillsReport = async (params?: {
+  applicationId?: string;
+  includePaid?: boolean;
+}): Promise<any> => {
+  try {
+    const response = await api.get("/billing/unpaid-bills-report", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching unpaid bills report:", error);
+    return { data: { bills: [], summary: {} } };
   }
 };

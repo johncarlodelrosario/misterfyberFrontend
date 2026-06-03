@@ -20,8 +20,10 @@ import {
   startMonthlyBilling,
   getBillingSettingsAdmin,
   updateBillingSettingsAdmin,
-  getBillingSummaryAdmin,
   startBillingForApplication,
+  initializeBackdatedBilling,
+  recoverMissingBills,
+  getUnpaidBillsReport,
 } from "@/services/billing";
 import {
   getPendingPayments,
@@ -57,6 +59,7 @@ import {
   FiDollarSign,
   FiFileText,
   FiTrash2,
+  FiCalendar as FiCalendarIcon,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -122,6 +125,7 @@ export default function AdminBillingPage() {
   const [showStartModal, setShowStartModal] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showManualCustomerModal, setShowManualCustomerModal] = useState(false);
+  const [showBackdatedModal, setShowBackdatedModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedApplicationId, setSelectedApplicationId] = useState("");
   const [selectedCustomerName, setSelectedCustomerName] = useState("");
@@ -144,6 +148,20 @@ export default function AdminBillingPage() {
   const [emailMessage, setEmailMessage] = useState("");
   const [emailType, setEmailType] = useState("custom");
   const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Backdated billing form state
+  const [backdatedForm, setBackdatedForm] = useState({
+    applicationId: "",
+    serviceStartDate: "",
+    customPlanName: "",
+    monthlyRate: "",
+    skipFirstBill: false,
+    notes: "",
+  });
+  const [backdatedLoading, setBackdatedLoading] = useState(false);
+  const [selectedBackdatedCustomer, setSelectedBackdatedCustomer] =
+    useState<any>(null);
+
   const [manualCustomerForm, setManualCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -253,6 +271,96 @@ export default function AdminBillingPage() {
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
+    }
+  };
+
+  // ==================== BACKDATED BILLING HANDLER ====================
+  const handleBackdatedBilling = async () => {
+    if (!backdatedForm.applicationId) {
+      toast.error("Please select a customer");
+      return;
+    }
+    if (!backdatedForm.serviceStartDate) {
+      toast.error("Please enter the service start date");
+      return;
+    }
+    if (!backdatedForm.customPlanName && !backdatedForm.monthlyRate) {
+      toast.error("Please enter either a plan name or monthly rate");
+      return;
+    }
+
+    setBackdatedLoading(true);
+    try {
+      const result = await initializeBackdatedBilling({
+        applicationId: backdatedForm.applicationId,
+        serviceStartDate: backdatedForm.serviceStartDate,
+        customPlanName: backdatedForm.customPlanName || undefined,
+        monthlyRate: backdatedForm.monthlyRate
+          ? parseFloat(backdatedForm.monthlyRate)
+          : undefined,
+        skipFirstBill: backdatedForm.skipFirstBill,
+        notes: backdatedForm.notes,
+      });
+
+      if (result.success) {
+        toast.success(result.message);
+        setShowBackdatedModal(false);
+        setBackdatedForm({
+          applicationId: "",
+          serviceStartDate: "",
+          customPlanName: "",
+          monthlyRate: "",
+          skipFirstBill: false,
+          notes: "",
+        });
+        setSelectedBackdatedCustomer(null);
+        loadedRef.current = false;
+        loadData(true);
+      } else {
+        toast.error(result.message || "Failed to initialize backdated billing");
+      }
+    } catch (error: any) {
+      console.error("Backdated billing error:", error);
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to initialize backdated billing",
+      );
+    } finally {
+      setBackdatedLoading(false);
+    }
+  };
+
+  const handleRecoverMissingBills = async (customer: CustomerItem) => {
+    if (!customer.applicationId && customer.type !== "application") {
+      toast.error("Only application customers can recover missing bills");
+      return;
+    }
+
+    const startFromDate = prompt(
+      "Enter start date for recovery (YYYY-MM-DD) or leave empty to auto-detect:",
+      "",
+    );
+
+    try {
+      toast.loading("Recovering missing bills...", { id: "recover-bills" });
+      const result = await recoverMissingBills({
+        applicationId: customer.applicationId!,
+        startFromDate: startFromDate || undefined,
+      });
+      toast.dismiss("recover-bills");
+
+      if (result.success) {
+        toast.success(result.message);
+        loadedRef.current = false;
+        loadData(true);
+      } else {
+        toast.error(result.message || "Failed to recover missing bills");
+      }
+    } catch (error: any) {
+      toast.dismiss("recover-bills");
+      toast.error(
+        error.response?.data?.message || "Failed to recover missing bills",
+      );
     }
   };
 
@@ -1095,6 +1203,12 @@ export default function AdminBillingPage() {
           </div>
           <div className="flex gap-3 flex-wrap">
             <button
+              onClick={() => setShowBackdatedModal(true)}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2"
+            >
+              <FiCalendarIcon className="w-4 h-4" /> Backdated Billing
+            </button>
+            <button
               onClick={() => setShowManualCustomerModal(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
             >
@@ -1455,6 +1569,20 @@ export default function AdminBillingPage() {
                             <FiMail className="w-4 h-4" />
                           </button>
 
+                          {/* Recover Missing Bills - for application customers with active billing */}
+                          {customer.type === "application" &&
+                            hasBillingCycle && (
+                              <button
+                                onClick={() =>
+                                  handleRecoverMissingBills(customer)
+                                }
+                                className="p-1 text-amber-600 hover:text-amber-800"
+                                title="Recover Missing Bills"
+                              >
+                                <FiCalendarIcon className="w-4 h-4" />
+                              </button>
+                            )}
+
                           {/* APPLICATIONS - Full Actions */}
                           {customer.type === "application" && (
                             <>
@@ -1686,6 +1814,251 @@ export default function AdminBillingPage() {
           applications)
         </div>
       </div>
+
+      {/* Backdated Billing Modal */}
+      {showBackdatedModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Backdated Billing for Existing Customer
+              </h2>
+              <button
+                onClick={() => {
+                  setShowBackdatedModal(false);
+                  setSelectedBackdatedCustomer(null);
+                  setBackdatedForm({
+                    applicationId: "",
+                    serviceStartDate: "",
+                    customPlanName: "",
+                    monthlyRate: "",
+                    skipFirstBill: false,
+                    notes: "",
+                  });
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                <p className="text-amber-800 font-semibold mb-2">
+                  📌 When to use Backdated Billing:
+                </p>
+                <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
+                  <li>Customer has been using your internet for past months</li>
+                  <li>
+                    Need to generate all missing bills from their start date
+                  </li>
+                  <li>Customer never had billing in the system before</li>
+                  <li>Will create billing cycle + all past monthly bills</li>
+                </ul>
+              </div>
+
+              {/* Customer Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Customer/Application *
+                </label>
+                <select
+                  value={backdatedForm.applicationId}
+                  onChange={(e) => {
+                    const appId = e.target.value;
+                    const customer = customers.find(
+                      (c) =>
+                        c.type === "application" &&
+                        c.applicationId === appId &&
+                        !c.billingCycle,
+                    );
+                    setSelectedBackdatedCustomer(customer);
+                    setBackdatedForm({
+                      ...backdatedForm,
+                      applicationId: appId,
+                      customPlanName: customer?.planName || "",
+                      monthlyRate: customer?.planPrice?.toString() || "",
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select a customer...</option>
+                  {customers
+                    .filter(
+                      (c) =>
+                        c.type === "application" &&
+                        !c.billingCycle &&
+                        c.applicationId,
+                    )
+                    .map((c) => (
+                      <option key={c.applicationId} value={c.applicationId}>
+                        {c.firstName} {c.lastName} - {c.email} (No billing yet)
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Only shows applications without existing billing
+                </p>
+              </div>
+
+              {selectedBackdatedCustomer && (
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <p className="text-sm font-medium text-green-800">
+                    Selected Customer:
+                  </p>
+                  <p className="text-sm">
+                    {selectedBackdatedCustomer.firstName}{" "}
+                    {selectedBackdatedCustomer.lastName}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {selectedBackdatedCustomer.email}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    Plan: {selectedBackdatedCustomer.planName} - ₱
+                    {selectedBackdatedCustomer.planPrice}/mo
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Service Start Date (When they started using) *
+                </label>
+                <input
+                  type="date"
+                  value={backdatedForm.serviceStartDate}
+                  onChange={(e) =>
+                    setBackdatedForm({
+                      ...backdatedForm,
+                      serviceStartDate: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Example: If customer started on March 5, 2024, enter
+                  2024-03-05
+                </p>
+              </div>
+
+              {!selectedBackdatedCustomer?.planName && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Plan Name (for custom plan)
+                    </label>
+                    <input
+                      type="text"
+                      value={backdatedForm.customPlanName}
+                      onChange={(e) =>
+                        setBackdatedForm({
+                          ...backdatedForm,
+                          customPlanName: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., Basic Plan 10Mbps"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Monthly Rate (₱)
+                    </label>
+                    <input
+                      type="number"
+                      value={backdatedForm.monthlyRate}
+                      onChange={(e) =>
+                        setBackdatedForm({
+                          ...backdatedForm,
+                          monthlyRate: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., 999"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={backdatedForm.skipFirstBill}
+                    onChange={(e) =>
+                      setBackdatedForm({
+                        ...backdatedForm,
+                        skipFirstBill: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    Skip first bill (customer already paid first month)
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  Check this if the customer already paid their first month's
+                  bill
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={backdatedForm.notes}
+                  onChange={(e) =>
+                    setBackdatedForm({
+                      ...backdatedForm,
+                      notes: e.target.value,
+                    })
+                  }
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Any notes about this backdated billing..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowBackdatedModal(false);
+                    setSelectedBackdatedCustomer(null);
+                    setBackdatedForm({
+                      applicationId: "",
+                      serviceStartDate: "",
+                      customPlanName: "",
+                      monthlyRate: "",
+                      skipFirstBill: false,
+                      notes: "",
+                    });
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBackdatedBilling}
+                  disabled={backdatedLoading}
+                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {backdatedLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <FiCalendarIcon className="w-4 h-4" />
+                      Generate Backdated Bills
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirmModal && customerToDelete && (
