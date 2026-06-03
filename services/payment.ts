@@ -21,7 +21,7 @@ export interface PaymentResponse {
 export interface Payment {
   _id: string;
   userId: any;
-  applicationId?: string; // Changed to string
+  applicationId?: string;
   amount: number;
   paymentMethod: string;
   paymentType: string;

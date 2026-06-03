@@ -133,6 +133,7 @@ export default function AdminBillingPage() {
   const [startDate, setStartDate] = useState("");
   const [customAmount, setCustomAmount] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
+  const [includeInstallationFee, setIncludeInstallationFee] = useState(true);
   const [pauseReason, setPauseReason] = useState("");
   const [pauseUntilDate, setPauseUntilDate] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -148,8 +149,8 @@ export default function AdminBillingPage() {
   const [emailMessage, setEmailMessage] = useState("");
   const [emailType, setEmailType] = useState("custom");
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [billingSettings, setBillingSettingsState] = useState<any>(null);
 
-  // Backdated billing form state
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
     serviceStartDate: "",
@@ -157,6 +158,7 @@ export default function AdminBillingPage() {
     monthlyRate: "",
     skipFirstBill: false,
     notes: "",
+    includeInstallationFee: true,
   });
   const [backdatedLoading, setBackdatedLoading] = useState(false);
   const [selectedBackdatedCustomer, setSelectedBackdatedCustomer] =
@@ -201,6 +203,7 @@ export default function AdminBillingPage() {
     freeDays: 0,
     gracePeriodDays: 5,
     reminderDays: [7, 3, 1],
+    installationFee: 1500,
   });
 
   const [stats, setStats] = useState({
@@ -257,7 +260,9 @@ export default function AdminBillingPage() {
           freeDays: 0,
           gracePeriodDays: settingsData.gracePeriodDays || 5,
           reminderDays: settingsData.reminderDays || [7, 3, 1],
+          installationFee: settingsData.installationFee || 1500,
         });
+        setBillingSettingsState(settingsData);
       }
     } catch (error) {
       console.error("Failed to load billing flow settings:", error);
@@ -274,7 +279,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== BACKDATED BILLING HANDLER ====================
   const handleBackdatedBilling = async () => {
     if (!backdatedForm.applicationId) {
       toast.error("Please select a customer");
@@ -300,6 +304,7 @@ export default function AdminBillingPage() {
           : undefined,
         skipFirstBill: backdatedForm.skipFirstBill,
         notes: backdatedForm.notes,
+        includeInstallationFee: backdatedForm.includeInstallationFee,
       });
 
       if (result.success) {
@@ -312,6 +317,7 @@ export default function AdminBillingPage() {
           monthlyRate: "",
           skipFirstBill: false,
           notes: "",
+          includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
         loadedRef.current = false;
@@ -483,8 +489,6 @@ export default function AdminBillingPage() {
     setShowEmailModal(true);
   };
 
-  // ==================== APPLICATION BILLING HANDLERS ====================
-
   const handlePauseBillingForApplication = async (customer: CustomerItem) => {
     const reason = prompt("Enter reason for pausing:");
     if (reason === null) return;
@@ -630,19 +634,11 @@ export default function AdminBillingPage() {
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
 
-      console.log(
-        `📊 Users: ${usersList.length}, Applications: ${applicationsList.length}`,
-      );
-      console.log(
-        `📊 Cycles: ${cyclesData.length}, Bills: ${billsList.length}`,
-      );
-
       setBillingCycles(cyclesData);
       setBills(billsList);
       setPendingPayments(pendingPaymentsList);
       setCustomersWithoutAccounts(customersWithoutAccountsData);
 
-      // Build customers from USERS
       const userCustomers: CustomerItem[] = usersList.map((user: any) => {
         const userBills = billsList.filter(
           (bill: any) =>
@@ -679,7 +675,6 @@ export default function AdminBillingPage() {
         };
       });
 
-      // Build customers from APPLICATIONS
       const applicationCustomers: CustomerItem[] = applicationsList
         .filter(
           (app: any) =>
@@ -699,7 +694,6 @@ export default function AdminBillingPage() {
             (bill: any) =>
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
-
           const appCycle = cyclesData.find(
             (cycle: any) => cycle.applicationId === app.applicationId,
           );
@@ -727,7 +721,6 @@ export default function AdminBillingPage() {
 
       setCustomers(allCustomers);
 
-      // Calculate stats
       const totalBalance = allCustomers.reduce(
         (sum, c) => sum + c.currentBalance,
         0,
@@ -857,12 +850,16 @@ export default function AdminBillingPage() {
       const result = await startBillingForApplication(selectedApplicationId, {
         installationDate: startDate || undefined,
         notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
       });
       toast.dismiss("start-billing-app");
 
       if (result.success) {
+        const feeMsg = includeInstallationFee
+          ? ` Includes installation fee of ₱${billingFlowSettings.installationFee.toLocaleString()}.`
+          : "";
         toast.success(
-          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}`,
+          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}.${feeMsg}`,
         );
         setShowStartModal(false);
         setSelectedApplicationId("");
@@ -871,6 +868,7 @@ export default function AdminBillingPage() {
         setStartDate("");
         setCustomAmount("");
         setBillingNotes("");
+        setIncludeInstallationFee(true);
         loadedRef.current = false;
         loadData(true);
       } else {
@@ -936,6 +934,7 @@ export default function AdminBillingPage() {
         startDate: startDate || undefined,
         customAmount: customAmount ? parseFloat(customAmount) : undefined,
         notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
       });
       toast.success(`✅ Billing started! Invoice sent to customer`);
       setShowStartModal(false);
@@ -943,6 +942,7 @@ export default function AdminBillingPage() {
       setStartDate("");
       setCustomAmount("");
       setBillingNotes("");
+      setIncludeInstallationFee(true);
       loadedRef.current = false;
       loadData(true);
     } catch (error: any) {
@@ -1362,13 +1362,13 @@ export default function AdminBillingPage() {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Cutoff Day</p>
-              <p className="text-2xl font-bold text-cyan-600">
-                {billingFlowSettings.billingCutoffDay}
+              <p className="text-sm text-gray-500">Installation Fee</p>
+              <p className="text-2xl font-bold text-amber-600">
+                ₱{billingFlowSettings.installationFee.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-400">After = next month</p>
+              <p className="text-xs text-gray-400">One-time charge</p>
             </div>
-            <FiCalendar className="w-8 h-8 text-cyan-100" />
+            <FiDollarSign className="w-8 h-8 text-amber-100" />
           </div>
         </div>
       </div>
@@ -1381,7 +1381,7 @@ export default function AdminBillingPage() {
             <p className="text-sm font-semibold text-blue-800">
               📋 Current Billing Flow Settings:
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-xs text-blue-700">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2 text-xs text-blue-700">
               <div>
                 • Install Day 1-{billingFlowSettings.billingCutoffDay}:
                 Pro-rated bill due on {billingFlowSettings.proRatedDueDay}th of
@@ -1395,6 +1395,11 @@ export default function AdminBillingPage() {
               <div>
                 • {billingFlowSettings.gracePeriodDays} day(s) grace period
                 before suspension
+              </div>
+              <div>
+                • Installation Fee: ₱
+                {billingFlowSettings.installationFee.toLocaleString()}{" "}
+                (one-time)
               </div>
             </div>
           </div>
@@ -1548,7 +1553,6 @@ export default function AdminBillingPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2 flex-wrap">
-                          {/* View Details Button */}
                           <button
                             onClick={() => {
                               setSelectedCustomer(customer);
@@ -1559,8 +1563,6 @@ export default function AdminBillingPage() {
                           >
                             <FiEye className="w-4 h-4" />
                           </button>
-
-                          {/* Send Email Button */}
                           <button
                             onClick={() => openEmailModal(customer, "custom")}
                             className="p-1 text-purple-600 hover:text-purple-800"
@@ -1568,8 +1570,6 @@ export default function AdminBillingPage() {
                           >
                             <FiMail className="w-4 h-4" />
                           </button>
-
-                          {/* Recover Missing Bills - for application customers with active billing */}
                           {customer.type === "application" &&
                             hasBillingCycle && (
                               <button
@@ -1582,21 +1582,19 @@ export default function AdminBillingPage() {
                                 <FiCalendarIcon className="w-4 h-4" />
                               </button>
                             )}
-
-                          {/* APPLICATIONS - Full Actions */}
                           {customer.type === "application" && (
                             <>
-                              {/* Start Billing - only if no billing cycle exists */}
                               {!hasBillingCycle && (
                                 <button
                                   onClick={() => {
-                                    const appId =
-                                      customer.applicationId || customer._id;
-                                    setSelectedApplicationId(appId);
+                                    setSelectedApplicationId(
+                                      customer.applicationId || customer._id,
+                                    );
                                     setSelectedCustomerName(
                                       `${customer.firstName} ${customer.lastName}`,
                                     );
                                     setSelectedCustomerEmail(customer.email);
+                                    setIncludeInstallationFee(true);
                                     setShowStartModal(true);
                                   }}
                                   className="p-1 text-green-600 hover:text-green-800"
@@ -1605,8 +1603,6 @@ export default function AdminBillingPage() {
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Pause Button - only if active */}
                               {isActive && (
                                 <button
                                   onClick={() =>
@@ -1618,8 +1614,6 @@ export default function AdminBillingPage() {
                                   <FiPause className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Resume Button - only if paused */}
                               {isPaused && (
                                 <button
                                   onClick={() =>
@@ -1631,8 +1625,6 @@ export default function AdminBillingPage() {
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Disconnect Button - only if active or pending activation */}
                               {(isActive || isPendingActivation) && (
                                 <button
                                   onClick={() =>
@@ -1644,8 +1636,6 @@ export default function AdminBillingPage() {
                                   <FiWifiOff className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Reconnect Button - if status is suspended */}
                               {customer.status === "suspended" && (
                                 <button
                                   onClick={() =>
@@ -1657,8 +1647,6 @@ export default function AdminBillingPage() {
                                   <FiWifi className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Stop/Cancel Button - if has billing cycle */}
                               {hasBillingCycle && (
                                 <button
                                   onClick={() =>
@@ -1670,8 +1658,6 @@ export default function AdminBillingPage() {
                                   <FiX className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Delete Button - if has billing cycle */}
                               {hasBillingCycle && (
                                 <button
                                   onClick={() => {
@@ -1686,8 +1672,6 @@ export default function AdminBillingPage() {
                               )}
                             </>
                           )}
-
-                          {/* USERS - Existing actions */}
                           {customer.type === "user" && (
                             <>
                               {(!customer.billingCycle ||
@@ -1700,6 +1684,7 @@ export default function AdminBillingPage() {
                                       `${customer.firstName} ${customer.lastName}`,
                                     );
                                     setSelectedCustomerEmail(customer.email);
+                                    setIncludeInstallationFee(true);
                                     setShowStartModal(true);
                                   }}
                                   className="p-1 text-green-600 hover:text-green-800"
@@ -1708,7 +1693,6 @@ export default function AdminBillingPage() {
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.billingCycle &&
                                 customer.billingCycle?.status !==
                                   "cancelled" && (
@@ -1720,7 +1704,6 @@ export default function AdminBillingPage() {
                                     <FiPlay className="w-4 h-4" />
                                   </button>
                                 )}
-
                               {customer.billingCycle?.status === "active" && (
                                 <button
                                   onClick={() => {
@@ -1733,7 +1716,6 @@ export default function AdminBillingPage() {
                                   <FiPause className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.billingCycle?.status === "paused" && (
                                 <button
                                   onClick={() =>
@@ -1748,7 +1730,6 @@ export default function AdminBillingPage() {
                                   <FiPlay className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.billingCycle?.status === "active" && (
                                 <button
                                   onClick={() =>
@@ -1763,7 +1744,6 @@ export default function AdminBillingPage() {
                                   <FiX className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.status === "active" && (
                                 <button
                                   onClick={() => handleDisconnect(customer)}
@@ -1773,7 +1753,6 @@ export default function AdminBillingPage() {
                                   <FiWifiOff className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.status === "suspended" && (
                                 <button
                                   onClick={() => handleReconnect(customer)}
@@ -1783,7 +1762,6 @@ export default function AdminBillingPage() {
                                   <FiWifi className="w-4 h-4" />
                                 </button>
                               )}
-
                               {customer.billingCycle && (
                                 <button
                                   onClick={() => {
@@ -1815,328 +1793,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Backdated Billing Modal */}
-      {showBackdatedModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Backdated Billing for Existing Customer
-              </h2>
-              <button
-                onClick={() => {
-                  setShowBackdatedModal(false);
-                  setSelectedBackdatedCustomer(null);
-                  setBackdatedForm({
-                    applicationId: "",
-                    serviceStartDate: "",
-                    customPlanName: "",
-                    monthlyRate: "",
-                    skipFirstBill: false,
-                    notes: "",
-                  });
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                <p className="text-amber-800 font-semibold mb-2">
-                  📌 When to use Backdated Billing:
-                </p>
-                <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
-                  <li>Customer has been using your internet for past months</li>
-                  <li>
-                    Need to generate all missing bills from their start date
-                  </li>
-                  <li>Customer never had billing in the system before</li>
-                  <li>Will create billing cycle + all past monthly bills</li>
-                </ul>
-              </div>
-
-              {/* Customer Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Customer/Application *
-                </label>
-                <select
-                  value={backdatedForm.applicationId}
-                  onChange={(e) => {
-                    const appId = e.target.value;
-                    const customer = customers.find(
-                      (c) =>
-                        c.type === "application" &&
-                        c.applicationId === appId &&
-                        !c.billingCycle,
-                    );
-                    setSelectedBackdatedCustomer(customer);
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      applicationId: appId,
-                      customPlanName: customer?.planName || "",
-                      monthlyRate: customer?.planPrice?.toString() || "",
-                    });
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">Select a customer...</option>
-                  {customers
-                    .filter(
-                      (c) =>
-                        c.type === "application" &&
-                        !c.billingCycle &&
-                        c.applicationId,
-                    )
-                    .map((c) => (
-                      <option key={c.applicationId} value={c.applicationId}>
-                        {c.firstName} {c.lastName} - {c.email} (No billing yet)
-                      </option>
-                    ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Only shows applications without existing billing
-                </p>
-              </div>
-
-              {selectedBackdatedCustomer && (
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <p className="text-sm font-medium text-green-800">
-                    Selected Customer:
-                  </p>
-                  <p className="text-sm">
-                    {selectedBackdatedCustomer.firstName}{" "}
-                    {selectedBackdatedCustomer.lastName}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    {selectedBackdatedCustomer.email}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    Plan: {selectedBackdatedCustomer.planName} - ₱
-                    {selectedBackdatedCustomer.planPrice}/mo
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Service Start Date (When they started using) *
-                </label>
-                <input
-                  type="date"
-                  value={backdatedForm.serviceStartDate}
-                  onChange={(e) =>
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      serviceStartDate: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Example: If customer started on March 5, 2024, enter
-                  2024-03-05
-                </p>
-              </div>
-
-              {!selectedBackdatedCustomer?.planName && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Plan Name (for custom plan)
-                    </label>
-                    <input
-                      type="text"
-                      value={backdatedForm.customPlanName}
-                      onChange={(e) =>
-                        setBackdatedForm({
-                          ...backdatedForm,
-                          customPlanName: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., Basic Plan 10Mbps"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Monthly Rate (₱)
-                    </label>
-                    <input
-                      type="number"
-                      value={backdatedForm.monthlyRate}
-                      onChange={(e) =>
-                        setBackdatedForm({
-                          ...backdatedForm,
-                          monthlyRate: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., 999"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={backdatedForm.skipFirstBill}
-                    onChange={(e) =>
-                      setBackdatedForm({
-                        ...backdatedForm,
-                        skipFirstBill: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    Skip first bill (customer already paid first month)
-                  </span>
-                </label>
-                <p className="text-xs text-gray-500 mt-1 ml-6">
-                  Check this if the customer already paid their first month's
-                  bill
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes (Optional)
-                </label>
-                <textarea
-                  value={backdatedForm.notes}
-                  onChange={(e) =>
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      notes: e.target.value,
-                    })
-                  }
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Any notes about this backdated billing..."
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowBackdatedModal(false);
-                    setSelectedBackdatedCustomer(null);
-                    setBackdatedForm({
-                      applicationId: "",
-                      serviceStartDate: "",
-                      customPlanName: "",
-                      monthlyRate: "",
-                      skipFirstBill: false,
-                      notes: "",
-                    });
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBackdatedBilling}
-                  disabled={backdatedLoading}
-                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {backdatedLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <FiCalendarIcon className="w-4 h-4" />
-                      Generate Backdated Bills
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirmModal && customerToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Delete Billing Cycle
-              </h2>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirmModal(false);
-                  setCustomerToDelete(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                <p className="text-red-800 font-semibold mb-2">
-                  ⚠️ Warning: This action cannot be undone!
-                </p>
-                <p className="text-red-700 text-sm">
-                  You are about to delete the billing cycle for:
-                </p>
-                <p className="font-medium text-gray-900 mt-2">
-                  {customerToDelete.firstName} {customerToDelete.lastName}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {customerToDelete.email}
-                </p>
-                {customerToDelete.billingCycle && (
-                  <div className="mt-3 pt-3 border-t border-red-200">
-                    <p className="text-xs text-gray-600">
-                      Billing Cycle ID: {customerToDelete.billingCycle._id}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      Status: {customerToDelete.billingCycle.status}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      Current Balance: ₱
-                      {customerToDelete.currentBalance.toLocaleString()}
-                    </p>
-                  </div>
-                )}
-                <p className="text-red-600 text-sm mt-3">
-                  This will delete the billing cycle AND all associated bills
-                  and records.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowDeleteConfirmModal(false);
-                    setCustomerToDelete(null);
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    handleDeleteBillingCycle(customerToDelete);
-                    setShowDeleteConfirmModal(false);
-                    setCustomerToDelete(null);
-                  }}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
-                >
-                  Delete Permanently
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Start Billing Modal */}
       {showStartModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2151,6 +1807,7 @@ export default function AdminBillingPage() {
                   setStartDate("");
                   setCustomAmount("");
                   setBillingNotes("");
+                  setIncludeInstallationFee(true);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -2197,6 +1854,25 @@ export default function AdminBillingPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeInstallationFee}
+                    onChange={(e) =>
+                      setIncludeInstallationFee(e.target.checked)
+                    }
+                    className="w-4 h-4 text-amber-600"
+                  />
+                  <span className="text-sm font-medium text-amber-800">
+                    Include Installation Fee (₱
+                    {billingFlowSettings.installationFee.toLocaleString()})
+                  </span>
+                </label>
+                <p className="text-xs text-amber-700 mt-1 ml-6">
+                  One-time fee added to the first bill
+                </p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes
@@ -2222,6 +1898,13 @@ export default function AdminBillingPage() {
                   </li>
                   <li>No registration needed</li>
                   <li>Bill will be sent via email</li>
+                  {includeInstallationFee && (
+                    <li>
+                      Installation fee of ₱
+                      {billingFlowSettings.installationFee.toLocaleString()}{" "}
+                      will be added to first bill
+                    </li>
+                  )}
                 </ul>
               </div>
               <div className="bg-yellow-50 p-3 rounded-lg">
@@ -2257,6 +1940,7 @@ export default function AdminBillingPage() {
                     setStartDate("");
                     setCustomAmount("");
                     setBillingNotes("");
+                    setIncludeInstallationFee(true);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
@@ -2273,201 +1957,6 @@ export default function AdminBillingPage() {
                   Start Billing (ACTIVE)
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pause Billing Modal */}
-      {showPauseModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Pause Billing
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason
-                </label>
-                <input
-                  type="text"
-                  value={pauseReason}
-                  onChange={(e) => setPauseReason(e.target.value)}
-                  placeholder="e.g., Customer request, Maintenance"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Auto-resume Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={pauseUntilDate}
-                  onChange={(e) => setPauseUntilDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowPauseModal(false);
-                    setSelectedUserId("");
-                    setPauseReason("");
-                    setPauseUntilDate("");
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handlePauseBilling}
-                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700"
-                >
-                  Pause Billing
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Customer Detail Modal */}
-      {showCustomerDetailModal && selectedCustomer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {selectedCustomer.firstName} {selectedCustomer.lastName}
-                </h2>
-                <p className="text-gray-500">{selectedCustomer.email}</p>
-                {selectedCustomer.applicationId && (
-                  <p className="text-xs text-gray-400 font-mono">
-                    App ID: {selectedCustomer.applicationId}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Balance</p>
-                  <p
-                    className={`text-2xl font-bold ${getBalanceColor(selectedCustomer.currentBalance)}`}
-                  >
-                    ₱{selectedCustomer.currentBalance.toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Unpaid Bills</p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {selectedCustomer.unpaidBills.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Overdue</p>
-                  <p className="text-2xl font-bold text-red-600">
-                    {selectedCustomer.overdueBills.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Status</p>
-                  <span
-                    className={`inline-block px-2 py-1 text-xs rounded-full ${getStatusBadge(selectedCustomer)}`}
-                  >
-                    {getStatusText(selectedCustomer)}
-                  </span>
-                  {selectedCustomer.billingCycle?.status === "active" &&
-                    selectedCustomer.type === "application" && (
-                      <p className="text-xs text-green-600 mt-1">
-                        ✅ Service ACTIVE
-                      </p>
-                    )}
-                </div>
-              </div>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Unpaid Bills
-            </h3>
-            <div className="overflow-x-auto mb-6">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Invoice #
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Period
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Due Date
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Amount
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedCustomer.unpaidBills.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-8 text-center text-gray-500"
-                      >
-                        No unpaid bills
-                      </td>
-                    </tr>
-                  ) : (
-                    selectedCustomer.unpaidBills.map((bill) => (
-                      <tr key={bill._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {bill.invoiceNumber}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {bill.billingPeriod
-                            ? `${formatDateFixed(bill.billingPeriod.start)} - ${formatDateFixed(bill.billingPeriod.end)}`
-                            : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {formatDateFixed(bill.dueDate)}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                          ₱{bill.total?.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() =>
-                              handleMarkBillAsPaid(bill, selectedCustomer)
-                            }
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-1"
-                          >
-                            <FiCheckCircle className="w-3 h-3" /> Mark Paid
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>
@@ -2493,24 +1982,45 @@ export default function AdminBillingPage() {
                 <h3 className="font-semibold text-gray-900 mb-3">
                   <FiSettings className="inline mr-2" /> Basic Settings
                 </h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Grace Period (Days)
-                  </label>
-                  <input
-                    type="number"
-                    value={billingFlowSettings.gracePeriodDays}
-                    onChange={(e) =>
-                      setBillingFlowSettings({
-                        ...billingFlowSettings,
-                        gracePeriodDays: parseInt(e.target.value) || 5,
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Days after due date before suspension
-                  </p>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Grace Period (Days)
+                    </label>
+                    <input
+                      type="number"
+                      value={billingFlowSettings.gracePeriodDays}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          gracePeriodDays: parseInt(e.target.value) || 5,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Days after due date before suspension
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Installation Fee (₱)
+                    </label>
+                    <input
+                      type="number"
+                      value={billingFlowSettings.installationFee}
+                      onChange={(e) =>
+                        setBillingFlowSettings({
+                          ...billingFlowSettings,
+                          installationFee: parseInt(e.target.value) || 1500,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      One-time fee charged on first bill
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="border-t pt-4">
@@ -2593,7 +2103,7 @@ export default function AdminBillingPage() {
                           enableAutoBilling: e.target.checked,
                         })
                       }
-                    />
+                    />{" "}
                     <span>Enable Automatic Billing Generation</span>
                   </label>
                   <label className="flex items-center gap-2">
@@ -2606,7 +2116,7 @@ export default function AdminBillingPage() {
                           sendInvoiceOnInstall: e.target.checked,
                         })
                       }
-                    />
+                    />{" "}
                     <span>Send Invoice Email on Installation</span>
                   </label>
                 </div>
@@ -2625,6 +2135,11 @@ export default function AdminBillingPage() {
                   </li>
                   <li>No user account registration needed</li>
                   <li>Email with bill is sent to customer</li>
+                  <li>
+                    Installation fee of ₱
+                    {billingFlowSettings.installationFee.toLocaleString()} added
+                    to first bill
+                  </li>
                 </ul>
               </div>
               <div className="bg-blue-50 p-4 rounded-lg">

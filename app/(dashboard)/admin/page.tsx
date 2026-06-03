@@ -521,12 +521,6 @@ export default function AdminReportsPage() {
               <FiPrinter className="w-4 h-4" />
               Print
             </button>
-            <button
-              onClick={() => (window.location.href = "/admin")}
-              className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
-            >
-              Back to Dashboard
-            </button>
           </div>
         </div>
       </div>

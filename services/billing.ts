@@ -41,6 +41,8 @@ export interface BillingCycle {
     effectiveDate: string;
     status: "pending" | "approved" | "rejected";
   };
+  installationFee: number;
+  installationFeePaid: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,6 +63,7 @@ export interface BillingSettings {
   enableAutoBilling: boolean;
   sendInvoiceOnInstall: boolean;
   requireAdminActivation: boolean;
+  installationFee: number;
 }
 
 export interface Bill {
@@ -96,6 +99,9 @@ export interface Bill {
   proRatedDays: number;
   billingCycleId: string;
   applicationData?: any;
+  installationFee: number;
+  installationFeePaid: boolean;
+  paidAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +109,7 @@ export interface Bill {
 export interface Payment {
   _id: string;
   userId: any;
+  applicationId?: string;
   amount: number;
   paymentMethod: string;
   paymentType: string;
@@ -171,6 +178,7 @@ export const initializeBackdatedBilling = async (data: {
   monthlyRate?: number;
   skipFirstBill?: boolean;
   notes?: string;
+  includeInstallationFee?: boolean;
 }): Promise<any> => {
   try {
     const response = await api.post("/billing/initialize-backdated", data);
@@ -185,13 +193,18 @@ export const initializeBackdatedBilling = async (data: {
 // ==================== APPLICATION BILLING FUNCTIONS ====================
 export const startBillingForApplication = async (
   applicationId: string,
-  data?: { installationDate?: string; notes?: string },
+  data?: {
+    installationDate?: string;
+    notes?: string;
+    includeInstallationFee?: boolean;
+  },
 ): Promise<any> => {
   try {
     const response = await api.post("/billing/start", {
       applicationId,
       startDate: data?.installationDate,
       notes: data?.notes,
+      includeInstallationFee: data?.includeInstallationFee,
     });
     clearBillingCache();
     return response.data;
@@ -412,6 +425,7 @@ export const startBilling = async (data: {
   startDate?: string;
   customAmount?: number;
   notes?: string;
+  includeInstallationFee?: boolean;
 }): Promise<any> => {
   try {
     const response = await api.post("/billing/start", data);
