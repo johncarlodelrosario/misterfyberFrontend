@@ -21,7 +21,7 @@ export default function TermsAndConditionsModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -36,73 +36,78 @@ export default function TermsAndConditionsModal({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative bg-[#0f172a] rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden border border-blue-800/30"
+            className="relative bg-[#0f172a] rounded-2xl shadow-2xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border border-blue-800/30 flex flex-col"
           >
-            {/* Header */}
-            <div className="sticky top-0 bg-[#0f172a] border-b border-gray-800 px-5 sm:px-6 py-4 flex justify-between items-center">
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
+            {/* Header - Fixed */}
+            <div className="flex-shrink-0 bg-[#0f172a] border-b border-gray-800 px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+              <h2 className="text-lg sm:text-2xl font-bold text-white">
                 Subscription Contract
               </h2>
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-white transition p-1"
+                className="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-gray-800"
+                aria-label="Close"
               >
                 <FiX className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="overflow-y-auto p-5 sm:p-6 space-y-6 text-gray-300">
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 text-gray-300">
               {/* Subscriber Info Placeholder */}
-              <div className="bg-blue-900/20 p-4 rounded-lg border border-blue-800/30">
-                <p className="text-sm text-blue-300 mb-2 font-semibold">
+              <div className="bg-blue-900/20 p-3 sm:p-4 rounded-lg border border-blue-800/30">
+                <p className="text-xs sm:text-sm text-blue-300 mb-2 font-semibold">
                   SUBSCRIBER INFORMATION
                 </p>
-                <p className="text-sm">
-                  Subscriber's Name:{" "}
-                  <span className="text-white">_________________________</span>
-                </p>
-                <p className="text-sm mt-1">
-                  Address:{" "}
-                  <span className="text-white">
-                    ___________________________
-                  </span>
-                </p>
-                <p className="text-sm mt-1">
-                  Contact no.:{" "}
-                  <span className="text-white">_________________</span>
-                </p>
-                <p className="text-sm mt-1">
-                  Mister Fyber Plan:{" "}
-                  <span className="text-white font-semibold">
-                    {planName || "______"}
-                  </span>
-                </p>
-                <p className="text-sm mt-1">
-                  Speed:{" "}
-                  <span className="text-white font-semibold">
-                    {planSpeed || "___ mbps"}
-                  </span>
-                </p>
+                <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                  <p>
+                    Subscriber's Name:{" "}
+                    <span className="text-white">
+                      _________________________
+                    </span>
+                  </p>
+                  <p>
+                    Address:{" "}
+                    <span className="text-white">
+                      ___________________________
+                    </span>
+                  </p>
+                  <p>
+                    Contact no.:{" "}
+                    <span className="text-white">_________________</span>
+                  </p>
+                  <p>
+                    Mister Fyber Plan:{" "}
+                    <span className="text-white font-semibold">
+                      {planName || "______"}
+                    </span>
+                  </p>
+                  <p>
+                    Speed:{" "}
+                    <span className="text-white font-semibold">
+                      {planSpeed || "___ mbps"}
+                    </span>
+                  </p>
+                </div>
               </div>
 
               {/* Terms and Conditions Content */}
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white border-b border-gray-700 pb-2">
+                <h3 className="text-base sm:text-lg font-bold text-white border-b border-gray-700 pb-2">
                   TERMS & CONDITIONS
                 </h3>
 
-                <p className="text-sm">
+                <p className="text-xs sm:text-sm leading-relaxed">
                   This Internet Subscriber Service Agreement ("Agreement") is
                   entered into by and between Mister Fyber ("Service Provider")
                   and the undersigned subscriber ("Subscriber").
                 </p>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     1. Service Subscription
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     The Service Provider agrees to install and provide internet
                     service to the Subscriber at the registered service address,
                     subject to the terms and conditions stated herein.
@@ -110,10 +115,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     2. Monthly Service Fee
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     The Subscriber agrees to pay the monthly subscription fee
                     based on the selected internet plan, as indicated below, on
                     or before the due date indicated in the billing statement.
@@ -121,10 +126,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     3. Payment Terms
                   </h4>
-                  <ul className="text-sm list-disc list-inside space-y-1 ml-2">
+                  <ul className="text-xs sm:text-sm list-disc list-inside space-y-1 ml-1">
                     <li>
                       Payments must be made on time each month, on the due date
                       as indicated in the billing statement.
@@ -147,10 +152,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     4. Contract / No Lock-in Policy
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     Mister Fyber offers a no lock-in policy, meaning subscribers
                     are not required to commit to a fixed contract period.
                     Because of this setup, our internet service operates on a
@@ -165,10 +170,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     5. Subscriber Responsibilities
                   </h4>
-                  <ul className="text-sm list-disc list-inside space-y-1 ml-2">
+                  <ul className="text-xs sm:text-sm list-disc list-inside space-y-1 ml-1">
                     <li>
                       Provide accurate personal and installation information.
                     </li>
@@ -182,10 +187,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     6. Modem / Equipment Ownership
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     The modem/router and other installed equipment provided by
                     the Service Provider remain the property of the Service
                     Provider unless otherwise stated.
@@ -193,15 +198,15 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     7. Pull-Out of Modem / Retrieval of Equipment
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     The Service Provider reserves the right to pull out or
                     retrieve the modem/equipment under the following
                     circumstances:
                   </p>
-                  <ul className="text-sm list-decimal list-inside space-y-1 ml-6 mt-2">
+                  <ul className="text-xs sm:text-sm list-decimal list-inside space-y-1 ml-1 mt-2">
                     <li>
                       <span className="font-medium">
                         Permanent Disconnection
@@ -223,14 +228,14 @@ export default function TermsAndConditionsModal({
                       service.
                     </li>
                   </ul>
-                  <p className="text-sm mt-2">
+                  <p className="text-xs sm:text-sm leading-relaxed mt-2">
                     In the event that any recovered device or equipment is found
                     to have physical damage, defects, or missing parts beyond
                     normal wear and tear, the Subscriber shall be held
                     responsible and charged the corresponding replacement or
                     repair cost.
                   </p>
-                  <p className="text-sm mt-2">
+                  <p className="text-xs sm:text-sm leading-relaxed mt-2">
                     If any device or equipment provided by Mister Fyber is not
                     returned upon disconnection, termination, or pull-out
                     request, Mister Fyber reserves the right to bill the
@@ -242,10 +247,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     8. Service Interruptions
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     Mister Fyber shall not be held liable or considered in
                     default for any delay, interruption, or failure to provide
                     internet service caused by circumstances beyond its
@@ -256,7 +261,7 @@ export default function TermsAndConditionsModal({
                     lightning, riots, strikes, lockouts, labor disputes,
                     epidemics, pandemics, or other force majeure events.
                   </p>
-                  <p className="text-sm mt-2">
+                  <p className="text-xs sm:text-sm leading-relaxed mt-2">
                     Furthermore, Mister Fyber shall not be responsible for
                     issues involving subscriber-owned devices, as these are
                     beyond the scope of services provided. This includes, but is
@@ -269,10 +274,10 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     9. Reconnection Policy
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     In the event that the Subscriber requests reconnection, the
                     Subscriber must first fully settle all outstanding balances,
                     including any past due accounts, penalties, and applicable
@@ -283,24 +288,24 @@ export default function TermsAndConditionsModal({
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-white mt-4 mb-2">
+                  <h4 className="font-semibold text-white mt-4 mb-2 text-sm sm:text-base">
                     10. Termination
                   </h4>
-                  <p className="text-sm">
+                  <p className="text-xs sm:text-sm leading-relaxed">
                     Either party may terminate this Agreement subject to
                     settlement of outstanding balances and return of Service
                     Provider-owned equipment.
                   </p>
                 </div>
 
-                <div className="mt-6 p-4 bg-blue-900/20 rounded-lg border border-blue-800/30">
-                  <p className="text-sm text-blue-200">
+                <div className="mt-6 p-3 sm:p-4 bg-blue-900/20 rounded-lg border border-blue-800/30">
+                  <p className="text-xs sm:text-sm text-blue-200 leading-relaxed">
                     By signing below, I (the "Subscriber") confirm that I avail
                     Plan {planName || "______"} with {planSpeed || "___ mbps"},
                     and I have read, understood, and agreed to the terms and
                     conditions of this Subscription Contract.
                   </p>
-                  <div className="mt-4 pt-4 border-t border-blue-800/30 flex justify-between text-xs text-gray-400">
+                  <div className="mt-4 pt-4 border-t border-blue-800/30 flex flex-col sm:flex-row justify-between gap-2 text-xs text-gray-400">
                     <span>Subscriber's Signature: _________________</span>
                     <span>Date: _________________</span>
                   </div>
@@ -308,11 +313,11 @@ export default function TermsAndConditionsModal({
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="sticky bottom-0 bg-[#0f172a] border-t border-gray-800 px-5 sm:px-6 py-4 flex flex-col sm:flex-row gap-3 justify-end">
+            {/* Footer - Fixed */}
+            <div className="flex-shrink-0 bg-[#0f172a] border-t border-gray-800 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row gap-3 justify-end">
               <button
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-800 transition text-sm"
+                className="px-4 py-2 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-800 transition text-sm font-medium"
               >
                 Cancel
               </button>

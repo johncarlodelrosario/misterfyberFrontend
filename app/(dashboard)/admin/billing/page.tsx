@@ -154,7 +154,6 @@ export default function AdminBillingPage() {
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
-  // Backdated billing form state with installation fee
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
     serviceStartDate: "",
@@ -286,7 +285,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Load Unpaid Bills Report
   const loadUnpaidBillsReport = async () => {
     setLoadingReport(true);
     try {
@@ -305,7 +303,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== BACKDATED BILLING HANDLER ====================
   const handleBackdatedBilling = async () => {
     if (!backdatedForm.applicationId) {
       toast.error("Please select a customer");
@@ -777,7 +774,6 @@ export default function AdminBillingPage() {
         (app: any) => app.status === "approved" && !app.billingStarted,
       ).length;
 
-      // Count installation fees due
       const totalInstallationFeesDue =
         reportSummary.totalInstallationFeesDue || 0;
       const installationFeesPaidCount = allCustomers.filter(
@@ -1113,8 +1109,7 @@ export default function AdminBillingPage() {
       customer.unpaidBills && customer.unpaidBills.length > 0;
     const hasUnpaidInstallationFee =
       customer.type === "application" &&
-      customer.installationFee &&
-      customer.installationFee > 0 &&
+      (customer.installationFee ?? 0) > 0 &&
       !customer.installationFeePaid;
 
     if (hasUnpaidInstallationFee) {
@@ -1158,8 +1153,7 @@ export default function AdminBillingPage() {
       customer.unpaidBills && customer.unpaidBills.length > 0;
     const hasUnpaidInstallationFee =
       customer.type === "application" &&
-      customer.installationFee &&
-      customer.installationFee > 0 &&
+      (customer.installationFee ?? 0) > 0 &&
       !customer.installationFeePaid;
 
     if (hasUnpaidInstallationFee) {
@@ -1236,8 +1230,7 @@ export default function AdminBillingPage() {
       return (
         matchesSearch &&
         customer.type === "application" &&
-        customer.installationFee &&
-        customer.installationFee > 0 &&
+        (customer.installationFee ?? 0) > 0 &&
         !customer.installationFeePaid
       );
     return matchesSearch;
@@ -1931,8 +1924,6 @@ export default function AdminBillingPage() {
                 <FiX className="w-6 h-6" />
               </button>
             </div>
-
-            {/* Summary Section */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-red-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600">Total Unpaid Bills</p>
@@ -1965,8 +1956,6 @@ export default function AdminBillingPage() {
                 </p>
               </div>
             </div>
-
-            {/* Bills Table */}
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -2033,11 +2022,7 @@ export default function AdminBillingPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`px-2 py-1 text-xs rounded-full ${
-                            bill.status === "overdue"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-yellow-100 text-yellow-800"
-                          }`}
+                          className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
                         >
                           {bill.status}
                         </span>
@@ -2047,7 +2032,6 @@ export default function AdminBillingPage() {
                 </tbody>
               </table>
             </div>
-
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowUnpaidBillsReportModal(false)}
@@ -2101,8 +2085,6 @@ export default function AdminBillingPage() {
                   <li>Will create billing cycle + all past monthly bills</li>
                 </ul>
               </div>
-
-              {/* Customer Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Select Customer/Application *
@@ -2145,7 +2127,6 @@ export default function AdminBillingPage() {
                   Only shows applications without existing billing
                 </p>
               </div>
-
               {selectedBackdatedCustomer && (
                 <div className="bg-green-50 p-3 rounded-lg">
                   <p className="text-sm font-medium text-green-800">
@@ -2164,7 +2145,6 @@ export default function AdminBillingPage() {
                   </p>
                 </div>
               )}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Service Start Date (When they started using) *
@@ -2185,7 +2165,6 @@ export default function AdminBillingPage() {
                   2024-03-05
                 </p>
               </div>
-
               {!selectedBackdatedCustomer?.planName && (
                 <>
                   <div>
@@ -2224,8 +2203,6 @@ export default function AdminBillingPage() {
                   </div>
                 </>
               )}
-
-              {/* INSTALLATION FEE CHECKBOX FOR BACKDATED BILLING */}
               <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -2248,7 +2225,6 @@ export default function AdminBillingPage() {
                   Add one-time installation fee to the first bill
                 </p>
               </div>
-
               <div>
                 <label className="flex items-center gap-2">
                   <input
@@ -2270,7 +2246,6 @@ export default function AdminBillingPage() {
                   bill
                 </p>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes (Optional)
@@ -2288,7 +2263,6 @@ export default function AdminBillingPage() {
                   placeholder="Any notes about this backdated billing..."
                 />
               </div>
-
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => {
