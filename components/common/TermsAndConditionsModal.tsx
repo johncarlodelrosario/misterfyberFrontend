@@ -151,9 +151,16 @@ export default function TermsAndConditionsModal({
                     4. Contract / No Lock-in Policy
                   </h4>
                   <p className="text-sm">
-                    There is no lock-in period for this subscription. However,
-                    the Subscriber agrees to comply with all account obligations
-                    and equipment responsibilities under this Agreement.
+                    Mister Fyber offers a no lock-in policy, meaning subscribers
+                    are not required to commit to a fixed contract period.
+                    Because of this setup, our internet service operates on a
+                    prepaid basis, where payments are made in advance for the
+                    service period to keep the connection active. However, the
+                    Subscriber agrees to comply with all account obligations,
+                    payment terms, and equipment responsibilities under this
+                    Agreement. Failure to meet these obligations may result in
+                    service suspension, equipment recovery, or other actions as
+                    provided in this Agreement.
                   </p>
                 </div>
 
