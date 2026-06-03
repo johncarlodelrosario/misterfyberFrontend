@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   FiDownload,
   FiFileText,
@@ -14,6 +14,17 @@ import {
   FiLoader,
   FiBell,
   FiXCircle,
+  FiCalendar,
+  FiBarChart2,
+  FiDollarSign,
+  FiUserCheck,
+  FiActivity,
+  FiSliders,
+  FiRefreshCw,
+  FiChevronRight,
+  FiPieChart,
+  FiServer,
+  FiShield,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import {
@@ -26,33 +37,348 @@ import {
 } from "@/services/admin";
 import * as XLSX from "xlsx";
 
+// ============================================================================
+// Types & Constants
+// ============================================================================
+type ReportType = "payments" | "users" | "bills" | "revenue";
+
+interface DateRange {
+  startDate: string;
+  endDate: string;
+}
+
+interface DashboardStats {
+  totalUsers: number;
+  totalPayments: number;
+  monthlyRevenue: number;
+  pendingApplications: number;
+}
+
+interface QuickDateRange {
+  label: string;
+  getValue: () => DateRange;
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+};
+
+const formatDate = (dateString: string): string => {
+  if (!dateString) return "N/A";
+  return new Date(dateString).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const formatDateTime = (dateString: string): string => {
+  if (!dateString) return "N/A";
+  return new Date(dateString).toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const getStatusColor = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    completed: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
+    paid: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
+    active: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
+    pending: "bg-amber-100 text-amber-700 ring-1 ring-amber-600/20",
+    failed: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
+    inactive: "bg-slate-100 text-slate-700 ring-1 ring-slate-600/20",
+    suspended: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
+    overdue: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
+    default: "bg-gray-100 text-gray-700 ring-1 ring-gray-600/20",
+  };
+  return statusMap[status?.toLowerCase()] || statusMap.default;
+};
+
+// ============================================================================
+// Custom Hooks
+// ============================================================================
+const useDebounce = <T,>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debouncedValue;
+};
+
+// ============================================================================
+// Subcomponents
+// ============================================================================
+
+// Stats Card Component
+const StatsCard = ({
+  title,
+  value,
+  icon: Icon,
+  trend,
+  color,
+}: {
+  title: string;
+  value: string;
+  icon: React.ElementType;
+  trend?: { value: number; isPositive: boolean };
+  color: "blue" | "green" | "purple" | "amber";
+}) => {
+  const colorClasses = {
+    blue: "bg-blue-50 text-blue-600 group-hover:bg-blue-100",
+    green: "bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100",
+    purple: "bg-violet-50 text-violet-600 group-hover:bg-violet-100",
+    amber: "bg-amber-50 text-amber-600 group-hover:bg-amber-100",
+  };
+
+  return (
+    <div className="group bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 overflow-hidden">
+      <div className="p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-500 tracking-wide">
+              {title}
+            </p>
+            <p className="text-3xl font-bold text-gray-900 mt-2 tracking-tight">
+              {value}
+            </p>
+            {trend && (
+              <div className="flex items-center gap-1 mt-2">
+                <FiTrendingUp
+                  className={`w-3.5 h-3.5 ${trend.isPositive ? "text-emerald-600" : "text-rose-600 rotate-180"}`}
+                />
+                <span
+                  className={`text-xs font-medium ${trend.isPositive ? "text-emerald-600" : "text-rose-600"}`}
+                >
+                  {Math.abs(trend.value)}%
+                </span>
+                <span className="text-xs text-gray-400">vs last month</span>
+              </div>
+            )}
+          </div>
+          <div
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${colorClasses[color]}`}
+          >
+            <Icon className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+      <div className="h-0.5 bg-gradient-to-r from-transparent via-gray-100 to-transparent group-hover:via-gray-200 transition-all" />
+    </div>
+  );
+};
+
+// Report Type Button Component
+const ReportTypeButton = ({
+  type,
+  label,
+  description,
+  icon: Icon,
+  isActive,
+  onClick,
+}: {
+  type: ReportType;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  isActive: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    onClick={onClick}
+    className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left w-full group ${
+      isActive
+        ? "border-blue-500 bg-blue-50/50 shadow-md"
+        : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+    }`}
+  >
+    <div className="flex items-start gap-3">
+      <div
+        className={`p-2 rounded-lg transition-colors ${
+          isActive
+            ? "bg-blue-500 text-white"
+            : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
+        }`}
+      >
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex-1">
+        <p
+          className={`font-semibold ${isActive ? "text-blue-700" : "text-gray-800"}`}
+        >
+          {label}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+      </div>
+      {isActive && <FiChevronRight className="w-4 h-4 text-blue-500 mt-2" />}
+    </div>
+  </button>
+);
+
+// Email Toggle Component
+const EmailToggleCard = ({
+  emailEnabled,
+  togglingEmail,
+  onToggle,
+}: {
+  emailEnabled: boolean;
+  togglingEmail: boolean;
+  onToggle: () => void;
+}) => (
+  <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-200 p-5">
+    <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center gap-4">
+        <div
+          className={`p-3 rounded-xl ${emailEnabled ? "bg-emerald-100" : "bg-gray-100"}`}
+        >
+          <FiMail
+            className={`w-5 h-5 ${emailEnabled ? "text-emerald-600" : "text-gray-500"}`}
+          />
+        </div>
+        <div>
+          <h3 className="font-semibold text-gray-900">Customer Email Alerts</h3>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {emailEnabled
+              ? "Customers receive all notifications"
+              : "Customer emails are suppressed"}
+          </p>
+        </div>
+      </div>
+      <button
+        onClick={onToggle}
+        disabled={togglingEmail}
+        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ${
+          emailEnabled ? "bg-emerald-500" : "bg-gray-300"
+        } ${togglingEmail ? "opacity-50 cursor-not-allowed" : "cursor-pointer shadow-sm hover:shadow"}`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+            emailEnabled ? "translate-x-6" : "translate-x-1"
+          }`}
+        />
+      </button>
+    </div>
+    <div
+      className={`mt-4 p-3 rounded-xl text-xs ${emailEnabled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+    >
+      {emailEnabled ? (
+        <div className="flex items-center gap-2">
+          <FiCheckCircle className="w-3.5 h-3.5" />
+          <span>
+            All customer emails (invoices, reminders, approvals) are being sent
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <FiAlertCircle className="w-3.5 h-3.5" />
+          <span>
+            Customer emails DISABLED. Admin emails still work normally.
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+// ============================================================================
+// Main Component
+// ============================================================================
 export default function AdminReportsPage() {
-  const [generating, setGenerating] = useState<string | null>(null);
+  // State
+  const [generating, setGenerating] = useState<ReportType | null>(null);
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [togglingEmail, setTogglingEmail] = useState(false);
-  const [dateRange, setDateRange] = useState({
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       .toISOString()
       .split("T")[0],
     endDate: new Date().toISOString().split("T")[0],
   });
-  const [reportType, setReportType] = useState<
-    "payments" | "users" | "bills" | "revenue"
-  >("payments");
-
-  const [stats, setStats] = useState({
+  const [reportType, setReportType] = useState<ReportType>("payments");
+  const [stats, setStats] = useState<DashboardStats>({
     totalUsers: 0,
     totalPayments: 0,
     monthlyRevenue: 0,
     pendingApplications: 0,
   });
 
-  useEffect(() => {
-    fetchStats();
-    fetchEmailStatus();
-  }, []);
+  // Debounced date range for potential auto-refresh
+  const debouncedDateRange = useDebounce(dateRange, 500);
 
-  const fetchStats = async () => {
+  // Quick date ranges
+  const quickDateRanges: QuickDateRange[] = useMemo(
+    () => [
+      {
+        label: "This Month",
+        getValue: () => {
+          const today = new Date();
+          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+          return {
+            startDate: firstDay.toISOString().split("T")[0],
+            endDate: today.toISOString().split("T")[0],
+          };
+        },
+      },
+      {
+        label: "Last Month",
+        getValue: () => {
+          const today = new Date();
+          const firstDay = new Date(
+            today.getFullYear(),
+            today.getMonth() - 1,
+            1,
+          );
+          const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+          return {
+            startDate: firstDay.toISOString().split("T")[0],
+            endDate: lastDay.toISOString().split("T")[0],
+          };
+        },
+      },
+      {
+        label: "Last 30 Days",
+        getValue: () => {
+          const today = new Date();
+          const thirtyDaysAgo = new Date(today);
+          thirtyDaysAgo.setDate(today.getDate() - 30);
+          return {
+            startDate: thirtyDaysAgo.toISOString().split("T")[0],
+            endDate: today.toISOString().split("T")[0],
+          };
+        },
+      },
+      {
+        label: "This Quarter",
+        getValue: () => {
+          const today = new Date();
+          const quarter = Math.floor(today.getMonth() / 3);
+          const firstDay = new Date(today.getFullYear(), quarter * 3, 1);
+          return {
+            startDate: firstDay.toISOString().split("T")[0],
+            endDate: today.toISOString().split("T")[0],
+          };
+        },
+      },
+    ],
+    [],
+  );
+
+  // Data fetching
+  const fetchStats = useCallback(async () => {
+    setIsLoadingStats(true);
     try {
       const dashboardStats = await getDashboardStats();
       setStats({
@@ -63,65 +389,31 @@ export default function AdminReportsPage() {
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
-      setStats({
-        totalUsers: 0,
-        totalPayments: 0,
-        monthlyRevenue: 0,
-        pendingApplications: 0,
-      });
+      toast.error("Unable to load dashboard statistics");
+    } finally {
+      setIsLoadingStats(false);
     }
-  };
+  }, []);
 
-  const fetchEmailStatus = async () => {
+  const fetchEmailStatus = useCallback(async () => {
     try {
       const result = await getCustomerEmailAlertsPreference();
       setEmailEnabled(result.data?.customerEmailAlertsEnabled ?? true);
     } catch (error) {
       console.error("Failed to fetch email status:", error);
-      setEmailEnabled(true);
     }
-  };
+  }, []);
 
-  const handleToggleEmail = async () => {
-    setTogglingEmail(true);
-    try {
-      const newState = !emailEnabled;
-      const result = await toggleCustomerEmailAlerts(newState);
-      if (result.success) {
-        setEmailEnabled(newState);
-        toast.success(
-          `Customer email alerts ${newState ? "enabled" : "disabled"} successfully`,
-        );
-      } else {
-        toast.error(result.message || "Failed to toggle email settings");
-      }
-    } catch (error) {
-      console.error("Failed to toggle email:", error);
-      toast.error("Failed to toggle email settings");
-    } finally {
-      setTogglingEmail(false);
-    }
-  };
+  useEffect(() => {
+    fetchStats();
+    fetchEmailStatus();
+  }, [fetchStats, fetchEmailStatus]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
+  // Report generation handlers
   const generatePaymentsReport = async () => {
     setGenerating("payments");
+    const loadingToast = toast.loading("Fetching payment data...");
+
     try {
       const result = await getAllPayments({
         forceRefresh: true,
@@ -138,6 +430,8 @@ export default function AdminReportsPage() {
         return paymentDate >= start && paymentDate <= end;
       });
 
+      toast.loading("Building Excel report...", { id: loadingToast });
+
       const reportData = payments.map((payment: any) => ({
         "Payment ID": payment._id,
         "Invoice Number": payment.invoiceNumber || payment.billingId || "N/A",
@@ -146,8 +440,8 @@ export default function AdminReportsPage() {
         "Payment Method": payment.paymentMethod || "N/A",
         "Payment Type": payment.paymentType || "subscription",
         "Reference Number": payment.referenceNumber || "N/A",
-        "Paid At": payment.paidAt ? formatDate(payment.paidAt) : "Not paid",
-        "Created At": formatDate(payment.createdAt),
+        "Paid At": payment.paidAt ? formatDateTime(payment.paidAt) : "Not paid",
+        "Created At": formatDateTime(payment.createdAt),
         "User ID":
           typeof payment.userId === "object"
             ? payment.userId?._id
@@ -179,44 +473,50 @@ export default function AdminReportsPage() {
       ).length;
 
       const summary = [
-        ["PAYMENTS REPORT SUMMARY"],
-        ["Generated:", new Date().toLocaleString()],
+        ["PAYMENTS REPORT"],
+        [`Generated: ${formatDateTime(new Date().toISOString())}`],
         [
-          "Date Range:",
-          `${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
+          `Date Range: ${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
         ],
         [""],
-        ["Total Payments Count:", payments.length],
-        ["Total Amount:", formatCurrency(totalAmount)],
-        ["Completed Payments:", completedPayments],
-        ["Pending Payments:", pendingPayments],
-        ["Failed Payments:", failedPayments],
-        [""],
+        ["SUMMARY STATISTICS"],
+        ["Total Payments", payments.length],
+        ["Total Amount", formatCurrency(totalAmount)],
+        ["Completed", completedPayments],
+        ["Pending", pendingPayments],
+        ["Failed", failedPayments],
         [
-          "AVERAGE PAYMENT VALUE:",
+          "Average Payment",
           formatCurrency(
             payments.length > 0 ? totalAmount / payments.length : 0,
           ),
         ],
+        [""],
+        ["DETAILED TRANSACTIONS"],
       ];
 
-      const finalData = [
-        ...summary,
-        [],
-        Object.keys(reportData[0] || {}),
-        ...reportData.map(Object.values),
-      ];
+      const headers = Object.keys(reportData[0] || {});
+      const rows = reportData.map(Object.values);
+
+      const finalData = [...summary, headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
+
+      // Column width optimization
+      ws["!cols"] = headers.map(() => ({ wch: 18 }));
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Payments Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Payments");
       XLSX.writeFile(
         wb,
-        `payments_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
+        `payments_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-      toast.success("Payments report generated successfully");
+
+      toast.success(`Payments report generated (${payments.length} records)`, {
+        id: loadingToast,
+      });
     } catch (error) {
       console.error("Error generating payments report:", error);
-      toast.error("Failed to generate payments report");
+      toast.error("Failed to generate payments report", { id: loadingToast });
     } finally {
       setGenerating(null);
     }
@@ -224,6 +524,8 @@ export default function AdminReportsPage() {
 
   const generateUsersReport = async () => {
     setGenerating("users");
+    const loadingToast = toast.loading("Fetching user data...");
+
     try {
       const result = await getAllUsers({ forceRefresh: true, limit: 10000 });
       let users = result.data || [];
@@ -236,6 +538,8 @@ export default function AdminReportsPage() {
         return userDate >= start && userDate <= end;
       });
 
+      toast.loading("Building Excel report...", { id: loadingToast });
+
       const reportData = users.map((user: any) => ({
         "User ID": user._id,
         Username: user.username || "N/A",
@@ -247,10 +551,12 @@ export default function AdminReportsPage() {
         Status: user.status?.toUpperCase() || "UNKNOWN",
         Plan: user.planId?.name || "No Plan",
         Address:
-          `${user.barangay || ""}, ${user.city || ""}, ${user.province || ""}`.trim() ||
-          "N/A",
-        "Created At": formatDate(user.createdAt),
-        "Last Login": user.lastLogin ? formatDate(user.lastLogin) : "Never",
+          `${user.barangay || ""}, ${user.city || ""}, ${user.province || ""}`.replace(
+            /^,\s|,\s$/,
+            "",
+          ) || "N/A",
+        "Created At": formatDateTime(user.createdAt),
+        "Last Login": user.lastLogin ? formatDateTime(user.lastLogin) : "Never",
       }));
 
       const totalActive = users.filter(
@@ -264,36 +570,41 @@ export default function AdminReportsPage() {
       ).length;
 
       const summary = [
-        ["USER REPORT SUMMARY"],
-        ["Generated:", new Date().toLocaleString()],
+        ["USERS REPORT"],
+        [`Generated: ${formatDateTime(new Date().toISOString())}`],
         [
-          "Date Range:",
-          `${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
+          `Date Range: ${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
         ],
         [""],
-        ["Total Users:", users.length],
-        ["Active Users:", totalActive],
-        ["Inactive Users:", totalInactive],
-        ["Suspended Users:", totalSuspended],
+        ["SUMMARY STATISTICS"],
+        ["Total Users", users.length],
+        ["Active", totalActive],
+        ["Inactive", totalInactive],
+        ["Suspended", totalSuspended],
+        [""],
+        ["DETAILED USER LIST"],
       ];
 
-      const finalData = [
-        ...summary,
-        [],
-        Object.keys(reportData[0] || {}),
-        ...reportData.map(Object.values),
-      ];
+      const headers = Object.keys(reportData[0] || {});
+      const rows = reportData.map(Object.values);
+
+      const finalData = [...summary, headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
+      ws["!cols"] = headers.map(() => ({ wch: 18 }));
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Users Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Users");
       XLSX.writeFile(
         wb,
-        `users_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
+        `users_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-      toast.success("Users report generated successfully");
+
+      toast.success(`Users report generated (${users.length} records)`, {
+        id: loadingToast,
+      });
     } catch (error) {
       console.error("Error generating users report:", error);
-      toast.error("Failed to generate users report");
+      toast.error("Failed to generate users report", { id: loadingToast });
     } finally {
       setGenerating(null);
     }
@@ -301,6 +612,8 @@ export default function AdminReportsPage() {
 
   const generateBillsReport = async () => {
     setGenerating("bills");
+    const loadingToast = toast.loading("Fetching bill data...");
+
     try {
       const result = await getAllBills({ forceRefresh: true, limit: 10000 });
       let bills = result.data || [];
@@ -313,6 +626,8 @@ export default function AdminReportsPage() {
         return billDate >= start && billDate <= end;
       });
 
+      toast.loading("Building Excel report...", { id: loadingToast });
+
       const reportData = bills.map((bill: any) => ({
         "Bill ID": bill._id,
         "Invoice Number": bill.invoiceNumber || "N/A",
@@ -322,7 +637,7 @@ export default function AdminReportsPage() {
         Total: bill.total || 0,
         Status: bill.status?.toUpperCase() || "UNKNOWN",
         "Due Date": bill.dueDate ? formatDate(bill.dueDate) : "N/A",
-        "Created At": formatDate(bill.createdAt),
+        "Created At": formatDateTime(bill.createdAt),
       }));
 
       const totalAmount = bills.reduce(
@@ -332,35 +647,44 @@ export default function AdminReportsPage() {
       const paidBills = bills.filter((b: any) => b.status === "paid").length;
 
       const summary = [
-        ["BILLS REPORT SUMMARY"],
-        ["Generated:", new Date().toLocaleString()],
+        ["BILLS REPORT"],
+        [`Generated: ${formatDateTime(new Date().toISOString())}`],
         [
-          "Date Range:",
-          `${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
+          `Date Range: ${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
         ],
         [""],
-        ["Total Bills:", bills.length],
-        ["Total Amount:", formatCurrency(totalAmount)],
-        ["Paid Bills:", paidBills],
+        ["SUMMARY STATISTICS"],
+        ["Total Bills", bills.length],
+        ["Total Amount", formatCurrency(totalAmount)],
+        ["Paid Bills", paidBills],
+        [
+          "Collection Rate",
+          `${bills.length > 0 ? ((paidBills / bills.length) * 100).toFixed(1) : 0}%`,
+        ],
+        [""],
+        ["DETAILED BILL LIST"],
       ];
 
-      const finalData = [
-        ...summary,
-        [],
-        Object.keys(reportData[0] || {}),
-        ...reportData.map(Object.values),
-      ];
+      const headers = Object.keys(reportData[0] || {});
+      const rows = reportData.map(Object.values);
+
+      const finalData = [...summary, headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
+      ws["!cols"] = headers.map(() => ({ wch: 18 }));
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Bills Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Bills");
       XLSX.writeFile(
         wb,
-        `bills_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
+        `bills_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-      toast.success("Bills report generated successfully");
+
+      toast.success(`Bills report generated (${bills.length} records)`, {
+        id: loadingToast,
+      });
     } catch (error) {
       console.error("Error generating bills report:", error);
-      toast.error("Failed to generate bills report");
+      toast.error("Failed to generate bills report", { id: loadingToast });
     } finally {
       setGenerating(null);
     }
@@ -368,6 +692,8 @@ export default function AdminReportsPage() {
 
   const generateRevenueReport = async () => {
     setGenerating("revenue");
+    const loadingToast = toast.loading("Analyzing revenue data...");
+
     try {
       const [paymentsResult, billsResult] = await Promise.all([
         getAllPayments({ forceRefresh: true, limit: 10000 }),
@@ -405,46 +731,55 @@ export default function AdminReportsPage() {
         .filter((p: any) => p.status === "completed")
         .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
 
+      const collectionRate =
+        totalBills > 0 ? (completedPayments / totalBills) * 100 : 0;
+
       const summary = [
-        ["REVENUE REPORT SUMMARY"],
-        ["Generated:", new Date().toLocaleString()],
+        ["REVENUE REPORT"],
+        [`Generated: ${formatDateTime(new Date().toISOString())}`],
         [
-          "Date Range:",
-          `${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
+          `Date Range: ${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`,
         ],
         [""],
-        ["Total Bills Generated:", formatCurrency(totalBills)],
-        ["Total Payments Received:", formatCurrency(totalPayments)],
-        ["Confirmed/Completed Revenue:", formatCurrency(completedPayments)],
-        [
-          "Outstanding Balance:",
-          formatCurrency(totalBills - completedPayments),
-        ],
+        ["FINANCIAL SUMMARY"],
+        ["Total Bills Generated", formatCurrency(totalBills)],
+        ["Total Payments Received", formatCurrency(totalPayments)],
+        ["Confirmed/Completed Revenue", formatCurrency(completedPayments)],
+        ["Outstanding Balance", formatCurrency(totalBills - completedPayments)],
         [""],
+        ["PERFORMANCE METRICS"],
+        ["Collection Rate", `${collectionRate.toFixed(2)}%`],
         [
-          "Overall Collection Rate:",
-          `${totalBills > 0 ? ((completedPayments / totalBills) * 100).toFixed(2) : 0}%`,
+          "Bill-to-Payment Ratio",
+          `${totalBills > 0 ? ((totalPayments / totalBills) * 100).toFixed(1) : 0}%`,
         ],
+        ["Total Transactions", payments.length],
+        ["Total Bills Issued", bills.length],
       ];
 
       const finalData = [...summary];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
+      ws["!cols"] = [{ wch: 30 }, { wch: 20 }];
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Revenue Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Revenue Summary");
       XLSX.writeFile(
         wb,
-        `revenue_report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
+        `revenue_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`,
       );
-      toast.success("Revenue report generated successfully");
+
+      toast.success("Revenue report generated successfully", {
+        id: loadingToast,
+      });
     } catch (error) {
       console.error("Error generating revenue report:", error);
-      toast.error("Failed to generate revenue report");
+      toast.error("Failed to generate revenue report", { id: loadingToast });
     } finally {
       setGenerating(null);
     }
   };
 
-  const handleGenerateReport = () => {
+  const handleGenerateReport = useCallback(() => {
     switch (reportType) {
       case "payments":
         generatePaymentsReport();
@@ -459,477 +794,466 @@ export default function AdminReportsPage() {
         generateRevenueReport();
         break;
     }
+  }, [reportType, dateRange]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  const handleToggleEmail = useCallback(async () => {
+    setTogglingEmail(true);
+    try {
+      const newState = !emailEnabled;
+      const result = await toggleCustomerEmailAlerts(newState);
+      if (result.success) {
+        setEmailEnabled(newState);
+        toast.success(
+          `Customer email alerts ${newState ? "enabled" : "disabled"}`,
+        );
+      } else {
+        toast.error(result.message || "Failed to toggle email settings");
+      }
+    } catch (error) {
+      console.error("Failed to toggle email:", error);
+      toast.error("Failed to toggle email settings");
+    } finally {
+      setTogglingEmail(false);
+    }
+  }, [emailEnabled]);
+
+  // Report info configuration
+  const reportInfo = {
+    payments: {
+      title: "Payments Report",
+      description: "Complete transaction history with status and user details",
+      icon: FiCreditCard,
+      features: [
+        "All payment transactions within date range",
+        "Payment status breakdown (Completed, Pending, Failed)",
+        "Payment methods and reference numbers",
+        "User information for each payment",
+        "Summary statistics with totals and averages",
+      ],
+    },
+    users: {
+      title: "Users Report",
+      description:
+        "Comprehensive user registry with account status and plan details",
+      icon: FiUsers,
+      features: [
+        "Complete user account list with contact info",
+        "User roles and account status",
+        "Plan subscription details",
+        "Account creation and last login tracking",
+        "Active/Inactive/Suspended breakdown",
+      ],
+    },
+    bills: {
+      title: "Bills Report",
+      description: "Invoice and billing summary with payment status",
+      icon: FiFileText,
+      features: [
+        "Complete bill/invoice listing",
+        "Bill status (Paid, Unpaid, Overdue)",
+        "Financial breakdown (subtotal, tax, discount, total)",
+        "Due dates and aging analysis",
+        "Collection rate calculation",
+      ],
+    },
+    revenue: {
+      title: "Revenue Report",
+      description: "Financial performance and collection analysis",
+      icon: FiTrendingUp,
+      features: [
+        "Overall revenue summary",
+        "Bills generated vs payments received",
+        "Collection rate analysis",
+        "Outstanding balance tracking",
+        "Bill-to-payment ratio metrics",
+      ],
+    },
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const currentReportInfo = reportInfo[reportType];
 
   return (
-    <div className="space-y-6">
-      {/* Page Header with Email Toggle */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 text-white">
-        <div className="flex justify-between items-start flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">Reports & Analytics</h1>
-            <p className="text-blue-100 mt-1">
-              Generate and download financial and operational reports
-            </p>
-          </div>
-          <div className="flex gap-3">
-            {/* Email Toggle Button */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <FiMail className="w-5 h-5 text-white" />
-                  <span className="text-sm font-medium text-white">
-                    Customer Email Alerts
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50/50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {/* Page Header - Premium Section */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl shadow-xl">
+          <div className="absolute inset-0 bg-grid-white/5 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]" />
+          <div className="relative px-8 py-8 lg:py-10">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm">
+                    <FiBarChart2 className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="h-8 w-px bg-white/20" />
+                  <span className="text-white/70 text-sm font-mono tracking-wide">
+                    ADMIN ANALYTICS
                   </span>
                 </div>
+                <h1 className="text-3xl lg:text-4xl font-bold text-white tracking-tight">
+                  Reports & Analytics
+                </h1>
+                <p className="text-white/60 text-base max-w-2xl">
+                  Generate comprehensive financial and operational reports with
+                  advanced filtering and export capabilities
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
                 <button
-                  onClick={handleToggleEmail}
-                  disabled={togglingEmail}
-                  className={`
-                    relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-                    ${emailEnabled ? "bg-green-500" : "bg-gray-400"}
-                    ${togglingEmail ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
-                  `}
+                  onClick={handlePrint}
+                  className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all duration-200 flex items-center gap-2 text-sm font-medium backdrop-blur-sm border border-white/10"
                 >
-                  <span
-                    className={`
-                      inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                      ${emailEnabled ? "translate-x-6" : "translate-x-1"}
-                    `}
-                  />
+                  <FiPrinter className="w-4 h-4" />
+                  Print View
                 </button>
-                <span
-                  className={`text-xs ${emailEnabled ? "text-green-300" : "text-gray-300"}`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Grid - KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatsCard
+            title="Total Users"
+            value={isLoadingStats ? "—" : stats.totalUsers.toLocaleString()}
+            icon={FiUsers}
+            trend={{ value: 12, isPositive: true }}
+            color="blue"
+          />
+          <StatsCard
+            title="Total Payments"
+            value={isLoadingStats ? "—" : formatCurrency(stats.totalPayments)}
+            icon={FiCreditCard}
+            trend={{ value: 8, isPositive: true }}
+            color="green"
+          />
+          <StatsCard
+            title="Monthly Revenue"
+            value={isLoadingStats ? "—" : formatCurrency(stats.monthlyRevenue)}
+            icon={FiDollarSign}
+            trend={{ value: 5, isPositive: true }}
+            color="purple"
+          />
+          <StatsCard
+            title="Pending Applications"
+            value={
+              isLoadingStats ? "—" : stats.pendingApplications.toLocaleString()
+            }
+            icon={FiUserCheck}
+            trend={{ value: 3, isPositive: false }}
+            color="amber"
+          />
+        </div>
+
+        {/* Main Report Generator Card */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-white">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-50 rounded-xl">
+                <FiDownload className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Report Generator
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Configure and generate Excel reports with custom date ranges
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Report Type Selection - Left Column */}
+              <div className="lg:col-span-5 space-y-4">
+                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <FiSliders className="w-4 h-4" />
+                  Report Type
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <ReportTypeButton
+                    type="payments"
+                    label="Payments Report"
+                    description="Transactions & history"
+                    icon={FiCreditCard}
+                    isActive={reportType === "payments"}
+                    onClick={() => setReportType("payments")}
+                  />
+                  <ReportTypeButton
+                    type="users"
+                    label="Users Report"
+                    description="Accounts & profiles"
+                    icon={FiUsers}
+                    isActive={reportType === "users"}
+                    onClick={() => setReportType("users")}
+                  />
+                  <ReportTypeButton
+                    type="bills"
+                    label="Bills Report"
+                    description="Invoices & billing"
+                    icon={FiFileText}
+                    isActive={reportType === "bills"}
+                    onClick={() => setReportType("bills")}
+                  />
+                  <ReportTypeButton
+                    type="revenue"
+                    label="Revenue Report"
+                    description="Financial summary"
+                    icon={FiPieChart}
+                    isActive={reportType === "revenue"}
+                    onClick={() => setReportType("revenue")}
+                  />
+                </div>
+              </div>
+
+              {/* Date Range Selection - Middle Column */}
+              <div className="lg:col-span-4 space-y-4">
+                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <FiCalendar className="w-4 h-4" />
+                  Date Range
+                </label>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={dateRange.startDate}
+                        onChange={(e) =>
+                          setDateRange({
+                            ...dateRange,
+                            startDate: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={dateRange.endDate}
+                        onChange={(e) =>
+                          setDateRange({
+                            ...dateRange,
+                            endDate: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {quickDateRanges.map((range) => (
+                      <button
+                        key={range.label}
+                        onClick={() => setDateRange(range.getValue())}
+                        className="px-3 py-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition-colors"
+                      >
+                        {range.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons - Right Column */}
+              <div className="lg:col-span-3 space-y-4">
+                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <FiActivity className="w-4 h-4" />
+                  Generate
+                </label>
+                <button
+                  onClick={handleGenerateReport}
+                  disabled={generating !== null}
+                  className={`w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 shadow-sm ${
+                    generating !== null
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-blue-200 hover:shadow-md"
+                  }`}
                 >
-                  {emailEnabled ? "Sending ON" : "Sending OFF"}
+                  {generating === reportType ? (
+                    <>
+                      <FiLoader className="w-4 h-4 animate-spin" />
+                      Generating Report...
+                    </>
+                  ) : (
+                    <>
+                      <FiDownload className="w-4 h-4" />
+                      Export {currentReportInfo.title}
+                    </>
+                  )}
+                </button>
+                <div className="text-center text-xs text-gray-400">
+                  Excel format · Up to 10,000 records
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Two Column Information Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* What's Included */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div className="px-6 py-5 border-b border-gray-100 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-50 rounded-xl">
+                  <FiCheckCircle className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    Report Contents
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    What's included in this report
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              <ul className="space-y-3">
+                {currentReportInfo.features.map((feature, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-3 text-gray-600 text-sm"
+                  >
+                    <FiChevronRight className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Export Information */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div className="px-6 py-5 border-b border-gray-100 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 rounded-xl">
+                  <FiAlertCircle className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    Export Details
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    File format and compatibility
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-gray-500 text-sm">File Format</span>
+                <span className="font-mono text-sm font-medium text-gray-900">
+                  .xlsx (Excel)
                 </span>
               </div>
-              <p className="text-xs text-blue-200 mt-1 max-w-[200px]">
-                {emailEnabled
-                  ? "Customers will receive email notifications"
-                  : "Customer emails are DISABLED. Admin emails still work."}
-              </p>
-            </div>
-            <button
-              onClick={handlePrint}
-              className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <FiPrinter className="w-4 h-4" />
-              Print
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-500 text-sm">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.totalUsers.toLocaleString()}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <FiUsers className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-500 text-sm">Total Payments</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(stats.totalPayments)}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-              <FiCreditCard className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-500 text-sm">Monthly Revenue</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(stats.monthlyRevenue)}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <FiTrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-500 text-sm">Pending Apps</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.pendingApplications}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-              <FiFileText className="w-6 h-6 text-yellow-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Report Generator Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-            <FiDownload className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Generate Report
-            </h2>
-            <p className="text-sm text-gray-500">
-              Select report type and date range to generate Excel report
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Report Type Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Report Type
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setReportType("payments")}
-                className={`px-4 py-3 rounded-lg border text-left transition-all ${
-                  reportType === "payments"
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <FiCreditCard className="w-5 h-5 mb-2" />
-                <p className="font-medium">Payments Report</p>
-                <p className="text-xs text-gray-500">
-                  All payment transactions
-                </p>
-              </button>
-              <button
-                onClick={() => setReportType("users")}
-                className={`px-4 py-3 rounded-lg border text-left transition-all ${
-                  reportType === "users"
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <FiUsers className="w-5 h-5 mb-2" />
-                <p className="font-medium">Users Report</p>
-                <p className="text-xs text-gray-500">All user accounts</p>
-              </button>
-              <button
-                onClick={() => setReportType("bills")}
-                className={`px-4 py-3 rounded-lg border text-left transition-all ${
-                  reportType === "bills"
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <FiFileText className="w-5 h-5 mb-2" />
-                <p className="font-medium">Bills Report</p>
-                <p className="text-xs text-gray-500">All invoices and bills</p>
-              </button>
-              <button
-                onClick={() => setReportType("revenue")}
-                className={`px-4 py-3 rounded-lg border text-left transition-all ${
-                  reportType === "revenue"
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <FiTrendingUp className="w-5 h-5 mb-2" />
-                <p className="font-medium">Revenue Report</p>
-                <p className="text-xs text-gray-500">Financial summary</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Date Range Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date Range
-            </label>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-gray-500">Start Date</label>
-                <input
-                  type="date"
-                  value={dateRange.startDate}
-                  onChange={(e) =>
-                    setDateRange({ ...dateRange, startDate: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-gray-500 text-sm">Compatibility</span>
+                <span className="text-sm text-gray-700">
+                  Excel, Google Sheets, LibreOffice
+                </span>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">End Date</label>
-                <input
-                  type="date"
-                  value={dateRange.endDate}
-                  onChange={(e) =>
-                    setDateRange({ ...dateRange, endDate: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-gray-500 text-sm">Summary Section</span>
+                <span className="text-sm font-medium text-emerald-600">
+                  Included
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-gray-500 text-sm">Auto-download</span>
+                <span className="text-sm font-medium text-emerald-600">
+                  Yes
+                </span>
+              </div>
+              <div className="mt-4 p-3 bg-amber-50 rounded-xl">
+                <div className="flex items-start gap-2">
+                  <FiAlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-700">
+                    Reports include all data within the selected date range.
+                    Large datasets may take a few seconds to process.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Quick Actions and Generate Button */}
+        {/* Email Configuration Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 rounded-xl">
+                  <FiBell className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    Email Notification Control
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Manage customer email delivery preferences
+                  </p>
+                </div>
+              </div>
+              <div className="hidden sm:block">
+                <div
+                  className={`px-3 py-1 rounded-full text-xs font-medium ${emailEnabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
+                >
+                  {emailEnabled
+                    ? "Customer Emails: ON"
+                    : "Customer Emails: OFF"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            <EmailToggleCard
+              emailEnabled={emailEnabled}
+              togglingEmail={togglingEmail}
+              onToggle={handleToggleEmail}
+            />
+            <div className="mt-5 p-4 bg-slate-50 rounded-xl">
+              <div className="flex items-start gap-3">
+                <FiShield className="w-4 h-4 text-slate-500 mt-0.5" />
+                <div className="text-xs text-slate-600">
+                  <p className="font-medium mb-1">Administrator Note:</p>
+                  <p>
+                    This setting affects all customer-facing notifications
+                    including invoices, payment confirmations, and application
+                    status updates. Admin email alerts are always delivered
+                    regardless of this toggle.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Meta */}
+        <div className="flex items-center justify-between text-xs text-gray-400 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1">
+              <FiServer className="w-3 h-3" />
+              Data Source: Live Database
+            </span>
+            <span>•</span>
+            <span>Last sync: {new Date().toLocaleString()}</span>
+          </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Quick Actions
-            </label>
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  const today = new Date();
-                  const firstDay = new Date(
-                    today.getFullYear(),
-                    today.getMonth(),
-                    1,
-                  );
-                  setDateRange({
-                    startDate: firstDay.toISOString().split("T")[0],
-                    endDate: today.toISOString().split("T")[0],
-                  });
-                }}
-                className="w-full px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-left"
-              >
-                This Month
-              </button>
-              <button
-                onClick={() => {
-                  const today = new Date();
-                  const firstDay = new Date(
-                    today.getFullYear(),
-                    today.getMonth() - 1,
-                    1,
-                  );
-                  const lastDay = new Date(
-                    today.getFullYear(),
-                    today.getMonth(),
-                    0,
-                  );
-                  setDateRange({
-                    startDate: firstDay.toISOString().split("T")[0],
-                    endDate: lastDay.toISOString().split("T")[0],
-                  });
-                }}
-                className="w-full px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-left"
-              >
-                Last Month
-              </button>
-              <button
-                onClick={handleGenerateReport}
-                disabled={generating !== null}
-                className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${
-                  generating !== null
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-700 text-white"
-                }`}
-              >
-                {generating === reportType ? (
-                  <>
-                    <FiLoader className="w-4 h-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <FiDownload className="w-4 h-4" />
-                    Generate Report
-                  </>
-                )}
-              </button>
-            </div>
+            <span className="font-mono">v2.0 · Report Engine</span>
           </div>
-        </div>
-      </div>
-
-      {/* Report Information Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* What's Included */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <FiCheckCircle className="w-5 h-5 text-green-500" />
-            What's Included in the Report
-          </h3>
-          <div className="space-y-3">
-            {reportType === "payments" && (
-              <>
-                <p className="text-gray-600">
-                  • Complete payment transaction list
-                </p>
-                <p className="text-gray-600">
-                  • Payment status (Completed, Pending, Failed)
-                </p>
-                <p className="text-gray-600">
-                  • Payment methods and reference numbers
-                </p>
-                <p className="text-gray-600">
-                  • User information for each payment
-                </p>
-                <p className="text-gray-600">• Summary statistics and totals</p>
-              </>
-            )}
-            {reportType === "users" && (
-              <>
-                <p className="text-gray-600">• Complete user account list</p>
-                <p className="text-gray-600">• User roles and status</p>
-                <p className="text-gray-600">
-                  • Contact information (email, phone)
-                </p>
-                <p className="text-gray-600">• Plan subscription details</p>
-                <p className="text-gray-600">
-                  • Account creation and last login dates
-                </p>
-              </>
-            )}
-            {reportType === "bills" && (
-              <>
-                <p className="text-gray-600">• Complete bill/invoice list</p>
-                <p className="text-gray-600">
-                  • Bill status (Paid, Unpaid, Overdue)
-                </p>
-                <p className="text-gray-600">
-                  • Breakdown of subtotal, tax, discount, total
-                </p>
-                <p className="text-gray-600">• Due dates and billing periods</p>
-                <p className="text-gray-600">• Collection rate calculation</p>
-              </>
-            )}
-            {reportType === "revenue" && (
-              <>
-                <p className="text-gray-600">• Overall revenue summary</p>
-                <p className="text-gray-600">• Monthly revenue breakdown</p>
-                <p className="text-gray-600">
-                  • Bills generated vs payments received
-                </p>
-                <p className="text-gray-600">• Collection rate analysis</p>
-                <p className="text-gray-600">• Outstanding balance tracking</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Export Format Info */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <FiAlertCircle className="w-5 h-5 text-blue-500" />
-            Export Information
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <span className="text-gray-600">File Format</span>
-              <span className="font-medium text-gray-900">
-                Microsoft Excel (.xlsx)
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <span className="text-gray-600">Compatible With</span>
-              <span className="font-medium text-gray-900">
-                Excel, Google Sheets, LibreOffice
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <span className="text-gray-600">Includes Summary</span>
-              <span className="font-medium text-green-600">Yes</span>
-            </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="text-gray-600">Auto-download</span>
-              <span className="font-medium text-green-600">Yes</span>
-            </div>
-          </div>
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700">
-              <strong>Note:</strong> Reports include data from the selected date
-              range. For larger datasets, the report may take a few seconds to
-              generate.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Email Status Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Email Notification Status
-          </h3>
-          <FiBell className="w-5 h-5 text-gray-400" />
-        </div>
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            {emailEnabled ? (
-              <FiCheckCircle className="w-8 h-8 text-green-500" />
-            ) : (
-              <FiXCircle className="w-8 h-8 text-red-500" />
-            )}
-            <div>
-              <p className="font-medium text-gray-900">
-                Customer email sending is currently{" "}
-                {emailEnabled ? "ENABLED" : "DISABLED"}
-              </p>
-              <p className="text-sm text-gray-500">
-                {emailEnabled
-                  ? "Customers will receive all email notifications (invoices, reminders, approvals)"
-                  : "Customers will NOT receive any emails. Admin notifications are still sent."}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleToggleEmail}
-            disabled={togglingEmail}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              emailEnabled
-                ? "bg-red-100 text-red-700 hover:bg-red-200"
-                : "bg-green-100 text-green-700 hover:bg-green-200"
-            } ${togglingEmail ? "opacity-50 cursor-not-allowed" : ""}`}
-          >
-            {togglingEmail ? (
-              <>
-                <FiLoader className="w-4 h-4 inline animate-spin mr-2" />
-                Updating...
-              </>
-            ) : emailEnabled ? (
-              "Disable Customer Emails"
-            ) : (
-              "Enable Customer Emails"
-            )}
-          </button>
-        </div>
-        <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
-          <p className="text-sm text-yellow-700">
-            <strong>⚠️ Important:</strong> When disabled, customers will not
-            receive:
-          </p>
-          <ul className="text-sm text-yellow-600 mt-2 list-disc list-inside">
-            <li>Welcome emails after registration</li>
-            <li>Invoice and billing notifications</li>
-            <li>Payment confirmations</li>
-            <li>Application approval/rejection emails</li>
-            <li>Payment reminders and overdue notices</li>
-          </ul>
-          <p className="text-sm text-yellow-700 mt-2">
-            Admin email notifications are always sent regardless of this
-            setting.
-          </p>
         </div>
       </div>
     </div>

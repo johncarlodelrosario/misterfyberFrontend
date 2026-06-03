@@ -105,10 +105,30 @@ interface Plan {
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
+  // Return as MM/DD/YYYY without timezone issues
   const month = date.getMonth() + 1;
   const day = date.getDate();
   const year = date.getFullYear();
   return `${month}/${day}/${year}`;
+}
+
+// Helper to get last day of month for billing period end
+function getLastDayOfMonth(year: number, month: number): Date {
+  return new Date(year, month + 1, 0);
+}
+
+// Helper to format billing period correctly (first day to last day)
+function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  // For end date, show the actual date (which should be last day of month)
+  const startMonth = start.getMonth() + 1;
+  const startDay = start.getDate();
+  const startYear = start.getFullYear();
+  const endMonth = end.getMonth() + 1;
+  const endDay = end.getDate();
+  const endYear = end.getFullYear();
+  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
 export default function AdminBillingPage() {
@@ -1588,22 +1608,22 @@ export default function AdminBillingPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Customer / Application
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Plan
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Balance
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Installation Fee
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -1635,14 +1655,14 @@ export default function AdminBillingPage() {
                   return (
                     <tr
                       key={`${customer.type}-${customer._id}`}
-                      className="hover:bg-gray-50"
+                      className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {customer.type === "application" ? (
-                            <FiFileText className="w-4 h-4 text-purple-500" />
+                            <FiFileText className="w-4 h-4 text-purple-500 flex-shrink-0" />
                           ) : (
-                            <FiUser className="w-4 h-4 text-blue-500" />
+                            <FiUser className="w-4 h-4 text-blue-500 flex-shrink-0" />
                           )}
                           <div>
                             <p className="font-medium text-gray-900">
@@ -1664,7 +1684,7 @@ export default function AdminBillingPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <p className="text-sm font-medium text-gray-900">
                           {customer.planName}
                         </p>
@@ -1672,7 +1692,7 @@ export default function AdminBillingPage() {
                           ₱{customer.planPrice.toLocaleString()}/mo
                         </p>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <p
                           className={`text-lg font-bold ${getBalanceColor(customer.currentBalance)}`}
                         >
@@ -1684,7 +1704,7 @@ export default function AdminBillingPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <span
                           className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
                         >
@@ -1709,7 +1729,7 @@ export default function AdminBillingPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         {customer.type === "application" &&
                         (customer.installationFee ?? 0) > 0 ? (
                           <div>
@@ -1760,7 +1780,7 @@ export default function AdminBillingPage() {
                                 className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors cursor-pointer"
                                 title="Recover Missing Bills"
                               >
-                                <FiCalendarIcon className="w-4 h-4" />
+                                <FiCalendar className="w-4 h-4" />
                               </button>
                             )}
                           {customer.type === "application" && (
@@ -1991,7 +2011,6 @@ export default function AdminBillingPage() {
           applications)
         </div>
       </div>
-
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -2070,87 +2089,96 @@ export default function AdminBillingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {unpaidBillsReport.bills?.map((bill: any) => (
-                    <tr key={bill._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm font-mono">
-                        {bill.invoiceNumber}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-medium">
-                          {bill.applicationData?.firstName}{" "}
-                          {bill.applicationData?.lastName}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {bill.applicationData?.email}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        {formatDateFixed(bill.billingPeriod?.start)} -{" "}
-                        {formatDateFixed(bill.billingPeriod?.end)}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        {formatDateFixed(bill.dueDate)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-red-600">
-                        ₱{bill.total.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        {bill.installationFee > 0 ? (
-                          <span
-                            className={`text-sm ${bill.installationFeePaid ? "text-green-600" : "text-amber-600"}`}
-                          >
-                            ₱{bill.installationFee.toLocaleString()}
-                            {!bill.installationFeePaid && " (Unpaid)"}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
-                        >
-                          {bill.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {bill.isInstallationBill &&
-                          !bill.installationFeePaid && (
-                            <button
-                              onClick={() => {
-                                const customer = customers.find(
-                                  (c) => c.applicationId === bill.applicationId,
-                                );
-                                if (customer) {
-                                  handleMarkInstallationBillAsPaid(
-                                    bill,
-                                    customer,
-                                  );
-                                }
-                              }}
-                              className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                  {unpaidBillsReport.bills?.map((bill: any) => {
+                    // Format period correctly using start and end dates from the bill
+                    let periodDisplay = "-";
+                    if (bill.billingPeriod?.start && bill.billingPeriod?.end) {
+                      const start = new Date(bill.billingPeriod.start);
+                      const end = new Date(bill.billingPeriod.end);
+                      periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                    }
+                    return (
+                      <tr key={bill._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-mono">
+                          {bill.invoiceNumber}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium">
+                            {bill.applicationData?.firstName}{" "}
+                            {bill.applicationData?.lastName}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {bill.applicationData?.email}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{periodDisplay}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {formatDateFixed(bill.dueDate)}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium text-red-600">
+                          ₱{bill.total.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          {bill.installationFee > 0 ? (
+                            <span
+                              className={`text-sm ${bill.installationFeePaid ? "text-green-600" : "text-amber-600"}`}
                             >
-                              Mark Install Paid
-                            </button>
+                              ₱{bill.installationFee.toLocaleString()}
+                              {!bill.installationFeePaid && " (Unpaid)"}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-400">-</span>
                           )}
-                        {!bill.isInstallationBill && bill.status !== "paid" && (
-                          <button
-                            onClick={() => {
-                              const customer = customers.find(
-                                (c) => c.applicationId === bill.applicationId,
-                              );
-                              if (customer) {
-                                handleMarkBillAsPaid(bill, customer);
-                              }
-                            }}
-                            className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
                           >
-                            Mark Paid
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            {bill.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {bill.isInstallationBill &&
+                            !bill.installationFeePaid && (
+                              <button
+                                onClick={() => {
+                                  const customer = customers.find(
+                                    (c) =>
+                                      c.applicationId === bill.applicationId,
+                                  );
+                                  if (customer) {
+                                    handleMarkInstallationBillAsPaid(
+                                      bill,
+                                      customer,
+                                    );
+                                  }
+                                }}
+                                className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                              >
+                                Mark Install Paid
+                              </button>
+                            )}
+                          {!bill.isInstallationBill &&
+                            bill.status !== "paid" && (
+                              <button
+                                onClick={() => {
+                                  const customer = customers.find(
+                                    (c) =>
+                                      c.applicationId === bill.applicationId,
+                                  );
+                                  if (customer) {
+                                    handleMarkBillAsPaid(bill, customer);
+                                  }
+                                }}
+                                className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                              >
+                                Mark Paid
+                              </button>
+                            )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -3126,72 +3154,84 @@ export default function AdminBillingPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {selectedCustomer.unpaidBills.map((bill: any) => (
-                        <tr key={bill._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 font-mono">
-                            {bill.invoiceNumber}
-                          </td>
-                          <td className="px-4 py-2">
-                            {formatDateFixed(bill.billingPeriod?.start)} -{" "}
-                            {formatDateFixed(bill.billingPeriod?.end)}
-                          </td>
-                          <td className="px-4 py-2">
-                            {formatDateFixed(bill.dueDate)}
-                          </td>
-                          <td className="px-4 py-2 font-medium text-red-600">
-                            ₱{bill.total.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-2">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
-                            >
-                              {bill.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2">
-                            {bill.isInstallationBill ? (
-                              <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">
-                                Installation Fee
+                      {selectedCustomer.unpaidBills.map((bill: any) => {
+                        // Format period correctly using start and end dates
+                        let periodDisplay = "-";
+                        if (
+                          bill.billingPeriod?.start &&
+                          bill.billingPeriod?.end
+                        ) {
+                          const start = new Date(bill.billingPeriod.start);
+                          const end = new Date(bill.billingPeriod.end);
+                          periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                        }
+                        return (
+                          <tr key={bill._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 font-mono">
+                              {bill.invoiceNumber}
+                            </td>
+                            <td className="px-4 py-2">{periodDisplay}</td>
+                            <td className="px-4 py-2">
+                              {formatDateFixed(bill.dueDate)}
+                            </td>
+                            <td className="px-4 py-2 font-medium text-red-600">
+                              ₱{bill.total.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
+                              >
+                                {bill.status}
                               </span>
-                            ) : bill.isProRated ? (
-                              <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
-                                Pro-rated
-                              </span>
-                            ) : (
-                              <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                                Monthly
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
-                            {bill.isInstallationBill &&
-                              !bill.installationFeePaid && (
-                                <button
-                                  onClick={() =>
-                                    handleMarkInstallationBillAsPaid(
-                                      bill,
-                                      selectedCustomer,
-                                    )
-                                  }
-                                  className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
-                                >
-                                  Mark Install Paid
-                                </button>
+                            </td>
+                            <td className="px-4 py-2">
+                              {bill.isInstallationBill ? (
+                                <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">
+                                  Installation Fee
+                                </span>
+                              ) : bill.isProRated ? (
+                                <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                                  Pro-rated
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                                  Monthly
+                                </span>
                               )}
-                            {!bill.isInstallationBill &&
-                              bill.status !== "paid" && (
-                                <button
-                                  onClick={() =>
-                                    handleMarkBillAsPaid(bill, selectedCustomer)
-                                  }
-                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-4 py-2">
+                              {bill.isInstallationBill &&
+                                !bill.installationFeePaid && (
+                                  <button
+                                    onClick={() =>
+                                      handleMarkInstallationBillAsPaid(
+                                        bill,
+                                        selectedCustomer,
+                                      )
+                                    }
+                                    className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 cursor-pointer"
+                                  >
+                                    Mark Install Paid
+                                  </button>
+                                )}
+                              {!bill.isInstallationBill &&
+                                bill.status !== "paid" && (
+                                  <button
+                                    onClick={() =>
+                                      handleMarkBillAsPaid(
+                                        bill,
+                                        selectedCustomer,
+                                      )
+                                    }
+                                    className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                                  >
+                                    Mark Paid
+                                  </button>
+                                )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -3360,42 +3400,53 @@ export default function AdminBillingPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {pendingProRated.map((bill: any) => (
-                          <tr key={bill._id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-mono text-sm">
-                              {bill.invoiceNumber}
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm font-medium">
-                                {bill.applicationData?.firstName}{" "}
-                                {bill.applicationData?.lastName}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {bill.applicationData?.email}
-                              </p>
-                            </td>
-                            <td className="px-4 py-3 text-sm font-medium text-red-600">
-                              ₱{bill.total.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">
-                                {bill.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <button
-                                onClick={() =>
-                                  confirmProRatedPayment({
-                                    applicationId: bill.applicationId,
-                                  })
-                                }
-                                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
-                              >
-                                Confirm Payment
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {pendingProRated.map((bill: any) => {
+                          let periodDisplay = "-";
+                          if (
+                            bill.billingPeriod?.start &&
+                            bill.billingPeriod?.end
+                          ) {
+                            const start = new Date(bill.billingPeriod.start);
+                            const end = new Date(bill.billingPeriod.end);
+                            periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                          }
+                          return (
+                            <tr key={bill._id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 font-mono text-sm">
+                                {bill.invoiceNumber}
+                              </td>
+                              <td className="px-4 py-3">
+                                <p className="text-sm font-medium">
+                                  {bill.applicationData?.firstName}{" "}
+                                  {bill.applicationData?.lastName}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {bill.applicationData?.email}
+                                </p>
+                              </td>
+                              <td className="px-4 py-3 text-sm font-medium text-red-600">
+                                ₱{bill.total.toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">
+                                  {bill.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() =>
+                                    confirmProRatedPayment({
+                                      applicationId: bill.applicationId,
+                                    })
+                                  }
+                                  className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 cursor-pointer"
+                                >
+                                  Confirm Payment
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
