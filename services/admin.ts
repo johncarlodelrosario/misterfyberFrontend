@@ -1,4 +1,3 @@
-// services/admin.ts
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -114,7 +113,6 @@ export const getRecentActivities = async () => {
       "Error fetching recent activities:",
       error.response?.data || error.message,
     );
-    // Return empty array as fallback
     return [];
   }
 };
@@ -252,10 +250,8 @@ export const getAllPayments = async (params?: {
 
 export const getPendingPayments = async (forceRefresh?: boolean) => {
   try {
-    // Don't cache pending payments as they need real-time data
     const response = await api.get("/admin/payments/pending");
     const result = response.data;
-
     return result;
   } catch (error: any) {
     console.error(
@@ -269,7 +265,7 @@ export const getPendingPayments = async (forceRefresh?: boolean) => {
 export const confirmPayment = async (paymentId: string) => {
   try {
     const response = await api.post(`/admin/payments/${paymentId}/confirm`);
-    clearAdminCache(); // Clear cache to refresh data
+    clearAdminCache();
     return response.data;
   } catch (error: any) {
     console.error(
@@ -285,7 +281,7 @@ export const rejectPayment = async (paymentId: string, reason: string) => {
     const response = await api.post(`/admin/payments/${paymentId}/reject`, {
       reason,
     });
-    clearAdminCache(); // Clear cache to refresh data
+    clearAdminCache();
     return response.data;
   } catch (error: any) {
     console.error(
@@ -347,6 +343,7 @@ export const createManualCustomer = async (data: {
   startBillingImmediately?: boolean;
   installationDate?: string;
   notes?: string;
+  includeInstallationFee?: boolean;
 }) => {
   try {
     console.log("📝 Creating manual customer with data:", data);
@@ -539,7 +536,11 @@ export const rejectApplication = async (id: string, adminNotes?: string) => {
 
 export const startBillingForApplication = async (
   applicationId: string,
-  data?: { installationDate?: string; notes?: string },
+  data?: {
+    installationDate?: string;
+    notes?: string;
+    includeInstallationFee?: boolean;
+  },
 ) => {
   try {
     console.log(`🚀 Starting billing for application: ${applicationId}`);
@@ -601,49 +602,30 @@ export const clearBillingCache = () => {
 
 // ==================== DEFAULT EXPORT ====================
 export default {
-  // Customer Email Alerts
   toggleCustomerEmailAlerts,
   getCustomerEmailAlertsPreference,
-
-  // Dashboard
   getDashboardStats,
   getRecentActivities,
-
-  // User Management
   getAllUsers,
   getUser,
   updateUser,
   approveUser,
   suspendUser,
   deleteUser,
-
-  // Payment Management
   getAllPayments,
   getPendingPayments,
   confirmPayment,
   rejectPayment,
-
-  // Bill Management
   getAllBills,
-
-  // Customer Management
   createManualCustomer,
   getCustomersWithoutAccounts,
-
-  // Report Generation
   generateReport,
-
-  // Application Management
   getAllApplications,
   approveApplication,
   rejectApplication,
   startBillingForApplication,
   getApplicationBillingStatus,
-
-  // Billing Cycle Management
   getAllBillingCycles,
-
-  // Cache Management
   clearBillingCache,
   clearAdminCache,
 };

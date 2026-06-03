@@ -60,6 +60,7 @@ import {
   FiFileText,
   FiTrash2,
   FiCalendar as FiCalendarIcon,
+  FiPrinter,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -79,6 +80,8 @@ interface CustomerItem {
   overdueBills: any[];
   billingCycle?: any;
   applicationId?: string;
+  installationFee?: number;
+  installationFeePaid?: boolean;
 }
 
 interface Building {
@@ -94,10 +97,6 @@ interface Plan {
   name: string;
   price: number;
   speed: { download: number; upload: number };
-}
-
-function getLastDayOfMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
 }
 
 function formatDateFixed(dateStr: string): string {
@@ -150,6 +149,10 @@ export default function AdminBillingPage() {
   const [emailType, setEmailType] = useState("custom");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [billingSettings, setBillingSettingsState] = useState<any>(null);
+  const [showUnpaidBillsReportModal, setShowUnpaidBillsReportModal] =
+    useState(false);
+  const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
 
   // Backdated billing form state with installation fee
   const [backdatedForm, setBackdatedForm] = useState({
@@ -180,6 +183,7 @@ export default function AdminBillingPage() {
     startBillingImmediately: true,
     installationDate: "",
     notes: "",
+    includeInstallationFee: true,
   });
   const [plans, setPlans] = useState<Plan[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -218,6 +222,8 @@ export default function AdminBillingPage() {
     pendingActivationsCount: 0,
     pendingPaymentsCount: 0,
     applicationsWithoutBilling: 0,
+    totalInstallationFeesDue: 0,
+    installationFeesPaidCount: 0,
   });
 
   const isMountedRef = useRef(true);
@@ -277,6 +283,25 @@ export default function AdminBillingPage() {
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
+    }
+  };
+
+  // Load Unpaid Bills Report
+  const loadUnpaidBillsReport = async () => {
+    setLoadingReport(true);
+    try {
+      const result = await getUnpaidBillsReport({ includePaid: false });
+      if (result.success) {
+        setUnpaidBillsReport(result.data);
+        setShowUnpaidBillsReportModal(true);
+      } else {
+        toast.error("Failed to load report");
+      }
+    } catch (error) {
+      console.error("Error loading report:", error);
+      toast.error("Failed to load unpaid bills report");
+    } finally {
+      setLoadingReport(false);
     }
   };
 
@@ -615,6 +640,7 @@ export default function AdminBillingPage() {
         applicationsResult,
         pendingPaymentsResult,
         customersWithoutAccountsResult,
+        unpaidReportResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
@@ -624,6 +650,9 @@ export default function AdminBillingPage() {
         })),
         getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+        getUnpaidBillsReport({ includePaid: false }).catch(() => ({
+          data: { summary: {} },
+        })),
       ]);
 
       if (!isMountedRef.current) return;
@@ -635,6 +664,7 @@ export default function AdminBillingPage() {
       const pendingPaymentsList = pendingPaymentsResult?.data || [];
       const customersWithoutAccountsData =
         customersWithoutAccountsResult?.data || [];
+      const reportSummary = unpaidReportResult?.data?.summary || {};
 
       setBillingCycles(cyclesData);
       setBills(billsList);
@@ -674,6 +704,8 @@ export default function AdminBillingPage() {
           unpaidBills: userBills,
           overdueBills: overdueBills,
           billingCycle: userCycle || null,
+          installationFee: 0,
+          installationFeePaid: true,
         };
       });
 
@@ -715,6 +747,8 @@ export default function AdminBillingPage() {
             overdueBills: overdueBills,
             billingCycle: appCycle || null,
             applicationId: app.applicationId,
+            installationFee: app.installationFee || 0,
+            installationFeePaid: app.installationFeePaid || false,
           };
         });
 
@@ -743,6 +777,13 @@ export default function AdminBillingPage() {
         (app: any) => app.status === "approved" && !app.billingStarted,
       ).length;
 
+      // Count installation fees due
+      const totalInstallationFeesDue =
+        reportSummary.totalInstallationFeesDue || 0;
+      const installationFeesPaidCount = allCustomers.filter(
+        (c) => c.type === "application" && c.installationFeePaid,
+      ).length;
+
       const [proRatedResult, activationsResult] = await Promise.all([
         getPendingProRatedBills(),
         getPendingActivations(),
@@ -762,6 +803,8 @@ export default function AdminBillingPage() {
         pendingActivationsCount: activationsResult?.data?.length || 0,
         pendingPaymentsCount: pendingPaymentsList.length,
         applicationsWithoutBilling: applicationsWithoutBilling,
+        totalInstallationFeesDue: totalInstallationFeesDue,
+        installationFeesPaidCount: installationFeesPaidCount,
       };
 
       setStats(newStats);
@@ -815,6 +858,7 @@ export default function AdminBillingPage() {
       const result = await createManualCustomer({
         ...manualCustomerForm,
         startBillingImmediately: manualCustomerForm.startBillingImmediately,
+        includeInstallationFee: manualCustomerForm.includeInstallationFee,
       });
       toast.success(result.message || "Customer created successfully!");
       setShowManualCustomerModal(false);
@@ -833,6 +877,7 @@ export default function AdminBillingPage() {
         startBillingImmediately: true,
         installationDate: "",
         notes: "",
+        includeInstallationFee: true,
       });
       loadedRef.current = false;
       loadData(true);
@@ -1066,6 +1111,15 @@ export default function AdminBillingPage() {
   const getStatusBadge = (customer: CustomerItem) => {
     const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
+    const hasUnpaidInstallationFee =
+      customer.type === "application" &&
+      customer.installationFee &&
+      customer.installationFee > 0 &&
+      !customer.installationFeePaid;
+
+    if (hasUnpaidInstallationFee) {
+      return "bg-amber-100 text-amber-800";
+    }
 
     if (customer.type === "application") {
       if (
@@ -1102,6 +1156,15 @@ export default function AdminBillingPage() {
   const getStatusText = (customer: CustomerItem) => {
     const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
+    const hasUnpaidInstallationFee =
+      customer.type === "application" &&
+      customer.installationFee &&
+      customer.installationFee > 0 &&
+      !customer.installationFeePaid;
+
+    if (hasUnpaidInstallationFee) {
+      return "Installation Fee Due";
+    }
 
     if (customer.type === "application") {
       if (
@@ -1169,6 +1232,14 @@ export default function AdminBillingPage() {
     }
     if (statusFilter === "applications")
       return matchesSearch && customer.type === "application";
+    if (statusFilter === "installation_fee_due")
+      return (
+        matchesSearch &&
+        customer.type === "application" &&
+        customer.installationFee &&
+        customer.installationFee > 0 &&
+        !customer.installationFeePaid
+      );
     return matchesSearch;
   });
 
@@ -1200,10 +1271,17 @@ export default function AdminBillingPage() {
               Billing Management
             </h1>
             <p className="text-gray-600">
-              Manage customer balances, bills, payments, and subscriptions
+              Manage customer balances, bills, payments, subscriptions, and
+              installation fees
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={loadUnpaidBillsReport}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition flex items-center gap-2"
+            >
+              <FiPrinter className="w-4 h-4" /> Unpaid Bills Report
+            </button>
             <button
               onClick={() => setShowBackdatedModal(true)}
               className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2"
@@ -1260,7 +1338,7 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-10 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-11 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -1373,6 +1451,18 @@ export default function AdminBillingPage() {
             <FiDollarSign className="w-8 h-8 text-amber-100" />
           </div>
         </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Installation Fees Due</p>
+              <p className="text-2xl font-bold text-amber-600">
+                ₱{stats.totalInstallationFeesDue.toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-400">Unpaid</p>
+            </div>
+            <FiAlertCircle className="w-8 h-8 text-amber-100" />
+          </div>
+        </div>
       </div>
 
       {/* Billing Flow Info */}
@@ -1434,6 +1524,7 @@ export default function AdminBillingPage() {
             <option value="suspended">Suspended</option>
             <option value="pending_activation">Awaiting Payment</option>
             <option value="applications">Applications Only</option>
+            <option value="installation_fee_due">Installation Fee Due</option>
           </select>
         </div>
       </div>
@@ -1457,6 +1548,9 @@ export default function AdminBillingPage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Installation Fee
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Actions
                 </th>
               </tr>
@@ -1465,7 +1559,7 @@ export default function AdminBillingPage() {
               {filteredCustomers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     No customers found
@@ -1480,6 +1574,10 @@ export default function AdminBillingPage() {
                   const isPaused = customer.billingCycle?.status === "paused";
                   const isPendingActivation =
                     customer.billingCycle?.status === "pending_activation";
+                  const hasUnpaidInstallationFee =
+                    customer.type === "application" &&
+                    (customer.installationFee ?? 0) > 0 &&
+                    !customer.installationFeePaid;
 
                   return (
                     <tr
@@ -1552,6 +1650,29 @@ export default function AdminBillingPage() {
                               ✅ Service ACTIVE
                             </p>
                           )}
+                        {hasUnpaidInstallationFee && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            ⚠️ Installation fee unpaid
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {customer.type === "application" &&
+                        (customer.installationFee ?? 0) > 0 ? (
+                          <div>
+                            <p className="text-sm font-medium">
+                              ₱
+                              {(customer.installationFee ?? 0).toLocaleString()}
+                            </p>
+                            <p
+                              className={`text-xs ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
+                            >
+                              {customer.installationFeePaid ? "Paid" : "Unpaid"}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-400">N/A</p>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2 flex-wrap">
@@ -1795,7 +1916,151 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Backdated Billing Modal WITH INSTALLATION FEE */}
+      {/* Unpaid Bills Report Modal */}
+      {showUnpaidBillsReportModal && unpaidBillsReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                Unpaid Bills Report
+              </h2>
+              <button
+                onClick={() => setShowUnpaidBillsReportModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Summary Section */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-red-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">Total Unpaid Bills</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {unpaidBillsReport.summary?.totalUnpaidBills || 0}
+                </p>
+              </div>
+              <div className="bg-orange-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">Total Amount Due</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  ₱
+                  {(
+                    unpaidBillsReport.summary?.totalAmountDue || 0
+                  ).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-amber-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">Installation Fees Due</p>
+                <p className="text-2xl font-bold text-amber-600">
+                  ₱
+                  {(
+                    unpaidBillsReport.summary?.totalInstallationFeesDue || 0
+                  ).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">Overdue Bills</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {unpaidBillsReport.summary?.byStatus?.overdue || 0}
+                </p>
+              </div>
+            </div>
+
+            {/* Bills Table */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Invoice
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Customer
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Period
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Due Date
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Amount
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Installation Fee
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unpaidBillsReport.bills?.map((bill: any) => (
+                    <tr key={bill._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm font-mono">
+                        {bill.invoiceNumber}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium">
+                          {bill.applicationData?.firstName}{" "}
+                          {bill.applicationData?.lastName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {bill.applicationData?.email}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDateFixed(bill.billingPeriod?.start)} -{" "}
+                        {formatDateFixed(bill.billingPeriod?.end)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDateFixed(bill.dueDate)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-red-600">
+                        ₱{bill.total.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {bill.installationFee > 0 ? (
+                          <span
+                            className={`text-sm ${bill.installationFeePaid ? "text-green-600" : "text-amber-600"}`}
+                          >
+                            ₱{bill.installationFee.toLocaleString()}
+                            {!bill.installationFeePaid && " (Unpaid)"}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            bill.status === "overdue"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {bill.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowUnpaidBillsReportModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backdated Billing Modal */}
       {showBackdatedModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
