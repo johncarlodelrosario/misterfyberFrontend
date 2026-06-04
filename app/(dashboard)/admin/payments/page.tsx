@@ -83,6 +83,7 @@ interface CustomerInfo {
   email: string;
   phone: string;
   applicationId: string;
+  applicationMongoId: string | null;
   address: string;
   floor?: string;
   unitNumber?: string;
@@ -102,28 +103,51 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
-// Cache for application data
+// Cache for application data - keyed by applicationId string (FOU...)
 const applicationCache = new Map<string, any>();
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
-async function fetchApplicationData(applicationId: string): Promise<any> {
-  if (!applicationId || applicationId === "—") return null;
+async function fetchApplicationData(applicationIdString: string): Promise<any> {
+  if (!applicationIdString || applicationIdString === "—") return null;
 
   // Check cache first
-  if (applicationCache.has(applicationId)) {
-    return applicationCache.get(applicationId);
+  if (applicationCache.has(applicationIdString)) {
+    return applicationCache.get(applicationIdString);
   }
 
   try {
-    // Try to fetch application data from API
-    const response = await api.get(`/applications/${applicationId}`);
+    // Try to fetch application by applicationId field (not MongoDB _id)
+    const response = await api.get(
+      `/applications/by-application-id/${encodeURIComponent(applicationIdString)}`,
+    );
     if (response.data?.success && response.data?.data) {
       const appData = response.data.data;
-      applicationCache.set(applicationId, appData);
+      applicationCache.set(applicationIdString, appData);
       return appData;
     }
   } catch (error) {
-    console.error(`Failed to fetch application ${applicationId}:`, error);
+    console.error(`Failed to fetch application ${applicationIdString}:`, error);
+  }
+  return null;
+}
+
+// Try to fetch by MongoDB ID as fallback
+async function fetchApplicationByMongoId(mongoId: string): Promise<any> {
+  if (!mongoId) return null;
+
+  if (applicationCache.has(`mongo_${mongoId}`)) {
+    return applicationCache.get(`mongo_${mongoId}`);
+  }
+
+  try {
+    const response = await api.get(`/applications/${mongoId}`);
+    if (response.data?.success && response.data?.data) {
+      const appData = response.data.data;
+      applicationCache.set(`mongo_${mongoId}`, appData);
+      return appData;
+    }
+  } catch (error) {
+    console.error(`Failed to fetch application by mongo id ${mongoId}:`, error);
   }
   return null;
 }
@@ -140,6 +164,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       email: app.email || "—",
       phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || payment.applicationId || "—",
+      applicationMongoId: app._id || null,
       address: app.address || "—",
       floor: app.floor,
       unitNumber: app.unitNumber,
@@ -158,6 +183,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       email: app.email || "—",
       phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || app._id || "—",
+      applicationMongoId: app._id || null,
       address: app.address || "—",
       floor: app.floor,
       unitNumber: app.unitNumber,
@@ -176,6 +202,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       email: user.email || "—",
       phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
+      applicationMongoId: null,
       address: user.address || "—",
     };
   }
@@ -191,6 +218,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       email: user.email || "—",
       phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
+      applicationMongoId: null,
       address: user.address || "—",
     };
   }
@@ -208,12 +236,13 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
           (typeof payment.applicationId === "string"
             ? payment.applicationId
             : "—"),
+        applicationMongoId: null,
         address: "—",
       };
     }
   }
 
-  // Priority 6: Use applicationId as string - show as is, will be updated async
+  // Priority 6: Use applicationId as string - this is the FOU... code
   if (
     typeof payment.applicationId === "string" &&
     payment.applicationId !== "—" &&
@@ -224,6 +253,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       email: "—",
       phone: "—",
       applicationId: payment.applicationId,
+      applicationMongoId: null,
       address: "—",
     };
   }
@@ -235,6 +265,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     phone: "—",
     applicationId:
       typeof payment.applicationId === "string" ? payment.applicationId : "—",
+    applicationMongoId: null,
     address: "—",
   };
 }
@@ -359,25 +390,40 @@ export default function AdminPaymentsPage() {
           // Fetch application data for each payment to get customer names
           const enrichedPayments = await Promise.all(
             paymentsList.map(async (payment: Payment) => {
-              let applicationId = null;
-              if (
+              // Get the applicationId string (FOU...)
+              let applicationIdString = null;
+
+              if (typeof payment.applicationId === "string") {
+                applicationIdString = payment.applicationId;
+              } else if (
                 payment.applicationId &&
-                typeof payment.applicationId === "string"
+                typeof payment.applicationId === "object" &&
+                payment.applicationId.applicationId
               ) {
-                applicationId = payment.applicationId;
+                applicationIdString = payment.applicationId.applicationId;
               } else if (
                 payment.applicationId &&
                 typeof payment.applicationId === "object" &&
                 payment.applicationId._id
               ) {
-                applicationId = payment.applicationId._id;
-              } else if (payment.application && payment.application._id) {
-                applicationId = payment.application._id;
+                // If it's a MongoDB ID, try to fetch by that too
+                const appData = await fetchApplicationByMongoId(
+                  payment.applicationId._id,
+                );
+                if (appData && !payment.application) {
+                  payment.application = appData;
+                }
+                return payment;
+              } else if (
+                payment.application &&
+                payment.application.applicationId
+              ) {
+                applicationIdString = payment.application.applicationId;
               }
 
-              if (applicationId) {
-                const appData = await fetchApplicationData(applicationId);
-                if (appData && !payment.application) {
+              if (applicationIdString && !payment.application) {
+                const appData = await fetchApplicationData(applicationIdString);
+                if (appData) {
                   payment.application = appData;
                 }
               }
@@ -398,25 +444,38 @@ export default function AdminPaymentsPage() {
           // Enrich pending payments with customer data
           const enrichedPending = await Promise.all(
             pendingList.map(async (payment: Payment) => {
-              let applicationId = null;
-              if (
+              let applicationIdString = null;
+
+              if (typeof payment.applicationId === "string") {
+                applicationIdString = payment.applicationId;
+              } else if (
                 payment.applicationId &&
-                typeof payment.applicationId === "string"
+                typeof payment.applicationId === "object" &&
+                payment.applicationId.applicationId
               ) {
-                applicationId = payment.applicationId;
+                applicationIdString = payment.applicationId.applicationId;
               } else if (
                 payment.applicationId &&
                 typeof payment.applicationId === "object" &&
                 payment.applicationId._id
               ) {
-                applicationId = payment.applicationId._id;
-              } else if (payment.application && payment.application._id) {
-                applicationId = payment.application._id;
+                const appData = await fetchApplicationByMongoId(
+                  payment.applicationId._id,
+                );
+                if (appData && !payment.application) {
+                  payment.application = appData;
+                }
+                return payment;
+              } else if (
+                payment.application &&
+                payment.application.applicationId
+              ) {
+                applicationIdString = payment.application.applicationId;
               }
 
-              if (applicationId) {
-                const appData = await fetchApplicationData(applicationId);
-                if (appData && !payment.application) {
+              if (applicationIdString && !payment.application) {
+                const appData = await fetchApplicationData(applicationIdString);
+                if (appData) {
                   payment.application = appData;
                 }
               }
