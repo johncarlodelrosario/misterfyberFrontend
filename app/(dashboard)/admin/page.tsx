@@ -25,6 +25,27 @@ import {
   FiPieChart,
   FiServer,
   FiShield,
+  FiHome,
+  FiBox,
+  FiHardDrive,
+  FiPlus,
+  FiEdit2,
+  FiTrash2,
+  FiEye,
+  FiSearch,
+  FiFilter,
+  FiGrid,
+  FiList,
+  FiToggleLeft,
+  FiToggleRight,
+  FiMapPin,
+  FiGlobe,
+  FiMap,
+  FiNavigation,
+  FiWifi,
+  FiZap,
+  FiClock,
+  FiStar,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import {
@@ -34,13 +55,34 @@ import {
   getDashboardStats,
   getCustomerEmailAlertsPreference,
   toggleCustomerEmailAlerts,
+  getAllApplications,
+  approveApplication,
+  rejectApplication,
+  startBillingForApplication,
+  createManualCustomer,
 } from "@/services/admin";
+import {
+  getPlans,
+  createPlan,
+  updatePlan,
+  deletePlan,
+  Plan,
+} from "@/services/plan";
+import {
+  getActiveBuildings,
+  getAllBuildings,
+  createBuilding,
+  updateBuilding,
+  deleteBuilding,
+  Building,
+} from "@/services/building";
 import * as XLSX from "xlsx";
 
 // ============================================================================
 // Types & Constants
 // ============================================================================
 type ReportType = "payments" | "users" | "bills" | "revenue";
+type TabType = "reports" | "applications" | "buildings" | "plans";
 
 interface DateRange {
   startDate: string;
@@ -57,6 +99,31 @@ interface DashboardStats {
 interface QuickDateRange {
   label: string;
   getValue: () => DateRange;
+}
+
+interface Application {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  status: "pending" | "approved" | "rejected";
+  planId: {
+    _id: string;
+    name: string;
+    price: number;
+  };
+  buildingId: {
+    _id: string;
+    buildingName: string;
+    city: string;
+  };
+  floor: string;
+  unitNumber: string;
+  createdAt: string;
+  adminNotes?: string;
+  idType: string;
+  idNumber: string;
 }
 
 // ============================================================================
@@ -96,7 +163,9 @@ const getStatusColor = (status: string): string => {
     completed: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
     paid: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
     active: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
+    approved: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
     pending: "bg-amber-100 text-amber-700 ring-1 ring-amber-600/20",
+    rejected: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
     failed: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
     inactive: "bg-slate-100 text-slate-700 ring-1 ring-slate-600/20",
     suspended: "bg-rose-100 text-rose-700 ring-1 ring-rose-600/20",
@@ -180,52 +249,332 @@ const StatsCard = ({
   );
 };
 
-// Report Type Button Component
-const ReportTypeButton = ({
-  type,
+// Tab Button Component
+const TabButton = ({
+  tab,
   label,
-  description,
   icon: Icon,
   isActive,
   onClick,
+  count,
 }: {
-  type: ReportType;
+  tab: TabType;
   label: string;
-  description: string;
   icon: React.ElementType;
   isActive: boolean;
   onClick: () => void;
+  count?: number;
 }) => (
   <button
     onClick={onClick}
-    className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left w-full group ${
+    className={`relative px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${
       isActive
-        ? "border-blue-500 bg-blue-50/50 shadow-md"
-        : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+        ? "bg-white text-blue-600 shadow-md ring-1 ring-blue-100"
+        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
     }`}
   >
-    <div className="flex items-start gap-3">
-      <div
-        className={`p-2 rounded-lg transition-colors ${
-          isActive
-            ? "bg-blue-500 text-white"
-            : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
+    <Icon className={`w-4 h-4 ${isActive ? "text-blue-500" : ""}`} />
+    <span>{label}</span>
+    {count !== undefined && count > 0 && (
+      <span
+        className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
+          isActive ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
         }`}
       >
-        <Icon className="w-5 h-5" />
-      </div>
-      <div className="flex-1">
-        <p
-          className={`font-semibold ${isActive ? "text-blue-700" : "text-gray-800"}`}
-        >
-          {label}
-        </p>
-        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
-      </div>
-      {isActive && <FiChevronRight className="w-4 h-4 text-blue-500 mt-2" />}
-    </div>
+        {count}
+      </span>
+    )}
   </button>
 );
+
+// Application Card Component
+const ApplicationCard = ({
+  application,
+  onView,
+  onApprove,
+  onReject,
+  onStartBilling,
+}: {
+  application: Application;
+  onView: (app: Application) => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onStartBilling: (id: string) => void;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all duration-200 overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h3 className="font-semibold text-gray-900">
+                {application.firstName} {application.lastName}
+              </h3>
+              <span className={getStatusColor(application.status)}>
+                {application.status.toUpperCase()}
+              </span>
+            </div>
+            <p className="text-sm text-gray-500 mt-1">{application.email}</p>
+            <p className="text-sm text-gray-500">{application.phoneNumber}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <FiEye className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-gray-500">Plan:</span>
+                <p className="font-medium text-gray-800">
+                  {application.planId?.name || "N/A"}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Monthly Rate:</span>
+                <p className="font-medium text-gray-800">
+                  {formatCurrency(application.planId?.price || 0)}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Building:</span>
+                <p className="font-medium text-gray-800">
+                  {application.buildingId?.buildingName || "N/A"}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Location:</span>
+                <p className="font-medium text-gray-800">
+                  {application.floor} {application.unitNumber}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">ID Type:</span>
+                <p className="font-medium text-gray-800">
+                  {application.idType}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Submitted:</span>
+                <p className="font-medium text-gray-800">
+                  {formatDate(application.createdAt)}
+                </p>
+              </div>
+            </div>
+            {application.adminNotes && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <span className="text-xs text-gray-500">Admin Notes:</span>
+                <p className="text-sm text-gray-700">
+                  {application.adminNotes}
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              {application.status === "pending" && (
+                <>
+                  <button
+                    onClick={() => onApprove(application._id)}
+                    className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => onReject(application._id)}
+                    className="flex-1 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+              {application.status === "approved" && (
+                <button
+                  onClick={() => onStartBilling(application._id)}
+                  className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Start Billing
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Building Card Component
+const BuildingCard = ({
+  building,
+  onEdit,
+  onDelete,
+  onToggleStatus,
+}: {
+  building: Building;
+  onEdit: (building: Building) => void;
+  onDelete: (id: string) => void;
+  onToggleStatus: (id: string, currentStatus: boolean) => void;
+}) => {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all duration-200 overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h3 className="font-semibold text-gray-900">
+                {building.buildingName}
+              </h3>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  building.isActive
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {building.isActive ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-gray-500 flex items-center gap-1">
+                <FiMapPin className="w-3 h-3" />
+                {building.streetAddress}
+              </p>
+              <p className="text-sm text-gray-500">
+                {building.barangay}, {building.city}, {building.province}
+              </p>
+              <p className="text-sm text-gray-500">ZIP: {building.zipCode}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onEdit(building)}
+              className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <FiEdit2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onToggleStatus(building._id, building.isActive)}
+              className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+            >
+              {building.isActive ? (
+                <FiToggleRight className="w-5 h-5" />
+              ) : (
+                <FiToggleLeft className="w-5 h-5" />
+              )}
+            </button>
+            <button
+              onClick={() => onDelete(building._id)}
+              className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+            >
+              <FiTrash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Plan Card Component
+const PlanCard = ({
+  plan,
+  onEdit,
+  onDelete,
+  onToggleStatus,
+}: {
+  plan: Plan;
+  onEdit: (plan: Plan) => void;
+  onDelete: (id: string) => void;
+  onToggleStatus: (id: string, currentStatus: boolean) => void;
+}) => {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all duration-200 overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h3 className="font-semibold text-gray-900">{plan.name}</h3>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  plan.isActive
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {plan.isActive ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mt-2">
+              {formatCurrency(plan.price)}
+              <span className="text-sm font-normal text-gray-500">/month</span>
+            </p>
+            <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+              <span className="flex items-center gap-1">
+                <FiWifi className="w-3 h-3" />
+                {plan.speed.download} Mbps / {plan.speed.upload} Mbps
+              </span>
+              <span className="flex items-center gap-1">
+                <FiClock className="w-3 h-3" />
+                {plan.duration} months
+              </span>
+            </div>
+            <p className="text-sm text-gray-500 mt-2 line-clamp-2">
+              {plan.description}
+            </p>
+            {plan.features && plan.features.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {plan.features.slice(0, 3).map((feature, idx) => (
+                  <span
+                    key={idx}
+                    className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full"
+                  >
+                    {feature}
+                  </span>
+                ))}
+                {plan.features.length > 3 && (
+                  <span className="text-xs text-gray-400">
+                    +{plan.features.length - 3} more
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onEdit(plan)}
+              className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <FiEdit2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onToggleStatus(plan._id, plan.isActive)}
+              className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+            >
+              {plan.isActive ? (
+                <FiToggleRight className="w-5 h-5" />
+              ) : (
+                <FiToggleLeft className="w-5 h-5" />
+              )}
+            </button>
+            <button
+              onClick={() => onDelete(plan._id)}
+              className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+            >
+              <FiTrash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Email Toggle Component
 const EmailToggleCard = ({
@@ -295,8 +644,9 @@ const EmailToggleCard = ({
 // ============================================================================
 // Main Component
 // ============================================================================
-export default function AdminReportsPage() {
+export default function AdminDashboardPage() {
   // State
+  const [activeTab, setActiveTab] = useState<TabType>("reports");
   const [generating, setGenerating] = useState<ReportType | null>(null);
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [togglingEmail, setTogglingEmail] = useState(false);
@@ -315,8 +665,51 @@ export default function AdminReportsPage() {
     pendingApplications: 0,
   });
 
-  // Debounced date range for potential auto-refresh
-  const debouncedDateRange = useDebounce(dateRange, 500);
+  // Applications State
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoadingApps, setIsLoadingApps] = useState(false);
+  const [appSearchTerm, setAppSearchTerm] = useState("");
+  const [appStatusFilter, setAppStatusFilter] = useState<string>("all");
+
+  // Buildings State
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [isLoadingBuildings, setIsLoadingBuildings] = useState(false);
+  const [buildingSearchTerm, setBuildingSearchTerm] = useState("");
+  const [showBuildingModal, setShowBuildingModal] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
+  const [buildingForm, setBuildingForm] = useState({
+    buildingName: "",
+    region: "",
+    province: "",
+    city: "",
+    barangay: "",
+    streetAddress: "",
+    zipCode: "",
+    isActive: true,
+  });
+
+  // Plans State
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [isLoadingPlans, setIsLoadingPlans] = useState(false);
+  const [planSearchTerm, setPlanSearchTerm] = useState("");
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [planForm, setPlanForm] = useState({
+    name: "",
+    description: "",
+    price: 0,
+    speed: { download: 0, upload: 0 },
+    features: [] as string[],
+    duration: 1,
+    mikrotikProfile: "",
+    isActive: true,
+  });
+  const [newFeature, setNewFeature] = useState("");
+
+  // Debounced search
+  const debouncedAppSearch = useDebounce(appSearchTerm, 300);
+  const debouncedBuildingSearch = useDebounce(buildingSearchTerm, 300);
+  const debouncedPlanSearch = useDebounce(planSearchTerm, 300);
 
   // Quick date ranges
   const quickDateRanges: QuickDateRange[] = useMemo(
@@ -404,10 +797,346 @@ export default function AdminReportsPage() {
     }
   }, []);
 
+  const fetchApplications = useCallback(async () => {
+    setIsLoadingApps(true);
+    try {
+      const result = await getAllApplications({
+        forceRefresh: true,
+        limit: 100,
+      });
+      setApplications(result.data || []);
+    } catch (error) {
+      console.error("Failed to fetch applications:", error);
+      toast.error("Unable to load applications");
+    } finally {
+      setIsLoadingApps(false);
+    }
+  }, []);
+
+  const fetchBuildings = useCallback(async () => {
+    setIsLoadingBuildings(true);
+    try {
+      const result = await getAllBuildings({ limit: 100 });
+      setBuildings(result.data || []);
+    } catch (error) {
+      console.error("Failed to fetch buildings:", error);
+      toast.error("Unable to load buildings");
+    } finally {
+      setIsLoadingBuildings(false);
+    }
+  }, []);
+
+  const fetchPlans = useCallback(async () => {
+    setIsLoadingPlans(true);
+    try {
+      const result = await getPlans();
+      setPlans(result);
+    } catch (error) {
+      console.error("Failed to fetch plans:", error);
+      toast.error("Unable to load plans");
+    } finally {
+      setIsLoadingPlans(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStats();
     fetchEmailStatus();
-  }, [fetchStats, fetchEmailStatus]);
+    fetchApplications();
+    fetchBuildings();
+    fetchPlans();
+  }, [
+    fetchStats,
+    fetchEmailStatus,
+    fetchApplications,
+    fetchBuildings,
+    fetchPlans,
+  ]);
+
+  // Application handlers
+  const handleApproveApplication = async (id: string) => {
+    try {
+      await approveApplication(id);
+      toast.success("Application approved successfully");
+      fetchApplications();
+      fetchStats();
+    } catch (error) {
+      toast.error("Failed to approve application");
+    }
+  };
+
+  const handleRejectApplication = async (id: string) => {
+    const notes = prompt("Please provide rejection reason:");
+    try {
+      await rejectApplication(id, notes || undefined);
+      toast.success("Application rejected");
+      fetchApplications();
+    } catch (error) {
+      toast.error("Failed to reject application");
+    }
+  };
+
+  const handleStartBilling = async (id: string) => {
+    const includeInstallationFee = confirm(
+      "Do you want to include the installation fee?",
+    );
+    try {
+      await startBillingForApplication(id, { includeInstallationFee });
+      toast.success("Billing started successfully");
+      fetchApplications();
+    } catch (error) {
+      toast.error("Failed to start billing");
+    }
+  };
+
+  // Building handlers
+  const handleCreateBuilding = async () => {
+    if (!buildingForm.buildingName || !buildingForm.city) {
+      toast.error("Please fill in required fields");
+      return;
+    }
+    try {
+      await createBuilding(buildingForm);
+      toast.success("Building created successfully");
+      setShowBuildingModal(false);
+      setBuildingForm({
+        buildingName: "",
+        region: "",
+        province: "",
+        city: "",
+        barangay: "",
+        streetAddress: "",
+        zipCode: "",
+        isActive: true,
+      });
+      fetchBuildings();
+    } catch (error) {
+      toast.error("Failed to create building");
+    }
+  };
+
+  const handleUpdateBuilding = async () => {
+    if (!editingBuilding) return;
+    try {
+      await updateBuilding(editingBuilding._id, buildingForm);
+      toast.success("Building updated successfully");
+      setShowBuildingModal(false);
+      setEditingBuilding(null);
+      setBuildingForm({
+        buildingName: "",
+        region: "",
+        province: "",
+        city: "",
+        barangay: "",
+        streetAddress: "",
+        zipCode: "",
+        isActive: true,
+      });
+      fetchBuildings();
+    } catch (error) {
+      toast.error("Failed to update building");
+    }
+  };
+
+  const handleDeleteBuilding = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this building?")) return;
+    try {
+      await deleteBuilding(id);
+      toast.success("Building deleted successfully");
+      fetchBuildings();
+    } catch (error) {
+      toast.error("Failed to delete building");
+    }
+  };
+
+  const handleToggleBuildingStatus = async (
+    id: string,
+    currentStatus: boolean,
+  ) => {
+    try {
+      await updateBuilding(id, { isActive: !currentStatus });
+      toast.success(`Building ${!currentStatus ? "activated" : "deactivated"}`);
+      fetchBuildings();
+    } catch (error) {
+      toast.error("Failed to update building status");
+    }
+  };
+
+  const openBuildingModal = (building?: Building) => {
+    if (building) {
+      setEditingBuilding(building);
+      setBuildingForm({
+        buildingName: building.buildingName,
+        region: building.region || "",
+        province: building.province || "",
+        city: building.city || "",
+        barangay: building.barangay || "",
+        streetAddress: building.streetAddress || "",
+        zipCode: building.zipCode || "",
+        isActive: building.isActive,
+      });
+    } else {
+      setEditingBuilding(null);
+      setBuildingForm({
+        buildingName: "",
+        region: "",
+        province: "",
+        city: "",
+        barangay: "",
+        streetAddress: "",
+        zipCode: "",
+        isActive: true,
+      });
+    }
+    setShowBuildingModal(true);
+  };
+
+  // Plan handlers
+  const handleCreatePlan = async () => {
+    if (!planForm.name || planForm.price <= 0) {
+      toast.error("Please fill in required fields");
+      return;
+    }
+    try {
+      await createPlan(planForm);
+      toast.success("Plan created successfully");
+      setShowPlanModal(false);
+      setPlanForm({
+        name: "",
+        description: "",
+        price: 0,
+        speed: { download: 0, upload: 0 },
+        features: [],
+        duration: 1,
+        mikrotikProfile: "",
+        isActive: true,
+      });
+      fetchPlans();
+    } catch (error) {
+      toast.error("Failed to create plan");
+    }
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!editingPlan) return;
+    try {
+      await updatePlan(editingPlan._id, planForm);
+      toast.success("Plan updated successfully");
+      setShowPlanModal(false);
+      setEditingPlan(null);
+      setPlanForm({
+        name: "",
+        description: "",
+        price: 0,
+        speed: { download: 0, upload: 0 },
+        features: [],
+        duration: 1,
+        mikrotikProfile: "",
+        isActive: true,
+      });
+      fetchPlans();
+    } catch (error) {
+      toast.error("Failed to update plan");
+    }
+  };
+
+  const handleDeletePlan = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this plan?")) return;
+    try {
+      await deletePlan(id);
+      toast.success("Plan deleted successfully");
+      fetchPlans();
+    } catch (error) {
+      toast.error("Failed to delete plan");
+    }
+  };
+
+  const handleTogglePlanStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      await updatePlan(id, { isActive: !currentStatus });
+      toast.success(`Plan ${!currentStatus ? "activated" : "deactivated"}`);
+      fetchPlans();
+    } catch (error) {
+      toast.error("Failed to update plan status");
+    }
+  };
+
+  const addFeature = () => {
+    if (newFeature.trim()) {
+      setPlanForm({
+        ...planForm,
+        features: [...planForm.features, newFeature.trim()],
+      });
+      setNewFeature("");
+    }
+  };
+
+  const removeFeature = (index: number) => {
+    setPlanForm({
+      ...planForm,
+      features: planForm.features.filter((_, i) => i !== index),
+    });
+  };
+
+  const openPlanModal = (plan?: Plan) => {
+    if (plan) {
+      setEditingPlan(plan);
+      setPlanForm({
+        name: plan.name,
+        description: plan.description || "",
+        price: plan.price,
+        speed: plan.speed || { download: 0, upload: 0 },
+        features: plan.features || [],
+        duration: plan.duration || 1,
+        mikrotikProfile: plan.mikrotikProfile || "",
+        isActive: plan.isActive,
+      });
+    } else {
+      setEditingPlan(null);
+      setPlanForm({
+        name: "",
+        description: "",
+        price: 0,
+        speed: { download: 0, upload: 0 },
+        features: [],
+        duration: 1,
+        mikrotikProfile: "",
+        isActive: true,
+      });
+    }
+    setShowPlanModal(true);
+  };
+
+  // Filtered data
+  const filteredApplications = applications.filter((app) => {
+    const matchesSearch =
+      debouncedAppSearch === "" ||
+      `${app.firstName} ${app.lastName}`
+        .toLowerCase()
+        .includes(debouncedAppSearch.toLowerCase()) ||
+      app.email.toLowerCase().includes(debouncedAppSearch.toLowerCase()) ||
+      app.phoneNumber.includes(debouncedAppSearch);
+    const matchesStatus =
+      appStatusFilter === "all" || app.status === appStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredBuildings = buildings.filter(
+    (building) =>
+      debouncedBuildingSearch === "" ||
+      building.buildingName
+        .toLowerCase()
+        .includes(debouncedBuildingSearch.toLowerCase()) ||
+      building.city
+        ?.toLowerCase()
+        .includes(debouncedBuildingSearch.toLowerCase()),
+  );
+
+  const filteredPlans = plans.filter(
+    (plan) =>
+      debouncedPlanSearch === "" ||
+      plan.name.toLowerCase().includes(debouncedPlanSearch.toLowerCase()),
+  );
 
   // Report generation handlers
   const generatePaymentsReport = async () => {
@@ -501,7 +1230,6 @@ export default function AdminReportsPage() {
       const finalData = [...summary, headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(finalData);
 
-      // Column width optimization
       ws["!cols"] = headers.map(() => ({ wch: 18 }));
 
       const wb = XLSX.utils.book_new();
@@ -891,15 +1619,15 @@ export default function AdminReportsPage() {
                   </div>
                   <div className="h-8 w-px bg-white/20" />
                   <span className="text-white/70 text-sm font-mono tracking-wide">
-                    ADMIN ANALYTICS
+                    ADMIN DASHBOARD
                   </span>
                 </div>
                 <h1 className="text-3xl lg:text-4xl font-bold text-white tracking-tight">
-                  Reports & Analytics
+                  Admin Control Center
                 </h1>
                 <p className="text-white/60 text-base max-w-2xl">
-                  Generate comprehensive financial and operational reports with
-                  advanced filtering and export capabilities
+                  Manage reports, applications, buildings, and service plans
+                  from one centralized dashboard
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -949,297 +1677,503 @@ export default function AdminReportsPage() {
           />
         </div>
 
-        {/* Main Report Generator Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-white">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 rounded-xl">
-                <FiDownload className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Report Generator
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Configure and generate Excel reports with custom date ranges
-                </p>
-              </div>
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-100 px-4">
+            <div className="flex gap-1 py-2 overflow-x-auto scrollbar-hide">
+              <TabButton
+                tab="reports"
+                label="Reports & Analytics"
+                icon={FiBarChart2}
+                isActive={activeTab === "reports"}
+                onClick={() => setActiveTab("reports")}
+              />
+              <TabButton
+                tab="applications"
+                label="Applications"
+                icon={FiFileText}
+                isActive={activeTab === "applications"}
+                onClick={() => setActiveTab("applications")}
+                count={stats.pendingApplications}
+              />
+              <TabButton
+                tab="buildings"
+                label="Buildings"
+                icon={FiHome}
+                isActive={activeTab === "buildings"}
+                onClick={() => setActiveTab("buildings")}
+              />
+              <TabButton
+                tab="plans"
+                label="Service Plans"
+                icon={FiWifi}
+                isActive={activeTab === "plans"}
+                onClick={() => setActiveTab("plans")}
+              />
             </div>
           </div>
 
+          {/* Tab Content */}
           <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Report Type Selection - Left Column */}
-              <div className="lg:col-span-5 space-y-4">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  <FiSliders className="w-4 h-4" />
-                  Report Type
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <ReportTypeButton
-                    type="payments"
-                    label="Payments Report"
-                    description="Transactions & history"
-                    icon={FiCreditCard}
-                    isActive={reportType === "payments"}
-                    onClick={() => setReportType("payments")}
-                  />
-                  <ReportTypeButton
-                    type="users"
-                    label="Users Report"
-                    description="Accounts & profiles"
-                    icon={FiUsers}
-                    isActive={reportType === "users"}
-                    onClick={() => setReportType("users")}
-                  />
-                  <ReportTypeButton
-                    type="bills"
-                    label="Bills Report"
-                    description="Invoices & billing"
-                    icon={FiFileText}
-                    isActive={reportType === "bills"}
-                    onClick={() => setReportType("bills")}
-                  />
-                  <ReportTypeButton
-                    type="revenue"
-                    label="Revenue Report"
-                    description="Financial summary"
-                    icon={FiPieChart}
-                    isActive={reportType === "revenue"}
-                    onClick={() => setReportType("revenue")}
-                  />
-                </div>
-              </div>
-
-              {/* Date Range Selection - Middle Column */}
-              <div className="lg:col-span-4 space-y-4">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  <FiCalendar className="w-4 h-4" />
-                  Date Range
-                </label>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">
-                        Start Date
+            {/* REPORTS TAB */}
+            {activeTab === "reports" && (
+              <div className="space-y-6">
+                {/* Report Generator */}
+                <div>
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* Report Type Selection */}
+                    <div className="lg:col-span-5 space-y-4">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <FiSliders className="w-4 h-4" />
+                        Report Type
                       </label>
-                      <input
-                        type="date"
-                        value={dateRange.startDate}
-                        onChange={(e) =>
-                          setDateRange({
-                            ...dateRange,
-                            startDate: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
-                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <ReportTypeButton
+                          type="payments"
+                          label="Payments Report"
+                          description="Transactions & history"
+                          icon={FiCreditCard}
+                          isActive={reportType === "payments"}
+                          onClick={() => setReportType("payments")}
+                        />
+                        <ReportTypeButton
+                          type="users"
+                          label="Users Report"
+                          description="Accounts & profiles"
+                          icon={FiUsers}
+                          isActive={reportType === "users"}
+                          onClick={() => setReportType("users")}
+                        />
+                        <ReportTypeButton
+                          type="bills"
+                          label="Bills Report"
+                          description="Invoices & billing"
+                          icon={FiFileText}
+                          isActive={reportType === "bills"}
+                          onClick={() => setReportType("bills")}
+                        />
+                        <ReportTypeButton
+                          type="revenue"
+                          label="Revenue Report"
+                          description="Financial summary"
+                          icon={FiPieChart}
+                          isActive={reportType === "revenue"}
+                          onClick={() => setReportType("revenue")}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">
-                        End Date
+
+                    {/* Date Range Selection */}
+                    <div className="lg:col-span-4 space-y-4">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <FiCalendar className="w-4 h-4" />
+                        Date Range
                       </label>
-                      <input
-                        type="date"
-                        value={dateRange.endDate}
-                        onChange={(e) =>
-                          setDateRange({
-                            ...dateRange,
-                            endDate: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
-                      />
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">
+                              Start Date
+                            </label>
+                            <input
+                              type="date"
+                              value={dateRange.startDate}
+                              onChange={(e) =>
+                                setDateRange({
+                                  ...dateRange,
+                                  startDate: e.target.value,
+                                })
+                              }
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">
+                              End Date
+                            </label>
+                            <input
+                              type="date"
+                              value={dateRange.endDate}
+                              onChange={(e) =>
+                                setDateRange({
+                                  ...dateRange,
+                                  endDate: e.target.value,
+                                })
+                              }
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          {quickDateRanges.map((range) => (
+                            <button
+                              key={range.label}
+                              onClick={() => setDateRange(range.getValue())}
+                              className="px-3 py-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition-colors"
+                            >
+                              {range.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="lg:col-span-3 space-y-4">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <FiActivity className="w-4 h-4" />
+                        Generate
+                      </label>
+                      <button
+                        onClick={handleGenerateReport}
+                        disabled={generating !== null}
+                        className={`w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 shadow-sm ${
+                          generating !== null
+                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-blue-200 hover:shadow-md"
+                        }`}
+                      >
+                        {generating === reportType ? (
+                          <>
+                            <FiLoader className="w-4 h-4 animate-spin" />
+                            Generating Report...
+                          </>
+                        ) : (
+                          <>
+                            <FiDownload className="w-4 h-4" />
+                            Export {currentReportInfo.title}
+                          </>
+                        )}
+                      </button>
+                      <div className="text-center text-xs text-gray-400">
+                        Excel format · Up to 10,000 records
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {quickDateRanges.map((range) => (
-                      <button
-                        key={range.label}
-                        onClick={() => setDateRange(range.getValue())}
-                        className="px-3 py-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition-colors"
-                      >
-                        {range.label}
-                      </button>
+                </div>
+
+                {/* What's Included */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 rounded-xl p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-emerald-50 rounded-xl">
+                        <FiCheckCircle className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          Report Contents
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          What's included in this report
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="space-y-3">
+                      {currentReportInfo.features.map((feature, idx) => (
+                        <li
+                          key={idx}
+                          className="flex items-start gap-3 text-gray-600 text-sm"
+                        >
+                          <FiChevronRight className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-blue-50 rounded-xl">
+                        <FiAlertCircle className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          Export Details
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          File format and compatibility
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                        <span className="text-gray-500 text-sm">
+                          File Format
+                        </span>
+                        <span className="font-mono text-sm font-medium text-gray-900">
+                          .xlsx (Excel)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                        <span className="text-gray-500 text-sm">
+                          Compatibility
+                        </span>
+                        <span className="text-sm text-gray-700">
+                          Excel, Google Sheets, LibreOffice
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                        <span className="text-gray-500 text-sm">
+                          Summary Section
+                        </span>
+                        <span className="text-sm font-medium text-emerald-600">
+                          Included
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2">
+                        <span className="text-gray-500 text-sm">
+                          Auto-download
+                        </span>
+                        <span className="text-sm font-medium text-emerald-600">
+                          Yes
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* APPLICATIONS TAB */}
+            {activeTab === "applications" && (
+              <div className="space-y-6">
+                {/* Header with Search and Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, email, or phone..."
+                      value={appSearchTerm}
+                      onChange={(e) => setAppSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAppStatusFilter("all")}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        appStatusFilter === "all"
+                          ? "bg-blue-500 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setAppStatusFilter("pending")}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        appStatusFilter === "pending"
+                          ? "bg-amber-500 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Pending
+                    </button>
+                    <button
+                      onClick={() => setAppStatusFilter("approved")}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        appStatusFilter === "approved"
+                          ? "bg-emerald-500 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Approved
+                    </button>
+                    <button
+                      onClick={() => setAppStatusFilter("rejected")}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        appStatusFilter === "rejected"
+                          ? "bg-rose-500 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Rejected
+                    </button>
+                  </div>
+                </div>
+
+                {/* Applications Grid */}
+                {isLoadingApps ? (
+                  <div className="flex justify-center items-center py-12">
+                    <FiLoader className="w-8 h-8 animate-spin text-blue-500" />
+                  </div>
+                ) : filteredApplications.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-xl">
+                    <FiFileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No applications found</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {filteredApplications.map((application) => (
+                      <ApplicationCard
+                        key={application._id}
+                        application={application}
+                        onView={() => {}}
+                        onApprove={handleApproveApplication}
+                        onReject={handleRejectApplication}
+                        onStartBilling={handleStartBilling}
+                      />
                     ))}
                   </div>
-                </div>
+                )}
               </div>
+            )}
 
-              {/* Action Buttons - Right Column */}
-              <div className="lg:col-span-3 space-y-4">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  <FiActivity className="w-4 h-4" />
-                  Generate
-                </label>
-                <button
-                  onClick={handleGenerateReport}
-                  disabled={generating !== null}
-                  className={`w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 shadow-sm ${
-                    generating !== null
-                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-blue-200 hover:shadow-md"
-                  }`}
-                >
-                  {generating === reportType ? (
-                    <>
-                      <FiLoader className="w-4 h-4 animate-spin" />
-                      Generating Report...
-                    </>
-                  ) : (
-                    <>
-                      <FiDownload className="w-4 h-4" />
-                      Export {currentReportInfo.title}
-                    </>
-                  )}
-                </button>
-                <div className="text-center text-xs text-gray-400">
-                  Excel format · Up to 10,000 records
+            {/* BUILDINGS TAB */}
+            {activeTab === "buildings" && (
+              <div className="space-y-6">
+                {/* Header with Search and Add Button */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search buildings by name or city..."
+                      value={buildingSearchTerm}
+                      onChange={(e) => setBuildingSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <button
+                    onClick={() => openBuildingModal()}
+                    className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium flex items-center gap-2 transition-colors"
+                  >
+                    <FiPlus className="w-4 h-4" />
+                    Add Building
+                  </button>
                 </div>
+
+                {/* Buildings Grid */}
+                {isLoadingBuildings ? (
+                  <div className="flex justify-center items-center py-12">
+                    <FiLoader className="w-8 h-8 animate-spin text-blue-500" />
+                  </div>
+                ) : filteredBuildings.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-xl">
+                    <FiHome className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No buildings found</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredBuildings.map((building) => (
+                      <BuildingCard
+                        key={building._id}
+                        building={building}
+                        onEdit={openBuildingModal}
+                        onDelete={handleDeleteBuilding}
+                        onToggleStatus={handleToggleBuildingStatus}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
+            )}
+
+            {/* PLANS TAB */}
+            {activeTab === "plans" && (
+              <div className="space-y-6">
+                {/* Header with Search and Add Button */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search plans by name..."
+                      value={planSearchTerm}
+                      onChange={(e) => setPlanSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <button
+                    onClick={() => openPlanModal()}
+                    className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium flex items-center gap-2 transition-colors"
+                  >
+                    <FiPlus className="w-4 h-4" />
+                    Add Plan
+                  </button>
+                </div>
+
+                {/* Plans Grid */}
+                {isLoadingPlans ? (
+                  <div className="flex justify-center items-center py-12">
+                    <FiLoader className="w-8 h-8 animate-spin text-blue-500" />
+                  </div>
+                ) : filteredPlans.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-xl">
+                    <FiWifi className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No plans found</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredPlans.map((plan) => (
+                      <PlanCard
+                        key={plan._id}
+                        plan={plan}
+                        onEdit={openPlanModal}
+                        onDelete={handleDeletePlan}
+                        onToggleStatus={handleTogglePlanStatus}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Two Column Information Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* What's Included */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-            <div className="px-6 py-5 border-b border-gray-100 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-xl">
-                  <FiCheckCircle className="w-5 h-5 text-emerald-600" />
+        {/* Email Configuration Card - Only visible on Reports tab */}
+        {activeTab === "reports" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 rounded-xl">
+                    <FiBell className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      Email Notification Control
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Manage customer email delivery preferences
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    Report Contents
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    What's included in this report
-                  </p>
+                <div className="hidden sm:block">
+                  <div
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${emailEnabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
+                  >
+                    {emailEnabled
+                      ? "Customer Emails: ON"
+                      : "Customer Emails: OFF"}
+                  </div>
                 </div>
               </div>
             </div>
             <div className="p-6">
-              <ul className="space-y-3">
-                {currentReportInfo.features.map((feature, idx) => (
-                  <li
-                    key={idx}
-                    className="flex items-start gap-3 text-gray-600 text-sm"
-                  >
-                    <FiChevronRight className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* Export Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-            <div className="px-6 py-5 border-b border-gray-100 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-xl">
-                  <FiAlertCircle className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    Export Details
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    File format and compatibility
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-500 text-sm">File Format</span>
-                <span className="font-mono text-sm font-medium text-gray-900">
-                  .xlsx (Excel)
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-500 text-sm">Compatibility</span>
-                <span className="text-sm text-gray-700">
-                  Excel, Google Sheets, LibreOffice
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-500 text-sm">Summary Section</span>
-                <span className="text-sm font-medium text-emerald-600">
-                  Included
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-gray-500 text-sm">Auto-download</span>
-                <span className="text-sm font-medium text-emerald-600">
-                  Yes
-                </span>
-              </div>
-              <div className="mt-4 p-3 bg-amber-50 rounded-xl">
-                <div className="flex items-start gap-2">
-                  <FiAlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-amber-700">
-                    Reports include all data within the selected date range.
-                    Large datasets may take a few seconds to process.
-                  </p>
+              <EmailToggleCard
+                emailEnabled={emailEnabled}
+                togglingEmail={togglingEmail}
+                onToggle={handleToggleEmail}
+              />
+              <div className="mt-5 p-4 bg-slate-50 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <FiShield className="w-4 h-4 text-slate-500 mt-0.5" />
+                  <div className="text-xs text-slate-600">
+                    <p className="font-medium mb-1">Administrator Note:</p>
+                    <p>
+                      This setting affects all customer-facing notifications
+                      including invoices, payment confirmations, and application
+                      status updates. Admin email alerts are always delivered
+                      regardless of this toggle.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Email Configuration Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-white">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 rounded-xl">
-                  <FiBell className="w-5 h-5 text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    Email Notification Control
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Manage customer email delivery preferences
-                  </p>
-                </div>
-              </div>
-              <div className="hidden sm:block">
-                <div
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${emailEnabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
-                >
-                  {emailEnabled
-                    ? "Customer Emails: ON"
-                    : "Customer Emails: OFF"}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="p-6">
-            <EmailToggleCard
-              emailEnabled={emailEnabled}
-              togglingEmail={togglingEmail}
-              onToggle={handleToggleEmail}
-            />
-            <div className="mt-5 p-4 bg-slate-50 rounded-xl">
-              <div className="flex items-start gap-3">
-                <FiShield className="w-4 h-4 text-slate-500 mt-0.5" />
-                <div className="text-xs text-slate-600">
-                  <p className="font-medium mb-1">Administrator Note:</p>
-                  <p>
-                    This setting affects all customer-facing notifications
-                    including invoices, payment confirmations, and application
-                    status updates. Admin email alerts are always delivered
-                    regardless of this toggle.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Footer Meta */}
         <div className="flex items-center justify-between text-xs text-gray-400 pt-4 border-t border-gray-100">
@@ -1252,10 +2186,414 @@ export default function AdminReportsPage() {
             <span>Last sync: {new Date().toLocaleString()}</span>
           </div>
           <div>
-            <span className="font-mono">v2.0 · Report Engine</span>
+            <span className="font-mono">v2.0 · Admin Dashboard</span>
           </div>
         </div>
       </div>
+
+      {/* Building Modal */}
+      {showBuildingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {editingBuilding ? "Edit Building" : "Add New Building"}
+              </h2>
+              <button
+                onClick={() => setShowBuildingModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <FiXCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Building Name *
+                </label>
+                <input
+                  type="text"
+                  value={buildingForm.buildingName}
+                  onChange={(e) =>
+                    setBuildingForm({
+                      ...buildingForm,
+                      buildingName: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Tower One"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Street Address
+                </label>
+                <input
+                  type="text"
+                  value={buildingForm.streetAddress}
+                  onChange={(e) =>
+                    setBuildingForm({
+                      ...buildingForm,
+                      streetAddress: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    City *
+                  </label>
+                  <input
+                    type="text"
+                    value={buildingForm.city}
+                    onChange={(e) =>
+                      setBuildingForm({ ...buildingForm, city: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Province
+                  </label>
+                  <input
+                    type="text"
+                    value={buildingForm.province}
+                    onChange={(e) =>
+                      setBuildingForm({
+                        ...buildingForm,
+                        province: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Barangay
+                  </label>
+                  <input
+                    type="text"
+                    value={buildingForm.barangay}
+                    onChange={(e) =>
+                      setBuildingForm({
+                        ...buildingForm,
+                        barangay: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ZIP Code
+                  </label>
+                  <input
+                    type="text"
+                    value={buildingForm.zipCode}
+                    onChange={(e) =>
+                      setBuildingForm({
+                        ...buildingForm,
+                        zipCode: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={buildingForm.isActive}
+                  onChange={(e) =>
+                    setBuildingForm({
+                      ...buildingForm,
+                      isActive: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 text-blue-500 rounded"
+                />
+                <label htmlFor="isActive" className="text-sm text-gray-700">
+                  Active (available for applications)
+                </label>
+              </div>
+            </div>
+            <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setShowBuildingModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={
+                  editingBuilding ? handleUpdateBuilding : handleCreateBuilding
+                }
+                className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              >
+                {editingBuilding ? "Update" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plan Modal */}
+      {showPlanModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {editingPlan ? "Edit Plan" : "Add New Plan"}
+              </h2>
+              <button
+                onClick={() => setShowPlanModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <FiXCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Plan Name *
+                </label>
+                <input
+                  type="text"
+                  value={planForm.name}
+                  onChange={(e) =>
+                    setPlanForm({ ...planForm, name: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Fiber 50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={planForm.description}
+                  onChange={(e) =>
+                    setPlanForm({ ...planForm, description: e.target.value })
+                  }
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Plan description..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Price (PHP) *
+                  </label>
+                  <input
+                    type="number"
+                    value={planForm.price}
+                    onChange={(e) =>
+                      setPlanForm({
+                        ...planForm,
+                        price: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Duration (months)
+                  </label>
+                  <input
+                    type="number"
+                    value={planForm.duration}
+                    onChange={(e) =>
+                      setPlanForm({
+                        ...planForm,
+                        duration: parseInt(e.target.value) || 1,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Download Speed (Mbps)
+                  </label>
+                  <input
+                    type="number"
+                    value={planForm.speed.download}
+                    onChange={(e) =>
+                      setPlanForm({
+                        ...planForm,
+                        speed: {
+                          ...planForm.speed,
+                          download: parseInt(e.target.value) || 0,
+                        },
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Upload Speed (Mbps)
+                  </label>
+                  <input
+                    type="number"
+                    value={planForm.speed.upload}
+                    onChange={(e) =>
+                      setPlanForm({
+                        ...planForm,
+                        speed: {
+                          ...planForm.speed,
+                          upload: parseInt(e.target.value) || 0,
+                        },
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Features
+                </label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={newFeature}
+                    onChange={(e) => setNewFeature(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && addFeature()}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Add a feature..."
+                  />
+                  <button
+                    onClick={addFeature}
+                    className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    <FiPlus className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {planForm.features.map((feature, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-sm rounded-lg"
+                    >
+                      {feature}
+                      <button
+                        onClick={() => removeFeature(idx)}
+                        className="hover:text-blue-900"
+                      >
+                        <FiXCircle className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  MikroTik Profile
+                </label>
+                <input
+                  type="text"
+                  value={planForm.mikrotikProfile}
+                  onChange={(e) =>
+                    setPlanForm({
+                      ...planForm,
+                      mikrotikProfile: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="MikroTik queue profile name"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="planIsActive"
+                  checked={planForm.isActive}
+                  onChange={(e) =>
+                    setPlanForm({ ...planForm, isActive: e.target.checked })
+                  }
+                  className="w-4 h-4 text-blue-500 rounded"
+                />
+                <label htmlFor="planIsActive" className="text-sm text-gray-700">
+                  Active (available for customers)
+                </label>
+              </div>
+            </div>
+            <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setShowPlanModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingPlan ? handleUpdatePlan : handleCreatePlan}
+                className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              >
+                {editingPlan ? "Update" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// Helper component for report type buttons
+const ReportTypeButton = ({
+  type,
+  label,
+  description,
+  icon: Icon,
+  isActive,
+  onClick,
+}: {
+  type: ReportType;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  isActive: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    onClick={onClick}
+    className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left w-full group ${
+      isActive
+        ? "border-blue-500 bg-blue-50/50 shadow-md"
+        : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+    }`}
+  >
+    <div className="flex items-start gap-3">
+      <div
+        className={`p-2 rounded-lg transition-colors ${
+          isActive
+            ? "bg-blue-500 text-white"
+            : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
+        }`}
+      >
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex-1">
+        <p
+          className={`font-semibold ${isActive ? "text-blue-700" : "text-gray-800"}`}
+        >
+          {label}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+      </div>
+      {isActive && <FiChevronRight className="w-4 h-4 text-blue-500 mt-2" />}
+    </div>
+  </button>
+);

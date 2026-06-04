@@ -102,32 +102,35 @@ interface Plan {
   speed: { download: number; upload: number };
 }
 
+// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
+  // Parse as UTC to avoid timezone shifting the date
   const date = new Date(dateStr);
-  // Return as MM/DD/YYYY without timezone issues
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const year = date.getFullYear();
+  // Use UTC methods to prevent timezone conversion
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
   return `${month}/${day}/${year}`;
 }
 
-// Helper to get last day of month for billing period end
-function getLastDayOfMonth(year: number, month: number): Date {
-  return new Date(year, month + 1, 0);
+// Helper to get last day of month for billing period end (using UTC)
+function getLastDayOfMonthUTC(year: number, month: number): Date {
+  // month is 0-indexed, next month's 0th day is last day of current month
+  return new Date(Date.UTC(year, month + 1, 0));
 }
 
-// Helper to format billing period correctly (first day to last day)
+// Helper to format billing period correctly using UTC dates
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
-  // For end date, show the actual date (which should be last day of month)
-  const startMonth = start.getMonth() + 1;
-  const startDay = start.getDate();
-  const startYear = start.getFullYear();
-  const endMonth = end.getMonth() + 1;
-  const endDay = end.getDate();
-  const endYear = end.getFullYear();
+  // Use UTC to prevent timezone shifts
+  const startMonth = start.getUTCMonth() + 1;
+  const startDay = start.getUTCDate();
+  const startYear = start.getUTCFullYear();
+  const endMonth = end.getUTCMonth() + 1;
+  const endDay = end.getUTCDate();
+  const endYear = end.getUTCFullYear();
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
@@ -1607,7 +1610,7 @@ export default function AdminBillingPage() {
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr>
+              <div>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Customer / Application
                 </th>
@@ -1626,7 +1629,7 @@ export default function AdminBillingPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
-              </tr>
+              </div>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredCustomers.length === 0 ? (
@@ -1657,7 +1660,7 @@ export default function AdminBillingPage() {
                       key={`${customer.type}-${customer._id}`}
                       className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {customer.type === "application" ? (
                             <FiFileText className="w-4 h-4 text-purple-500 flex-shrink-0" />
@@ -1683,7 +1686,7 @@ export default function AdminBillingPage() {
                             )}
                           </div>
                         </div>
-                      </td>
+                      </div>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <p className="text-sm font-medium text-gray-900">
                           {customer.planName}
@@ -2095,7 +2098,7 @@ export default function AdminBillingPage() {
                     if (bill.billingPeriod?.start && bill.billingPeriod?.end) {
                       const start = new Date(bill.billingPeriod.start);
                       const end = new Date(bill.billingPeriod.end);
-                      periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                      periodDisplay = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
                     }
                     return (
                       <tr key={bill._id} className="hover:bg-gray-50">
@@ -3155,7 +3158,7 @@ export default function AdminBillingPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {selectedCustomer.unpaidBills.map((bill: any) => {
-                        // Format period correctly using start and end dates
+                        // Format period correctly using UTC
                         let periodDisplay = "-";
                         if (
                           bill.billingPeriod?.start &&
@@ -3163,7 +3166,7 @@ export default function AdminBillingPage() {
                         ) {
                           const start = new Date(bill.billingPeriod.start);
                           const end = new Date(bill.billingPeriod.end);
-                          periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                          periodDisplay = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
                         }
                         return (
                           <tr key={bill._id} className="hover:bg-gray-50">
@@ -3408,7 +3411,7 @@ export default function AdminBillingPage() {
                           ) {
                             const start = new Date(bill.billingPeriod.start);
                             const end = new Date(bill.billingPeriod.end);
-                            periodDisplay = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()} - ${end.getMonth() + 1}/${end.getDate()}/${end.getFullYear()}`;
+                            periodDisplay = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
                           }
                           return (
                             <tr key={bill._id} className="hover:bg-gray-50">
