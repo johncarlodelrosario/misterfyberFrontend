@@ -112,9 +112,7 @@ function StatCard({
         className="mb-4 inline-flex p-4 bg-gray-800/80 backdrop-blur-sm rounded-2xl group-hover:shadow-xl transition-all duration-300 border border-blue-500/30 group-hover:border-blue-500/60"
         whileHover={{ rotate: 360 }}
         transition={{ duration: 0.6 }}
-      >
-        <stat.icon className="w-8 h-8 text-cyan-400" />
-      </motion.div>
+      ></motion.div>
       <motion.div
         className={`font-bold mb-2 ${
           stat.label === "" ? "text-xl md:text-2xl" : "text-4xl"
