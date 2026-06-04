@@ -339,7 +339,6 @@ export default function AdminPaymentsPage() {
             ? pendingResult.data
             : [];
 
-          setPayments(paymentsList);
           setTotalPages(allPaymentsResult?.totalPages || 1);
           setPendingPayments(pendingList);
 
