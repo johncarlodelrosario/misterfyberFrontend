@@ -73,9 +73,7 @@ interface PaymentGroup {
 }
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
-// This function handles both populated application object and applicationId (string)
 function getCustomerInfo(payment: Payment): CustomerInfo {
-  // Priority 1: Check if application object is populated (from backend fix)
   if (payment.application) {
     const app = payment.application;
     return {
@@ -90,7 +88,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 2: Check if applicationData is populated (alternative field)
   if (payment.applicationData) {
     const app = payment.applicationData;
     return {
@@ -105,7 +102,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 3: Check if applicationId is populated as object (from populate)
   if (payment.applicationId && typeof payment.applicationId === "object") {
     const app = payment.applicationId;
     return {
@@ -117,7 +113,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 4: Check if userId is populated
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     return {
@@ -132,7 +127,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 5: Check if user object is populated
   if (payment.user) {
     const user = payment.user;
     return {
@@ -147,7 +141,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 6: Check paymentDetails for applicationId
   if (payment.paymentDetails?.gatewayResponse?.applicationId) {
     return {
       name: "—",
@@ -158,7 +151,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Priority 7: Check readableApplicationId
   if (payment.readableApplicationId) {
     return {
       name: "—",
@@ -169,7 +161,6 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Fallback: use raw applicationId string
   return {
     name: "—",
     email: "—",
@@ -243,10 +234,8 @@ export default function AdminPaymentsPage() {
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
 
-  // Load payments from API
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
-      // Prevent duplicate loads
       if (loadPromiseRef.current && !forceRefresh) {
         return loadPromiseRef.current;
       }
@@ -259,7 +248,6 @@ export default function AdminPaymentsPage() {
         }
 
         try {
-          // Fetch both all payments and pending payments in parallel
           const [allPaymentsResult, pendingResult] = await Promise.all([
             getAllPayments({
               page: currentPage,
@@ -425,9 +413,7 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  // Filter and group payments based on search
   const filteredAndGroupedPayments: PaymentGroup[] = (() => {
-    // First filter individual payments
     const filtered = payments.filter((payment: Payment) => {
       const customerInfo = getCustomerInfo(payment);
       const searchLower = search.toLowerCase();
@@ -441,7 +427,6 @@ export default function AdminPaymentsPage() {
       );
     });
 
-    // Then group by customer
     return groupPaymentsByCustomer(filtered);
   })();
 
@@ -612,28 +597,28 @@ export default function AdminPaymentsPage() {
           </h2>
           <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="w-full table-auto border-collapse">
                 <thead className="bg-yellow-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[28%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Customer / Application
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[15%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Reference
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Method
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[15%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Notes
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Actions
                     </th>
                   </tr>
@@ -643,39 +628,47 @@ export default function AdminPaymentsPage() {
                     const customerInfo = getCustomerInfo(payment);
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-4 py-4 text-sm text-gray-500 align-top">
                           {formatDate(payment.createdAt)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-4 align-top">
                           <div>
                             <p className="font-medium text-gray-900 flex items-center gap-2">
-                              <FiUser className="w-4 h-4 text-gray-400" />
-                              {customerInfo.name}
+                              <FiUser className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <span className="truncate">
+                                {customerInfo.name}
+                              </span>
                             </p>
                             <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                              <FiMail className="w-3 h-3" />
-                              {customerInfo.email}
+                              <FiMail className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">
+                                {customerInfo.email}
+                              </span>
                             </p>
                             {customerInfo.phone !== "—" && (
                               <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                <FiPhone className="w-3 h-3" />
-                                {customerInfo.phone}
+                                <FiPhone className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">
+                                  {customerInfo.phone}
+                                </span>
                               </p>
                             )}
                             <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                              <FiHash className="w-3 h-3" />
-                              App ID: {customerInfo.applicationId}
+                              <FiHash className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">
+                                App ID: {customerInfo.applicationId}
+                              </span>
                             </p>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                        <td className="px-4 py-4 text-sm font-mono text-gray-900 align-top break-all">
                           {payment.referenceNumber}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                        <td className="px-4 py-4 text-sm font-semibold text-gray-900 align-top whitespace-nowrap">
                           {formatCurrency(payment.amount)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                        <td className="px-4 py-4 align-top">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs whitespace-nowrap">
                             <span>
                               {getPaymentMethodIcon(payment.paymentMethod)}
                             </span>
@@ -684,15 +677,15 @@ export default function AdminPaymentsPage() {
                             </span>
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                        <td className="px-4 py-4 text-sm text-gray-500 align-top break-words">
                           {payment.paymentDetails?.notes || "-"}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-4 align-top whitespace-nowrap">
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleConfirmPayment(payment._id)}
                               disabled={confirming}
-                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                             >
                               <FiCheckCircle className="w-4 h-4" />
                               Confirm
@@ -700,14 +693,14 @@ export default function AdminPaymentsPage() {
                             <button
                               onClick={() => handleRejectPayment(payment._id)}
                               disabled={rejecting}
-                              className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                             >
                               <FiXCircle className="w-4 h-4" />
                               Reject
                             </button>
                             <button
                               onClick={() => setSelectedPayment(payment)}
-                              className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
+                              className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition whitespace-nowrap"
                               title="View Details"
                             >
                               <FiEye className="w-4 h-4" />
@@ -735,25 +728,25 @@ export default function AdminPaymentsPage() {
           </span>
         </h2>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="w-full table-auto border-collapse">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[22%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Customer Information
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[20%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Payment Summary
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Total Amount
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Payment Count
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[24%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Date Range
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Actions
                 </th>
               </tr>
@@ -763,7 +756,7 @@ export default function AdminPaymentsPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-6 py-12 text-center text-gray-500"
+                    className="px-4 py-12 text-center text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
                       <FiInfo className="w-8 h-8 text-gray-300" />
@@ -785,29 +778,37 @@ export default function AdminPaymentsPage() {
                       <tbody key={index} className="divide-y divide-gray-200">
                         {/* Customer Summary Row */}
                         <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-4 align-top">
                             <div>
                               <p className="font-medium text-gray-900 flex items-center gap-2">
-                                <FiUser className="w-4 h-4 text-gray-400" />
-                                {group.customerInfo.name}
+                                <FiUser className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <span className="break-words">
+                                  {group.customerInfo.name}
+                                </span>
                               </p>
                               <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                                <FiMail className="w-3 h-3" />
-                                {group.customerInfo.email}
+                                <FiMail className="w-3 h-3 flex-shrink-0" />
+                                <span className="break-words">
+                                  {group.customerInfo.email}
+                                </span>
                               </p>
                               {group.customerInfo.phone !== "—" && (
                                 <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                  <FiPhone className="w-3 h-3" />
-                                  {group.customerInfo.phone}
+                                  <FiPhone className="w-3 h-3 flex-shrink-0" />
+                                  <span className="break-words">
+                                    {group.customerInfo.phone}
+                                  </span>
                                 </p>
                               )}
                               <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                <FiHash className="w-3 h-3" />
-                                App ID: {group.customerInfo.applicationId}
+                                <FiHash className="w-3 h-3 flex-shrink-0" />
+                                <span className="break-words">
+                                  App ID: {group.customerInfo.applicationId}
+                                </span>
                               </p>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-4 align-top">
                             <div>
                               {hasMultiplePayments ? (
                                 <>
@@ -820,7 +821,7 @@ export default function AdminPaymentsPage() {
                                 </>
                               ) : (
                                 <div className="space-y-1">
-                                  <p className="text-sm font-mono text-gray-900">
+                                  <p className="text-sm font-mono text-gray-900 break-all">
                                     Ref: {group.payments[0].referenceNumber}
                                   </p>
                                   <p className="text-xs text-gray-500">
@@ -841,41 +842,41 @@ export default function AdminPaymentsPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-4 align-top">
                             <div>
-                              <p className="text-lg font-bold text-green-600">
+                              <p className="text-lg font-bold text-green-600 whitespace-nowrap">
                                 {formatCurrency(group.totalAmount)}
                               </p>
                               {hasMultiplePayments && (
-                                <p className="text-xs text-gray-400">
+                                <p className="text-xs text-gray-400 whitespace-nowrap">
                                   (Total of {group.payments.length} payments)
                                 </p>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <td className="px-4 py-4 align-top">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap">
                               {group.payments.length} payment
                               {group.payments.length !== 1 ? "s" : ""}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="text-sm text-gray-600">
-                              {formatDate(group.earliestPaymentDate)}
+                          <td className="px-4 py-4 align-top">
+                            <div className="text-sm text-gray-600">
+                              <div>{formatDate(group.earliestPaymentDate)}</div>
                               {group.payments.length > 1 && (
                                 <>
-                                  <br />
-                                  <span className="text-xs text-gray-400">
+                                  <div className="text-xs text-gray-400">
                                     to
-                                  </span>
-                                  <br />
-                                  {formatDate(group.latestPaymentDate)}
+                                  </div>
+                                  <div>
+                                    {formatDate(group.latestPaymentDate)}
+                                  </div>
                                 </>
                               )}
-                            </p>
+                            </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex gap-2">
+                          <td className="px-4 py-4 align-top">
+                            <div className="flex flex-col gap-2">
                               {hasMultiplePayments && (
                                 <button
                                   onClick={() =>
@@ -885,7 +886,7 @@ export default function AdminPaymentsPage() {
                                         : group.customerInfo.applicationId,
                                     )
                                   }
-                                  className="text-blue-600 hover:text-blue-800 transition text-sm flex items-center gap-1"
+                                  className="text-blue-600 hover:text-blue-800 transition text-sm text-left"
                                 >
                                   {isExpanded ? "Hide Details" : "Show Details"}
                                 </button>
@@ -894,7 +895,7 @@ export default function AdminPaymentsPage() {
                                 onClick={() =>
                                   setSelectedPayment(group.payments[0])
                                 }
-                                className="text-gray-600 hover:text-gray-800 transition text-sm flex items-center gap-1"
+                                className="text-gray-600 hover:text-gray-800 transition text-sm text-left flex items-center gap-1"
                                 title="View Latest Payment"
                               >
                                 <FiEye className="w-4 h-4" />
@@ -904,87 +905,85 @@ export default function AdminPaymentsPage() {
                           </td>
                         </tr>
 
-                        {/* Expanded Details Row (shows all payments for this customer) */}
+                        {/* Expanded Details Row */}
                         {isExpanded && hasMultiplePayments && (
                           <tr className="bg-gray-50">
-                            <td colSpan={6} className="px-6 py-4">
+                            <td colSpan={6} className="px-4 py-4">
                               <div className="border-l-4 border-blue-400 pl-4">
                                 <p className="font-semibold text-gray-900 mb-3">
                                   All Payment Records:
                                 </p>
                                 <div className="space-y-3">
-                                  {group.payments.map(
-                                    (payment: Payment, idx: number) => (
-                                      <div
-                                        key={payment._id}
-                                        className="bg-white rounded-lg p-3 border border-gray-200"
-                                      >
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Date
-                                            </p>
-                                            <p className="text-sm font-medium">
-                                              {formatDate(payment.createdAt)}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Reference
-                                            </p>
-                                            <p className="text-sm font-mono">
-                                              {payment.referenceNumber}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Amount
-                                            </p>
-                                            <p className="text-sm font-semibold text-green-600">
-                                              {formatCurrency(payment.amount)}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Status
-                                            </p>
-                                            <span
-                                              className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
-                                            >
-                                              {payment.status}
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Method
-                                            </p>
-                                            <p className="text-sm capitalize">
-                                              {payment.paymentMethod}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Invoice
-                                            </p>
-                                            <p className="text-sm">
-                                              {payment.billingId
-                                                ?.invoiceNumber || "-"}
-                                            </p>
-                                          </div>
-                                          <div className="md:col-span-2">
-                                            <button
-                                              onClick={() =>
-                                                setSelectedPayment(payment)
-                                              }
-                                              className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                              View Full Details →
-                                            </button>
-                                          </div>
+                                  {group.payments.map((payment: Payment) => (
+                                    <div
+                                      key={payment._id}
+                                      className="bg-white rounded-lg p-3 border border-gray-200"
+                                    >
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Date
+                                          </p>
+                                          <p className="text-sm font-medium">
+                                            {formatDate(payment.createdAt)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Reference
+                                          </p>
+                                          <p className="text-sm font-mono break-all">
+                                            {payment.referenceNumber}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Amount
+                                          </p>
+                                          <p className="text-sm font-semibold text-green-600">
+                                            {formatCurrency(payment.amount)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Status
+                                          </p>
+                                          <span
+                                            className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
+                                          >
+                                            {payment.status}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Method
+                                          </p>
+                                          <p className="text-sm capitalize">
+                                            {payment.paymentMethod}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500">
+                                            Invoice
+                                          </p>
+                                          <p className="text-sm break-all">
+                                            {payment.billingId?.invoiceNumber ||
+                                              "-"}
+                                          </p>
+                                        </div>
+                                        <div className="col-span-2">
+                                          <button
+                                            onClick={() =>
+                                              setSelectedPayment(payment)
+                                            }
+                                            className="text-blue-600 hover:text-blue-800 text-sm"
+                                          >
+                                            View Full Details →
+                                          </button>
                                         </div>
                                       </div>
-                                    ),
-                                  )}
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             </td>
@@ -1001,7 +1000,7 @@ export default function AdminPaymentsPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-6 py-4 border-t flex items-center justify-between">
+          <div className="px-4 py-4 border-t flex items-center justify-between">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
@@ -1049,7 +1048,7 @@ export default function AdminPaymentsPage() {
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-500">Reference:</span>
-                  <span className="font-mono text-gray-900">
+                  <span className="font-mono text-gray-900 break-all">
                     {selectedPayment.referenceNumber}
                   </span>
                 </div>
@@ -1084,7 +1083,7 @@ export default function AdminPaymentsPage() {
                 {selectedPayment.billingId && (
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-500">Invoice:</span>
-                    <span className="font-mono text-gray-900">
+                    <span className="font-mono text-gray-900 break-all">
                       {selectedPayment.billingId.invoiceNumber}
                     </span>
                   </div>
@@ -1101,51 +1100,51 @@ export default function AdminPaymentsPage() {
                       return (
                         <>
                           <div className="flex items-start gap-2">
-                            <FiUser className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiUser className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
                               <p className="text-sm text-gray-500">Name</p>
-                              <p className="font-medium text-gray-900">
+                              <p className="font-medium text-gray-900 break-words">
                                 {customerInfo.name}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-start gap-2">
-                            <FiMail className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiMail className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
                               <p className="text-sm text-gray-500">Email</p>
-                              <p className="text-gray-900">
+                              <p className="text-gray-900 break-words">
                                 {customerInfo.email}
                               </p>
                             </div>
                           </div>
                           {customerInfo.phone !== "—" && (
                             <div className="flex items-start gap-2">
-                              <FiPhone className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <FiPhone className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                               <div>
                                 <p className="text-sm text-gray-500">Phone</p>
-                                <p className="text-gray-900">
+                                <p className="text-gray-900 break-words">
                                   {customerInfo.phone}
                                 </p>
                               </div>
                             </div>
                           )}
                           <div className="flex items-start gap-2">
-                            <FiHash className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiHash className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
                               <p className="text-sm text-gray-500">
                                 Application ID
                               </p>
-                              <p className="font-mono text-gray-900">
+                              <p className="font-mono text-gray-900 break-all">
                                 {customerInfo.applicationId}
                               </p>
                             </div>
                           </div>
                           {customerInfo.address !== "—" && (
                             <div className="flex items-start gap-2">
-                              <FiFileText className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <FiFileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                               <div>
                                 <p className="text-sm text-gray-500">Address</p>
-                                <p className="text-gray-900">
+                                <p className="text-gray-900 break-words">
                                   {customerInfo.address}
                                 </p>
                               </div>
@@ -1160,7 +1159,7 @@ export default function AdminPaymentsPage() {
                 {selectedPayment.paymentDetails?.notes && (
                   <div className="py-2">
                     <span className="text-gray-500">Notes:</span>
-                    <p className="mt-1 text-sm bg-gray-100 p-2 rounded text-gray-700">
+                    <p className="mt-1 text-sm bg-gray-100 p-2 rounded text-gray-700 break-words">
                       {selectedPayment.paymentDetails.notes}
                     </p>
                   </div>
@@ -1169,7 +1168,7 @@ export default function AdminPaymentsPage() {
                   ?.confirmationNotes && (
                   <div className="py-2">
                     <span className="text-gray-500">Admin Notes:</span>
-                    <p className="mt-1 text-sm bg-blue-50 p-2 rounded text-blue-700">
+                    <p className="mt-1 text-sm bg-blue-50 p-2 rounded text-blue-700 break-words">
                       {
                         selectedPayment.paymentDetails.gatewayResponse
                           .confirmationNotes
