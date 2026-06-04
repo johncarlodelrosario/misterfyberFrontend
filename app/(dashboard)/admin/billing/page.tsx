@@ -59,7 +59,6 @@ import {
   FiInfo,
   FiUserPlus,
   FiMail,
-  FiDollarSign,
   FiFileText,
   FiTrash2,
   FiCalendar as FiCalendarIcon,
@@ -1373,7 +1372,6 @@ export default function AdminBillingPage() {
       label: "Installation Fee",
       value: `₱${billingFlowSettings.installationFee.toLocaleString()}`,
       sub: "One-time charge",
-      icon: FiDollarSign,
       color: "amber",
     },
     {
@@ -1496,7 +1494,6 @@ export default function AdminBillingPage() {
                   <p className="text-[10px] text-gray-400">{stat.sub}</p>
                 )}
               </div>
-              <stat.icon className={`w-5 h-5 text-${stat.color}-100`} />
             </div>
           </div>
         ))}
