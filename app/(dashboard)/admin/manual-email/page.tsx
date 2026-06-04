@@ -22,6 +22,7 @@ export default function ManualEmailPage() {
   const [customerBills, setCustomerBills] = useState<Bill[]>([]);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   // Email form state
   const [subject, setSubject] = useState("");
@@ -65,11 +66,30 @@ export default function ManualEmailPage() {
   const loadCustomers = async (search?: string) => {
     try {
       setLoading(true);
+      setError(null);
+      console.log("Loading customers with search:", search);
       const data = await emailService.getCustomers({ search });
-      setCustomers(data);
-    } catch (error) {
+      console.log("Customers loaded:", data);
+      console.log("Number of customers:", data?.length || 0);
+
+      if (data && data.length > 0) {
+        console.log("First customer:", data[0]);
+      } else {
+        console.warn("No customers returned from API");
+        setError(
+          "No customers found. Please check if there are approved applications.",
+        );
+      }
+
+      setCustomers(data || []);
+    } catch (error: any) {
       console.error("Failed to load customers:", error);
-      toast.error("Failed to load customers");
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to load customers";
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -327,39 +347,72 @@ export default function ManualEmailPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
 
-              {/* Customer List */}
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {filteredCustomers.map((customer) => (
+              {/* Loading State */}
+              {loading && (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+
+              {/* Error State */}
+              {error && !loading && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-red-600 text-sm">{error}</p>
                   <button
-                    key={customer._id}
-                    onClick={() => handleCustomerSelect(customer)}
-                    className={`w-full text-left p-4 rounded-lg border transition-all ${
-                      selectedCustomer?.applicationId === customer.applicationId
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
+                    onClick={() => loadCustomers()}
+                    className="mt-2 text-sm text-red-700 underline"
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {customer.firstName} {customer.lastName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {customer.email}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          ID: {customer.applicationId}
-                        </p>
-                      </div>
-                      {customer.hasUnpaidBills && (
-                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                          Unpaid
-                        </span>
-                      )}
-                    </div>
+                    Try Again
                   </button>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {/* Customer List */}
+              {!loading && !error && (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredCustomers.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No customers found</p>
+                      <p className="text-xs mt-1">
+                        Make sure there are approved applications with email
+                        addresses
+                      </p>
+                    </div>
+                  ) : (
+                    filteredCustomers.map((customer) => (
+                      <button
+                        key={customer._id}
+                        onClick={() => handleCustomerSelect(customer)}
+                        className={`w-full text-left p-4 rounded-lg border transition-all ${
+                          selectedCustomer?.applicationId ===
+                          customer.applicationId
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {customer.firstName} {customer.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {customer.email}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              ID: {customer.applicationId}
+                            </p>
+                          </div>
+                          {customer.hasUnpaidBills && (
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                              Unpaid
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
 
               {/* Selected Customer Info */}
               {selectedCustomer && (
@@ -550,51 +603,74 @@ export default function ManualEmailPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
 
-              <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                {filteredCustomers.map((customer) => (
-                  <label
-                    key={customer._id}
-                    className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
-                      selectedCustomers.some(
-                        (c) => c.applicationId === customer.applicationId,
-                      )
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      checked={selectedCustomers.some(
-                        (c) => c.applicationId === customer.applicationId,
-                      )}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedCustomers([
-                            ...selectedCustomers,
-                            customer,
-                          ]);
-                        } else {
-                          setSelectedCustomers(
-                            selectedCustomers.filter(
-                              (c) => c.applicationId !== customer.applicationId,
-                            ),
-                          );
-                        }
-                      }}
-                    />
-                    <div className="ml-3">
-                      <p className="font-medium text-gray-900">
-                        {customer.firstName} {customer.lastName}
-                      </p>
-                      <p className="text-sm text-gray-500">{customer.email}</p>
-                      <p className="text-xs text-gray-400">
-                        ID: {customer.applicationId}
-                      </p>
+              {loading && (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+
+              {error && !loading && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-red-600 text-sm">{error}</p>
+                </div>
+              )}
+
+              {!loading && !error && (
+                <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
+                  {filteredCustomers.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No customers found</p>
                     </div>
-                  </label>
-                ))}
-              </div>
+                  ) : (
+                    filteredCustomers.map((customer) => (
+                      <label
+                        key={customer._id}
+                        className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                          selectedCustomers.some(
+                            (c) => c.applicationId === customer.applicationId,
+                          )
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          checked={selectedCustomers.some(
+                            (c) => c.applicationId === customer.applicationId,
+                          )}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCustomers([
+                                ...selectedCustomers,
+                                customer,
+                              ]);
+                            } else {
+                              setSelectedCustomers(
+                                selectedCustomers.filter(
+                                  (c) =>
+                                    c.applicationId !== customer.applicationId,
+                                ),
+                              );
+                            }
+                          }}
+                        />
+                        <div className="ml-3">
+                          <p className="font-medium text-gray-900">
+                            {customer.firstName} {customer.lastName}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {customer.email}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            ID: {customer.applicationId}
+                          </p>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              )}
 
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-sm text-gray-600">
