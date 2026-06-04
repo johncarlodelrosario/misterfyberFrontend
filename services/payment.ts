@@ -1,4 +1,3 @@
-// frontend/services/payment.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 export interface CreatePaymentData {
@@ -40,10 +39,39 @@ export interface Payment {
   updatedAt: string;
 }
 
+export interface GetAllPaymentsParams {
+  page?: number;
+  limit?: number;
+  status?: string;
+  paymentType?: string;
+  search?: string;
+  forceRefresh?: boolean;
+}
+
+export interface GetAllPaymentsResponse {
+  success: boolean;
+  data: Payment[];
+  total: number;
+  page: number;
+  totalPages: number;
+  stats: {
+    total: number;
+    totalCount: number;
+    monthly: number;
+    monthlyCount: number;
+    subscription: number;
+    subscriptionCount: number;
+    installationFees: number;
+    installationFeeCount: number;
+    pending: number;
+    pendingCount: number;
+  };
+}
+
 const PAYMENT_CACHE_KEYS = {
   PAYMENTS_DATA: "misterfyber_payments_data",
-  PAYMENTS_TIMESTAMP: "misterfyber_payments_timestamp",
   PENDING_PAYMENTS: "misterfyber_pending_payments",
+  ADMIN_ALL_PAYMENTS: "misterfyber_admin_all_payments",
 };
 
 const PAYMENT_CACHE_DURATION = 5 * 60 * 1000;
@@ -186,11 +214,85 @@ export const getPendingPayments = async (
 
 export const getPaymentStats = async (): Promise<any> => {
   try {
-    const response = await api.get("/payments/stats");
+    const response = await api.get("/payments/admin/stats");
     return response.data;
   } catch (error) {
     console.error("Error fetching payment stats:", error);
     throw error;
+  }
+};
+
+// FIXED: getAllPayments - always returns a proper structure
+export const getAllPayments = async (
+  params?: GetAllPaymentsParams,
+): Promise<GetAllPaymentsResponse> => {
+  try {
+    if (!params?.forceRefresh) {
+      const cached = getCachedPayments<GetAllPaymentsResponse>(
+        PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS,
+      );
+      if (cached) return cached;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.paymentType)
+      queryParams.append("paymentType", params.paymentType);
+    if (params?.search) queryParams.append("search", params.search);
+
+    const url = `/payments/admin/all${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await api.get(url);
+
+    // Ensure we always return a consistent structure
+    const result = response.data;
+
+    // FIX: Make sure data is always an array
+    const safeResult: GetAllPaymentsResponse = {
+      success: result.success || true,
+      data: Array.isArray(result.data) ? result.data : [],
+      total: result.total || 0,
+      page: result.page || params?.page || 1,
+      totalPages: result.totalPages || 1,
+      stats: result.stats || {
+        total: 0,
+        totalCount: 0,
+        monthly: 0,
+        monthlyCount: 0,
+        subscription: 0,
+        subscriptionCount: 0,
+        installationFees: 0,
+        installationFeeCount: 0,
+        pending: 0,
+        pendingCount: 0,
+      },
+    };
+
+    setCachedPayments(PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS, safeResult);
+    return safeResult;
+  } catch (error) {
+    console.error("Error fetching all payments:", error);
+    // Return empty structure on error
+    return {
+      success: false,
+      data: [],
+      total: 0,
+      page: params?.page || 1,
+      totalPages: 1,
+      stats: {
+        total: 0,
+        totalCount: 0,
+        monthly: 0,
+        monthlyCount: 0,
+        subscription: 0,
+        subscriptionCount: 0,
+        installationFees: 0,
+        installationFeeCount: 0,
+        pending: 0,
+        pendingCount: 0,
+      },
+    };
   }
 };
 
@@ -203,5 +305,6 @@ export default {
   rejectPayment,
   getPendingPayments,
   getPaymentStats,
+  getAllPayments,
   clearPaymentsCache,
 };

@@ -1,4 +1,4 @@
-// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION
+// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -1401,7 +1401,7 @@ export default function AdminBillingPage() {
   }
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
       {/* Header with compact buttons */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -1530,44 +1530,44 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Customers Table - Excel-like responsive design */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+      {/* Excel-like Table Design */}
+      <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <table className="min-w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100 border-b border-gray-300">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                   Customer
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                   Plan
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                   Balance
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                   Status
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                   Install Fee
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200">
               {filteredCustomers.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-gray-500 text-sm"
+                    className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
                   >
                     No customers found
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer) => {
+                filteredCustomers.map((customer, idx) => {
                   const hasUnpaidBills =
                     customer.unpaidBills && customer.unpaidBills.length > 0;
                   const hasBillingCycle = !!customer.billingCycle;
@@ -1583,9 +1583,9 @@ export default function AdminBillingPage() {
                   return (
                     <tr
                       key={`${customer.type}-${customer._id}`}
-                      className="hover:bg-gray-50 transition-colors"
+                      className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
                     >
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         <div className="flex items-center gap-2">
                           {customer.type === "application" ? (
                             <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
@@ -1607,7 +1607,7 @@ export default function AdminBillingPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         <p className="text-sm font-medium text-gray-900">
                           {customer.planName}
                         </p>
@@ -1615,7 +1615,7 @@ export default function AdminBillingPage() {
                           ₱{customer.planPrice.toLocaleString()}/mo
                         </p>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         <p
                           className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
                         >
@@ -1627,14 +1627,14 @@ export default function AdminBillingPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         <span
                           className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
                         >
                           {getStatusText(customer)}
                         </span>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         {customer.type === "application" &&
                         (customer.installationFee ?? 0) > 0 ? (
                           <div>
@@ -1652,7 +1652,7 @@ export default function AdminBillingPage() {
                           <p className="text-xs text-gray-400">—</p>
                         )}
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2">
                         <div className="flex gap-1">
                           <button
                             onClick={() => {
@@ -1875,7 +1875,7 @@ export default function AdminBillingPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
           Showing {filteredCustomers.length} of {customers.length} customers (
           {customers.filter((c) => c.type === "user").length} users,{" "}
           {customers.filter((c) => c.type === "application").length}{" "}
