@@ -835,8 +835,14 @@ export default function AdminBillingPage() {
         (app: any) => app.status === "approved" && !app.billingStarted,
       ).length;
 
-      const totalInstallationFeesDue =
-        reportSummary.totalInstallationFeesDue || 0;
+      const totalInstallationFeesDue = allCustomers
+        .filter(
+          (c) =>
+            c.type === "application" &&
+            !c.installationFeePaid &&
+            (c.installationFee || 0) > 0,
+        )
+        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
       const installationFeesPaidCount = allCustomers.filter(
         (c) => c.type === "application" && c.installationFeePaid,
       ).length;
@@ -1317,7 +1323,7 @@ export default function AdminBillingPage() {
     {
       label: "Total Balance",
       value: `₱${stats.totalBalance.toLocaleString()}`,
-      icon: FiDollarSign,
+
       color: "red",
     },
     {
@@ -1494,22 +1500,6 @@ export default function AdminBillingPage() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Billing Flow Info - Compact */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 mb-6 border border-blue-200">
-        <div className="flex items-start gap-2 text-xs">
-          <FiInfo className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <p className="text-blue-800">
-            <span className="font-semibold">Billing Flow:</span> Install Day 1-
-            {billingFlowSettings.billingCutoffDay} → Pro-rated due{" "}
-            {billingFlowSettings.proRatedDueDay}th | Install Day{" "}
-            {billingFlowSettings.billingCutoffDay + 1}-31 → Combined bill due{" "}
-            {billingFlowSettings.monthlyDueDay}th | Grace Period:{" "}
-            {billingFlowSettings.gracePeriodDays} days | Installation Fee: ₱
-            {billingFlowSettings.installationFee.toLocaleString()}
-          </p>
-        </div>
       </div>
 
       {/* Search and Filter - Compact */}

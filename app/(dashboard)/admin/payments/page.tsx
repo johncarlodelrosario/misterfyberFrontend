@@ -26,6 +26,9 @@ import {
   FiPhone,
   FiHash,
   FiDollarSign,
+  FiTrendingUp,
+  FiCreditCard,
+  FiAlertCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -73,7 +76,6 @@ interface PaymentGroup {
 }
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
-// This function handles both populated application object and applicationId (string)
 function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 1: Check if application object is populated (from backend fix)
   if (payment.application) {
@@ -239,6 +241,10 @@ export default function AdminPaymentsPage() {
     totalCount: 0,
     monthlyAmount: 0,
     monthlyCount: 0,
+    pendingAmount: 0,
+    pendingCount: 0,
+    completedAmount: 0,
+    completedCount: 0,
   });
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
@@ -246,7 +252,6 @@ export default function AdminPaymentsPage() {
   // Load payments from API
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
-      // Prevent duplicate loads
       if (loadPromiseRef.current && !forceRefresh) {
         return loadPromiseRef.current;
       }
@@ -259,7 +264,6 @@ export default function AdminPaymentsPage() {
         }
 
         try {
-          // Fetch both all payments and pending payments in parallel
           const [allPaymentsResult, pendingResult] = await Promise.all([
             getAllPayments({
               page: currentPage,
@@ -280,11 +284,29 @@ export default function AdminPaymentsPage() {
           setPendingPayments(pendingList);
 
           if (allPaymentsResult.stats) {
+            // Calculate additional stats from the payments list
+            const totalCompleted = paymentsList
+              .filter((p: Payment) => p.status === "completed")
+              .reduce((sum: number, p: Payment) => sum + (p.amount || 0), 0);
+            const totalPendingAmount = paymentsList
+              .filter((p: Payment) => p.status === "pending")
+              .reduce((sum: number, p: Payment) => sum + (p.amount || 0), 0);
+            const pendingCount = paymentsList.filter(
+              (p: Payment) => p.status === "pending",
+            ).length;
+            const completedCount = paymentsList.filter(
+              (p: Payment) => p.status === "completed",
+            ).length;
+
             setStats({
               totalAmount: allPaymentsResult.stats.total || 0,
               totalCount: allPaymentsResult.stats.totalCount || 0,
               monthlyAmount: allPaymentsResult.stats.monthly || 0,
               monthlyCount: allPaymentsResult.stats.monthlyCount || 0,
+              pendingAmount: totalPendingAmount,
+              pendingCount: pendingCount,
+              completedAmount: totalCompleted,
+              completedCount: completedCount,
             });
           }
         } catch (error: any) {
@@ -410,7 +432,10 @@ export default function AdminPaymentsPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `₱${(amount || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -427,7 +452,6 @@ export default function AdminPaymentsPage() {
 
   // Filter and group payments based on search
   const filteredAndGroupedPayments: PaymentGroup[] = (() => {
-    // First filter individual payments
     const filtered = payments.filter((payment: Payment) => {
       const customerInfo = getCustomerInfo(payment);
       const searchLower = search.toLowerCase();
@@ -441,7 +465,6 @@ export default function AdminPaymentsPage() {
       );
     });
 
-    // Then group by customer
     return groupPaymentsByCustomer(filtered);
   })();
 
@@ -457,7 +480,7 @@ export default function AdminPaymentsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-[1600px] mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Payment Management</h1>
         <p className="text-gray-600">
@@ -465,84 +488,96 @@ export default function AdminPaymentsPage() {
         </p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+      {/* Enhanced Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        {/* Total Revenue Card */}
+        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-sm p-5 border border-green-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Total Revenue</p>
-              <p className="text-2xl font-bold text-green-600">
+              <p className="text-sm text-green-700 font-medium">
+                Total Revenue
+              </p>
+              <p className="text-2xl font-bold text-green-700 mt-1">
                 {formatCurrency(stats.totalAmount)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-              <FiDollarSign className="w-5 h-5 text-green-600" />
+            <div className="w-12 h-12 bg-green-200 rounded-xl flex items-center justify-center">
+              <FiDollarSign className="w-6 h-6 text-green-700" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.totalCount} transactions
+          <p className="text-xs text-green-600 mt-3">
+            {stats.totalCount} total transactions
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        {/* Monthly Revenue Card */}
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm p-5 border border-blue-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Monthly Revenue</p>
-              <p className="text-2xl font-bold text-blue-600">
+              <p className="text-sm text-blue-700 font-medium">
+                Monthly Revenue
+              </p>
+              <p className="text-2xl font-bold text-blue-700 mt-1">
                 {formatCurrency(stats.monthlyAmount)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <FiClock className="w-5 h-5 text-blue-600" />
+            <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center">
+              <FiTrendingUp className="w-6 h-6 text-blue-700" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.monthlyCount} this month
+          <p className="text-xs text-blue-600 mt-3">
+            {stats.monthlyCount} payments this month
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        {/* Pending Payments Card */}
+        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl shadow-sm p-5 border border-yellow-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Pending Payments</p>
-              <p className="text-2xl font-bold text-yellow-600">
-                {pendingPayments.length}
+              <p className="text-sm text-yellow-700 font-medium">Pending</p>
+              <p className="text-2xl font-bold text-yellow-700 mt-1">
+                {formatCurrency(stats.pendingAmount)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-              <FiClock className="w-5 h-5 text-yellow-600" />
+            <div className="w-12 h-12 bg-yellow-200 rounded-xl flex items-center justify-center">
+              <FiClock className="w-6 h-6 text-yellow-700" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Awaiting confirmation</p>
+          <p className="text-xs text-yellow-600 mt-3">
+            {stats.pendingCount} pending confirmations
+          </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        {/* Completed Payments Card */}
+        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-sm p-5 border border-purple-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Total Payments</p>
-              <p className="text-2xl font-bold text-purple-600">
-                {stats.totalCount}
+              <p className="text-sm text-purple-700 font-medium">Completed</p>
+              <p className="text-2xl font-bold text-purple-700 mt-1">
+                {formatCurrency(stats.completedAmount)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-              <FiCheckCircle className="w-5 h-5 text-purple-600" />
+            <div className="w-12 h-12 bg-purple-200 rounded-xl flex items-center justify-center">
+              <FiCheckCircle className="w-6 h-6 text-purple-700" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">All time</p>
+          <p className="text-xs text-purple-600 mt-3">
+            {stats.completedCount} successful payments
+          </p>
         </div>
       </div>
 
       {/* Pending Payments Alert */}
       {pendingPayments.length > 0 && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <FiClock className="w-6 h-6 text-yellow-600" />
+        <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-500 rounded-xl p-5 shadow-sm">
+          <div className="flex items-start gap-4">
+            <FiAlertCircle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold text-yellow-800">
+              <p className="font-semibold text-yellow-800 text-lg">
                 {pendingPayments.length} Pending Payment
                 {pendingPayments.length !== 1 ? "s" : ""} Need Confirmation
               </p>
-              <p className="text-sm text-yellow-700">
+              <p className="text-sm text-yellow-700 mt-1">
                 Please review and confirm these payments to update customer
                 accounts. Confirmed payments will automatically mark bills as
                 paid and send email notifications.
@@ -551,7 +586,7 @@ export default function AdminPaymentsPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition flex items-center gap-2"
+              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition flex items-center gap-2 font-medium"
             >
               <FiRefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -563,7 +598,7 @@ export default function AdminPaymentsPage() {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm p-5 mb-6 border border-gray-200">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -572,7 +607,7 @@ export default function AdminPaymentsPage() {
               placeholder="Search by customer name, email, application ID, or reference number..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
             />
           </div>
           <select
@@ -581,7 +616,7 @@ export default function AdminPaymentsPage() {
               setStatus(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-white"
           >
             <option value="">All Status</option>
             <option value="pending">Pending</option>
@@ -593,7 +628,7 @@ export default function AdminPaymentsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 disabled:opacity-50"
+            className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 disabled:opacity-50 font-medium"
           >
             <FiRefreshCw
               className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -610,30 +645,30 @@ export default function AdminPaymentsPage() {
             <FiClock className="w-5 h-5 text-yellow-600" />
             Pending Confirmation
           </h2>
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-yellow-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Customer / Application
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Reference
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Method
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Notes
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -642,8 +677,11 @@ export default function AdminPaymentsPage() {
                   {pendingPayments.map((payment: Payment) => {
                     const customerInfo = getCustomerInfo(payment);
                     return (
-                      <tr key={payment._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-500">
+                      <tr
+                        key={payment._id}
+                        className="hover:bg-gray-50 transition"
+                      >
+                        <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
                           {formatDate(payment.createdAt)}
                         </td>
                         <td className="px-6 py-4">
@@ -671,11 +709,11 @@ export default function AdminPaymentsPage() {
                         <td className="px-6 py-4 text-sm font-mono text-gray-900">
                           {payment.referenceNumber}
                         </td>
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
                           {formatCurrency(payment.amount)}
                         </td>
                         <td className="px-6 py-4">
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-full text-xs font-medium">
                             <span>
                               {getPaymentMethodIcon(payment.paymentMethod)}
                             </span>
@@ -687,12 +725,12 @@ export default function AdminPaymentsPage() {
                         <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
                           {payment.paymentDetails?.notes || "-"}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleConfirmPayment(payment._id)}
                               disabled={confirming}
-                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition flex items-center gap-1 disabled:opacity-50 font-medium"
                             >
                               <FiCheckCircle className="w-4 h-4" />
                               Confirm
@@ -700,14 +738,14 @@ export default function AdminPaymentsPage() {
                             <button
                               onClick={() => handleRejectPayment(payment._id)}
                               disabled={rejecting}
-                              className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition flex items-center gap-1 disabled:opacity-50 font-medium"
                             >
                               <FiXCircle className="w-4 h-4" />
                               Reject
                             </button>
                             <button
                               onClick={() => setSelectedPayment(payment)}
-                              className="px-3 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
+                              className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 transition"
                               title="View Details"
                             >
                               <FiEye className="w-4 h-4" />
@@ -724,36 +762,40 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* All Payments Table - Grouped by Customer */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-900 p-6 border-b flex items-center gap-2">
-          <FiClipboard className="w-5 h-5 text-gray-500" />
-          All Payments
-          <span className="text-sm text-gray-400 ml-2">
-            (Grouped by customer - {filteredAndGroupedPayments.length}{" "}
-            customers)
-          </span>
-        </h2>
+      {/* All Payments Table - Grouped by Customer - FIXED ALIGNMENT */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-2">
+            <FiClipboard className="w-5 h-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              All Payments
+            </h2>
+            <span className="text-sm text-gray-500 ml-2">
+              (Grouped by customer - {filteredAndGroupedPayments.length}{" "}
+              customers)
+            </span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[280px]">
                   Customer Information
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[220px]">
                   Payment Summary
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[140px]">
                   Total Amount
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
                   Payment Count
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
                   Date Range
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
                   Actions
                 </th>
               </tr>
@@ -784,48 +826,52 @@ export default function AdminPaymentsPage() {
                     return (
                       <tbody key={index} className="divide-y divide-gray-200">
                         {/* Customer Summary Row */}
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4">
+                        <tr className="hover:bg-gray-50 transition">
+                          <td className="px-6 py-4 align-top">
                             <div>
                               <p className="font-medium text-gray-900 flex items-center gap-2">
-                                <FiUser className="w-4 h-4 text-gray-400" />
-                                {group.customerInfo.name}
+                                <FiUser className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <span>{group.customerInfo.name}</span>
                               </p>
                               <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                                <FiMail className="w-3 h-3" />
-                                {group.customerInfo.email}
+                                <FiMail className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">
+                                  {group.customerInfo.email}
+                                </span>
                               </p>
                               {group.customerInfo.phone !== "—" && (
                                 <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                  <FiPhone className="w-3 h-3" />
-                                  {group.customerInfo.phone}
+                                  <FiPhone className="w-3 h-3 flex-shrink-0" />
+                                  <span>{group.customerInfo.phone}</span>
                                 </p>
                               )}
                               <p className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                                <FiHash className="w-3 h-3" />
-                                App ID: {group.customerInfo.applicationId}
+                                <FiHash className="w-3 h-3 flex-shrink-0" />
+                                <span>
+                                  App ID: {group.customerInfo.applicationId}
+                                </span>
                               </p>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 align-top">
                             <div>
                               {hasMultiplePayments ? (
                                 <>
                                   <p className="text-sm text-gray-600">
                                     {group.payments.length} payment records
                                   </p>
-                                  <p className="text-xs text-blue-600 mt-1">
-                                    Click expand to view details
+                                  <p className="text-xs text-blue-600 mt-1 font-medium">
+                                    Click "Show Details" to view
                                   </p>
                                 </>
                               ) : (
                                 <div className="space-y-1">
-                                  <p className="text-sm font-mono text-gray-900">
+                                  <p className="text-sm font-mono text-gray-900 break-all">
                                     Ref: {group.payments[0].referenceNumber}
                                   </p>
                                   <p className="text-xs text-gray-500">
                                     Method:{" "}
-                                    <span className="capitalize">
+                                    <span className="capitalize font-medium">
                                       {group.payments[0].paymentMethod}
                                     </span>
                                   </p>
@@ -841,41 +887,41 @@ export default function AdminPaymentsPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 align-top">
                             <div>
                               <p className="text-lg font-bold text-green-600">
                                 {formatCurrency(group.totalAmount)}
                               </p>
                               {hasMultiplePayments && (
-                                <p className="text-xs text-gray-400">
-                                  (Total of {group.payments.length} payments)
+                                <p className="text-xs text-gray-400 mt-1">
+                                  (Total of {group.payments.length})
                                 </p>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <td className="px-6 py-4 align-top">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                               {group.payments.length} payment
                               {group.payments.length !== 1 ? "s" : ""}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-gray-600">
-                              {formatDate(group.earliestPaymentDate)}
+                          <td className="px-6 py-4 align-top">
+                            <div className="text-sm text-gray-600">
+                              <div>{formatDate(group.earliestPaymentDate)}</div>
                               {group.payments.length > 1 && (
                                 <>
-                                  <br />
-                                  <span className="text-xs text-gray-400">
+                                  <div className="text-xs text-gray-400 my-0.5">
                                     to
-                                  </span>
-                                  <br />
-                                  {formatDate(group.latestPaymentDate)}
+                                  </div>
+                                  <div>
+                                    {formatDate(group.latestPaymentDate)}
+                                  </div>
                                 </>
                               )}
-                            </p>
+                            </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex gap-2">
+                          <td className="px-6 py-4 align-top whitespace-nowrap">
+                            <div className="flex gap-3">
                               {hasMultiplePayments && (
                                 <button
                                   onClick={() =>
@@ -885,7 +931,7 @@ export default function AdminPaymentsPage() {
                                         : group.customerInfo.applicationId,
                                     )
                                   }
-                                  className="text-blue-600 hover:text-blue-800 transition text-sm flex items-center gap-1"
+                                  className="text-blue-600 hover:text-blue-800 transition text-sm font-medium"
                                 >
                                   {isExpanded ? "Hide Details" : "Show Details"}
                                 </button>
@@ -894,7 +940,7 @@ export default function AdminPaymentsPage() {
                                 onClick={() =>
                                   setSelectedPayment(group.payments[0])
                                 }
-                                className="text-gray-600 hover:text-gray-800 transition text-sm flex items-center gap-1"
+                                className="text-gray-600 hover:text-gray-900 transition text-sm flex items-center gap-1"
                                 title="View Latest Payment"
                               >
                                 <FiEye className="w-4 h-4" />
@@ -904,7 +950,7 @@ export default function AdminPaymentsPage() {
                           </td>
                         </tr>
 
-                        {/* Expanded Details Row (shows all payments for this customer) */}
+                        {/* Expanded Details Row */}
                         {isExpanded && hasMultiplePayments && (
                           <tr className="bg-gray-50">
                             <td colSpan={6} className="px-6 py-4">
@@ -913,78 +959,77 @@ export default function AdminPaymentsPage() {
                                   All Payment Records:
                                 </p>
                                 <div className="space-y-3">
-                                  {group.payments.map(
-                                    (payment: Payment, idx: number) => (
-                                      <div
-                                        key={payment._id}
-                                        className="bg-white rounded-lg p-3 border border-gray-200"
-                                      >
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Date
-                                            </p>
-                                            <p className="text-sm font-medium">
-                                              {formatDate(payment.createdAt)}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Reference
-                                            </p>
-                                            <p className="text-sm font-mono">
-                                              {payment.referenceNumber}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Amount
-                                            </p>
-                                            <p className="text-sm font-semibold text-green-600">
-                                              {formatCurrency(payment.amount)}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Status
-                                            </p>
-                                            <span
-                                              className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
-                                            >
-                                              {payment.status}
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Method
-                                            </p>
-                                            <p className="text-sm capitalize">
-                                              {payment.paymentMethod}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs text-gray-500">
-                                              Invoice
-                                            </p>
-                                            <p className="text-sm">
-                                              {payment.billingId
-                                                ?.invoiceNumber || "-"}
-                                            </p>
-                                          </div>
-                                          <div className="md:col-span-2">
-                                            <button
-                                              onClick={() =>
-                                                setSelectedPayment(payment)
-                                              }
-                                              className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                              View Full Details →
-                                            </button>
-                                          </div>
+                                  {group.payments.map((payment: Payment) => (
+                                    <div
+                                      key={payment._id}
+                                      className="bg-white rounded-lg p-3 border border-gray-200 shadow-sm"
+                                    >
+                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Date
+                                          </p>
+                                          <p className="text-sm">
+                                            {formatDate(payment.createdAt)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Reference
+                                          </p>
+                                          <p className="text-sm font-mono break-all">
+                                            {payment.referenceNumber}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Amount
+                                          </p>
+                                          <p className="text-sm font-semibold text-green-600">
+                                            {formatCurrency(payment.amount)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Status
+                                          </p>
+                                          <span
+                                            className={`px-2 py-1 text-xs font-semibold rounded-full inline-block ${getStatusColor(payment.status)}`}
+                                          >
+                                            {payment.status}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Method
+                                          </p>
+                                          <p className="text-sm capitalize">
+                                            {payment.paymentMethod}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-500 font-medium">
+                                            Invoice
+                                          </p>
+                                          <p className="text-sm font-mono">
+                                            {payment.billingId?.invoiceNumber ||
+                                              "-"}
+                                          </p>
+                                        </div>
+                                        <div className="lg:col-span-2">
+                                          <button
+                                            onClick={() =>
+                                              setSelectedPayment(payment)
+                                            }
+                                            className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+                                          >
+                                            View Full Details
+                                            <FiEye className="w-3 h-3" />
+                                          </button>
                                         </div>
                                       </div>
-                                    ),
-                                  )}
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             </td>
@@ -1001,21 +1046,21 @@ export default function AdminPaymentsPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-6 py-4 border-t flex items-center justify-between">
+          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-gray-50">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="p-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="p-2 rounded-lg border border-gray-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition"
             >
               <FiChevronLeft />
             </button>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-gray-600 font-medium">
               Page {currentPage} of {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="p-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="p-2 rounded-lg border border-gray-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition"
             >
               <FiChevronRight />
             </button>
@@ -1026,40 +1071,40 @@ export default function AdminPaymentsPage() {
       {/* Payment Details Modal */}
       {selectedPayment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-center mb-5">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <FiClipboard className="w-5 h-5" />
+                  <FiClipboard className="w-5 h-5 text-gray-500" />
                   Payment Details
                 </h2>
                 <button
                   onClick={() => setSelectedPayment(null)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 transition"
                 >
                   <FiX className="w-5 h-5" />
                 </button>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between py-2 border-b">
+                <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">Amount:</span>
                   <span className="font-semibold text-gray-900">
                     {formatCurrency(selectedPayment.amount)}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
+                <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">Reference:</span>
-                  <span className="font-mono text-gray-900">
+                  <span className="font-mono text-gray-900 text-sm">
                     {selectedPayment.referenceNumber}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
+                <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">Method:</span>
                   <span className="capitalize text-gray-900">
                     {selectedPayment.paymentMethod}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
+                <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">Status:</span>
                   <span
                     className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedPayment.status)}`}
@@ -1067,14 +1112,14 @@ export default function AdminPaymentsPage() {
                     {selectedPayment.status}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
+                <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">Date:</span>
                   <span className="text-gray-900">
                     {formatDate(selectedPayment.createdAt)}
                   </span>
                 </div>
                 {selectedPayment.paidAt && (
-                  <div className="flex justify-between py-2 border-b">
+                  <div className="flex justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500">Paid Date:</span>
                     <span className="text-gray-900">
                       {formatDate(selectedPayment.paidAt)}
@@ -1082,7 +1127,7 @@ export default function AdminPaymentsPage() {
                   </div>
                 )}
                 {selectedPayment.billingId && (
-                  <div className="flex justify-between py-2 border-b">
+                  <div className="flex justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500">Invoice:</span>
                     <span className="font-mono text-gray-900">
                       {selectedPayment.billingId.invoiceNumber}
@@ -1091,38 +1136,38 @@ export default function AdminPaymentsPage() {
                 )}
 
                 {/* Customer Information Section */}
-                <div className="py-2 border-b">
-                  <span className="text-gray-500 font-semibold">
+                <div className="py-2">
+                  <span className="text-gray-500 font-semibold block mb-2">
                     Customer Information:
                   </span>
-                  <div className="mt-2 space-y-2">
+                  <div className="space-y-2 bg-gray-50 p-3 rounded-lg">
                     {(() => {
                       const customerInfo = getCustomerInfo(selectedPayment);
                       return (
                         <>
                           <div className="flex items-start gap-2">
-                            <FiUser className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiUser className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <p className="text-sm text-gray-500">Name</p>
+                              <p className="text-xs text-gray-500">Name</p>
                               <p className="font-medium text-gray-900">
                                 {customerInfo.name}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-start gap-2">
-                            <FiMail className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiMail className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <p className="text-sm text-gray-500">Email</p>
-                              <p className="text-gray-900">
+                              <p className="text-xs text-gray-500">Email</p>
+                              <p className="text-gray-900 break-all">
                                 {customerInfo.email}
                               </p>
                             </div>
                           </div>
                           {customerInfo.phone !== "—" && (
                             <div className="flex items-start gap-2">
-                              <FiPhone className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <FiPhone className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                               <div>
-                                <p className="text-sm text-gray-500">Phone</p>
+                                <p className="text-xs text-gray-500">Phone</p>
                                 <p className="text-gray-900">
                                   {customerInfo.phone}
                                 </p>
@@ -1130,21 +1175,21 @@ export default function AdminPaymentsPage() {
                             </div>
                           )}
                           <div className="flex items-start gap-2">
-                            <FiHash className="w-4 h-4 text-gray-400 mt-0.5" />
+                            <FiHash className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <p className="text-sm text-gray-500">
+                              <p className="text-xs text-gray-500">
                                 Application ID
                               </p>
-                              <p className="font-mono text-gray-900">
+                              <p className="font-mono text-gray-900 break-all">
                                 {customerInfo.applicationId}
                               </p>
                             </div>
                           </div>
                           {customerInfo.address !== "—" && (
                             <div className="flex items-start gap-2">
-                              <FiFileText className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <FiFileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                               <div>
-                                <p className="text-sm text-gray-500">Address</p>
+                                <p className="text-xs text-gray-500">Address</p>
                                 <p className="text-gray-900">
                                   {customerInfo.address}
                                 </p>
@@ -1184,7 +1229,7 @@ export default function AdminPaymentsPage() {
                     <button
                       onClick={() => handleConfirmPayment(selectedPayment._id)}
                       disabled={confirming}
-                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50 font-medium"
                     >
                       <FiCheckCircle className="w-4 h-4" />
                       {confirming ? "Processing..." : "Confirm Payment"}
@@ -1192,7 +1237,7 @@ export default function AdminPaymentsPage() {
                     <button
                       onClick={() => handleRejectPayment(selectedPayment._id)}
                       disabled={rejecting}
-                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2 disabled:opacity-50 font-medium"
                     >
                       <FiXCircle className="w-4 h-4" />
                       {rejecting ? "Processing..." : "Reject"}
@@ -1201,7 +1246,7 @@ export default function AdminPaymentsPage() {
                 )}
                 <button
                   onClick={() => setSelectedPayment(null)}
-                  className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+                  className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
                 >
                   Close
                 </button>
