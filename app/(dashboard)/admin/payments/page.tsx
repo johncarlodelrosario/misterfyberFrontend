@@ -31,6 +31,8 @@ import {
   FiPrinter,
   FiChevronDown,
   FiChevronUp,
+  FiChevronsDown,
+  FiChevronsUp,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -79,8 +81,17 @@ interface CustomerInfo {
   buildingName?: string;
 }
 
-interface ExtendedPayment extends Payment {
-  _customerInfo?: CustomerInfo;
+interface PaymentGroup {
+  customerId: string;
+  customerInfo: CustomerInfo;
+  payments: Payment[];
+  totalAmount: number;
+  totalPaidAmount: number;
+  totalPendingAmount: number;
+  paymentCount: number;
+  lastPaymentDate: string;
+  firstPaymentDate: string;
+  hasPendingPayments: boolean;
 }
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
@@ -159,10 +170,62 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   };
 }
 
+// ==================== GROUP PAYMENTS BY CUSTOMER ====================
+function groupPaymentsByCustomer(payments: Payment[]): PaymentGroup[] {
+  const groups = new Map<string, PaymentGroup>();
+
+  payments.forEach((payment) => {
+    const customerInfo = getCustomerInfo(payment);
+    const customerId =
+      customerInfo.applicationId ||
+      customerInfo.email ||
+      payment.userId?._id ||
+      payment.userId ||
+      "unknown";
+
+    if (!groups.has(customerId)) {
+      groups.set(customerId, {
+        customerId,
+        customerInfo,
+        payments: [],
+        totalAmount: 0,
+        totalPaidAmount: 0,
+        totalPendingAmount: 0,
+        paymentCount: 0,
+        lastPaymentDate: payment.createdAt,
+        firstPaymentDate: payment.createdAt,
+        hasPendingPayments: false,
+      });
+    }
+
+    const group = groups.get(customerId)!;
+    group.payments.push(payment);
+    group.totalAmount += payment.amount || 0;
+    group.paymentCount++;
+
+    if (payment.status === "completed") {
+      group.totalPaidAmount += payment.amount || 0;
+    } else if (payment.status === "pending") {
+      group.totalPendingAmount += payment.amount || 0;
+      group.hasPendingPayments = true;
+    }
+
+    // Update date range
+    if (new Date(payment.createdAt) > new Date(group.lastPaymentDate)) {
+      group.lastPaymentDate = payment.createdAt;
+    }
+    if (new Date(payment.createdAt) < new Date(group.firstPaymentDate)) {
+      group.firstPaymentDate = payment.createdAt;
+    }
+  });
+
+  return Array.from(groups.values());
+}
+
 // ==================== MAIN COMPONENT ====================
 export default function AdminPaymentsPage() {
-  const [payments, setPayments] = useState<ExtendedPayment[]>([]);
-  const [pendingPayments, setPendingPayments] = useState<ExtendedPayment[]>([]);
+  const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
@@ -171,12 +234,13 @@ export default function AdminPaymentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [selectedPayment, setSelectedPayment] =
-    useState<ExtendedPayment | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
-  const [sortField, setSortField] = useState<keyof Payment>("createdAt");
+  const [sortField, setSortField] =
+    useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -208,88 +272,57 @@ export default function AdminPaymentsPage() {
         }
 
         try {
-          // Fetch all payments with filters - note: getAllPayments doesn't accept paymentType directly
-          // We'll filter on the client side for payment type
+          // Fetch all payments
           const allPaymentsResult = await getAllPayments({
             page: currentPage,
-            limit: 20,
+            limit: 100, // Get more records to group properly
             status: statusFilter || undefined,
             forceRefresh: forceRefresh,
           });
 
           if (!isMountedRef.current) return;
 
-          let paymentsList = (allPaymentsResult.data || []).map(
-            (payment: Payment) => ({
-              ...payment,
-              _customerInfo: getCustomerInfo(payment),
-            }),
-          );
+          let paymentsList = allPaymentsResult.data || [];
 
           // Apply payment type filter on client side
           if (paymentTypeFilter) {
             paymentsList = paymentsList.filter(
-              (payment: ExtendedPayment) =>
-                payment.paymentType === paymentTypeFilter,
+              (payment: Payment) => payment.paymentType === paymentTypeFilter,
             );
           }
 
-          setPayments(paymentsList);
-          setTotalPages(allPaymentsResult.totalPages || 1);
-          setTotalRecords(allPaymentsResult.total || 0);
+          // Group payments by customer
+          const grouped = groupPaymentsByCustomer(paymentsList);
 
-          // Fetch pending payments separately
+          setPaymentGroups(grouped);
+          setTotalPages(allPaymentsResult.totalPages || 1);
+          setTotalRecords(grouped.length);
+
+          // Fetch pending payments separately (ungrouped for quick actions)
           const pendingResult = await getPendingPayments(forceRefresh).catch(
             () => ({ data: [] }),
           );
-          let pendingList = (pendingResult.data || []).map(
-            (payment: Payment) => ({
-              ...payment,
-              _customerInfo: getCustomerInfo(payment),
-            }),
-          );
+          let pendingList = pendingResult.data || [];
 
-          // Apply payment type filter to pending payments
           if (paymentTypeFilter) {
             pendingList = pendingList.filter(
-              (payment: ExtendedPayment) =>
-                payment.paymentType === paymentTypeFilter,
+              (payment: Payment) => payment.paymentType === paymentTypeFilter,
             );
           }
-
           setPendingPayments(pendingList);
 
           // Update stats
           if (allPaymentsResult.stats) {
-            // Calculate stats based on filtered payments if payment type filter is applied
-            let totalAmount = allPaymentsResult.stats.total || 0;
-            let totalCount = allPaymentsResult.stats.totalCount || 0;
-            let subscriptionAmount = allPaymentsResult.stats.subscription || 0;
-            let subscriptionCount =
-              allPaymentsResult.stats.subscriptionCount || 0;
-            let installationFees =
-              allPaymentsResult.stats.installationFees || 0;
-            let installationFeeCount =
-              allPaymentsResult.stats.installationFeeCount || 0;
-
-            // If payment type filter is applied, recalculate stats based on filtered data
-            if (paymentTypeFilter === "subscription") {
-              totalAmount = subscriptionAmount;
-              totalCount = subscriptionCount;
-            } else if (paymentTypeFilter === "installation") {
-              totalAmount = installationFees;
-              totalCount = installationFeeCount;
-            }
-
             setStats({
-              totalAmount: totalAmount,
-              totalCount: totalCount,
+              totalAmount: allPaymentsResult.stats.total || 0,
+              totalCount: allPaymentsResult.stats.totalCount || 0,
               monthlyAmount: allPaymentsResult.stats.monthly || 0,
               monthlyCount: allPaymentsResult.stats.monthlyCount || 0,
-              subscriptionAmount: subscriptionAmount,
-              subscriptionCount: subscriptionCount,
-              installationFees: installationFees,
-              installationFeeCount: installationFeeCount,
+              subscriptionAmount: allPaymentsResult.stats.subscription || 0,
+              subscriptionCount: allPaymentsResult.stats.subscriptionCount || 0,
+              installationFees: allPaymentsResult.stats.installationFees || 0,
+              installationFeeCount:
+                allPaymentsResult.stats.installationFeeCount || 0,
               pendingAmount: allPaymentsResult.stats.pending || 0,
               pendingCount: allPaymentsResult.stats.pendingCount || 0,
             });
@@ -381,7 +414,7 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  const handleSort = (field: keyof Payment) => {
+  const handleSort = (field: keyof PaymentGroup) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
@@ -390,16 +423,35 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  const getSortedPayments = (
-    paymentsList: ExtendedPayment[],
-  ): ExtendedPayment[] => {
-    return [...paymentsList].sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+  const getSortedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
+    return [...groups].sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
 
-      if (sortField === "createdAt" || sortField === "paidAt") {
-        aVal = new Date(aVal || 0).getTime();
-        bVal = new Date(bVal || 0).getTime();
+      switch (sortField) {
+        case "customerInfo":
+          aVal = a.customerInfo.name;
+          bVal = b.customerInfo.name;
+          break;
+        case "totalAmount":
+          aVal = a.totalAmount;
+          bVal = b.totalAmount;
+          break;
+        case "paymentCount":
+          aVal = a.paymentCount;
+          bVal = b.paymentCount;
+          break;
+        case "lastPaymentDate":
+          aVal = new Date(a.lastPaymentDate).getTime();
+          bVal = new Date(b.lastPaymentDate).getTime();
+          break;
+        case "firstPaymentDate":
+          aVal = new Date(a.firstPaymentDate).getTime();
+          bVal = new Date(b.firstPaymentDate).getTime();
+          break;
+        default:
+          aVal = a[sortField];
+          bVal = b[sortField];
       }
 
       if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
@@ -408,21 +460,22 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  const getFilteredPayments = (
-    paymentsList: ExtendedPayment[],
-  ): ExtendedPayment[] => {
-    if (!search.trim()) return paymentsList;
+  const getFilteredGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
+    if (!search.trim()) return groups;
 
     const searchLower = search.toLowerCase();
-    return paymentsList.filter((payment) => {
-      const customerInfo = payment._customerInfo || getCustomerInfo(payment);
+    return groups.filter((group) => {
+      const info = group.customerInfo;
       return (
-        customerInfo.name.toLowerCase().includes(searchLower) ||
-        customerInfo.email.toLowerCase().includes(searchLower) ||
-        customerInfo.applicationId.toLowerCase().includes(searchLower) ||
-        payment.referenceNumber?.toLowerCase().includes(searchLower) ||
-        payment.billingId?.invoiceNumber?.toLowerCase().includes(searchLower) ||
-        payment.amount?.toString().includes(searchLower)
+        info.name.toLowerCase().includes(searchLower) ||
+        info.email.toLowerCase().includes(searchLower) ||
+        info.applicationId.toLowerCase().includes(searchLower) ||
+        group.payments.some((p) =>
+          p.referenceNumber?.toLowerCase().includes(searchLower),
+        ) ||
+        group.payments.some((p) =>
+          p.billingId?.invoiceNumber?.toLowerCase().includes(searchLower),
+        )
       );
     });
   };
@@ -498,7 +551,7 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  const SortIcon = ({ field }: { field: keyof Payment }) => {
+  const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
     if (sortField !== field)
       return <FiChevronDown className="w-3 h-3 opacity-30" />;
     return sortDirection === "asc" ? (
@@ -508,10 +561,10 @@ export default function AdminPaymentsPage() {
     );
   };
 
-  const filteredPayments = getFilteredPayments(payments);
-  const sortedPayments = getSortedPayments(filteredPayments);
+  const filteredGroups = getFilteredGroups(paymentGroups);
+  const sortedGroups = getSortedGroups(filteredGroups);
 
-  if (loading && payments.length === 0) {
+  if (loading && paymentGroups.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -642,7 +695,7 @@ export default function AdminPaymentsPage() {
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by customer name, email, application ID, reference number, or amount..."
+                placeholder="Search by customer name, email, application ID, reference number, or invoice..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
@@ -758,8 +811,7 @@ export default function AdminPaymentsPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {pendingPayments.map((payment) => {
-                    const customerInfo =
-                      payment._customerInfo || getCustomerInfo(payment);
+                    const customerInfo = getCustomerInfo(payment);
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-500">
@@ -847,16 +899,16 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* All Payments - Excel-like Table */}
+      {/* All Payments - Excel-like Table (Grouped by Customer) */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
         <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <FiClipboard className="w-5 h-5 text-gray-500" />
-              Payment Records
+              Customer Payment Summary
             </h2>
             <span className="text-sm text-gray-500">
-              {filteredPayments.length} of {totalRecords} records
+              {filteredGroups.length} customers
             </span>
           </div>
           <div className="flex gap-2">
@@ -883,68 +935,65 @@ export default function AdminPaymentsPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Customer
+                </th>
                 <th
-                  onClick={() => handleSort("createdAt")}
+                  onClick={() => handleSort("customerInfo")}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center gap-1">
-                    Date <SortIcon field="createdAt" />
+                    Name <SortIcon field="customerInfo" />
                   </div>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Customer
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Application ID
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Contact
+                </th>
                 <th
-                  onClick={() => handleSort("referenceNumber")}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort("paymentCount")}
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
-                  <div className="flex items-center gap-1">
-                    Reference <SortIcon field="referenceNumber" />
+                  <div className="flex items-center justify-center gap-1">
+                    Payments <SortIcon field="paymentCount" />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Invoice
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
-                </th>
                 <th
-                  onClick={() => handleSort("amount")}
+                  onClick={() => handleSort("totalAmount")}
                   className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center justify-end gap-1">
-                    Amount <SortIcon field="amount" />
+                    Total Paid <SortIcon field="totalAmount" />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Method
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Pending
                 </th>
                 <th
-                  onClick={() => handleSort("status")}
+                  onClick={() => handleSort("lastPaymentDate")}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center gap-1">
-                    Status <SortIcon field="status" />
+                    Last Payment <SortIcon field="lastPaymentDate" />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sortedPayments.length === 0 ? (
+              {sortedGroups.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={9}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
                       <FiInfo className="w-8 h-8 text-gray-300" />
-                      <p>No payments found</p>
+                      <p>No payment records found</p>
                       <p className="text-xs text-gray-400">
                         Try adjusting your search or filters
                       </p>
@@ -952,101 +1001,254 @@ export default function AdminPaymentsPage() {
                   </td>
                 </tr>
               ) : (
-                sortedPayments.map((payment) => {
-                  const customerInfo =
-                    payment._customerInfo || getCustomerInfo(payment);
+                sortedGroups.map((group) => {
+                  const isExpanded = expandedCustomer === group.customerId;
+                  const hasMultiplePayments = group.paymentCount > 1;
+
                   return (
-                    <tr key={payment._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div>
-                          <p className="text-sm text-gray-900">
-                            {formatShortDate(payment.createdAt)}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {new Date(payment.createdAt).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {customerInfo.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {customerInfo.email}
-                          </p>
-                          {customerInfo.phone !== "—" && (
-                            <p className="text-xs text-gray-400">
-                              {customerInfo.phone}
-                            </p>
+                    <tbody
+                      key={group.customerId}
+                      className="divide-y divide-gray-200"
+                    >
+                      {/* Customer Summary Row */}
+                      <tr
+                        className={`hover:bg-gray-50 ${group.hasPendingPayments ? "bg-yellow-50/30" : ""}`}
+                      >
+                        <td className="px-4 py-3">
+                          {hasMultiplePayments && (
+                            <button
+                              onClick={() =>
+                                setExpandedCustomer(
+                                  isExpanded ? null : group.customerId,
+                                )
+                              }
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              {isExpanded ? (
+                                <FiChevronsUp className="w-4 h-4" />
+                              ) : (
+                                <FiChevronsDown className="w-4 h-4" />
+                              )}
+                            </button>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-600">
-                          {customerInfo.applicationId}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-900">
-                          {payment.referenceNumber}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-600">
-                          {payment.billingId?.invoiceNumber || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getPaymentTypeColor(payment.paymentType || "subscription")}`}
-                        >
-                          {payment.paymentType === "installation"
-                            ? "Installation"
-                            : payment.paymentType === "subscription"
-                              ? "Subscription"
-                              : "Other"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <span
-                          className={`font-semibold ${payment.status === "completed" ? "text-green-600" : payment.status === "pending" ? "text-yellow-600" : "text-gray-900"}`}
-                        >
-                          {formatCurrency(payment.amount)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs">
-                          <span>
-                            {getPaymentMethodIcon(payment.paymentMethod)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {group.customerInfo.name}
+                            </p>
+                            {group.customerInfo.buildingName && (
+                              <p className="text-xs text-gray-400">
+                                {group.customerInfo.buildingName}
+                              </p>
+                            )}
+                            {(group.customerInfo.floor ||
+                              group.customerInfo.unitNumber) && (
+                              <p className="text-xs text-gray-400">
+                                Unit:{" "}
+                                {group.customerInfo.floor
+                                  ? `Flr ${group.customerInfo.floor}`
+                                  : ""}
+                                {group.customerInfo.unitNumber
+                                  ? ` Unit ${group.customerInfo.unitNumber}`
+                                  : ""}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-gray-600">
+                            {group.customerInfo.applicationId}
                           </span>
-                          <span className="capitalize">
-                            {payment.paymentMethod}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="text-sm text-gray-700">
+                              {group.customerInfo.email}
+                            </p>
+                            {group.customerInfo.phone !== "—" && (
+                              <p className="text-xs text-gray-400">
+                                {group.customerInfo.phone}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {group.paymentCount} payment
+                            {group.paymentCount !== 1 ? "s" : ""}
                           </span>
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
-                        >
-                          {payment.status}
-                        </span>
-                        {payment.paidAt && payment.status === "completed" && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            Paid: {formatShortDate(payment.paidAt)}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => setSelectedPayment(payment)}
-                          className="text-blue-600 hover:text-blue-800 transition"
-                          title="View Details"
-                        >
-                          <FiEye className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div>
+                            <p className="text-lg font-bold text-green-600">
+                              {formatCurrency(group.totalPaidAmount)}
+                            </p>
+                            {group.totalPaidAmount !== group.totalAmount && (
+                              <p className="text-xs text-gray-400 line-through">
+                                {formatCurrency(group.totalAmount)}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {group.totalPendingAmount > 0 ? (
+                            <span className="text-sm font-semibold text-yellow-600">
+                              {formatCurrency(group.totalPendingAmount)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="text-sm text-gray-900">
+                              {formatShortDate(group.lastPaymentDate)}
+                            </p>
+                            {group.paymentCount > 1 && (
+                              <p className="text-xs text-gray-400">
+                                First: {formatShortDate(group.firstPaymentDate)}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() =>
+                                setSelectedPayment(group.payments[0])
+                              }
+                              className="text-blue-600 hover:text-blue-800 transition"
+                              title="View Details"
+                            >
+                              <FiEye className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Expanded Details Row - Shows all payments for this customer */}
+                      {isExpanded && hasMultiplePayments && (
+                        <tr className="bg-gray-50">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="border-l-4 border-blue-400 pl-4">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                                Payment History
+                              </p>
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                  <thead className="bg-gray-100">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Date
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Reference
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Invoice
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Type
+                                      </th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">
+                                        Amount
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Method
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                        Status
+                                      </th>
+                                      <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">
+                                        Actions
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-200">
+                                    {group.payments.map((payment, idx) => (
+                                      <tr
+                                        key={payment._id}
+                                        className="hover:bg-white"
+                                      >
+                                        <td className="px-3 py-2 text-xs text-gray-500">
+                                          {formatShortDate(payment.createdAt)}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span className="font-mono text-xs text-gray-600">
+                                            {payment.referenceNumber}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span className="font-mono text-xs text-gray-500">
+                                            {payment.billingId?.invoiceNumber ||
+                                              "-"}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span
+                                            className={`px-1.5 py-0.5 text-xs font-semibold rounded-full ${getPaymentTypeColor(payment.paymentType)}`}
+                                          >
+                                            {payment.paymentType ===
+                                            "installation"
+                                              ? "Install"
+                                              : payment.paymentType ===
+                                                  "subscription"
+                                                ? "Sub"
+                                                : "Other"}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                          <span className="font-semibold text-gray-900">
+                                            {formatCurrency(payment.amount)}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span className="capitalize text-xs">
+                                            {payment.paymentMethod}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span
+                                            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(payment.status)}`}
+                                          >
+                                            {payment.status}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <button
+                                            onClick={() =>
+                                              setSelectedPayment(payment)
+                                            }
+                                            className="text-blue-600 hover:text-blue-800 text-xs"
+                                          >
+                                            View
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                  <tfoot className="bg-gray-100">
+                                    <tr>
+                                      <td
+                                        colSpan={4}
+                                        className="px-3 py-2 text-right font-semibold text-sm"
+                                      >
+                                        Total:
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-bold text-green-600">
+                                        {formatCurrency(group.totalAmount)}
+                                      </td>
+                                      <td colSpan={3}></td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
                   );
                 })
               )}
@@ -1182,9 +1384,7 @@ export default function AdminPaymentsPage() {
                   Customer Information
                 </h3>
                 {(() => {
-                  const customerInfo =
-                    selectedPayment._customerInfo ||
-                    getCustomerInfo(selectedPayment);
+                  const customerInfo = getCustomerInfo(selectedPayment);
                   return (
                     <div className="grid grid-cols-2 gap-4">
                       <div>

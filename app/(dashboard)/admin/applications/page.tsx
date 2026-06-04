@@ -1297,19 +1297,6 @@ export default function ApplicationsPage() {
                           <FiEye className="w-3.5 h-3.5" />
                           <span className="hidden xs:inline">View</span>
                         </button>
-                        {app.status === "approved" && !app.billingStarted && (
-                          <button
-                            onClick={() => {
-                              setSelectedAppForBilling(app);
-                              setShowBillingModal(true);
-                            }}
-                            className="text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
-                            title="Start Billing"
-                          >
-                            <FiPlay className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Billing</span>
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>
