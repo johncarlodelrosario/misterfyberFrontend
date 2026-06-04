@@ -222,7 +222,6 @@ export const getPaymentStats = async (): Promise<any> => {
   }
 };
 
-// FIXED: getAllPayments - always returns a proper structure
 export const getAllPayments = async (
   params?: GetAllPaymentsParams,
 ): Promise<GetAllPaymentsResponse> => {
@@ -244,11 +243,8 @@ export const getAllPayments = async (
 
     const url = `/payments/admin/all${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
     const response = await api.get(url);
-
-    // Ensure we always return a consistent structure
     const result = response.data;
 
-    // FIX: Make sure data is always an array
     const safeResult: GetAllPaymentsResponse = {
       success: result.success || true,
       data: Array.isArray(result.data) ? result.data : [],
@@ -273,7 +269,6 @@ export const getAllPayments = async (
     return safeResult;
   } catch (error) {
     console.error("Error fetching all payments:", error);
-    // Return empty structure on error
     return {
       success: false,
       data: [],
