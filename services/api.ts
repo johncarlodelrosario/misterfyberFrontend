@@ -68,30 +68,52 @@ const checkBackendHealth = async (): Promise<boolean> => {
     return isBackendHealthy;
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+  // Check both production and local backends
+  const healthUrls = [
+    "http://localhost:5000/health",
+    "https://misterfyberbackend.onrender.com/health",
+  ];
 
-    const response = await fetch(
-      "https://misterfyberbackend.onrender.com/health",
-      {
+  for (const url of healthUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(url, {
         signal: controller.signal,
-      },
-    );
-    clearTimeout(timeoutId);
+      });
+      clearTimeout(timeoutId);
 
-    isBackendHealthy = response.ok;
-    lastHealthCheck = now;
-    return isBackendHealthy;
-  } catch (error) {
-    isBackendHealthy = false;
-    lastHealthCheck = now;
-    return false;
+      if (response.ok) {
+        isBackendHealthy = true;
+        lastHealthCheck = now;
+        return true;
+      }
+    } catch (error) {
+      console.log(`Health check failed for ${url}:`, error);
+    }
   }
+
+  isBackendHealthy = false;
+  lastHealthCheck = now;
+  return false;
 };
 
-// Determine API URL based on environment
+// Determine API URL based on environment (with localhost support)
 const getApiUrl = () => {
+  // Check if we're in development mode (localhost)
+  const isDevelopment =
+    process.env.NODE_ENV === "development" ||
+    (typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"));
+
+  if (isDevelopment) {
+    // Use localhost API for development
+    console.log("🔧 Development mode - using localhost API");
+    return "http://localhost:5000/api";
+  }
+
   // On Vercel, use the rewrite path to avoid CORS
   if (
     typeof window !== "undefined" &&
@@ -99,11 +121,15 @@ const getApiUrl = () => {
   ) {
     return "/api"; // Use Vercel rewrite
   }
+
+  // Production mode
   return (
     process.env.NEXT_PUBLIC_API_URL ||
     "https://misterfyberbackend.onrender.com/api"
   );
 };
+
+console.log(`📡 API Base URL: ${getApiUrl()}`);
 
 const api = axios.create({
   baseURL: getApiUrl(),
@@ -115,7 +141,7 @@ const api = axios.create({
   timeout: 30000, // Reduced from 60s to 30s for better performance
 });
 
-// Request interceptor with health check and deduplication - FIXED to remove cache-control
+// Request interceptor with health check and deduplication
 api.interceptors.request.use(async (config) => {
   const token =
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
