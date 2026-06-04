@@ -25,12 +25,10 @@ import {
   FiClock,
   FiClipboard,
   FiX,
-  FiUser,
   FiFileText,
   FiInfo,
   FiMail,
   FiPhone,
-  FiHash,
   FiDollarSign,
   FiFilter,
   FiDownload,
@@ -41,6 +39,7 @@ import {
   FiChevronsUp,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+import api from "@/services/api";
 
 // ==================== TYPE DEFINITIONS ====================
 interface Payment {
@@ -103,18 +102,43 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
+// Cache for application data
+const applicationCache = new Map<string, any>();
+
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
+async function fetchApplicationData(applicationId: string): Promise<any> {
+  if (!applicationId || applicationId === "—") return null;
+
+  // Check cache first
+  if (applicationCache.has(applicationId)) {
+    return applicationCache.get(applicationId);
+  }
+
+  try {
+    // Try to fetch application data from API
+    const response = await api.get(`/applications/${applicationId}`);
+    if (response.data?.success && response.data?.data) {
+      const appData = response.data.data;
+      applicationCache.set(applicationId, appData);
+      return appData;
+    }
+  } catch (error) {
+    console.error(`Failed to fetch application ${applicationId}:`, error);
+  }
+  return null;
+}
+
 function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 1: Check if application object is populated
   if (payment.application) {
     const app = payment.application as any;
+    const firstName = app.firstName || "";
+    const lastName = app.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name:
-        `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
-        app.applicantName ||
-        "—",
+      name: fullName || app.applicantName || app.name || "—",
       email: app.email || "—",
-      phone: app.phoneNumber || "—",
+      phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || payment.applicationId || "—",
       address: app.address || "—",
       floor: app.floor,
@@ -126,10 +150,13 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 2: Check if applicationId is populated as object
   if (payment.applicationId && typeof payment.applicationId === "object") {
     const app = payment.applicationId as any;
+    const firstName = app.firstName || "";
+    const lastName = app.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name: `${app.firstName || ""} ${app.lastName || ""}`.trim() || "—",
+      name: fullName || app.name || "—",
       email: app.email || "—",
-      phone: app.phoneNumber || "—",
+      phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || app._id || "—",
       address: app.address || "—",
       floor: app.floor,
@@ -141,13 +168,13 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 3: Check if userId is populated
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name:
-        `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
-        user.username ||
-        "—",
+      name: fullName || user.username || user.name || "—",
       email: user.email || "—",
-      phone: user.phoneNumber || "—",
+      phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
       address: user.address || "—",
     };
@@ -156,13 +183,13 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   // Priority 4: Check if user object is populated
   if (payment.user) {
     const user = payment.user as any;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name:
-        `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
-        user.username ||
-        "—",
+      name: fullName || user.username || user.name || "—",
       email: user.email || "—",
-      phone: user.phoneNumber || "—",
+      phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
       address: user.address || "—",
     };
@@ -186,14 +213,14 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Priority 6: Try to fetch from applicationId if it's a string
+  // Priority 6: Use applicationId as string - show as is, will be updated async
   if (
     typeof payment.applicationId === "string" &&
-    payment.applicationId !== "—"
+    payment.applicationId !== "—" &&
+    payment.applicationId.length > 0
   ) {
-    // Store the applicationId as is, name will be fetched separately if needed
     return {
-      name: "Loading...",
+      name: `Customer ${payment.applicationId.slice(-6)}`,
       email: "—",
       phone: "—",
       applicationId: payment.applicationId,
@@ -591,7 +618,7 @@ export default function AdminPaymentsPage() {
   const filteredGroups = getFilteredGroups(paymentGroups);
   const sortedGroups = getSortedGroups(filteredGroups);
 
-  if (loading && paymentGroups.length === 0) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -1054,17 +1081,6 @@ export default function AdminPaymentsPage() {
                             {group.customerInfo.buildingName && (
                               <p className="text-xs text-gray-400 mt-0.5">
                                 {group.customerInfo.buildingName}
-                              </p>
-                            )}
-                            {(group.customerInfo.floor ||
-                              group.customerInfo.unitNumber) && (
-                              <p className="text-xs text-gray-400">
-                                {group.customerInfo.floor
-                                  ? `Flr ${group.customerInfo.floor}`
-                                  : ""}
-                                {group.customerInfo.unitNumber
-                                  ? ` Unit ${group.customerInfo.unitNumber}`
-                                  : ""}
                               </p>
                             )}
                           </div>
