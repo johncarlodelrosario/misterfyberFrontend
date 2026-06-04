@@ -356,7 +356,36 @@ export default function AdminPaymentsPage() {
             );
           }
 
-          const grouped = groupPaymentsByCustomer(paymentsList);
+          // Fetch application data for each payment to get customer names
+          const enrichedPayments = await Promise.all(
+            paymentsList.map(async (payment: Payment) => {
+              let applicationId = null;
+              if (
+                payment.applicationId &&
+                typeof payment.applicationId === "string"
+              ) {
+                applicationId = payment.applicationId;
+              } else if (
+                payment.applicationId &&
+                typeof payment.applicationId === "object" &&
+                payment.applicationId._id
+              ) {
+                applicationId = payment.applicationId._id;
+              } else if (payment.application && payment.application._id) {
+                applicationId = payment.application._id;
+              }
+
+              if (applicationId) {
+                const appData = await fetchApplicationData(applicationId);
+                if (appData && !payment.application) {
+                  payment.application = appData;
+                }
+              }
+              return payment;
+            }),
+          );
+
+          const grouped = groupPaymentsByCustomer(enrichedPayments);
           setPaymentGroups(grouped);
           setTotalPages(allPaymentsResult.totalPages || 1);
           setTotalRecords(grouped.length);
@@ -366,12 +395,44 @@ export default function AdminPaymentsPage() {
           );
           let pendingList = pendingResult.data || [];
 
+          // Enrich pending payments with customer data
+          const enrichedPending = await Promise.all(
+            pendingList.map(async (payment: Payment) => {
+              let applicationId = null;
+              if (
+                payment.applicationId &&
+                typeof payment.applicationId === "string"
+              ) {
+                applicationId = payment.applicationId;
+              } else if (
+                payment.applicationId &&
+                typeof payment.applicationId === "object" &&
+                payment.applicationId._id
+              ) {
+                applicationId = payment.applicationId._id;
+              } else if (payment.application && payment.application._id) {
+                applicationId = payment.application._id;
+              }
+
+              if (applicationId) {
+                const appData = await fetchApplicationData(applicationId);
+                if (appData && !payment.application) {
+                  payment.application = appData;
+                }
+              }
+              return payment;
+            }),
+          );
+
           if (paymentTypeFilter) {
-            pendingList = pendingList.filter(
-              (payment: Payment) => payment.paymentType === paymentTypeFilter,
+            setPendingPayments(
+              enrichedPending.filter(
+                (payment: Payment) => payment.paymentType === paymentTypeFilter,
+              ),
             );
+          } else {
+            setPendingPayments(enrichedPending);
           }
-          setPendingPayments(pendingList);
 
           if (allPaymentsResult.stats) {
             setStats({
