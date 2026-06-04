@@ -69,6 +69,9 @@ interface Payment {
     gatewayResponse?: {
       applicationId?: string;
       confirmationNotes?: string;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
     };
     confirmedBy?: string;
     confirmedAt?: string;
@@ -162,6 +165,39 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
       phone: user.phoneNumber || "—",
       applicationId: payment.applicationId || "—",
       address: user.address || "—",
+    };
+  }
+
+  // Priority 5: Check paymentDetails for customer info
+  if (payment.paymentDetails?.gatewayResponse) {
+    const gr = payment.paymentDetails.gatewayResponse;
+    if (gr.customerName || gr.customerEmail || gr.customerPhone) {
+      return {
+        name: gr.customerName || "—",
+        email: gr.customerEmail || "—",
+        phone: gr.customerPhone || "—",
+        applicationId:
+          gr.applicationId ||
+          (typeof payment.applicationId === "string"
+            ? payment.applicationId
+            : "—"),
+        address: "—",
+      };
+    }
+  }
+
+  // Priority 6: Try to fetch from applicationId if it's a string
+  if (
+    typeof payment.applicationId === "string" &&
+    payment.applicationId !== "—"
+  ) {
+    // Store the applicationId as is, name will be fetched separately if needed
+    return {
+      name: "Loading...",
+      email: "—",
+      phone: "—",
+      applicationId: payment.applicationId,
+      address: "—",
     };
   }
 
@@ -1018,6 +1054,17 @@ export default function AdminPaymentsPage() {
                             {group.customerInfo.buildingName && (
                               <p className="text-xs text-gray-400 mt-0.5">
                                 {group.customerInfo.buildingName}
+                              </p>
+                            )}
+                            {(group.customerInfo.floor ||
+                              group.customerInfo.unitNumber) && (
+                              <p className="text-xs text-gray-400">
+                                {group.customerInfo.floor
+                                  ? `Flr ${group.customerInfo.floor}`
+                                  : ""}
+                                {group.customerInfo.unitNumber
+                                  ? ` Unit ${group.customerInfo.unitNumber}`
+                                  : ""}
                               </p>
                             )}
                           </div>
