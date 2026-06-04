@@ -480,7 +480,6 @@ export default function AdminLayout({
                     {user?.firstName?.[0] || user?.username?.[0] || "A"}
                   </span>
                 </div>
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white shadow-sm animate-pulse"></div>
               </div>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
