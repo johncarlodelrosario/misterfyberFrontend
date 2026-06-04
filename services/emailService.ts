@@ -1,0 +1,193 @@
+import api from "./api";
+
+export interface Customer {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  applicationId: string;
+  status: string;
+  hasBilling: boolean;
+  hasUnpaidBills: boolean;
+  lastBillAmount: number;
+  lastBillStatus: string | null;
+}
+
+export interface Bill {
+  _id: string;
+  invoiceNumber: string;
+  total: number;
+  dueDate: string;
+  status: string;
+  isProRated: boolean;
+  isInstallationBill: boolean;
+  billingPeriod: {
+    start: string;
+    end: string;
+  };
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  message: string;
+  category: string;
+  includeBillingDefault: boolean;
+  createdAt: string;
+  updatedBy: string;
+}
+
+export interface SendEmailParams {
+  applicationId: string;
+  subject: string;
+  message: string;
+  includeBilling: boolean;
+  billId?: string;
+  sendCopyToAdmin?: boolean;
+  attachments?: any[];
+  priority?: "low" | "normal" | "high";
+}
+
+export interface BulkEmailParams {
+  applicationIds: string[];
+  subject: string;
+  message: string;
+  includeBilling: boolean;
+  billType?: "unpaid" | "latest" | "installation";
+  sendCopyToAdmin?: boolean;
+}
+
+class EmailService {
+  private baseUrl = "/manual-email";
+
+  // Get customers for email selection
+  async getCustomers(params?: {
+    search?: string;
+    status?: string;
+    hasBilling?: boolean;
+  }): Promise<Customer[]> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.search) queryParams.append("search", params.search);
+      if (params?.status) queryParams.append("status", params.status);
+      if (params?.hasBilling !== undefined)
+        queryParams.append("hasBilling", String(params.hasBilling));
+
+      const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const response = await api.get(url);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to fetch customers:", error);
+      throw error;
+    }
+  }
+
+  // Get bills for a specific customer
+  async getCustomerBills(
+    applicationId: string,
+  ): Promise<{ customer: Customer; bills: Bill[] }> {
+    try {
+      const response = await api.get(
+        `${this.baseUrl}/customers/${applicationId}/bills`,
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to fetch customer bills:", error);
+      throw error;
+    }
+  }
+
+  // Send manual email to a single customer
+  async sendEmail(params: SendEmailParams): Promise<any> {
+    try {
+      const response = await api.post(`${this.baseUrl}/send`, params);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to send email:", error);
+      throw error;
+    }
+  }
+
+  // Send bulk emails to multiple customers
+  async sendBulkEmails(params: BulkEmailParams): Promise<any> {
+    try {
+      const response = await api.post(`${this.baseUrl}/send-bulk`, params);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to send bulk emails:", error);
+      throw error;
+    }
+  }
+
+  // Send reminder to all customers with unpaid bills
+  async sendReminderToUnpaid(
+    customMessage?: string,
+    includeDueDateReminder?: boolean,
+  ): Promise<any> {
+    try {
+      const response = await api.post(`${this.baseUrl}/send-reminder-unpaid`, {
+        customMessage,
+        includeDueDateReminder: includeDueDateReminder !== false,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Failed to send unpaid reminders:", error);
+      throw error;
+    }
+  }
+
+  // Save email template
+  async saveTemplate(
+    template: Omit<EmailTemplate, "id" | "createdAt" | "updatedBy">,
+  ): Promise<EmailTemplate> {
+    try {
+      const response = await api.post(`${this.baseUrl}/templates`, template);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to save template:", error);
+      throw error;
+    }
+  }
+
+  // Get all email templates
+  async getTemplates(): Promise<EmailTemplate[]> {
+    try {
+      const response = await api.get(`${this.baseUrl}/templates`);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to fetch templates:", error);
+      throw error;
+    }
+  }
+
+  // Delete email template
+  async deleteTemplate(templateId: string): Promise<void> {
+    try {
+      await api.delete(`${this.baseUrl}/templates/${templateId}`);
+    } catch (error) {
+      console.error("Failed to delete template:", error);
+      throw error;
+    }
+  }
+
+  // Preview email before sending
+  async previewEmail(params: {
+    subject: string;
+    message: string;
+    includeBilling: boolean;
+    applicationId?: string;
+    billId?: string;
+  }): Promise<{ html: string; subject: string; message: string }> {
+    try {
+      const response = await api.post(`${this.baseUrl}/preview`, params);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to preview email:", error);
+      throw error;
+    }
+  }
+}
+
+export default new EmailService();

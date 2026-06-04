@@ -24,6 +24,7 @@ import {
   FiCalendar,
   FiSettings,
   FiHelpCircle,
+  FiMail,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { getAllApplications } from "@/services/admin";
@@ -67,6 +68,7 @@ const navItems: NavItem[] = [
   { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
   { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
   { name: "Billing", href: "/admin/billing", icon: FiClipboard },
+  { name: "Manual Email", href: "/admin/manual-email", icon: FiMail },
   { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
   { name: "Plans", href: "/admin/plans", icon: FiPackage },
 ];
