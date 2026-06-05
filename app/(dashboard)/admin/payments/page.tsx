@@ -386,6 +386,8 @@ export default function AdminPaymentsPage() {
     pendingCount: 0,
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [currentTablePage, setCurrentTablePage] = useState(1);
   const isMountedRef = useRef(true);
 
   const loadPayments = useCallback(
@@ -577,6 +579,13 @@ export default function AdminPaymentsPage() {
     });
   };
 
+  // Excel-style pagination
+  const getPaginatedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
+    const startIndex = (currentTablePage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return groups.slice(startIndex, endIndex);
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
@@ -629,8 +638,58 @@ export default function AdminPaymentsPage() {
     );
   };
 
+  // Excel export function
+  const exportToExcel = () => {
+    const filteredGroups = getFilteredGroups(paymentGroups);
+    const sortedGroups = getSortedGroups(filteredGroups);
+
+    // Prepare data for CSV
+    const csvData = sortedGroups.map((group) => ({
+      "Customer Name": group.customerInfo.name,
+      "Application ID": group.customerInfo.applicationId,
+      Email: group.customerInfo.email,
+      Phone: group.customerInfo.phone,
+      "Total Paid": group.totalPaidAmount,
+      "Total Pending": group.totalPendingAmount,
+      "Payment Count": group.paymentCount,
+      "Last Payment Date": formatShortDate(group.lastPaymentDate),
+      "First Payment Date": formatShortDate(group.firstPaymentDate),
+      Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
+    }));
+
+    // Convert to CSV
+    const headers = Object.keys(csvData[0] || {});
+    const csvRows = [
+      headers.join(","),
+      ...csvData.map((row) =>
+        headers
+          .map((header) => {
+            const value = row[header as keyof typeof row];
+            // Handle numbers and strings
+            if (typeof value === "number") return value.toString();
+            return `"${String(value).replace(/"/g, '""')}"`;
+          })
+          .join(","),
+      ),
+    ];
+
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payments_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Export complete!");
+  };
+
   const filteredGroups = getFilteredGroups(paymentGroups);
   const sortedGroups = getSortedGroups(filteredGroups);
+  const paginatedGroups = getPaginatedGroups(sortedGroups);
+  const totalFilteredCount = filteredGroups.length;
+  const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage);
 
   if (loading) {
     return (
@@ -772,6 +831,12 @@ export default function AdminPaymentsPage() {
               <FiFilter /> Filters
             </button>
             <button
+              onClick={exportToExcel}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+            >
+              <FiDownload /> Export Excel
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
@@ -891,25 +956,46 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* Customer Summary Table */}
+      {/* Excel-style Customer Summary Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
-        <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
-          <h2 className="text-lg font-semibold">
-            Customer Payment Summary ({filteredGroups.length})
-          </h2>
-          <button
-            onClick={handleRefresh}
-            className="px-3 py-1 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 transition"
-          >
-            <FiRefreshCw className="w-4 h-4 inline mr-1" /> Refresh
-          </button>
+        <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Customer Payment Summary ({totalFilteredCount})
+            </h2>
+            <p className="text-sm text-gray-500">
+              Showing {paginatedGroups.length} of {sortedGroups.length}{" "}
+              customers
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentTablePage(1);
+              }}
+              className="px-3 py-1 border rounded-lg text-sm"
+            >
+              <option value={10}>10 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+            </select>
+            <button
+              onClick={exportToExcel}
+              className="px-3 py-1 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+            >
+              <FiDownload /> Export
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("customerInfo")}
                 >
                   Customer Name <SortIcon field="customerInfo" />
@@ -921,13 +1007,13 @@ export default function AdminPaymentsPage() {
                   Email / Phone
                 </th>
                 <th
-                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 cursor-pointer"
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("paymentCount")}
                 >
                   Payments <SortIcon field="paymentCount" />
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer"
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("totalAmount")}
                 >
                   Total Paid <SortIcon field="totalAmount" />
@@ -936,7 +1022,7 @@ export default function AdminPaymentsPage() {
                   Pending
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("lastPaymentDate")}
                 >
                   Last Payment <SortIcon field="lastPaymentDate" />
@@ -947,7 +1033,7 @@ export default function AdminPaymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {sortedGroups.length === 0 ? (
+              {paginatedGroups.length === 0 ? (
                 <tr>
                   <td
                     colSpan={8}
@@ -958,7 +1044,7 @@ export default function AdminPaymentsPage() {
                   </td>
                 </tr>
               ) : (
-                sortedGroups.map((group) => {
+                paginatedGroups.map((group) => {
                   const isExpanded = expandedCustomer === group.customerId;
                   const hasMultiple = group.paymentCount > 1;
 
@@ -976,7 +1062,7 @@ export default function AdminPaymentsPage() {
                                     isExpanded ? null : group.customerId,
                                   )
                                 }
-                                className="text-blue-600"
+                                className="text-blue-600 hover:text-blue-800"
                               >
                                 {isExpanded ? (
                                   <FiChevronsUp />
@@ -1092,6 +1178,56 @@ export default function AdminPaymentsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Excel-style Pagination */}
+        {totalFilteredCount > 0 && (
+          <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between flex-wrap gap-4">
+            <div className="text-sm text-gray-600">
+              Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
+              {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
+              {totalFilteredCount} entries
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentTablePage(1)}
+                disabled={currentTablePage === 1}
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                First
+              </button>
+              <button
+                onClick={() =>
+                  setCurrentTablePage((prev) => Math.max(1, prev - 1))
+                }
+                disabled={currentTablePage === 1}
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1">
+                Page {currentTablePage} of {totalPagesCount || 1}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentTablePage((prev) =>
+                    Math.min(totalPagesCount, prev + 1),
+                  )
+                }
+                disabled={currentTablePage === totalPagesCount}
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentTablePage(totalPagesCount)}
+                disabled={currentTablePage === totalPagesCount}
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Payment Modal */}
