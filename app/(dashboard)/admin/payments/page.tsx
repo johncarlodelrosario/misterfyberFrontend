@@ -1,4 +1,3 @@
-// app/(dashboard)/admin/payments/page.tsx
 "use client";
 
 import React, {
@@ -105,6 +104,7 @@ interface PaymentGroup {
 
 // Cache for application data - keyed by applicationId string (FOU...)
 const applicationCache = new Map<string, any>();
+const pendingFetches = new Map<string, Promise<any>>();
 
 // ==================== HELPER FUNCTION TO GET CUSTOMER INFO ====================
 async function fetchApplicationData(applicationIdString: string): Promise<any> {
@@ -115,52 +115,88 @@ async function fetchApplicationData(applicationIdString: string): Promise<any> {
     return applicationCache.get(applicationIdString);
   }
 
-  try {
-    // Try to fetch application by applicationId field (not MongoDB _id)
-    const response = await api.get(
-      `/applications/by-application-id/${encodeURIComponent(applicationIdString)}`,
-    );
-    if (response.data?.success && response.data?.data) {
-      const appData = response.data.data;
-      applicationCache.set(applicationIdString, appData);
-      return appData;
-    }
-  } catch (error) {
-    console.error(`Failed to fetch application ${applicationIdString}:`, error);
+  // Check if there's already a pending fetch for this ID
+  if (pendingFetches.has(applicationIdString)) {
+    return pendingFetches.get(applicationIdString);
   }
-  return null;
+
+  // Create a new fetch promise
+  const fetchPromise = (async () => {
+    try {
+      const response = await api.get(
+        `/applications/by-application-id/${encodeURIComponent(applicationIdString)}`,
+      );
+      if (response.data?.success && response.data?.data) {
+        const appData = response.data.data;
+        applicationCache.set(applicationIdString, appData);
+        return appData;
+      }
+    } catch (error) {
+      console.error(
+        `Failed to fetch application ${applicationIdString}:`,
+        error,
+      );
+    }
+    return null;
+  })();
+
+  pendingFetches.set(applicationIdString, fetchPromise);
+  const result = await fetchPromise;
+  pendingFetches.delete(applicationIdString);
+  return result;
 }
 
 // Try to fetch by MongoDB ID as fallback
 async function fetchApplicationByMongoId(mongoId: string): Promise<any> {
   if (!mongoId) return null;
 
-  if (applicationCache.has(`mongo_${mongoId}`)) {
-    return applicationCache.get(`mongo_${mongoId}`);
+  const cacheKey = `mongo_${mongoId}`;
+  if (applicationCache.has(cacheKey)) {
+    return applicationCache.get(cacheKey);
   }
 
-  try {
-    const response = await api.get(`/applications/${mongoId}`);
-    if (response.data?.success && response.data?.data) {
-      const appData = response.data.data;
-      applicationCache.set(`mongo_${mongoId}`, appData);
-      return appData;
-    }
-  } catch (error) {
-    console.error(`Failed to fetch application by mongo id ${mongoId}:`, error);
+  if (pendingFetches.has(cacheKey)) {
+    return pendingFetches.get(cacheKey);
   }
-  return null;
+
+  const fetchPromise = (async () => {
+    try {
+      const response = await api.get(`/applications/${mongoId}`);
+      if (response.data?.success && response.data?.data) {
+        const appData = response.data.data;
+        applicationCache.set(cacheKey, appData);
+        return appData;
+      }
+    } catch (error) {
+      console.error(
+        `Failed to fetch application by mongo id ${mongoId}:`,
+        error,
+      );
+    }
+    return null;
+  })();
+
+  pendingFetches.set(cacheKey, fetchPromise);
+  const result = await fetchPromise;
+  pendingFetches.delete(cacheKey);
+  return result;
 }
 
-function getCustomerInfo(payment: Payment): CustomerInfo {
-  // Priority 1: Check if application object is populated
-  if (payment.application) {
+// SYNC function to get customer info - uses cached data or returns placeholder
+function getCustomerInfoSync(payment: Payment): CustomerInfo {
+  // Priority 1: Check if application object is populated (already fetched)
+  if (payment.application && typeof payment.application === "object") {
     const app = payment.application as any;
     const firstName = app.firstName || "";
     const lastName = app.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name: fullName || app.applicantName || app.name || "—",
+      name:
+        fullName ||
+        app.applicantName ||
+        app.name ||
+        app.email?.split("@")[0] ||
+        "—",
       email: app.email || "—",
       phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || payment.applicationId || "—",
@@ -179,7 +215,7 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     const lastName = app.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name: fullName || app.name || "—",
+      name: fullName || app.name || app.email?.split("@")[0] || "—",
       email: app.email || "—",
       phone: app.phoneNumber || app.phone || "—",
       applicationId: app.applicationId || app._id || "—",
@@ -198,7 +234,12 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name: fullName || user.username || user.name || "—",
+      name:
+        fullName ||
+        user.username ||
+        user.name ||
+        user.email?.split("@")[0] ||
+        "—",
       email: user.email || "—",
       phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
@@ -208,13 +249,18 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   }
 
   // Priority 4: Check if user object is populated
-  if (payment.user) {
+  if (payment.user && typeof payment.user === "object") {
     const user = payment.user as any;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
     return {
-      name: fullName || user.username || user.name || "—",
+      name:
+        fullName ||
+        user.username ||
+        user.name ||
+        user.email?.split("@")[0] ||
+        "—",
       email: user.email || "—",
       phone: user.phoneNumber || user.phone || "—",
       applicationId: payment.applicationId || "—",
@@ -242,14 +288,14 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Priority 6: Use applicationId as string - this is the FOU... code
+  // Priority 6: Use applicationId as string
   if (
     typeof payment.applicationId === "string" &&
     payment.applicationId !== "—" &&
     payment.applicationId.length > 0
   ) {
     return {
-      name: `Customer ${payment.applicationId.slice(-6)}`,
+      name: `Loading... (${payment.applicationId})`,
       email: "—",
       phone: "—",
       applicationId: payment.applicationId,
@@ -270,13 +316,62 @@ function getCustomerInfo(payment: Payment): CustomerInfo {
   };
 }
 
+// Async function to enrich a payment with application data
+async function enrichPayment(payment: Payment): Promise<Payment> {
+  // Skip if already has application data
+  if (
+    payment.application &&
+    typeof payment.application === "object" &&
+    payment.application.firstName
+  ) {
+    return payment;
+  }
+
+  // Get the applicationId string (FOU...)
+  let applicationIdString: string | null = null;
+
+  if (typeof payment.applicationId === "string") {
+    applicationIdString = payment.applicationId;
+  } else if (
+    payment.applicationId &&
+    typeof payment.applicationId === "object" &&
+    payment.applicationId.applicationId
+  ) {
+    applicationIdString = payment.applicationId.applicationId;
+    payment.application = payment.applicationId;
+    return payment;
+  } else if (
+    payment.applicationId &&
+    typeof payment.applicationId === "object" &&
+    payment.applicationId._id
+  ) {
+    const appData = await fetchApplicationByMongoId(payment.applicationId._id);
+    if (appData) {
+      payment.application = appData;
+      return payment;
+    }
+  } else if (payment.application && payment.application.applicationId) {
+    applicationIdString = payment.application.applicationId;
+  }
+
+  if (applicationIdString) {
+    const appData = await fetchApplicationData(applicationIdString);
+    if (appData) {
+      payment.application = appData;
+    }
+  }
+
+  return payment;
+}
+
 // ==================== GROUP PAYMENTS BY CUSTOMER ====================
 function groupPaymentsByCustomer(payments: Payment[]): PaymentGroup[] {
   const groups = new Map<string, PaymentGroup>();
 
-  payments.forEach((payment) => {
-    const customerInfo = getCustomerInfo(payment);
-    const customerId =
+  for (const payment of payments) {
+    const customerInfo = getCustomerInfoSync(payment);
+
+    let customerId =
       customerInfo.applicationId !== "—"
         ? customerInfo.applicationId
         : customerInfo.email !== "—"
@@ -316,9 +411,36 @@ function groupPaymentsByCustomer(payments: Payment[]): PaymentGroup[] {
     if (new Date(payment.createdAt) < new Date(group.firstPaymentDate)) {
       group.firstPaymentDate = payment.createdAt;
     }
-  });
+  }
 
-  return Array.from(groups.values());
+  // Update customer info for each group with the best available data
+  const result = Array.from(groups.values());
+  for (const group of result) {
+    const paymentWithFullInfo = group.payments.find(
+      (p) =>
+        p.application &&
+        typeof p.application === "object" &&
+        p.application.firstName,
+    );
+    if (paymentWithFullInfo && paymentWithFullInfo.application) {
+      const app = paymentWithFullInfo.application as any;
+      const firstName = app.firstName || "";
+      const lastName = app.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      group.customerInfo = {
+        ...group.customerInfo,
+        name:
+          fullName ||
+          app.name ||
+          app.email?.split("@")[0] ||
+          group.customerInfo.name,
+        email: app.email || group.customerInfo.email,
+        phone: app.phoneNumber || app.phone || group.customerInfo.phone,
+      };
+    }
+  }
+
+  return result;
 }
 
 // ==================== MAIN COMPONENT ====================
@@ -332,7 +454,6 @@ export default function AdminPaymentsPage() {
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -370,6 +491,10 @@ export default function AdminPaymentsPage() {
         }
 
         try {
+          if (forceRefresh) {
+            applicationCache.clear();
+          }
+
           const allPaymentsResult = await getAllPayments({
             page: currentPage,
             limit: 100,
@@ -387,100 +512,21 @@ export default function AdminPaymentsPage() {
             );
           }
 
-          // Fetch application data for each payment to get customer names
           const enrichedPayments = await Promise.all(
-            paymentsList.map(async (payment: Payment) => {
-              // Get the applicationId string (FOU...)
-              let applicationIdString = null;
-
-              if (typeof payment.applicationId === "string") {
-                applicationIdString = payment.applicationId;
-              } else if (
-                payment.applicationId &&
-                typeof payment.applicationId === "object" &&
-                payment.applicationId.applicationId
-              ) {
-                applicationIdString = payment.applicationId.applicationId;
-              } else if (
-                payment.applicationId &&
-                typeof payment.applicationId === "object" &&
-                payment.applicationId._id
-              ) {
-                // If it's a MongoDB ID, try to fetch by that too
-                const appData = await fetchApplicationByMongoId(
-                  payment.applicationId._id,
-                );
-                if (appData && !payment.application) {
-                  payment.application = appData;
-                }
-                return payment;
-              } else if (
-                payment.application &&
-                payment.application.applicationId
-              ) {
-                applicationIdString = payment.application.applicationId;
-              }
-
-              if (applicationIdString && !payment.application) {
-                const appData = await fetchApplicationData(applicationIdString);
-                if (appData) {
-                  payment.application = appData;
-                }
-              }
-              return payment;
-            }),
+            paymentsList.map((payment: Payment) => enrichPayment(payment)),
           );
 
           const grouped = groupPaymentsByCustomer(enrichedPayments);
           setPaymentGroups(grouped);
           setTotalPages(allPaymentsResult.totalPages || 1);
-          setTotalRecords(grouped.length);
 
           const pendingResult = await getPendingPayments(forceRefresh).catch(
             () => ({ data: [] }),
           );
           let pendingList = pendingResult.data || [];
 
-          // Enrich pending payments with customer data
           const enrichedPending = await Promise.all(
-            pendingList.map(async (payment: Payment) => {
-              let applicationIdString = null;
-
-              if (typeof payment.applicationId === "string") {
-                applicationIdString = payment.applicationId;
-              } else if (
-                payment.applicationId &&
-                typeof payment.applicationId === "object" &&
-                payment.applicationId.applicationId
-              ) {
-                applicationIdString = payment.applicationId.applicationId;
-              } else if (
-                payment.applicationId &&
-                typeof payment.applicationId === "object" &&
-                payment.applicationId._id
-              ) {
-                const appData = await fetchApplicationByMongoId(
-                  payment.applicationId._id,
-                );
-                if (appData && !payment.application) {
-                  payment.application = appData;
-                }
-                return payment;
-              } else if (
-                payment.application &&
-                payment.application.applicationId
-              ) {
-                applicationIdString = payment.application.applicationId;
-              }
-
-              if (applicationIdString && !payment.application) {
-                const appData = await fetchApplicationData(applicationIdString);
-                if (appData) {
-                  payment.application = appData;
-                }
-              }
-              return payment;
-            }),
+            pendingList.map((payment: Payment) => enrichPayment(payment)),
           );
 
           if (paymentTypeFilter) {
@@ -547,8 +593,9 @@ export default function AdminPaymentsPage() {
       !confirm(
         "Confirm this payment? This will:\n✓ Mark the bill as paid\n✓ Update customer's balance\n✓ Send confirmation email to customer\n✓ Reactivate service if suspended",
       )
-    )
+    ) {
       return;
+    }
 
     setConfirming(true);
     try {
@@ -703,18 +750,6 @@ export default function AdminPaymentsPage() {
     return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   const formatShortDate = (dateStr: string) => {
     if (!dateStr) return "-";
     const date = new Date(dateStr);
@@ -737,6 +772,14 @@ export default function AdminPaymentsPage() {
 
   const filteredGroups = getFilteredGroups(paymentGroups);
   const sortedGroups = getSortedGroups(filteredGroups);
+
+  const getDisplayCustomerInfo = (group: PaymentGroup) => {
+    const name = group.customerInfo.name;
+    if (name.includes("Loading...")) {
+      return { ...group.customerInfo, name: "Loading customer info..." };
+    }
+    return group.customerInfo;
+  };
 
   if (loading) {
     return (
@@ -987,7 +1030,7 @@ export default function AdminPaymentsPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {pendingPayments.map((payment) => {
-                    const customerInfo = getCustomerInfo(payment);
+                    const customerInfo = getCustomerInfoSync(payment);
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-500">
@@ -1169,6 +1212,7 @@ export default function AdminPaymentsPage() {
                 sortedGroups.map((group) => {
                   const isExpanded = expandedCustomer === group.customerId;
                   const hasMultiplePayments = group.paymentCount > 1;
+                  const displayInfo = getDisplayCustomerInfo(group);
 
                   return (
                     <Fragment key={group.customerId}>
@@ -1196,30 +1240,30 @@ export default function AdminPaymentsPage() {
                         <td className="px-4 py-4">
                           <div>
                             <p className="font-semibold text-gray-900">
-                              {group.customerInfo.name}
+                              {displayInfo.name}
                             </p>
-                            {group.customerInfo.buildingName && (
+                            {displayInfo.buildingName && (
                               <p className="text-xs text-gray-400 mt-0.5">
-                                {group.customerInfo.buildingName}
+                                {displayInfo.buildingName}
                               </p>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-4">
                           <span className="font-mono text-sm font-medium text-gray-700">
-                            {group.customerInfo.applicationId}
+                            {displayInfo.applicationId}
                           </span>
                         </td>
                         <td className="px-4 py-4">
                           <div>
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <FiMail className="w-3 h-3 text-gray-400" />
-                              <span>{group.customerInfo.email}</span>
+                              <span>{displayInfo.email}</span>
                             </div>
-                            {group.customerInfo.phone !== "—" && (
+                            {displayInfo.phone !== "—" && (
                               <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                                 <FiPhone className="w-3 h-3" />
-                                <span>{group.customerInfo.phone}</span>
+                                <span>{displayInfo.phone}</span>
                               </div>
                             )}
                           </div>
@@ -1500,22 +1544,10 @@ export default function AdminPaymentsPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Date Created</p>
-                    <p>{formatDate(selectedPayment.createdAt)}</p>
+                    <p>
+                      {new Date(selectedPayment.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
-                  {selectedPayment.paidAt && (
-                    <div>
-                      <p className="text-xs text-gray-500">Date Paid</p>
-                      <p>{formatDate(selectedPayment.paidAt)}</p>
-                    </div>
-                  )}
-                  {selectedPayment.billingId?.invoiceNumber && (
-                    <div>
-                      <p className="text-xs text-gray-500">Invoice Number</p>
-                      <p className="font-mono text-sm">
-                        {selectedPayment.billingId.invoiceNumber}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -1524,7 +1556,7 @@ export default function AdminPaymentsPage() {
                   Customer Information
                 </h3>
                 {(() => {
-                  const customerInfo = getCustomerInfo(selectedPayment);
+                  const customerInfo = getCustomerInfoSync(selectedPayment);
                   return (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -1545,12 +1577,6 @@ export default function AdminPaymentsPage() {
                           {customerInfo.applicationId}
                         </p>
                       </div>
-                      {customerInfo.buildingName && (
-                        <div>
-                          <p className="text-xs text-gray-500">Building</p>
-                          <p>{customerInfo.buildingName}</p>
-                        </div>
-                      )}
                     </div>
                   );
                 })()}
