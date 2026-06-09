@@ -109,7 +109,7 @@ function StatCard({
       className="text-center group"
     >
       <motion.div
-        className="mb-4 inline-flex p-4 bg-gray-800/80 backdrop-blur-sm rounded-2xl group-hover:shadow-xl transition-all duration-300 border border-blue-500/30 group-hover:border-blue-500/60"
+        className="mb-4 inline-flex p-4 bg-white rounded-2xl group-hover:shadow-xl transition-all duration-300 border border-gray-200 group-hover:border-blue-500/60"
         whileHover={{ rotate: 360 }}
         transition={{ duration: 0.6 }}
       ></motion.div>
@@ -121,7 +121,7 @@ function StatCard({
         {displayValue}
       </motion.div>
       {stat.label && (
-        <div className="text-gray-400 font-medium">{stat.label}</div>
+        <div className="text-gray-600 font-medium">{stat.label}</div>
       )}
     </motion.div>
   );
@@ -150,7 +150,7 @@ export default function StatsSection({ stats }: StatsSectionProps) {
   return (
     <section
       className="py-20 relative overflow-hidden"
-      style={{ backgroundColor: "#080616" }}
+      style={{ backgroundColor: "#ffffff" }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         {/* Optional Header - maaaring gusto mong maglagay ng title */}
@@ -162,13 +162,13 @@ export default function StatsSection({ stats }: StatsSectionProps) {
           }}
           className="text-center mb-12"
         >
-          <h2 className="text-3xl md:text-4xl font-bold text-white">
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Our{" "}
             <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
               Statistics
             </span>
           </h2>
-          <p className="text-gray-400 mt-2 max-w-2xl mx-auto">
+          <p className="text-gray-600 mt-2 max-w-2xl mx-auto">
             Numbers that speak for themselves
           </p>
         </motion.div>

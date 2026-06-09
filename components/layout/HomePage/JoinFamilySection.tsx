@@ -63,44 +63,6 @@ const JoinFamilySection: React.FC = () => {
           </p>
 
           {/* CTA Button Group - Smaller buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <motion.button
-              whileHover={{ scale: 1.05, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              className="group relative inline-flex items-center justify-center px-5 sm:px-6 py-2.5 text-sm md:text-base font-semibold text-white bg-gradient-to-r from-[#00A3E0] to-[#0082B3] rounded-full shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden"
-              onClick={() => {
-                window.location.href = "/get-started";
-              }}
-            >
-              <span className="relative z-10">Get Started Today</span>
-              <span className="absolute inset-0 bg-gradient-to-r from-[#00D4FF] to-[#00A3E0] opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
-              <svg
-                className="relative z-10 w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform duration-200"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7l5 5m0 0l-5 5m5-5H6"
-                />
-              </svg>
-            </motion.button>
-
-            {/* Secondary Button - Smaller */}
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.98 }}
-              className="px-5 sm:px-6 py-2.5 text-sm md:text-base font-semibold text-white border border-white/30 rounded-full hover:bg-white/10 hover:border-white/50 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => {
-                window.location.href = "/contact";
-              }}
-            >
-              Contact Us
-            </motion.button>
-          </div>
 
           {/* Trust indicators - Smaller and more compact */}
           <motion.div

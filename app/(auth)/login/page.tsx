@@ -32,29 +32,26 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"
-      style={{ backgroundColor: "#080616" }}
-    >
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white">
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="text-center flex justify-center">
             <Image
               src="/Logo.png"
               alt="Logo"
-              width={120}
-              height={120}
+              width={300}
+              height={300}
               className="object-contain"
             />
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-400">
+          <p className="mt-2 text-center text-sm text-gray-600">
             Or{" "}
             <Link
               href="/register"
-              className="font-medium text-primary-400 hover:text-primary-300"
+              className="font-medium text-primary-600 hover:text-primary-500"
             >
               create a new account
             </Link>
@@ -62,7 +59,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-3 rounded-lg text-sm">
+          <div className="bg-red-50 border border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm">
             {error}
           </div>
         )}
@@ -72,7 +69,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Email address
               </label>
@@ -88,7 +85,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900"
                   placeholder="you@example.com"
                 />
               </div>
@@ -97,7 +94,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Password
               </label>
@@ -113,7 +110,7 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-gray-900 text-white"
+                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900"
                   placeholder="••••••••"
                 />
                 <button
@@ -122,9 +119,9 @@ export default function LoginPage() {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showPassword ? (
-                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-300" />
+                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   ) : (
-                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-300" />
+                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   )}
                 </button>
               </div>
@@ -137,11 +134,11 @@ export default function LoginPage() {
                 id="remember-me"
                 name="remember-me"
                 type="checkbox"
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-700 rounded bg-gray-900"
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded bg-white"
               />
               <label
                 htmlFor="remember-me"
-                className="ml-2 block text-sm text-gray-300"
+                className="ml-2 block text-sm text-gray-700"
               >
                 Remember me
               </label>
@@ -150,7 +147,7 @@ export default function LoginPage() {
             <div className="text-sm">
               <Link
                 href="/forgot-password"
-                className="font-medium text-primary-400 hover:text-primary-300"
+                className="font-medium text-primary-600 hover:text-primary-500"
               >
                 Forgot your password?
               </Link>
@@ -195,11 +192,11 @@ export default function LoginPage() {
         </form>
 
         <div className="text-center">
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-gray-600">
             Don't have an account?{" "}
             <Link
               href="/register"
-              className="font-medium text-primary-400 hover:text-primary-300"
+              className="font-medium text-primary-600 hover:text-primary-500"
             >
               Register here
             </Link>

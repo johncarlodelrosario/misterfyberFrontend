@@ -80,7 +80,7 @@ export default function AboutPage() {
   return (
     <>
       <Header />
-      <main className="bg-[#080616] overflow-hidden">
+      <main className="bg-white overflow-hidden">
         {/* Hero Section - Who We Are with Background Image */}
         <section
           className="relative text-white min-h-[500px] sm:min-h-[600px] md:min-h-[700px] flex items-center bg-cover bg-center bg-no-repeat"
@@ -180,10 +180,10 @@ export default function AboutPage() {
         </section>
 
         {/* Mission & Vision */}
-        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+        <section className="py-12 sm:py-16 md:py-20 bg-white">
           <div className="container-custom max-w-6xl mx-auto px-4 sm:px-6 grid md:grid-cols-2 gap-6 sm:gap-8">
             <motion.div
-              className="bg-white/10 backdrop-blur-sm p-6 sm:p-8 md:p-10 rounded-2xl border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] transition-all duration-300"
+              className="bg-gray-50 p-6 sm:p-8 md:p-10 rounded-2xl border border-gray-200 shadow-md hover:shadow-xl transition-all duration-300"
               initial={{ opacity: 0, x: -50 }}
               whileInView={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
@@ -191,25 +191,25 @@ export default function AboutPage() {
               whileHover={{ scale: 1.02, y: -5 }}
             >
               <motion.div
-                className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4 sm:mb-5"
+                className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4 sm:mb-5"
                 whileHover={{ rotate: 360, scale: 1.1 }}
                 transition={{ duration: 0.5 }}
               >
-                <span className="text-blue-400 text-lg sm:text-xl font-bold">
+                <span className="text-blue-600 text-lg sm:text-xl font-bold">
                   🎯
                 </span>
               </motion.div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Our Mission
               </h3>
-              <p className="text-gray-300 text-base sm:text-lg leading-relaxed">
+              <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
                 To provide reliable, affordable, and high-speed internet
                 services that improve the quality of life of every customer.
               </p>
             </motion.div>
 
             <motion.div
-              className="bg-white/10 backdrop-blur-sm p-6 sm:p-8 md:p-10 rounded-2xl border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] transition-all duration-300"
+              className="bg-gray-50 p-6 sm:p-8 md:p-10 rounded-2xl border border-gray-200 shadow-md hover:shadow-xl transition-all duration-300"
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
@@ -217,18 +217,18 @@ export default function AboutPage() {
               whileHover={{ scale: 1.02, y: -5 }}
             >
               <motion.div
-                className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4 sm:mb-5"
+                className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4 sm:mb-5"
                 whileHover={{ rotate: 360, scale: 1.1 }}
                 transition={{ duration: 0.5 }}
               >
-                <span className="text-blue-400 text-lg sm:text-xl font-bold">
+                <span className="text-blue-600 text-lg sm:text-xl font-bold">
                   👁️
                 </span>
               </motion.div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Our Vision
               </h3>
-              <p className="text-gray-300 text-base sm:text-lg leading-relaxed">
+              <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
                 To become one of the most trusted internet service providers,
                 known for innovation, customer satisfaction, and excellent
                 connectivity solutions.
@@ -238,7 +238,7 @@ export default function AboutPage() {
         </section>
 
         {/* Why Choose Us */}
-        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+        <section className="py-12 sm:py-16 md:py-20 bg-white">
           <div className="container-custom max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               className="text-center mb-10 sm:mb-16"
@@ -247,13 +247,13 @@ export default function AboutPage() {
               transition={{ duration: 0.6 }}
               viewport={{ once: true }}
             >
-              <div className="inline-block bg-blue-500/20 text-blue-300 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-semibold mb-4">
+              <div className="inline-block bg-blue-100 text-blue-700 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-semibold mb-4">
                 Why Us
               </div>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4 text-white">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4 text-gray-900">
                 Why Choose Misterfyber?
               </h2>
-              <p className="text-gray-400 text-base sm:text-lg max-w-2xl mx-auto px-2">
+              <p className="text-gray-600 text-base sm:text-lg max-w-2xl mx-auto px-2">
                 Built to deliver speed, reliability, and value for every
                 Filipino home and business.
               </p>
@@ -294,7 +294,7 @@ export default function AboutPage() {
               ].map((item, i) => (
                 <motion.div
                   key={i}
-                  className="bg-white/5 backdrop-blur-sm p-5 sm:p-6 rounded-xl border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_25px_rgba(59,130,246,0.4)] hover:bg-white/10 transition-all duration-300"
+                  className="bg-gray-50 p-5 sm:p-6 rounded-xl border border-gray-200 shadow-md hover:shadow-xl hover:bg-gray-100 transition-all duration-300"
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1, duration: 0.5 }}
@@ -305,12 +305,12 @@ export default function AboutPage() {
                     whileHover={{ rotate: 360 }}
                     transition={{ duration: 0.5 }}
                   >
-                    <item.icon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-400 mb-3 sm:mb-4" />
+                    <item.icon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mb-3 sm:mb-4" />
                   </motion.div>
-                  <h3 className="text-base sm:text-lg font-semibold text-white mb-2">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
                     {item.title}
                   </h3>
-                  <p className="text-gray-400 text-sm sm:text-base">
+                  <p className="text-gray-600 text-sm sm:text-base">
                     {item.desc}
                   </p>
                 </motion.div>
@@ -320,7 +320,7 @@ export default function AboutPage() {
         </section>
 
         {/* Values */}
-        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+        <section className="py-12 sm:py-16 md:py-20 bg-white">
           <div className="container-custom max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               className="text-center mb-10 sm:mb-16"
@@ -329,13 +329,13 @@ export default function AboutPage() {
               transition={{ duration: 0.6 }}
               viewport={{ once: true }}
             >
-              <div className="inline-block bg-blue-500/20 text-blue-300 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-semibold mb-4">
+              <div className="inline-block bg-blue-100 text-blue-700 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-semibold mb-4">
                 Core Values
               </div>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Our Values
               </h2>
-              <p className="text-gray-400 text-base sm:text-lg max-w-2xl mx-auto px-2">
+              <p className="text-gray-600 text-base sm:text-lg max-w-2xl mx-auto px-2">
                 The principles that guide everything we do at Misterfyber.
               </p>
             </motion.div>
@@ -344,7 +344,7 @@ export default function AboutPage() {
               {values.map((value, index) => (
                 <motion.div
                   key={index}
-                  className="bg-white/5 backdrop-blur-sm rounded-xl p-6 sm:p-8 text-center border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_25px_rgba(59,130,246,0.4)] hover:bg-white/10 transition-all duration-300"
+                  className="bg-gray-50 rounded-xl p-6 sm:p-8 text-center border border-gray-200 shadow-md hover:shadow-xl hover:bg-gray-100 transition-all duration-300"
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1, duration: 0.5 }}
@@ -352,16 +352,16 @@ export default function AboutPage() {
                   whileHover={{ scale: 1.05, y: -5 }}
                 >
                   <motion.div
-                    className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-5"
+                    className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-5"
                     whileHover={{ rotate: 360, scale: 1.1 }}
                     transition={{ duration: 0.5 }}
                   >
-                    <value.icon className="w-7 h-7 sm:w-8 sm:h-8 text-blue-400" />
+                    <value.icon className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600" />
                   </motion.div>
-                  <h3 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-3 text-white">
+                  <h3 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-3 text-gray-900">
                     {value.title}
                   </h3>
-                  <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
+                  <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
                     {value.description}
                   </p>
                 </motion.div>
@@ -371,7 +371,7 @@ export default function AboutPage() {
         </section>
 
         {/* Commitment Statement */}
-        <section className="py-12 sm:py-16 md:py-20 bg-[#080616]">
+        <section className="py-12 sm:py-16 md:py-20 bg-white">
           <div className="container-custom max-w-4xl mx-auto px-4 sm:px-6 text-center">
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -380,14 +380,14 @@ export default function AboutPage() {
               viewport={{ once: true }}
             >
               <motion.div
-                className="w-16 h-1 bg-blue-500 mx-auto mb-6 sm:mb-8 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                className="w-16 h-1 bg-blue-600 mx-auto mb-6 sm:mb-8"
                 whileHover={{ width: 100 }}
                 transition={{ duration: 0.3 }}
               />
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 sm:mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-4 sm:mb-6">
                 Our Commitment
               </h2>
-              <p className="text-gray-300 text-base sm:text-lg md:text-xl leading-relaxed px-2">
+              <p className="text-gray-700 text-base sm:text-lg md:text-xl leading-relaxed px-2">
                 At Misterfyber, powered by Fyberblizz Network Corporation, we
                 are committed to connecting people to opportunities through
                 better internet service. We believe every home and business
@@ -427,16 +427,6 @@ export default function AboutPage() {
               >
                 Experience the difference with Misterfyber
               </motion.p>
-              <motion.button
-                className="bg-white text-blue-700 px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-gray-100 transition shadow-lg hover:shadow-xl text-sm sm:text-base cursor-pointer"
-                whileHover={{
-                  scale: 1.05,
-                  boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2)",
-                }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Get Started Today
-              </motion.button>
             </motion.div>
           </div>
         </section>

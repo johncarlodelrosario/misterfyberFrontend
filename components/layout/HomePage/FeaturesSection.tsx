@@ -88,7 +88,7 @@ function FeatureCard({ feature }: { feature: (typeof features)[0] }) {
         scale: 1.02,
         transition: { duration: 0.2 },
       }}
-      className="group relative bg-gray-800/80 backdrop-blur-sm rounded-2xl p-5 md:p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-blue-500/30 hover:border-blue-500/60 overflow-hidden"
+      className="group relative bg-white rounded-2xl p-5 md:p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-gray-200 hover:border-blue-500/60 overflow-hidden"
     >
       {/* Blue glow effect */}
       <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
@@ -104,10 +104,10 @@ function FeatureCard({ feature }: { feature: (typeof features)[0] }) {
         >
           <feature.icon className="w-6 h-6 md:w-8 md:h-8 text-white" />
         </motion.div>
-        <h3 className="text-base md:text-xl font-bold mb-2 md:mb-3 text-white group-hover:text-cyan-400 transition-colors">
+        <h3 className="text-base md:text-xl font-bold mb-2 md:mb-3 text-gray-900 group-hover:text-cyan-600 transition-colors">
           {feature.title}
         </h3>
-        <p className="text-xs md:text-base text-gray-300 leading-relaxed">
+        <p className="text-xs md:text-base text-gray-600 leading-relaxed">
           {feature.description}
         </p>
       </div>
@@ -137,7 +137,7 @@ export default function FeaturesSection() {
   return (
     <section
       className="py-12 md:py-24 relative overflow-hidden"
-      style={{ backgroundColor: "#080616" }}
+      style={{ backgroundColor: "#ffffff" }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         <motion.div
@@ -148,13 +148,13 @@ export default function FeaturesSection() {
           }}
           className="text-center mb-8 md:mb-16"
         >
-          <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4 text-white">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4 text-gray-900">
             Quality{" "}
             <span className="bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
               Internet Service
             </span>
           </h2>
-          <p className="text-sm md:text-base lg:text-xl text-gray-300 max-w-3xl mx-auto px-4">
+          <p className="text-sm md:text-base lg:text-xl text-gray-600 max-w-3xl mx-auto px-4">
             We provide reliable internet connection with affordable plans and
             dedicated customer support
           </p>

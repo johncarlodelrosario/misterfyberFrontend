@@ -64,13 +64,13 @@ interface Notification {
 
 const navItems: NavItem[] = [
   { name: "Dashboard", href: "/admin", icon: FiHome },
-  { name: "Users", href: "/admin/users", icon: FiUsers },
   { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
   { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
   { name: "Billing", href: "/admin/billing", icon: FiClipboard },
   { name: "Manual Email", href: "/admin/manual-email", icon: FiMail },
   { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
   { name: "Plans", href: "/admin/plans", icon: FiPackage },
+  { name: "Users", href: "/admin/users", icon: FiUsers },
 ];
 
 // Optimized storage wrapper with size checking

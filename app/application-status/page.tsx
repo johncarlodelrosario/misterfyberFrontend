@@ -50,25 +50,25 @@ function StatusContent() {
     switch (status) {
       case "pending":
         return (
-          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-900/50 text-yellow-300 border border-yellow-700">
+          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300">
             Pending
           </span>
         );
       case "approved":
         return (
-          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-green-900/50 text-green-300 border border-green-700">
+          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800 border border-green-300">
             Approved
           </span>
         );
       case "rejected":
         return (
-          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-900/50 text-red-300 border border-red-700">
+          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800 border border-red-300">
             Rejected
           </span>
         );
       default:
         return (
-          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-800 text-gray-300 border border-gray-700">
+          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800 border border-gray-300">
             {status}
           </span>
         );
@@ -76,21 +76,21 @@ function StatusContent() {
   };
 
   return (
-    <main className="min-h-screen bg-[#080616] py-8 md:py-12 px-4 sm:px-6">
+    <main className="min-h-screen bg-white py-8 md:py-12 px-4 sm:px-6">
       <div className="container mx-auto max-w-2xl">
         <div className="text-center mb-6 md:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
             Application Status
           </h1>
-          <p className="text-gray-400 text-sm sm:text-base mt-2">
+          <p className="text-gray-600 text-sm sm:text-base mt-2">
             Check the status of your internet application
           </p>
         </div>
 
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-xl border border-gray-700 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
           {/* Search Form - Minimal padding */}
           <div className="p-4 sm:p-5">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Application ID
             </label>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -99,7 +99,7 @@ function StatusContent() {
                 value={applicationId}
                 onChange={(e) => setApplicationId(e.target.value)}
                 placeholder="e.g., SLK2603123456"
-                className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 text-sm sm:text-base"
+                className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 text-sm sm:text-base"
                 onKeyPress={(e) => {
                   if (e.key === "Enter") {
                     handleCheckStatus();
@@ -118,45 +118,45 @@ function StatusContent() {
 
           {/* Status Result - Only expands when checked, no extra bottom space */}
           {checked && status && (
-            <div className="border-t border-gray-700">
+            <div className="border-t border-gray-200">
               <div className="px-4 sm:px-5 pb-4 sm:pb-5">
                 <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-700 gap-1 sm:gap-0">
-                    <span className="text-gray-400 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-200 gap-1 sm:gap-0">
+                    <span className="text-gray-500 text-sm">
                       Application ID:
                     </span>
-                    <span className="font-mono font-semibold text-white text-sm sm:text-base break-all">
+                    <span className="font-mono font-semibold text-gray-900 text-sm sm:text-base break-all">
                       {status.applicationId}
                     </span>
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-700 gap-1 sm:gap-0">
-                    <span className="text-gray-400 text-sm">Status:</span>
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-200 gap-1 sm:gap-0">
+                    <span className="text-gray-500 text-sm">Status:</span>
                     {getStatusBadge(status.status)}
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-700 gap-1 sm:gap-0">
-                    <span className="text-gray-400 text-sm">Plan:</span>
-                    <span className="font-semibold text-white text-sm sm:text-base">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-200 gap-1 sm:gap-0">
+                    <span className="text-gray-500 text-sm">Plan:</span>
+                    <span className="font-semibold text-gray-900 text-sm sm:text-base">
                       {status.plan?.name || "N/A"}
                     </span>
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-700 gap-1 sm:gap-0">
-                    <span className="text-gray-400 text-sm">Building:</span>
-                    <span className="font-semibold text-white text-sm sm:text-base">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-200 gap-1 sm:gap-0">
+                    <span className="text-gray-500 text-sm">Building:</span>
+                    <span className="font-semibold text-gray-900 text-sm sm:text-base">
                       {status.building?.buildingName || "N/A"}
                     </span>
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-700 gap-1 sm:gap-0">
-                    <span className="text-gray-400 text-sm">Submitted:</span>
-                    <span className="text-gray-300 text-sm sm:text-base">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-gray-200 gap-1 sm:gap-0">
+                    <span className="text-gray-500 text-sm">Submitted:</span>
+                    <span className="text-gray-700 text-sm sm:text-base">
                       {new Date(status.createdAt).toLocaleDateString()}
                     </span>
                   </div>
                   {status.adminNotes && (
-                    <div className="mt-3 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
-                      <p className="text-sm text-gray-400 font-medium mb-1">
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600 font-medium mb-1">
                         Admin Notes:
                       </p>
-                      <p className="text-sm text-gray-300 break-words">
+                      <p className="text-sm text-gray-700 break-words">
                         {status.adminNotes}
                       </p>
                     </div>
@@ -164,8 +164,8 @@ function StatusContent() {
                 </div>
 
                 {status.status === "approved" && (
-                  <div className="mt-4 p-3 bg-green-900/30 border border-green-700 rounded-lg">
-                    <p className="text-green-300 text-xs sm:text-sm">
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-green-700 text-xs sm:text-sm">
                       ✅ Your application has been approved! You can now create
                       your account using your Application ID.
                     </p>
@@ -179,8 +179,8 @@ function StatusContent() {
                 )}
 
                 {status.status === "rejected" && (
-                  <div className="mt-4 p-3 bg-red-900/30 border border-red-700 rounded-lg">
-                    <p className="text-red-300 text-xs sm:text-sm">
+                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-700 text-xs sm:text-sm">
                       ❌ Your application has been rejected. Please contact
                       support for more information.
                     </p>
@@ -188,8 +188,8 @@ function StatusContent() {
                 )}
 
                 {status.status === "pending" && (
-                  <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-lg">
-                    <p className="text-yellow-300 text-xs sm:text-sm">
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-yellow-700 text-xs sm:text-sm">
                       ⏳ Your application is pending review. You will receive an
                       email once approved.
                     </p>
@@ -201,7 +201,7 @@ function StatusContent() {
 
           {/* No result message - minimal spacing */}
           {checked && !status && !loading && (
-            <div className="border-t border-gray-700">
+            <div className="border-t border-gray-200">
               <div className="px-4 sm:px-5 pb-1 sm:pb-5">
                 <div className="text-center py-4">
                   <p className="text-gray-500 text-sm">
@@ -221,10 +221,10 @@ export default function ApplicationStatusPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#080616] flex items-center justify-center">
+        <div className="min-h-screen bg-white flex items-center justify-center">
           <div className="text-center">
-            <div className="inline-block w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-gray-400">Loading...</p>
+            <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
           </div>
         </div>
       }

@@ -179,26 +179,26 @@ export default function RegisterContent() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-[#080616]">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white">
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="text-center flex justify-center">
             <Image
               src="/Logo.png"
               alt="Logo"
-              width={120}
-              height={120}
+              width={300}
+              height={300}
               className="object-contain"
             />
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-400">
+          <p className="mt-2 text-center text-sm text-gray-600">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="font-medium text-blue-400 hover:text-blue-300"
+              className="font-medium text-blue-600 hover:text-blue-500"
             >
               Sign in
             </Link>
@@ -211,7 +211,7 @@ export default function RegisterContent() {
             <div>
               <label
                 htmlFor="applicationId"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Application ID *
               </label>
@@ -220,27 +220,27 @@ export default function RegisterContent() {
                   id="applicationId"
                   {...register("applicationId")}
                   type="text"
-                  className={`appearance-none block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white ${
+                  className={`appearance-none block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white text-gray-900 ${
                     applicationValid === true
                       ? "border-green-500"
                       : applicationValid === false
                         ? "border-red-500"
-                        : "border-gray-700"
+                        : "border-gray-300"
                   }`}
                   placeholder="Enter your Application ID (e.g., FOU26053180539)"
                   autoComplete="off"
                 />
                 {checkingApp && (
                   <div className="absolute right-3 top-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
                   </div>
                 )}
               </div>
 
               {/* Status Messages */}
               {applicationValid === true && appStatus && (
-                <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded-lg">
-                  <p className="text-sm text-green-400 flex items-center gap-2">
+                <div className="mt-2 p-2 bg-green-50 border border-green-500 rounded-lg">
+                  <p className="text-sm text-green-700 flex items-center gap-2">
                     <FiCheckCircle className="h-4 w-4" />✓ Application approved!
                     You can now register.
                   </p>
@@ -249,8 +249,8 @@ export default function RegisterContent() {
 
               {applicationValid === false &&
                 appStatus?.status === "pending" && (
-                  <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
-                    <p className="text-sm text-yellow-400 flex items-center gap-2">
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-500 rounded-lg">
+                    <p className="text-sm text-yellow-700 flex items-center gap-2">
                       <FiAlertCircle className="h-4 w-4" />⏳ Your application
                       is still pending approval.
                     </p>
@@ -259,8 +259,8 @@ export default function RegisterContent() {
 
               {applicationValid === false &&
                 appStatus?.status === "rejected" && (
-                  <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded-lg">
-                    <p className="text-sm text-red-400 flex items-center gap-2">
+                  <div className="mt-2 p-2 bg-red-50 border border-red-500 rounded-lg">
+                    <p className="text-sm text-red-700 flex items-center gap-2">
                       <FiAlertCircle className="h-4 w-4" />✗ Your application
                       was rejected. Please contact support.
                     </p>
@@ -268,8 +268,8 @@ export default function RegisterContent() {
                 )}
 
               {checkError && !appStatus && (
-                <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded-lg">
-                  <p className="text-sm text-red-400 flex items-center gap-2">
+                <div className="mt-2 p-2 bg-red-50 border border-red-500 rounded-lg">
+                  <p className="text-sm text-red-700 flex items-center gap-2">
                     <FiAlertCircle className="h-4 w-4" />
                     {checkError}
                   </p>
@@ -277,7 +277,7 @@ export default function RegisterContent() {
                     <button
                       type="button"
                       onClick={handleRetry}
-                      className="mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-500 flex items-center gap-1"
                     >
                       <FiRefreshCw className="h-3 w-3" />
                       Retry
@@ -287,7 +287,7 @@ export default function RegisterContent() {
               )}
 
               {errors.applicationId && (
-                <p className="mt-1 text-sm text-red-400">
+                <p className="mt-1 text-sm text-red-600">
                   {errors.applicationId}
                 </p>
               )}
@@ -297,7 +297,7 @@ export default function RegisterContent() {
             <div>
               <label
                 htmlFor="username"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Username *
               </label>
@@ -305,11 +305,11 @@ export default function RegisterContent() {
                 id="username"
                 {...register("username")}
                 type="text"
-                className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white"
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white text-gray-900"
                 placeholder="Choose a username"
               />
               {errors.username && (
-                <p className="mt-1 text-sm text-red-400">{errors.username}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.username}</p>
               )}
             </div>
 
@@ -317,7 +317,7 @@ export default function RegisterContent() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Email Address *
               </label>
@@ -327,14 +327,14 @@ export default function RegisterContent() {
                 type="email"
                 className={`appearance-none block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
                   appStatus?.email
-                    ? "bg-gray-800 text-gray-300"
-                    : "bg-gray-900 text-white"
-                } border-gray-700`}
+                    ? "bg-gray-100 text-gray-600"
+                    : "bg-white text-gray-900"
+                } border-gray-300`}
                 placeholder="your@email.com"
                 readOnly={!!appStatus?.email}
               />
               {errors.email && (
-                <p className="mt-1 text-sm text-red-400">{errors.email}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
               )}
             </div>
 
@@ -342,7 +342,7 @@ export default function RegisterContent() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Password *
               </label>
@@ -351,7 +351,7 @@ export default function RegisterContent() {
                   id="password"
                   {...register("password")}
                   type={showPassword ? "text" : "password"}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white pr-10"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white text-gray-900 pr-10"
                   placeholder="••••••••"
                 />
                 <button
@@ -360,14 +360,14 @@ export default function RegisterContent() {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showPassword ? (
-                    <FiEyeOff className="h-5 w-5 text-gray-400" />
+                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   ) : (
-                    <FiEye className="h-5 w-5 text-gray-400" />
+                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   )}
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-red-400">{errors.password}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.password}</p>
               )}
             </div>
 
@@ -375,7 +375,7 @@ export default function RegisterContent() {
             <div>
               <label
                 htmlFor="confirmPassword"
-                className="block text-sm font-medium text-gray-300"
+                className="block text-sm font-medium text-gray-700"
               >
                 Confirm Password *
               </label>
@@ -384,7 +384,7 @@ export default function RegisterContent() {
                   id="confirmPassword"
                   {...register("confirmPassword")}
                   type={showConfirmPassword ? "text" : "password"}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-gray-900 text-white pr-10"
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white text-gray-900 pr-10"
                   placeholder="••••••••"
                 />
                 <button
@@ -393,14 +393,14 @@ export default function RegisterContent() {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showConfirmPassword ? (
-                    <FiEyeOff className="h-5 w-5 text-gray-400" />
+                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   ) : (
-                    <FiEye className="h-5 w-5 text-gray-400" />
+                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   )}
                 </button>
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-400">
+                <p className="mt-1 text-sm text-red-600">
                   {errors.confirmPassword}
                 </p>
               )}
@@ -422,11 +422,11 @@ export default function RegisterContent() {
             )}
           </button>
 
-          <div className="text-center text-sm text-gray-400">
+          <div className="text-center text-sm text-gray-600">
             <p>Don't have an Application ID?</p>
             <Link
               href="/apply"
-              className="text-blue-400 hover:text-blue-300 font-medium"
+              className="text-blue-600 hover:text-blue-500 font-medium"
             >
               Apply for internet connection first →
             </Link>

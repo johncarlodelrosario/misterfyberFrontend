@@ -1,4 +1,4 @@
-// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design
+// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design AND SORTING
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -64,6 +64,8 @@ import {
   FiCalendar as FiCalendarIcon,
   FiPrinter,
   FiMoreVertical,
+  FiArrowUp,
+  FiArrowDown,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -101,6 +103,9 @@ interface Plan {
   price: number;
   speed: { download: number; upload: number };
 }
+
+type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
+type SortDirection = "asc" | "desc";
 
 // Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
@@ -173,6 +178,10 @@ export default function AdminBillingPage() {
     useState(false);
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
@@ -251,6 +260,60 @@ export default function AdminBillingPage() {
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
+
+  // Sorting function
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // Get sorted customers
+  const getSortedCustomers = (
+    customersToSort: CustomerItem[],
+  ): CustomerItem[] => {
+    const sorted = [...customersToSort];
+
+    sorted.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case "name":
+          aValue = `${a.firstName} ${a.lastName}`.toLowerCase();
+          bValue = `${b.firstName} ${b.lastName}`.toLowerCase();
+          break;
+        case "plan":
+          aValue = a.planName.toLowerCase();
+          bValue = b.planName.toLowerCase();
+          break;
+        case "balance":
+          aValue = a.currentBalance;
+          bValue = b.currentBalance;
+          break;
+        case "status":
+          aValue = getStatusText(a);
+          bValue = getStatusText(b);
+          break;
+        case "installationFee":
+          aValue = a.type === "application" ? a.installationFee || 0 : -1;
+          bValue = b.type === "application" ? b.installationFee || 0 : -1;
+          break;
+        default:
+          aValue = `${a.firstName} ${a.lastName}`.toLowerCase();
+          bValue = `${b.firstName} ${b.lastName}`.toLowerCase();
+      }
+
+      if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return sorted;
+  };
 
   const loadPlans = async () => {
     try {
@@ -1303,6 +1366,8 @@ export default function AdminBillingPage() {
     return matchesSearch;
   });
 
+  const sortedAndFilteredCustomers = getSortedCustomers(filteredCustomers);
+
   const totalPendingCount =
     pendingProRated.length +
     pendingActivations.length +
@@ -1388,6 +1453,17 @@ export default function AdminBillingPage() {
       color: "amber",
     },
   ];
+
+  // Render sort icon
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field)
+      return <FiArrowUp className="w-3 h-3 opacity-30" />;
+    return sortDirection === "asc" ? (
+      <FiArrowUp className="w-3 h-3" />
+    ) : (
+      <FiArrowDown className="w-3 h-3" />
+    );
+  };
 
   if (loading && customers.length === 0) {
     return (
@@ -1530,26 +1606,56 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Excel-like Table Design */}
+      {/* Excel-like Table Design with Sorting */}
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Customer
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1">
+                    Customer
+                    <SortIcon field="name" />
+                  </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Plan
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("plan")}
+                >
+                  <div className="flex items-center gap-1">
+                    Plan
+                    <SortIcon field="plan" />
+                  </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Balance
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("balance")}
+                >
+                  <div className="flex items-center gap-1">
+                    Balance
+                    <SortIcon field="balance" />
+                  </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Status
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center gap-1">
+                    Status
+                    <SortIcon field="status" />
+                  </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Install Fee
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("installationFee")}
+                >
+                  <div className="flex items-center gap-1">
+                    Install Fee
+                    <SortIcon field="installationFee" />
+                  </div>
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
@@ -1557,7 +1663,7 @@ export default function AdminBillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredCustomers.length === 0 ? (
+              {sortedAndFilteredCustomers.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -1567,7 +1673,7 @@ export default function AdminBillingPage() {
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer, idx) => {
+                sortedAndFilteredCustomers.map((customer, idx) => {
                   const hasUnpaidBills =
                     customer.unpaidBills && customer.unpaidBills.length > 0;
                   const hasBillingCycle = !!customer.billingCycle;
@@ -1876,10 +1982,11 @@ export default function AdminBillingPage() {
           </table>
         </div>
         <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
-          Showing {filteredCustomers.length} of {customers.length} customers (
-          {customers.filter((c) => c.type === "user").length} users,{" "}
+          Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
+          customers ({customers.filter((c) => c.type === "user").length} users,{" "}
           {customers.filter((c) => c.type === "application").length}{" "}
-          applications)
+          applications) - Sorted by {sortField} (
+          {sortDirection === "asc" ? "Ascending" : "Descending"})
         </div>
       </div>
 
