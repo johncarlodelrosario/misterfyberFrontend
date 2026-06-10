@@ -88,7 +88,8 @@ interface CustomerItem {
   applicationId?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
-  location?: string; // Building name or location
+  location?: string;
+  buildingName?: string;
 }
 
 interface Building {
@@ -109,7 +110,6 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -119,17 +119,14 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-// Helper to format billing period correctly - ALWAYS show first day of period
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
 
-  // For start date - use the actual date from the billing period
   const startMonth = start.getUTCMonth() + 1;
   const startDay = start.getUTCDate();
   const startYear = start.getUTCFullYear();
 
-  // For end date
   const endMonth = end.getUTCMonth() + 1;
   const endDay = end.getUTCDate();
   const endYear = end.getUTCFullYear();
@@ -187,8 +184,6 @@ export default function AdminBillingPage() {
     useState(false);
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
-
-  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -270,7 +265,6 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Sorting function
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -280,7 +274,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Get sorted customers
   const getSortedCustomers = (
     customersToSort: CustomerItem[],
   ): CustomerItem[] => {
@@ -740,21 +733,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Helper to get location for a customer
-  const getCustomerLocation = async (customer: any): Promise<string> => {
-    if (customer.type === "application") {
-      // For applications, try to get building info from the application data
-      if (customer.buildingName) return customer.buildingName;
-      if (customer.location) return customer.location;
-      return "Unknown Location";
-    } else {
-      // For users, try to get building from user's address or profile
-      if (customer.buildingName) return customer.buildingName;
-      if (customer.location) return customer.location;
-      return "Unknown Location";
-    }
-  };
-
   const loadData = useCallback(async (forceRefresh = false) => {
     if (!isMountedRef.current) return;
     if (loadedRef.current && !forceRefresh) return;
@@ -812,7 +790,6 @@ export default function AdminBillingPage() {
       setCustomersWithoutAccounts(customersWithoutAccountsData);
       setPendingInstallationBills(pendingInstallationBillsData);
 
-      // Fetch buildings data to map location
       const buildingsRes = await fetch("/api/buildings/active");
       const buildingsData = await buildingsRes.json();
       const buildingsList = buildingsData.data || [];
@@ -841,7 +818,6 @@ export default function AdminBillingPage() {
             cycle.userId?._id === user._id || cycle.userId === user._id,
         );
 
-        // Get location from user's buildingId
         let location = "Unknown Location";
         if (user.buildingId && buildingMap.has(user.buildingId)) {
           location = buildingMap.get(user.buildingId);
@@ -867,6 +843,7 @@ export default function AdminBillingPage() {
           installationFee: 0,
           installationFeePaid: true,
           location: location,
+          buildingName: user.buildingName,
         };
       });
 
@@ -894,7 +871,6 @@ export default function AdminBillingPage() {
             (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
-          // Get location from application's buildingId
           let location = "Unknown Location";
           if (app.buildingId && buildingMap.has(app.buildingId)) {
             location = buildingMap.get(app.buildingId);
@@ -920,6 +896,7 @@ export default function AdminBillingPage() {
             installationFee: app.installationFee || 0,
             installationFeePaid: app.installationFeePaid || false,
             location: location,
+            buildingName: app.buildingName,
           };
         });
 
@@ -927,7 +904,6 @@ export default function AdminBillingPage() {
       allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
       setCustomers(allCustomers);
 
-      // Extract unique locations for filter
       const locations = [
         ...new Set(
           allCustomers
@@ -1439,7 +1415,6 @@ export default function AdminBillingPage() {
     customersWithoutAccounts.length +
     stats.applicationsWithoutBilling;
 
-  // Compact stats cards data
   const compactStatsCards = [
     {
       label: "Total Customers",
@@ -1450,7 +1425,6 @@ export default function AdminBillingPage() {
     {
       label: "Total Balance",
       value: `₱${stats.totalBalance.toLocaleString()}`,
-
       color: "red",
     },
     {
@@ -1517,7 +1491,6 @@ export default function AdminBillingPage() {
     },
   ];
 
-  // Render sort icon
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
       return <FiArrowUp className="w-3 h-3 opacity-30" />;
@@ -1541,7 +1514,6 @@ export default function AdminBillingPage() {
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
-      {/* Header with compact buttons */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
@@ -1614,7 +1586,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Compact Stats Cards Grid - 6 columns on large screens */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
         {compactStatsCards.map((stat, idx) => (
           <div
@@ -1638,7 +1609,6 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
-      {/* Search, Filter and Location Filter - Compact */}
       <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
@@ -1692,7 +1662,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Excel-like Table Design with Sorting */}
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
@@ -1774,7 +1743,6 @@ export default function AdminBillingPage() {
                     customer.type === "application" &&
                     (customer.installationFee ?? 0) > 0 &&
                     !customer.installationFeePaid;
-                  // Show full App ID - never truncate
                   const fullAppId = customer.applicationId || "";
 
                   return (
@@ -1811,7 +1779,9 @@ export default function AdminBillingPage() {
                         <div className="flex items-center gap-1">
                           <FiMapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
                           <span className="text-sm text-gray-700">
-                            {customer.location || "Unknown Location"}
+                            {customer.location ||
+                              customer.buildingName ||
+                              "Unknown Location"}
                           </span>
                         </div>
                       </td>
@@ -2949,7 +2919,11 @@ export default function AdminBillingPage() {
                 </div>
                 <div>
                   <p className="text-gray-500">Location</p>
-                  <p>{selectedCustomer.location || "Unknown Location"}</p>
+                  <p>
+                    {selectedCustomer.location ||
+                      selectedCustomer.buildingName ||
+                      "Unknown Location"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-gray-500">Plan</p>
@@ -3338,7 +3312,33 @@ export default function AdminBillingPage() {
                   value={emailType}
                   onChange={(e) => {
                     const newType = e.target.value;
-                    setEmailType(newType); /* template logic */
+                    setEmailType(newType);
+                    if (newType === "invoice") {
+                      setEmailSubject(`Invoice Reminder - MisterFyber`);
+                      setEmailMessage(
+                        `Dear ${emailCustomer.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
+                      );
+                    } else if (newType === "payment_confirmation") {
+                      setEmailSubject(`Payment Confirmation - MisterFyber`);
+                      setEmailMessage(
+                        `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+                      );
+                    } else if (newType === "disconnection") {
+                      setEmailSubject(
+                        `Important: Service Disconnection Notice - MisterFyber`,
+                      );
+                      setEmailMessage(
+                        `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
+                      );
+                    } else if (newType === "welcome") {
+                      setEmailSubject(`Welcome to MisterFyber!`);
+                      setEmailMessage(
+                        `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
+                      );
+                    } else {
+                      setEmailSubject(`Message from MisterFyber`);
+                      setEmailMessage(`Dear ${emailCustomer.firstName},\n\n`);
+                    }
                   }}
                   className="w-full px-3 py-2 text-sm border rounded-lg"
                 >
