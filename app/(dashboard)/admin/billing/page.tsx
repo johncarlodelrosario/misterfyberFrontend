@@ -1,4 +1,4 @@
-// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design AND SORTING
+// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design, SORTING, LOCATION FILTER, FULL APP ID
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -66,6 +66,7 @@ import {
   FiMoreVertical,
   FiArrowUp,
   FiArrowDown,
+  FiMapPin,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -87,6 +88,7 @@ interface CustomerItem {
   applicationId?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
+  location?: string; // Building name or location
 }
 
 interface Building {
@@ -144,6 +146,8 @@ export default function AdminBillingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [availableLocations, setAvailableLocations] = useState<string[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
     null,
   );
@@ -736,6 +740,21 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Helper to get location for a customer
+  const getCustomerLocation = async (customer: any): Promise<string> => {
+    if (customer.type === "application") {
+      // For applications, try to get building info from the application data
+      if (customer.buildingName) return customer.buildingName;
+      if (customer.location) return customer.location;
+      return "Unknown Location";
+    } else {
+      // For users, try to get building from user's address or profile
+      if (customer.buildingName) return customer.buildingName;
+      if (customer.location) return customer.location;
+      return "Unknown Location";
+    }
+  };
+
   const loadData = useCallback(async (forceRefresh = false) => {
     if (!isMountedRef.current) return;
     if (loadedRef.current && !forceRefresh) return;
@@ -793,6 +812,15 @@ export default function AdminBillingPage() {
       setCustomersWithoutAccounts(customersWithoutAccountsData);
       setPendingInstallationBills(pendingInstallationBillsData);
 
+      // Fetch buildings data to map location
+      const buildingsRes = await fetch("/api/buildings/active");
+      const buildingsData = await buildingsRes.json();
+      const buildingsList = buildingsData.data || [];
+      const buildingMap = new Map();
+      buildingsList.forEach((b: any) => {
+        buildingMap.set(b._id, b.buildingName);
+      });
+
       const userCustomers: CustomerItem[] = usersList.map((user: any) => {
         const userBills = billsList.filter(
           (bill: any) =>
@@ -813,6 +841,14 @@ export default function AdminBillingPage() {
             cycle.userId?._id === user._id || cycle.userId === user._id,
         );
 
+        // Get location from user's buildingId
+        let location = "Unknown Location";
+        if (user.buildingId && buildingMap.has(user.buildingId)) {
+          location = buildingMap.get(user.buildingId);
+        } else if (user.buildingName) {
+          location = user.buildingName;
+        }
+
         return {
           _id: user._id,
           firstName: user.firstName,
@@ -830,6 +866,7 @@ export default function AdminBillingPage() {
           billingCycle: userCycle || null,
           installationFee: 0,
           installationFeePaid: true,
+          location: location,
         };
       });
 
@@ -857,6 +894,14 @@ export default function AdminBillingPage() {
             (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
+          // Get location from application's buildingId
+          let location = "Unknown Location";
+          if (app.buildingId && buildingMap.has(app.buildingId)) {
+            location = buildingMap.get(app.buildingId);
+          } else if (app.buildingName) {
+            location = app.buildingName;
+          }
+
           return {
             _id: app._id,
             firstName: app.firstName,
@@ -874,13 +919,29 @@ export default function AdminBillingPage() {
             applicationId: app.applicationId,
             installationFee: app.installationFee || 0,
             installationFeePaid: app.installationFeePaid || false,
+            location: location,
           };
         });
 
       const allCustomers = [...userCustomers, ...applicationCustomers];
       allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
-
       setCustomers(allCustomers);
+
+      // Extract unique locations for filter
+      const locations = [
+        ...new Set(
+          allCustomers
+            .map((c) => c.location)
+            .filter((l) => l && l !== "Unknown Location"),
+        ),
+      ];
+      setAvailableLocations(
+        locations
+          .filter(
+            (l): l is string => l !== undefined && l !== "Unknown Location",
+          )
+          .sort(),
+      );
 
       const totalBalance = allCustomers.reduce(
         (sum, c) => sum + c.currentBalance,
@@ -1340,35 +1401,32 @@ export default function AdminBillingPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()));
 
-    if (statusFilter === "all") return matchesSearch;
-    if (statusFilter === "has_balance")
-      return matchesSearch && customer.currentBalance > 0;
-    if (statusFilter === "overdue")
-      return matchesSearch && customer.overdueBills.length > 0;
-    if (statusFilter === "active")
-      return matchesSearch && customer.status === "active";
-    if (statusFilter === "suspended")
-      return matchesSearch && customer.status === "suspended";
+    const matchesLocation =
+      locationFilter === "all" || customer.location === locationFilter;
+
+    if (!matchesSearch || !matchesLocation) return false;
+
+    if (statusFilter === "all") return true;
+    if (statusFilter === "has_balance") return customer.currentBalance > 0;
+    if (statusFilter === "overdue") return customer.overdueBills.length > 0;
+    if (statusFilter === "active") return customer.status === "active";
+    if (statusFilter === "suspended") return customer.status === "suspended";
     if (statusFilter === "paused")
-      return matchesSearch && customer.billingCycle?.status === "paused";
+      return customer.billingCycle?.status === "paused";
     if (statusFilter === "pending_activation") {
       const hasUnpaid = customer.unpaidBills && customer.unpaidBills.length > 0;
       return (
-        matchesSearch &&
-        customer.billingCycle?.status === "pending_activation" &&
-        hasUnpaid
+        customer.billingCycle?.status === "pending_activation" && hasUnpaid
       );
     }
-    if (statusFilter === "applications")
-      return matchesSearch && customer.type === "application";
+    if (statusFilter === "applications") return customer.type === "application";
     if (statusFilter === "installation_fee_due")
       return (
-        matchesSearch &&
         customer.type === "application" &&
         (customer.installationFee ?? 0) > 0 &&
         !customer.installationFeePaid
       );
-    return matchesSearch;
+    return true;
   });
 
   const sortedAndFilteredCustomers = getSortedCustomers(filteredCustomers);
@@ -1580,7 +1638,7 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
-      {/* Search and Filter - Compact */}
+      {/* Search, Filter and Location Filter - Compact */}
       <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
@@ -1608,6 +1666,29 @@ export default function AdminBillingPage() {
             <option value="applications">Applications Only</option>
             <option value="installation_fee_due">Installation Fee Due</option>
           </select>
+          <div className="relative min-w-[180px]">
+            <FiMapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm" />
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
+            >
+              <option value="all">All Locations ({customers.length})</option>
+              {availableLocations.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc} ({customers.filter((c) => c.location === loc).length})
+                </option>
+              ))}
+              <option value="Unknown Location">
+                Unknown Location (
+                {
+                  customers.filter((c) => c.location === "Unknown Location")
+                    .length
+                }
+                )
+              </option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -1625,6 +1706,9 @@ export default function AdminBillingPage() {
                     Customer
                     <SortIcon field="name" />
                   </div>
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                  Location
                 </th>
                 <th
                   className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
@@ -1671,7 +1755,7 @@ export default function AdminBillingPage() {
               {sortedAndFilteredCustomers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
                   >
                     No customers found
@@ -1690,6 +1774,8 @@ export default function AdminBillingPage() {
                     customer.type === "application" &&
                     (customer.installationFee ?? 0) > 0 &&
                     !customer.installationFeePaid;
+                  // Show full App ID - never truncate
+                  const fullAppId = customer.applicationId || "";
 
                   return (
                     <tr
@@ -1711,11 +1797,22 @@ export default function AdminBillingPage() {
                               {customer.email}
                             </p>
                             {customer.applicationId && (
-                              <p className="text-[10px] text-gray-400 font-mono">
-                                {customer.applicationId.slice(-8)}
+                              <p
+                                className="text-xs text-gray-400 font-mono"
+                                title={fullAppId}
+                              >
+                                {fullAppId}
                               </p>
                             )}
                           </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200">
+                        <div className="flex items-center gap-1">
+                          <FiMapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="text-sm text-gray-700">
+                            {customer.location || "Unknown Location"}
+                          </span>
                         </div>
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200">
@@ -1986,12 +2083,26 @@ export default function AdminBillingPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
-          Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
-          customers ({customers.filter((c) => c.type === "user").length} users,{" "}
-          {customers.filter((c) => c.type === "application").length}{" "}
-          applications) - Sorted by {sortField} (
-          {sortDirection === "asc" ? "Ascending" : "Descending"})
+        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500 flex justify-between items-center">
+          <div>
+            Showing {sortedAndFilteredCustomers.length} of{" "}
+            {filteredCustomers.length} customers (
+            {customers.filter((c) => c.type === "user").length} users,{" "}
+            {customers.filter((c) => c.type === "application").length}{" "}
+            applications)
+          </div>
+          <div>
+            {locationFilter !== "all" && (
+              <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
+                Location: {locationFilter}
+              </span>
+            )}
+            {statusFilter !== "all" && (
+              <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-2">
+                Filter: {statusFilter.replace("_", " ")}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2837,6 +2948,10 @@ export default function AdminBillingPage() {
                   <p className="capitalize">{selectedCustomer.type}</p>
                 </div>
                 <div>
+                  <p className="text-gray-500">Location</p>
+                  <p>{selectedCustomer.location || "Unknown Location"}</p>
+                </div>
+                <div>
                   <p className="text-gray-500">Plan</p>
                   <p>
                     {selectedCustomer.planName} (₱
@@ -2852,9 +2967,9 @@ export default function AdminBillingPage() {
                   </p>
                 </div>
                 {selectedCustomer.applicationId && (
-                  <div>
-                    <p className="text-gray-500">App ID</p>
-                    <p className="font-mono text-xs">
+                  <div className="col-span-2">
+                    <p className="text-gray-500">Application ID</p>
+                    <p className="font-mono text-sm break-all">
                       {selectedCustomer.applicationId}
                     </p>
                   </div>
