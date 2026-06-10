@@ -469,6 +469,39 @@ export default function ApplicationsPage() {
     }
   }, []);
 
+  const quickRefresh = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+
+    try {
+      console.log("⚡ Quick refresh after adding customer...");
+      const data = await getAllApplications({ page: 1, limit: 100 });
+      const applicationsList = data.data || [];
+
+      setApplications(applicationsList);
+      setLastFetchTime(new Date());
+
+      setTimeout(() => {
+        const dataToStore: StoredApplicationsData = {
+          applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+          timestamp: Date.now(),
+          version: STORAGE_KEYS.CACHE_VERSION,
+          totalCount: applicationsList.length,
+        };
+        persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
+
+        const total = applicationsList.length;
+        const pending = applicationsList.filter(
+          (a: any) => a.status === "pending",
+        ).length;
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+      }, 100);
+    } catch (error) {
+      console.error("Quick refresh failed:", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (applications.length > 0 && !initialLoading) {
       const total = applications.length;
@@ -545,7 +578,7 @@ export default function ApplicationsPage() {
       );
 
       setSelectedApp(null);
-      fetchApplications();
+      setTimeout(() => quickRefresh(), 500);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to approve");
     } finally {
@@ -566,7 +599,7 @@ export default function ApplicationsPage() {
       );
 
       setSelectedApp(null);
-      fetchApplications();
+      setTimeout(() => quickRefresh(), 500);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject");
     } finally {
@@ -587,7 +620,7 @@ export default function ApplicationsPage() {
         toast.success(
           `✅ Billing started for ${app.firstName} ${app.lastName}! Invoice sent to ${app.email}`,
         );
-        fetchApplications();
+        setTimeout(() => quickRefresh(), 500);
         setSelectedAppForBilling(null);
         setShowBillingModal(false);
       } else {
@@ -758,11 +791,24 @@ export default function ApplicationsPage() {
     setSubmitting(true);
 
     try {
-      await submitApplication(customerForm as any);
-      toast.success("Customer application submitted successfully!");
-      setShowAddCustomerModal(false);
-      resetCustomerForm();
-      fetchApplications();
+      const result = await submitApplication(customerForm as any);
+
+      if (result.success && result.data) {
+        const newApplication = result.data;
+        setApplications((prev) => [newApplication, ...prev]);
+
+        toast.success(
+          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added successfully!`,
+        );
+        setShowAddCustomerModal(false);
+        resetCustomerForm();
+
+        setTimeout(() => {
+          quickRefresh();
+        }, 1000);
+      } else {
+        toast.error(result.message || "Failed to submit application");
+      }
     } catch (error: any) {
       console.error("Failed to submit application:", error);
       toast.error(
@@ -876,7 +922,7 @@ export default function ApplicationsPage() {
             planMap.set(p.name.toLowerCase().trim(), p._id);
           });
 
-          const applications: any[] = [];
+          const applicationsList: any[] = [];
 
           for (let i = 1; i < lines.length; i++) {
             if (!lines[i].trim()) continue;
@@ -911,7 +957,7 @@ export default function ApplicationsPage() {
               continue;
             }
 
-            applications.push({
+            applicationsList.push({
               firstName: row.firstName,
               lastName: row.lastName,
               email: row.email,
@@ -927,7 +973,7 @@ export default function ApplicationsPage() {
             });
           }
 
-          resolve(applications);
+          resolve(applicationsList);
         } catch (error) {
           reject(error);
         }
@@ -978,7 +1024,7 @@ export default function ApplicationsPage() {
 
       if (success.length > 0) {
         toast.success(`Successfully added ${success.length} customers`);
-        fetchApplications();
+        setTimeout(() => quickRefresh(), 1000);
       }
 
       if (failed.length > 0) {
@@ -1115,7 +1161,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Stats Cards - Compact */}
       <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4">
         <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
           <div className="text-xs text-gray-500">Total</div>
@@ -1139,7 +1184,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Search and Filter - Compact */}
       <div className="bg-white rounded-lg border border-gray-200 p-2 mb-4">
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex-1 relative">
@@ -1169,7 +1213,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Excel-like Table */}
       <div className="bg-white rounded-md border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-[900px] w-full border-collapse">
@@ -1311,7 +1354,6 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Modals - Keep existing modal code but update padding/compactness if needed */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1496,23 +1538,6 @@ export default function ApplicationsPage() {
                 </div>
               )}
 
-              {selectedApp.status === "approved" &&
-                !selectedApp.billingStarted && (
-                  <div className="flex justify-end gap-2 pt-3 border-t border-gray-200">
-                    <button
-                      onClick={() => {
-                        setSelectedAppForBilling(selectedApp);
-                        setShowBillingModal(true);
-                        setSelectedApp(null);
-                      }}
-                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1.5 text-xs"
-                    >
-                      <FiPlay className="w-3.5 h-3.5" />
-                      Start Billing
-                    </button>
-                  </div>
-                )}
-
               {selectedApp.status === "pending" && (
                 <>
                   <div>
@@ -1689,7 +1714,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Add Customer Modal - Keep existing but compact */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1997,7 +2021,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Bulk Upload Modal - Keep existing but compact */}
       {showBulkUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">

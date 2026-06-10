@@ -117,16 +117,21 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-// Helper to format billing period correctly using UTC dates
+// Helper to format billing period correctly - ALWAYS show first day of period
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
+
+  // For start date - use the actual date from the billing period
   const startMonth = start.getUTCMonth() + 1;
   const startDay = start.getUTCDate();
   const startYear = start.getUTCFullYear();
+
+  // For end date
   const endMonth = end.getUTCMonth() + 1;
   const endDay = end.getUTCDate();
   const endYear = end.getUTCFullYear();
+
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
