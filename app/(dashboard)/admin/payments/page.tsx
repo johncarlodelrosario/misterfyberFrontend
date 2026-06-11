@@ -128,7 +128,6 @@ function formatDateFixed(dateStr: string): string {
 
 // Helper to extract customer name from payment
 function extractCustomerInfo(payment: Payment): CustomerInfo {
-  // Check if application data is already populated
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
     const firstName = app.firstName || "";
@@ -142,7 +141,6 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Check if user data is populated
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     const firstName = user.firstName || "";
@@ -156,7 +154,6 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Check payment details for customer info
   if (payment.paymentDetails?.gatewayResponse?.customerName) {
     const gr = payment.paymentDetails.gatewayResponse;
     return {
@@ -167,7 +164,6 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Return placeholder with application ID for lookup
   const appId =
     typeof payment.applicationId === "string" ? payment.applicationId : "";
   return {
@@ -182,16 +178,13 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
 async function fetchApplicationData(applicationId: string): Promise<any> {
   if (!applicationId || applicationId === "—") return null;
 
-  // Check cache
   if (nameCache.has(applicationId)) {
     return nameCache.get(applicationId);
   }
 
   try {
-    // Try multiple endpoints
     let response = null;
 
-    // Try 1: Direct by applicationId
     try {
       response = await api.get(
         `/applications/by-application-id/${encodeURIComponent(applicationId)}`,
@@ -210,11 +203,8 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
         nameCache.set(applicationId, customerInfo);
         return customerInfo;
       }
-    } catch (e) {
-      // Continue to next try
-    }
+    } catch (e) {}
 
-    // Try 2: Search by applicationId
     try {
       response = await api.get(
         `/applications?search=${encodeURIComponent(applicationId)}`,
@@ -236,11 +226,8 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
           return customerInfo;
         }
       }
-    } catch (e) {
-      // Continue
-    }
+    } catch (e) {}
 
-    // Try 3: Get all applications and find by applicationId
     try {
       response = await api.get(`/applications?limit=1000`);
       if (response.data?.success && response.data?.data) {
@@ -260,11 +247,8 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
           return customerInfo;
         }
       }
-    } catch (e) {
-      // Continue
-    }
+    } catch (e) {}
 
-    // Fallback: use applicationId as name
     const fallbackInfo = {
       name: applicationId,
       email: "—",
@@ -280,7 +264,6 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
 
 // Enrich payment with customer data
 async function enrichPayment(payment: Payment): Promise<Payment> {
-  // If already has data, return
   if (
     payment.application &&
     typeof payment.application === "object" &&
@@ -289,7 +272,6 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
     return payment;
   }
 
-  // Get application ID
   let appId: string | null = null;
 
   if (typeof payment.applicationId === "string") {
@@ -303,14 +285,12 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
     typeof payment.userId === "object" &&
     payment.userId.firstName
   ) {
-    // Already has user data with name
     return payment;
   }
 
   if (appId) {
     const customerData = await fetchApplicationData(appId);
     if (customerData) {
-      // Store the data in the payment object
       payment.application = {
         firstName: customerData.name.split(" ")[0] || "",
         lastName: customerData.name.split(" ").slice(1).join(" ") || "",
@@ -372,7 +352,6 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
     }
   }
 
-  // Update groups with best available data
   for (const group of Array.from(groups.values())) {
     const paymentWithName = group.payments.find((p) => {
       const info = extractCustomerInfo(p);
@@ -435,7 +414,6 @@ export default function AdminPaymentsPage() {
           nameCache.clear();
         }
 
-        // Fetch all payments
         const allPaymentsResult = await getAllPayments({
           page: currentPage,
           limit: 100,
@@ -453,7 +431,6 @@ export default function AdminPaymentsPage() {
           );
         }
 
-        // Enrich payments with customer names
         const enrichedPayments = await Promise.all(
           paymentsList.map((payment: Payment) => enrichPayment(payment)),
         );
@@ -462,7 +439,6 @@ export default function AdminPaymentsPage() {
         setPaymentGroups(grouped);
         setTotalPages(allPaymentsResult.totalPages || 1);
 
-        // Fetch pending payments
         const pendingResult = await getPendingPayments(forceRefresh).catch(
           () => ({ data: [] }),
         );
@@ -611,7 +587,6 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  // Excel-style pagination
   const getPaginatedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
     const startIndex = (currentTablePage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
@@ -670,12 +645,10 @@ export default function AdminPaymentsPage() {
     );
   };
 
-  // Excel export function
   const exportToExcel = () => {
     const filteredGroups = getFilteredGroups(paymentGroups);
     const sortedGroups = getSortedGroups(filteredGroups);
 
-    // Prepare data for CSV
     const csvData = sortedGroups.map((group) => ({
       "Customer Name": group.customerInfo.name,
       "Application ID": group.customerInfo.applicationId,
@@ -689,7 +662,6 @@ export default function AdminPaymentsPage() {
       Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
     }));
 
-    // Convert to CSV
     const headers = Object.keys(csvData[0] || {});
     const csvRows = [
       headers.join(","),
@@ -1193,7 +1165,7 @@ export default function AdminPaymentsPage() {
                                       key={p._id}
                                       className="border rounded-lg p-3 bg-white"
                                     >
-                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
                                         <div>
                                           <p className="text-xs text-gray-400">
                                             Date
@@ -1206,7 +1178,7 @@ export default function AdminPaymentsPage() {
                                           <p className="text-xs text-gray-400">
                                             Reference
                                           </p>
-                                          <p className="font-mono text-xs">
+                                          <p className="font-mono text-xs break-all">
                                             {p.referenceNumber}
                                           </p>
                                         </div>
@@ -1218,8 +1190,10 @@ export default function AdminPaymentsPage() {
                                             className={`px-2 py-0.5 rounded-full text-xs inline-block ${getPaymentTypeColor(p.paymentType)}`}
                                           >
                                             {p.paymentType === "installation"
-                                              ? "Installation"
-                                              : "Subscription"}
+                                              ? "Installation Fee"
+                                              : p.paymentType === "subscription"
+                                                ? "Monthly Subscription"
+                                                : p.paymentType}
                                           </span>
                                         </div>
                                         <div>
@@ -1230,13 +1204,34 @@ export default function AdminPaymentsPage() {
                                             {formatCurrency(p.amount)}
                                           </p>
                                         </div>
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Status
+                                          </p>
+                                          <span
+                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
+                                          >
+                                            {p.status}
+                                          </span>
+                                        </div>
+                                        {!isInstallation &&
+                                          p.billingId?.invoiceNumber && (
+                                            <div>
+                                              <p className="text-xs text-gray-400">
+                                                Invoice
+                                              </p>
+                                              <p className="font-mono text-xs">
+                                                {p.billingId.invoiceNumber}
+                                              </p>
+                                            </div>
+                                          )}
                                         {!isInstallation && billingPeriod && (
-                                          <div className="col-span-2">
-                                            <p className="text-xs text-gray-400">
+                                          <div className="md:col-span-2">
+                                            <p className="text-xs text-gray-400 flex items-center gap-1">
+                                              <FiCalendar className="w-3 h-3" />{" "}
                                               Billing Period
                                             </p>
-                                            <p className="text-sm flex items-center gap-1">
-                                              <FiCalendar className="w-3 h-3" />
+                                            <p className="text-sm">
                                               {formatBillingPeriod(
                                                 billingPeriod,
                                               )}
@@ -1249,40 +1244,32 @@ export default function AdminPaymentsPage() {
                                               <p className="text-xs text-gray-400">
                                                 Due Date
                                               </p>
-                                              <p className="text-sm">
+                                              <p className="text-sm font-medium text-red-600">
                                                 {formatDateFixed(
                                                   p.billingId.dueDate,
                                                 )}
                                               </p>
                                             </div>
                                           )}
-                                        {p.billingId?.invoiceNumber && (
-                                          <div>
-                                            <p className="text-xs text-gray-400">
-                                              Invoice
-                                            </p>
-                                            <p className="font-mono text-xs">
-                                              {p.billingId.invoiceNumber}
-                                            </p>
-                                          </div>
-                                        )}
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            Status
-                                          </p>
-                                          <span
-                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
-                                          >
-                                            {p.status}
-                                          </span>
-                                        </div>
+                                        {p.billingId?.isProRated &&
+                                          !isInstallation && (
+                                            <div>
+                                              <p className="text-xs text-gray-400">
+                                                Bill Type
+                                              </p>
+                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                                Pro-rated
+                                              </span>
+                                            </div>
+                                          )}
                                       </div>
-                                      <div className="mt-2 flex justify-end">
+                                      <div className="mt-3 flex justify-end">
                                         <button
                                           onClick={() => setSelectedPayment(p)}
-                                          className="text-blue-600 text-xs hover:underline"
+                                          className="text-blue-600 text-xs hover:underline flex items-center gap-1"
                                         >
-                                          View Details →
+                                          <FiEye className="w-3 h-3" /> View
+                                          Full Details
                                         </button>
                                       </div>
                                     </div>
@@ -1354,9 +1341,9 @@ export default function AdminPaymentsPage() {
 
       {/* Payment Modal */}
       {selectedPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="border-b px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="border-b px-6 py-4 flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-xl font-bold">Payment Details</h2>
               <button
                 onClick={() => setSelectedPayment(null)}
@@ -1373,82 +1360,120 @@ export default function AdminPaymentsPage() {
                   selectedPayment.billingId?.isInstallationBill;
                 const billingPeriod = selectedPayment.billingId?.billingPeriod;
                 return (
-                  <>
-                    <div className="mb-4">
+                  <div className="space-y-4">
+                    <div>
                       <p className="text-xs text-gray-500">Customer</p>
                       <p className="font-semibold text-lg">{info.name}</p>
                       <p className="text-sm text-gray-600">{info.email}</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm font-mono text-gray-500">
                         {info.applicationId}
                       </p>
                     </div>
-                    <div className="mb-4">
-                      <p className="text-xs text-gray-500">Amount</p>
-                      <p className="text-2xl font-bold text-green-600">
-                        {formatCurrency(selectedPayment.amount)}
-                      </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Amount</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          {formatCurrency(selectedPayment.amount)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Status</p>
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(selectedPayment.status)}`}
+                        >
+                          {selectedPayment.status}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mb-4">
-                      <p className="text-xs text-gray-500">Reference</p>
-                      <p className="font-mono text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Reference Number</p>
+                      <p className="font-mono text-sm break-all">
                         {selectedPayment.referenceNumber}
                       </p>
                     </div>
+                    {!isInstallation &&
+                      selectedPayment.billingId?.invoiceNumber && (
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            Invoice Number
+                          </p>
+                          <p className="font-mono text-sm">
+                            {selectedPayment.billingId.invoiceNumber}
+                          </p>
+                        </div>
+                      )}
                     {!isInstallation && billingPeriod && (
-                      <div className="mb-4">
-                        <p className="text-xs text-gray-500">Billing Period</p>
+                      <div>
+                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                          <FiCalendar className="w-3 h-3" /> Billing Period
+                        </p>
                         <p className="text-sm font-medium">
                           {formatBillingPeriod(billingPeriod)}
                         </p>
                       </div>
                     )}
                     {!isInstallation && selectedPayment.billingId?.dueDate && (
-                      <div className="mb-4">
+                      <div>
                         <p className="text-xs text-gray-500">Due Date</p>
-                        <p className="text-sm">
+                        <p className="text-sm font-medium text-red-600">
                           {formatDateFixed(selectedPayment.billingId.dueDate)}
                         </p>
                       </div>
                     )}
-                    {selectedPayment.billingId?.invoiceNumber && (
-                      <div className="mb-4">
-                        <p className="text-xs text-gray-500">Invoice Number</p>
-                        <p className="font-mono text-sm">
-                          {selectedPayment.billingId.invoiceNumber}
+                    {selectedPayment.billingId?.isProRated &&
+                      !isInstallation && (
+                        <div>
+                          <p className="text-xs text-gray-500">Bill Type</p>
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                            Pro-rated Bill
+                          </span>
+                        </div>
+                      )}
+                    <div>
+                      <p className="text-xs text-gray-500">Payment Date</p>
+                      <p className="text-sm">
+                        {formatShortDate(selectedPayment.createdAt)}
+                      </p>
+                    </div>
+                    {selectedPayment.paidAt && (
+                      <div>
+                        <p className="text-xs text-gray-500">Paid At</p>
+                        <p className="text-sm">
+                          {formatShortDate(selectedPayment.paidAt)}
                         </p>
                       </div>
                     )}
-                    <div className="mb-4">
-                      <p className="text-xs text-gray-500">Status</p>
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${getStatusColor(selectedPayment.status)}`}
-                      >
-                        {selectedPayment.status}
-                      </span>
-                    </div>
+                    {selectedPayment.paymentDetails?.notes && (
+                      <div>
+                        <p className="text-xs text-gray-500">Notes</p>
+                        <p className="text-sm text-gray-600">
+                          {selectedPayment.paymentDetails.notes}
+                        </p>
+                      </div>
+                    )}
                     {selectedPayment.status === "pending" && (
-                      <div className="flex gap-3 mt-4">
+                      <div className="flex gap-3 pt-4 border-t">
                         <button
                           onClick={() =>
                             handleConfirmPayment(selectedPayment._id)
                           }
                           disabled={confirming}
-                          className="flex-1 py-2 bg-green-600 text-white rounded-lg"
+                          className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                         >
-                          Confirm
+                          Confirm Payment
                         </button>
                         <button
                           onClick={() =>
                             handleRejectPayment(selectedPayment._id)
                           }
                           disabled={rejecting}
-                          className="flex-1 py-2 bg-red-600 text-white rounded-lg"
+                          className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                         >
                           Reject
                         </button>
                       </div>
                     )}
-                  </>
+                  </div>
                 );
               })()}
             </div>
