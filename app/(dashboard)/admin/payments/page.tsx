@@ -16,13 +16,8 @@ import {
 import {
   FiSearch,
   FiEye,
-  FiChevronLeft,
-  FiChevronRight,
-  FiCheckCircle,
-  FiXCircle,
   FiRefreshCw,
   FiClock,
-  FiClipboard,
   FiX,
   FiFileText,
   FiInfo,
@@ -31,7 +26,6 @@ import {
   FiDollarSign,
   FiFilter,
   FiDownload,
-  FiPrinter,
   FiChevronDown,
   FiChevronUp,
   FiChevronsDown,
@@ -411,7 +405,6 @@ export default function AdminPaymentsPage() {
     useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
-  const [expandedPayment, setExpandedPayment] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -1188,100 +1181,110 @@ export default function AdminPaymentsPage() {
                               <p className="text-xs font-semibold text-gray-500 mb-2">
                                 Payment History
                               </p>
-                              <div className="space-y-2">
+                              <div className="space-y-3">
                                 {group.payments.map((p) => {
-                                  const isPaymentExpanded =
-                                    expandedPayment === p._id;
                                   const billingPeriod =
                                     p.billingId?.billingPeriod;
                                   const isInstallation =
                                     p.paymentType === "installation" ||
                                     p.billingId?.isInstallationBill;
                                   return (
-                                    <div key={p._id} className="border-b pb-2">
-                                      <div className="flex items-center justify-between text-sm">
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            onClick={() =>
-                                              setExpandedPayment(
-                                                isPaymentExpanded
-                                                  ? null
-                                                  : p._id,
-                                              )
-                                            }
-                                            className="text-blue-500 hover:text-blue-700"
-                                          >
-                                            {isPaymentExpanded ? (
-                                              <FiChevronUp className="w-3 h-3" />
-                                            ) : (
-                                              <FiChevronDown className="w-3 h-3" />
-                                            )}
-                                          </button>
-                                          <span className="text-gray-500">
+                                    <div
+                                      key={p._id}
+                                      className="border rounded-lg p-3 bg-white"
+                                    >
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Date
+                                          </p>
+                                          <p className="font-medium">
                                             {formatShortDate(p.createdAt)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Reference
+                                          </p>
+                                          <p className="font-mono text-xs">
+                                            {p.referenceNumber}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Type
+                                          </p>
+                                          <span
+                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getPaymentTypeColor(p.paymentType)}`}
+                                          >
+                                            {p.paymentType === "installation"
+                                              ? "Installation"
+                                              : "Subscription"}
                                           </span>
                                         </div>
-                                        <span className="font-mono text-xs">
-                                          {p.referenceNumber}
-                                        </span>
-                                        <span
-                                          className={`px-2 py-0.5 rounded-full text-xs ${getPaymentTypeColor(p.paymentType)}`}
-                                        >
-                                          {p.paymentType === "installation"
-                                            ? "Install"
-                                            : "Sub"}
-                                        </span>
-                                        <span className="font-semibold">
-                                          {formatCurrency(p.amount)}
-                                        </span>
-                                        <span
-                                          className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(p.status)}`}
-                                        >
-                                          {p.status}
-                                        </span>
-                                        <button
-                                          onClick={() => setSelectedPayment(p)}
-                                          className="text-blue-600 text-xs"
-                                        >
-                                          View
-                                        </button>
-                                      </div>
-                                      {isPaymentExpanded && (
-                                        <div className="mt-2 pl-6 text-xs text-gray-500 space-y-1">
-                                          {!isInstallation && billingPeriod && (
-                                            <div className="flex items-center gap-2">
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Amount
+                                          </p>
+                                          <p className="font-bold text-green-600">
+                                            {formatCurrency(p.amount)}
+                                          </p>
+                                        </div>
+                                        {!isInstallation && billingPeriod && (
+                                          <div className="col-span-2">
+                                            <p className="text-xs text-gray-400">
+                                              Billing Period
+                                            </p>
+                                            <p className="text-sm flex items-center gap-1">
                                               <FiCalendar className="w-3 h-3" />
-                                              <span>
-                                                <strong>Billing Period:</strong>{" "}
-                                                {formatBillingPeriod(
-                                                  billingPeriod,
-                                                )}
-                                              </span>
-                                            </div>
-                                          )}
-                                          {p.billingId?.dueDate &&
-                                            !isInstallation && (
-                                              <div>
-                                                <strong>Due Date:</strong>{" "}
+                                              {formatBillingPeriod(
+                                                billingPeriod,
+                                              )}
+                                            </p>
+                                          </div>
+                                        )}
+                                        {!isInstallation &&
+                                          p.billingId?.dueDate && (
+                                            <div>
+                                              <p className="text-xs text-gray-400">
+                                                Due Date
+                                              </p>
+                                              <p className="text-sm">
                                                 {formatDateFixed(
                                                   p.billingId.dueDate,
                                                 )}
-                                              </div>
-                                            )}
-                                          {p.billingId?.invoiceNumber && (
-                                            <div>
-                                              <strong>Invoice:</strong>{" "}
+                                              </p>
+                                            </div>
+                                          )}
+                                        {p.billingId?.invoiceNumber && (
+                                          <div>
+                                            <p className="text-xs text-gray-400">
+                                              Invoice
+                                            </p>
+                                            <p className="font-mono text-xs">
                                               {p.billingId.invoiceNumber}
-                                            </div>
-                                          )}
-                                          {p.paymentDetails?.notes && (
-                                            <div>
-                                              <strong>Notes:</strong>{" "}
-                                              {p.paymentDetails.notes}
-                                            </div>
-                                          )}
+                                            </p>
+                                          </div>
+                                        )}
+                                        <div>
+                                          <p className="text-xs text-gray-400">
+                                            Status
+                                          </p>
+                                          <span
+                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
+                                          >
+                                            {p.status}
+                                          </span>
                                         </div>
-                                      )}
+                                      </div>
+                                      <div className="mt-2 flex justify-end">
+                                        <button
+                                          onClick={() => setSelectedPayment(p)}
+                                          className="text-blue-600 text-xs hover:underline"
+                                        >
+                                          View Details →
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
