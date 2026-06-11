@@ -1,4 +1,4 @@
-// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design, SORTING, LOCATION FILTER, FULL APP ID
+// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design, SORTING, AND BUILDING FILTER
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -66,7 +66,7 @@ import {
   FiMoreVertical,
   FiArrowUp,
   FiArrowDown,
-  FiMapPin,
+  FiHome,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -88,8 +88,14 @@ interface CustomerItem {
   applicationId?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
-  location?: string;
-  buildingName?: string;
+  building?: {
+    _id: string;
+    buildingName: string;
+    streetAddress: string;
+    city: string;
+  };
+  unitNumber?: string;
+  floor?: string;
 }
 
 interface Building {
@@ -110,6 +116,7 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
+// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -119,18 +126,16 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
+// Helper to format billing period correctly using UTC dates
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
-
   const startMonth = start.getUTCMonth() + 1;
   const startDay = start.getUTCDate();
   const startYear = start.getUTCFullYear();
-
   const endMonth = end.getUTCMonth() + 1;
   const endDay = end.getUTCDate();
   const endYear = end.getUTCFullYear();
-
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
@@ -143,8 +148,8 @@ export default function AdminBillingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [locationFilter, setLocationFilter] = useState("all");
-  const [availableLocations, setAvailableLocations] = useState<string[]>([]);
+  const [buildingFilter, setBuildingFilter] = useState("all");
+  const [buildingsList, setBuildingsList] = useState<Building[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
     null,
   );
@@ -184,6 +189,8 @@ export default function AdminBillingPage() {
     useState(false);
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+
+  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -265,6 +272,7 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
+  // Sorting function
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -274,6 +282,7 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Get sorted customers
   const getSortedCustomers = (
     customersToSort: CustomerItem[],
   ): CustomerItem[] => {
@@ -333,6 +342,7 @@ export default function AdminBillingPage() {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
       setBuildings(data.data || []);
+      setBuildingsList(data.data || []);
     } catch (error) {
       console.error("Failed to load buildings:", error);
     } finally {
@@ -790,14 +800,6 @@ export default function AdminBillingPage() {
       setCustomersWithoutAccounts(customersWithoutAccountsData);
       setPendingInstallationBills(pendingInstallationBillsData);
 
-      const buildingsRes = await fetch("/api/buildings/active");
-      const buildingsData = await buildingsRes.json();
-      const buildingsList = buildingsData.data || [];
-      const buildingMap = new Map();
-      buildingsList.forEach((b: any) => {
-        buildingMap.set(b._id, b.buildingName);
-      });
-
       const userCustomers: CustomerItem[] = usersList.map((user: any) => {
         const userBills = billsList.filter(
           (bill: any) =>
@@ -818,13 +820,6 @@ export default function AdminBillingPage() {
             cycle.userId?._id === user._id || cycle.userId === user._id,
         );
 
-        let location = "Unknown Location";
-        if (user.buildingId && buildingMap.has(user.buildingId)) {
-          location = buildingMap.get(user.buildingId);
-        } else if (user.buildingName) {
-          location = user.buildingName;
-        }
-
         return {
           _id: user._id,
           firstName: user.firstName,
@@ -842,8 +837,9 @@ export default function AdminBillingPage() {
           billingCycle: userCycle || null,
           installationFee: 0,
           installationFeePaid: true,
-          location: location,
-          buildingName: user.buildingName,
+          building: user.building,
+          unitNumber: user.unitNumber,
+          floor: user.floor,
         };
       });
 
@@ -871,13 +867,6 @@ export default function AdminBillingPage() {
             (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
-          let location = "Unknown Location";
-          if (app.buildingId && buildingMap.has(app.buildingId)) {
-            location = buildingMap.get(app.buildingId);
-          } else if (app.buildingName) {
-            location = app.buildingName;
-          }
-
           return {
             _id: app._id,
             firstName: app.firstName,
@@ -895,29 +884,16 @@ export default function AdminBillingPage() {
             applicationId: app.applicationId,
             installationFee: app.installationFee || 0,
             installationFeePaid: app.installationFeePaid || false,
-            location: location,
-            buildingName: app.buildingName,
+            building: app.building,
+            unitNumber: app.unitNumber,
+            floor: app.floor,
           };
         });
 
       const allCustomers = [...userCustomers, ...applicationCustomers];
       allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
-      setCustomers(allCustomers);
 
-      const locations = [
-        ...new Set(
-          allCustomers
-            .map((c) => c.location)
-            .filter((l) => l && l !== "Unknown Location"),
-        ),
-      ];
-      setAvailableLocations(
-        locations
-          .filter(
-            (l): l is string => l !== undefined && l !== "Unknown Location",
-          )
-          .sort(),
-      );
+      setCustomers(allCustomers);
 
       const totalBalance = allCustomers.reduce(
         (sum, c) => sum + c.currentBalance,
@@ -1367,6 +1343,13 @@ export default function AdminBillingPage() {
     return "text-orange-600";
   };
 
+  const getBuildingDisplay = (customer: CustomerItem) => {
+    if (customer.building) {
+      return customer.building.buildingName;
+    }
+    return "-";
+  };
+
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
       customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1377,10 +1360,11 @@ export default function AdminBillingPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()));
 
-    const matchesLocation =
-      locationFilter === "all" || customer.location === locationFilter;
+    const matchesBuilding =
+      buildingFilter === "all" ||
+      (customer.building && customer.building._id === buildingFilter);
 
-    if (!matchesSearch || !matchesLocation) return false;
+    if (!matchesSearch || !matchesBuilding) return false;
 
     if (statusFilter === "all") return true;
     if (statusFilter === "has_balance") return customer.currentBalance > 0;
@@ -1415,6 +1399,7 @@ export default function AdminBillingPage() {
     customersWithoutAccounts.length +
     stats.applicationsWithoutBilling;
 
+  // Compact stats cards data
   const compactStatsCards = [
     {
       label: "Total Customers",
@@ -1425,6 +1410,7 @@ export default function AdminBillingPage() {
     {
       label: "Total Balance",
       value: `₱${stats.totalBalance.toLocaleString()}`,
+
       color: "red",
     },
     {
@@ -1491,6 +1477,7 @@ export default function AdminBillingPage() {
     },
   ];
 
+  // Render sort icon
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
       return <FiArrowUp className="w-3 h-3 opacity-30" />;
@@ -1514,6 +1501,7 @@ export default function AdminBillingPage() {
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+      {/* Header with compact buttons */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
@@ -1586,6 +1574,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Compact Stats Cards Grid - 6 columns on large screens */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
         {compactStatsCards.map((stat, idx) => (
           <div
@@ -1609,6 +1598,7 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
+      {/* Search and Filter - Compact with Building Filter */}
       <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
@@ -1621,6 +1611,18 @@ export default function AdminBillingPage() {
               className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+          <select
+            value={buildingFilter}
+            onChange={(e) => setBuildingFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
+          >
+            <option value="all">🏢 All Buildings</option>
+            {buildingsList.map((building) => (
+              <option key={building._id} value={building._id}>
+                🏢 {building.buildingName}
+              </option>
+            ))}
+          </select>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -1636,32 +1638,10 @@ export default function AdminBillingPage() {
             <option value="applications">Applications Only</option>
             <option value="installation_fee_due">Installation Fee Due</option>
           </select>
-          <div className="relative min-w-[180px]">
-            <FiMapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm" />
-            <select
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
-            >
-              <option value="all">All Locations ({customers.length})</option>
-              {availableLocations.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc} ({customers.filter((c) => c.location === loc).length})
-                </option>
-              ))}
-              <option value="Unknown Location">
-                Unknown Location (
-                {
-                  customers.filter((c) => c.location === "Unknown Location")
-                    .length
-                }
-                )
-              </option>
-            </select>
-          </div>
         </div>
       </div>
 
+      {/* Excel-like Table Design with Sorting */}
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
@@ -1675,9 +1655,6 @@ export default function AdminBillingPage() {
                     Customer
                     <SortIcon field="name" />
                   </div>
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  Location
                 </th>
                 <th
                   className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
@@ -1715,6 +1692,9 @@ export default function AdminBillingPage() {
                     <SortIcon field="installationFee" />
                   </div>
                 </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                  <div className="flex items-center gap-1">Building</div>
+                </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
                 </th>
@@ -1743,7 +1723,6 @@ export default function AdminBillingPage() {
                     customer.type === "application" &&
                     (customer.installationFee ?? 0) > 0 &&
                     !customer.installationFeePaid;
-                  const fullAppId = customer.applicationId || "";
 
                   return (
                     <tr
@@ -1765,24 +1744,11 @@ export default function AdminBillingPage() {
                               {customer.email}
                             </p>
                             {customer.applicationId && (
-                              <p
-                                className="text-xs text-gray-400 font-mono"
-                                title={fullAppId}
-                              >
-                                {fullAppId}
+                              <p className="text-[10px] text-gray-400 font-mono">
+                                {customer.applicationId.slice(-8)}
                               </p>
                             )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <div className="flex items-center gap-1">
-                          <FiMapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                          <span className="text-sm text-gray-700">
-                            {customer.location ||
-                              customer.buildingName ||
-                              "Unknown Location"}
-                          </span>
                         </div>
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200">
@@ -1829,6 +1795,19 @@ export default function AdminBillingPage() {
                         ) : (
                           <p className="text-xs text-gray-400">—</p>
                         )}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200">
+                        <div className="flex items-center gap-1">
+                          <FiHome className="w-3 h-3 text-gray-400" />
+                          <span className="text-xs text-gray-600">
+                            {getBuildingDisplay(customer)}
+                          </span>
+                          {customer.unitNumber && (
+                            <span className="text-xs text-gray-400">
+                              (Unit {customer.unitNumber})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
@@ -2053,26 +2032,21 @@ export default function AdminBillingPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500 flex justify-between items-center">
-          <div>
-            Showing {sortedAndFilteredCustomers.length} of{" "}
-            {filteredCustomers.length} customers (
-            {customers.filter((c) => c.type === "user").length} users,{" "}
-            {customers.filter((c) => c.type === "application").length}{" "}
-            applications)
-          </div>
-          <div>
-            {locationFilter !== "all" && (
-              <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
-                Location: {locationFilter}
-              </span>
-            )}
-            {statusFilter !== "all" && (
-              <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-2">
-                Filter: {statusFilter.replace("_", " ")}
-              </span>
-            )}
-          </div>
+        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
+          Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
+          customers ({customers.filter((c) => c.type === "user").length} users,{" "}
+          {customers.filter((c) => c.type === "application").length}{" "}
+          applications) - Sorted by {sortField} (
+          {sortDirection === "asc" ? "Ascending" : "Descending"})
+          {buildingFilter !== "all" && (
+            <span className="ml-2 text-blue-600">
+              - Filtered by building:{" "}
+              {
+                buildingsList.find((b) => b._id === buildingFilter)
+                  ?.buildingName
+              }
+            </span>
+          )}
         </div>
       </div>
 
@@ -2918,14 +2892,6 @@ export default function AdminBillingPage() {
                   <p className="capitalize">{selectedCustomer.type}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500">Location</p>
-                  <p>
-                    {selectedCustomer.location ||
-                      selectedCustomer.buildingName ||
-                      "Unknown Location"}
-                  </p>
-                </div>
-                <div>
                   <p className="text-gray-500">Plan</p>
                   <p>
                     {selectedCustomer.planName} (₱
@@ -2940,10 +2906,25 @@ export default function AdminBillingPage() {
                     ₱{selectedCustomer.currentBalance.toLocaleString()}
                   </p>
                 </div>
+                <div>
+                  <p className="text-gray-500">Building</p>
+                  <p>{getBuildingDisplay(selectedCustomer)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Unit/Floor</p>
+                  <p>
+                    {selectedCustomer.unitNumber
+                      ? `Unit ${selectedCustomer.unitNumber}`
+                      : "-"}
+                    {selectedCustomer.floor
+                      ? `, Floor ${selectedCustomer.floor}`
+                      : ""}
+                  </p>
+                </div>
                 {selectedCustomer.applicationId && (
-                  <div className="col-span-2">
-                    <p className="text-gray-500">Application ID</p>
-                    <p className="font-mono text-sm break-all">
+                  <div>
+                    <p className="text-gray-500">App ID</p>
+                    <p className="font-mono text-xs">
                       {selectedCustomer.applicationId}
                     </p>
                   </div>
@@ -3312,33 +3293,7 @@ export default function AdminBillingPage() {
                   value={emailType}
                   onChange={(e) => {
                     const newType = e.target.value;
-                    setEmailType(newType);
-                    if (newType === "invoice") {
-                      setEmailSubject(`Invoice Reminder - MisterFyber`);
-                      setEmailMessage(
-                        `Dear ${emailCustomer.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
-                      );
-                    } else if (newType === "payment_confirmation") {
-                      setEmailSubject(`Payment Confirmation - MisterFyber`);
-                      setEmailMessage(
-                        `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
-                      );
-                    } else if (newType === "disconnection") {
-                      setEmailSubject(
-                        `Important: Service Disconnection Notice - MisterFyber`,
-                      );
-                      setEmailMessage(
-                        `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
-                      );
-                    } else if (newType === "welcome") {
-                      setEmailSubject(`Welcome to MisterFyber!`);
-                      setEmailMessage(
-                        `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
-                      );
-                    } else {
-                      setEmailSubject(`Message from MisterFyber`);
-                      setEmailMessage(`Dear ${emailCustomer.firstName},\n\n`);
-                    }
+                    setEmailType(newType); /* template logic */
                   }}
                   className="w-full px-3 py-2 text-sm border rounded-lg"
                 >
