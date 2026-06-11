@@ -1,4 +1,3 @@
-// frontend/app/admin/billing/page.tsx - COMPLETE FIXED VERSION with Excel-like table design, SORTING, AND BUILDING FILTER
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -126,16 +125,20 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-// Helper to format billing period correctly using UTC dates
+// Helper to format billing period correctly using ACTUAL dates (not shifted to 1st)
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
+  if (!startDateStr || !endDateStr) return "-";
+
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
+
   const startMonth = start.getUTCMonth() + 1;
   const startDay = start.getUTCDate();
   const startYear = start.getUTCFullYear();
   const endMonth = end.getUTCMonth() + 1;
   const endDay = end.getUTCDate();
   const endYear = end.getUTCFullYear();
+
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
@@ -341,7 +344,6 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
-      // Example building names: "Silk", "Breeze", etc.
       setBuildings(data.data || []);
       setBuildingsList(data.data || []);
     } catch (error) {
@@ -793,7 +795,6 @@ export default function AdminBillingPage() {
         customersWithoutAccountsResult?.data || [];
       const pendingInstallationBillsData =
         pendingInstallationBillsResult?.data || [];
-      const reportSummary = unpaidReportResult?.data?.summary || {};
 
       setBillingCycles(cyclesData);
       setBills(billsList);
@@ -1400,7 +1401,6 @@ export default function AdminBillingPage() {
     customersWithoutAccounts.length +
     stats.applicationsWithoutBilling;
 
-  // Compact stats cards data
   const compactStatsCards = [
     {
       label: "Total Customers",
@@ -1411,7 +1411,6 @@ export default function AdminBillingPage() {
     {
       label: "Total Balance",
       value: `₱${stats.totalBalance.toLocaleString()}`,
-
       color: "red",
     },
     {
@@ -1478,7 +1477,6 @@ export default function AdminBillingPage() {
     },
   ];
 
-  // Render sort icon
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
       return <FiArrowUp className="w-3 h-3 opacity-30" />;
@@ -1502,7 +1500,6 @@ export default function AdminBillingPage() {
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
-      {/* Header with compact buttons */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
@@ -1575,7 +1572,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Compact Stats Cards Grid - 6 columns on large screens */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
         {compactStatsCards.map((stat, idx) => (
           <div
@@ -1599,7 +1595,6 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
-      {/* Search and Filter - Compact with Building Filter */}
       <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
@@ -1642,7 +1637,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Excel-like Table Design with Sorting */}
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
@@ -2051,7 +2045,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Rest of the modals remain the same... */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -3190,10 +3183,10 @@ export default function AdminBillingPage() {
                   <tbody>
                     {pendingActivations.map((cycle: any) => (
                       <tr key={cycle._id}>
-                        <td>
+                        <tr>
                           {cycle.applicationData?.firstName}{" "}
                           {cycle.applicationData?.lastName}
-                        </td>
+                        </tr>
                         <td>{cycle.planId?.name}</td>
                         <td>₱{cycle.monthlyRate?.toLocaleString()}</td>
                         <td>
