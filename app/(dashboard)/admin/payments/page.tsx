@@ -90,13 +90,11 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
-// Cache for fetched data
 const nameCache = new Map<
   string,
   { name: string; email: string; phone: string }
 >();
 
-// Helper to format billing period
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -106,17 +104,31 @@ function formatBillingPeriod(billingPeriod?: {
   const start = new Date(billingPeriod.start);
   const end = new Date(billingPeriod.end);
 
-  const startMonth = start.getUTCMonth() + 1;
-  const startDay = start.getUTCDate();
-  const startYear = start.getUTCFullYear();
-  const endMonth = end.getUTCMonth() + 1;
-  const endDay = end.getUTCDate();
-  const endYear = end.getUTCFullYear();
+  const startDateObj = new Date(
+    start.getUTCFullYear(),
+    start.getUTCMonth(),
+    start.getUTCDate(),
+  );
+  const endDateObj = new Date(
+    end.getUTCFullYear(),
+    end.getUTCMonth(),
+    end.getUTCDate(),
+  );
 
-  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
+  const startFormatted = startDateObj.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const endFormatted = endDateObj.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${startFormatted} - ${endFormatted}`;
 }
 
-// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -126,7 +138,20 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-// Helper to extract customer name from payment
+function formatShortDate(dateStr: string): string {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatCurrency(amount: number): string {
+  return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+}
+
 function extractCustomerInfo(payment: Payment): CustomerInfo {
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
@@ -174,95 +199,34 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
   };
 }
 
-// Fetch application data by ID
 async function fetchApplicationData(applicationId: string): Promise<any> {
   if (!applicationId || applicationId === "—") return null;
-
-  if (nameCache.has(applicationId)) {
-    return nameCache.get(applicationId);
-  }
+  if (nameCache.has(applicationId)) return nameCache.get(applicationId);
 
   try {
-    let response = null;
+    const response = await api.get(
+      `/applications/by-application-id/${encodeURIComponent(applicationId)}`,
+    );
+    if (response.data?.success && response.data?.data) {
+      const data = response.data.data;
+      const customerInfo = {
+        name:
+          `${data.firstName || ""} ${data.lastName || ""}`.trim() ||
+          data.name ||
+          applicationId,
+        email: data.email || "—",
+        phone: data.phoneNumber || data.phone || "—",
+      };
+      nameCache.set(applicationId, customerInfo);
+      return customerInfo;
+    }
+  } catch (e) {}
 
-    try {
-      response = await api.get(
-        `/applications/by-application-id/${encodeURIComponent(applicationId)}`,
-      );
-      if (response.data?.success && response.data?.data) {
-        const data = response.data.data;
-        const customerInfo = {
-          name:
-            `${data.firstName || ""} ${data.lastName || ""}`.trim() ||
-            data.name ||
-            data.applicantName ||
-            applicationId,
-          email: data.email || "—",
-          phone: data.phoneNumber || data.phone || "—",
-        };
-        nameCache.set(applicationId, customerInfo);
-        return customerInfo;
-      }
-    } catch (e) {}
-
-    try {
-      response = await api.get(
-        `/applications?search=${encodeURIComponent(applicationId)}`,
-      );
-      if (response.data?.success && response.data?.data?.length > 0) {
-        const app = response.data.data.find(
-          (a: any) => a.applicationId === applicationId,
-        );
-        if (app) {
-          const customerInfo = {
-            name:
-              `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
-              app.name ||
-              applicationId,
-            email: app.email || "—",
-            phone: app.phoneNumber || app.phone || "—",
-          };
-          nameCache.set(applicationId, customerInfo);
-          return customerInfo;
-        }
-      }
-    } catch (e) {}
-
-    try {
-      response = await api.get(`/applications?limit=1000`);
-      if (response.data?.success && response.data?.data) {
-        const app = response.data.data.find(
-          (a: any) => a.applicationId === applicationId,
-        );
-        if (app) {
-          const customerInfo = {
-            name:
-              `${app.firstName || ""} ${app.lastName || ""}`.trim() ||
-              app.name ||
-              applicationId,
-            email: app.email || "—",
-            phone: app.phoneNumber || app.phone || "—",
-          };
-          nameCache.set(applicationId, customerInfo);
-          return customerInfo;
-        }
-      }
-    } catch (e) {}
-
-    const fallbackInfo = {
-      name: applicationId,
-      email: "—",
-      phone: "—",
-    };
-    nameCache.set(applicationId, fallbackInfo);
-    return fallbackInfo;
-  } catch (error) {
-    console.error(`Failed to fetch application ${applicationId}:`, error);
-    return null;
-  }
+  const fallbackInfo = { name: applicationId, email: "—", phone: "—" };
+  nameCache.set(applicationId, fallbackInfo);
+  return fallbackInfo;
 }
 
-// Enrich payment with customer data
 async function enrichPayment(payment: Payment): Promise<Payment> {
   if (
     payment.application &&
@@ -304,7 +268,6 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
   return payment;
 }
 
-// Group payments by customer
 function groupPayments(payments: Payment[]): PaymentGroup[] {
   const groups = new Map<string, PaymentGroup>();
 
@@ -357,14 +320,40 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
       const info = extractCustomerInfo(p);
       return info.name !== "—" && !info.name.includes("Loading...");
     });
-
     if (paymentWithName) {
-      const bestInfo = extractCustomerInfo(paymentWithName);
-      group.customerInfo = bestInfo;
+      group.customerInfo = extractCustomerInfo(paymentWithName);
     }
   }
 
   return Array.from(groups.values());
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "completed":
+      return "bg-green-100 text-green-800";
+    case "pending":
+      return "bg-yellow-100 text-yellow-800";
+    case "processing":
+      return "bg-blue-100 text-blue-800";
+    case "failed":
+      return "bg-red-100 text-red-800";
+    case "refunded":
+      return "bg-gray-100 text-gray-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+}
+
+function getPaymentTypeColor(type: string): string {
+  switch (type) {
+    case "subscription":
+      return "bg-purple-100 text-purple-800";
+    case "installation":
+      return "bg-orange-100 text-orange-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
 }
 
 export default function AdminPaymentsPage() {
@@ -376,7 +365,6 @@ export default function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -410,9 +398,7 @@ export default function AdminPaymentsPage() {
       }
 
       try {
-        if (forceRefresh) {
-          nameCache.clear();
-        }
+        if (forceRefresh) nameCache.clear();
 
         const allPaymentsResult = await getAllPayments({
           page: currentPage,
@@ -424,34 +410,29 @@ export default function AdminPaymentsPage() {
         if (!isMountedRef.current) return;
 
         let paymentsList = allPaymentsResult.data || [];
-
         if (paymentTypeFilter) {
           paymentsList = paymentsList.filter(
-            (payment: Payment) => payment.paymentType === paymentTypeFilter,
+            (p: Payment) => p.paymentType === paymentTypeFilter,
           );
         }
 
         const enrichedPayments = await Promise.all(
-          paymentsList.map((payment: Payment) => enrichPayment(payment)),
+          paymentsList.map((p: Payment) => enrichPayment(p)),
         );
-
         const grouped = groupPayments(enrichedPayments);
         setPaymentGroups(grouped);
-        setTotalPages(allPaymentsResult.totalPages || 1);
 
         const pendingResult = await getPendingPayments(forceRefresh).catch(
           () => ({ data: [] }),
         );
         let pendingList = pendingResult.data || [];
-
         const enrichedPending = await Promise.all(
-          pendingList.map((payment: Payment) => enrichPayment(payment)),
+          pendingList.map((p: Payment) => enrichPayment(p)),
         );
-
         if (paymentTypeFilter) {
           setPendingPayments(
             enrichedPending.filter(
-              (payment: Payment) => payment.paymentType === paymentTypeFilter,
+              (p: Payment) => p.paymentType === paymentTypeFilter,
             ),
           );
         } else {
@@ -475,11 +456,7 @@ export default function AdminPaymentsPage() {
         }
       } catch (error: any) {
         console.error("Failed to load payments:", error);
-        if (error.response?.status === 403) {
-          toast.error("You don't have permission to view payments");
-        } else if (!forceRefresh) {
-          toast.error("Failed to load payments");
-        }
+        if (!forceRefresh) toast.error("Failed to load payments");
       } finally {
         if (isMountedRef.current) {
           setLoading(false);
@@ -589,50 +566,7 @@ export default function AdminPaymentsPage() {
 
   const getPaginatedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
     const startIndex = (currentTablePage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return groups.slice(startIndex, endIndex);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "processing":
-        return "bg-blue-100 text-blue-800";
-      case "failed":
-        return "bg-red-100 text-red-800";
-      case "refunded":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getPaymentTypeColor = (type: string) => {
-    switch (type) {
-      case "subscription":
-        return "bg-purple-100 text-purple-800";
-      case "installation":
-        return "bg-orange-100 text-orange-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-  };
-
-  const formatShortDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-PH", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    return groups.slice(startIndex, startIndex + itemsPerPage);
   };
 
   const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
@@ -648,7 +582,6 @@ export default function AdminPaymentsPage() {
   const exportToExcel = () => {
     const filteredGroups = getFilteredGroups(paymentGroups);
     const sortedGroups = getSortedGroups(filteredGroups);
-
     const csvData = sortedGroups.map((group) => ({
       "Customer Name": group.customerInfo.name,
       "Application ID": group.customerInfo.applicationId,
@@ -938,9 +871,19 @@ export default function AdminPaymentsPage() {
                               Installation Fee
                             </span>
                           ) : (
-                            <div className="flex items-center gap-1">
-                              <FiCalendar className="w-3 h-3 text-gray-400" />
-                              <span>{formatBillingPeriod(billingPeriod)}</span>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1">
+                                <FiCalendar className="w-3 h-3 text-gray-400" />
+                                <span className="text-xs font-medium">
+                                  {formatBillingPeriod(billingPeriod)}
+                                </span>
+                              </div>
+                              {payment.billingId?.dueDate && (
+                                <span className="text-xs text-gray-500">
+                                  Due:{" "}
+                                  {formatDateFixed(payment.billingId.dueDate)}
+                                </span>
+                              )}
                             </div>
                           )}
                         </td>
@@ -978,7 +921,7 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* Excel-style Customer Summary Table */}
+      {/* Customer Summary Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
         <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
           <div>
@@ -1069,7 +1012,6 @@ export default function AdminPaymentsPage() {
                 paginatedGroups.map((group) => {
                   const isExpanded = expandedCustomer === group.customerId;
                   const hasMultiple = group.paymentCount > 1;
-
                   return (
                     <Fragment key={group.customerId}>
                       <tr
@@ -1150,7 +1092,7 @@ export default function AdminPaymentsPage() {
                         <tr className="bg-gray-50">
                           <td colSpan={8} className="px-4 py-4 pl-12">
                             <div className="border-l-4 border-blue-400 pl-4">
-                              <p className="text-xs font-semibold text-gray-500 mb-2">
+                              <p className="text-xs font-semibold text-gray-500 mb-3">
                                 Payment History
                               </p>
                               <div className="space-y-3">
@@ -1191,9 +1133,7 @@ export default function AdminPaymentsPage() {
                                           >
                                             {p.paymentType === "installation"
                                               ? "Installation Fee"
-                                              : p.paymentType === "subscription"
-                                                ? "Monthly Subscription"
-                                                : p.paymentType}
+                                              : "Monthly Subscription"}
                                           </span>
                                         </div>
                                         <div>
@@ -1211,7 +1151,9 @@ export default function AdminPaymentsPage() {
                                           <span
                                             className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
                                           >
-                                            {p.status}
+                                            {p.status === "completed"
+                                              ? "Paid"
+                                              : p.status}
                                           </span>
                                         </div>
                                         {!isInstallation &&
@@ -1231,11 +1173,16 @@ export default function AdminPaymentsPage() {
                                               <FiCalendar className="w-3 h-3" />{" "}
                                               Billing Period
                                             </p>
-                                            <p className="text-sm">
+                                            <p className="text-sm font-medium text-gray-800">
                                               {formatBillingPeriod(
                                                 billingPeriod,
                                               )}
                                             </p>
+                                            {p.billingId?.isProRated && (
+                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+                                                Pro-rated Bill
+                                              </span>
+                                            )}
                                           </div>
                                         )}
                                         {!isInstallation &&
@@ -1249,17 +1196,6 @@ export default function AdminPaymentsPage() {
                                                   p.billingId.dueDate,
                                                 )}
                                               </p>
-                                            </div>
-                                          )}
-                                        {p.billingId?.isProRated &&
-                                          !isInstallation && (
-                                            <div>
-                                              <p className="text-xs text-gray-400">
-                                                Bill Type
-                                              </p>
-                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                                Pro-rated
-                                              </span>
                                             </div>
                                           )}
                                       </div>
@@ -1287,8 +1223,6 @@ export default function AdminPaymentsPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Excel-style Pagination */}
         {totalFilteredCount > 0 && (
           <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between flex-wrap gap-4">
             <div className="text-sm text-gray-600">
@@ -1300,7 +1234,7 @@ export default function AdminPaymentsPage() {
               <button
                 onClick={() => setCurrentTablePage(1)}
                 disabled={currentTablePage === 1}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
               >
                 First
               </button>
@@ -1309,7 +1243,7 @@ export default function AdminPaymentsPage() {
                   setCurrentTablePage((prev) => Math.max(1, prev - 1))
                 }
                 disabled={currentTablePage === 1}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
               >
                 Previous
               </button>
@@ -1323,14 +1257,14 @@ export default function AdminPaymentsPage() {
                   )
                 }
                 disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
               >
                 Next
               </button>
               <button
                 onClick={() => setCurrentTablePage(totalPagesCount)}
                 disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
               >
                 Last
               </button>
@@ -1381,7 +1315,9 @@ export default function AdminPaymentsPage() {
                         <span
                           className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(selectedPayment.status)}`}
                         >
-                          {selectedPayment.status}
+                          {selectedPayment.status === "completed"
+                            ? "Paid"
+                            : selectedPayment.status}
                         </span>
                       </div>
                     </div>
@@ -1410,6 +1346,11 @@ export default function AdminPaymentsPage() {
                         <p className="text-sm font-medium">
                           {formatBillingPeriod(billingPeriod)}
                         </p>
+                        {selectedPayment.billingId?.isProRated && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+                            Pro-rated Bill
+                          </span>
+                        )}
                       </div>
                     )}
                     {!isInstallation && selectedPayment.billingId?.dueDate && (
@@ -1420,15 +1361,6 @@ export default function AdminPaymentsPage() {
                         </p>
                       </div>
                     )}
-                    {selectedPayment.billingId?.isProRated &&
-                      !isInstallation && (
-                        <div>
-                          <p className="text-xs text-gray-500">Bill Type</p>
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                            Pro-rated Bill
-                          </span>
-                        </div>
-                      )}
                     <div>
                       <p className="text-xs text-gray-500">Payment Date</p>
                       <p className="text-sm">
