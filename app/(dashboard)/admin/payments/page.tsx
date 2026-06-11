@@ -36,6 +36,7 @@ import {
   FiChevronUp,
   FiChevronsDown,
   FiChevronsUp,
+  FiCalendar,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -56,6 +57,13 @@ interface Payment {
   billingId?: {
     _id: string;
     invoiceNumber: string;
+    billingPeriod?: {
+      start: string;
+      end: string;
+    };
+    dueDate?: string;
+    isProRated?: boolean;
+    isInstallationBill?: boolean;
   };
   paymentDetails?: {
     notes?: string;
@@ -93,6 +101,36 @@ const nameCache = new Map<
   string,
   { name: string; email: string; phone: string }
 >();
+
+// Helper to format billing period
+function formatBillingPeriod(billingPeriod?: {
+  start: string;
+  end: string;
+}): string {
+  if (!billingPeriod?.start || !billingPeriod?.end) return "-";
+
+  const start = new Date(billingPeriod.start);
+  const end = new Date(billingPeriod.end);
+
+  const startMonth = start.getUTCMonth() + 1;
+  const startDay = start.getUTCDate();
+  const startYear = start.getUTCFullYear();
+  const endMonth = end.getUTCMonth() + 1;
+  const endDay = end.getUTCDate();
+  const endYear = end.getUTCFullYear();
+
+  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
+}
+
+// Helper to format date as MM/DD/YYYY (no timezone shift)
+function formatDateFixed(dateStr: string): string {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  return `${month}/${day}/${year}`;
+}
 
 // Helper to extract customer name from payment
 function extractCustomerInfo(payment: Payment): CustomerInfo {
@@ -373,6 +411,7 @@ export default function AdminPaymentsPage() {
     useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
+  const [expandedPayment, setExpandedPayment] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -665,7 +704,6 @@ export default function AdminPaymentsPage() {
         headers
           .map((header) => {
             const value = row[header as keyof typeof row];
-            // Handle numbers and strings
             if (typeof value === "number") return value.toString();
             return `"${String(value).replace(/"/g, '""')}"`;
           })
@@ -903,6 +941,9 @@ export default function AdminPaymentsPage() {
                       Amount
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                      Billing Period
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
                       Actions
                     </th>
                   </tr>
@@ -910,6 +951,10 @@ export default function AdminPaymentsPage() {
                 <tbody className="divide-y divide-gray-200">
                   {pendingPayments.map((payment) => {
                     const info = extractCustomerInfo(payment);
+                    const billingPeriod = payment.billingId?.billingPeriod;
+                    const isInstallation =
+                      payment.paymentType === "installation" ||
+                      payment.billingId?.isInstallationBill;
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm">
@@ -921,6 +966,18 @@ export default function AdminPaymentsPage() {
                         </td>
                         <td className="px-4 py-3 font-semibold">
                           {formatCurrency(payment.amount)}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {isInstallation ? (
+                            <span className="text-orange-600">
+                              Installation Fee
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <FiCalendar className="w-3 h-3 text-gray-400" />
+                              <span>{formatBillingPeriod(billingPeriod)}</span>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
@@ -1132,40 +1189,102 @@ export default function AdminPaymentsPage() {
                                 Payment History
                               </p>
                               <div className="space-y-2">
-                                {group.payments.map((p) => (
-                                  <div
-                                    key={p._id}
-                                    className="flex items-center justify-between text-sm border-b pb-2"
-                                  >
-                                    <span className="text-gray-500">
-                                      {formatShortDate(p.createdAt)}
-                                    </span>
-                                    <span className="font-mono text-xs">
-                                      {p.referenceNumber}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full text-xs ${getPaymentTypeColor(p.paymentType)}`}
-                                    >
-                                      {p.paymentType === "installation"
-                                        ? "Install"
-                                        : "Sub"}
-                                    </span>
-                                    <span className="font-semibold">
-                                      {formatCurrency(p.amount)}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(p.status)}`}
-                                    >
-                                      {p.status}
-                                    </span>
-                                    <button
-                                      onClick={() => setSelectedPayment(p)}
-                                      className="text-blue-600 text-xs"
-                                    >
-                                      View
-                                    </button>
-                                  </div>
-                                ))}
+                                {group.payments.map((p) => {
+                                  const isPaymentExpanded =
+                                    expandedPayment === p._id;
+                                  const billingPeriod =
+                                    p.billingId?.billingPeriod;
+                                  const isInstallation =
+                                    p.paymentType === "installation" ||
+                                    p.billingId?.isInstallationBill;
+                                  return (
+                                    <div key={p._id} className="border-b pb-2">
+                                      <div className="flex items-center justify-between text-sm">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() =>
+                                              setExpandedPayment(
+                                                isPaymentExpanded
+                                                  ? null
+                                                  : p._id,
+                                              )
+                                            }
+                                            className="text-blue-500 hover:text-blue-700"
+                                          >
+                                            {isPaymentExpanded ? (
+                                              <FiChevronUp className="w-3 h-3" />
+                                            ) : (
+                                              <FiChevronDown className="w-3 h-3" />
+                                            )}
+                                          </button>
+                                          <span className="text-gray-500">
+                                            {formatShortDate(p.createdAt)}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-xs">
+                                          {p.referenceNumber}
+                                        </span>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-full text-xs ${getPaymentTypeColor(p.paymentType)}`}
+                                        >
+                                          {p.paymentType === "installation"
+                                            ? "Install"
+                                            : "Sub"}
+                                        </span>
+                                        <span className="font-semibold">
+                                          {formatCurrency(p.amount)}
+                                        </span>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(p.status)}`}
+                                        >
+                                          {p.status}
+                                        </span>
+                                        <button
+                                          onClick={() => setSelectedPayment(p)}
+                                          className="text-blue-600 text-xs"
+                                        >
+                                          View
+                                        </button>
+                                      </div>
+                                      {isPaymentExpanded && (
+                                        <div className="mt-2 pl-6 text-xs text-gray-500 space-y-1">
+                                          {!isInstallation && billingPeriod && (
+                                            <div className="flex items-center gap-2">
+                                              <FiCalendar className="w-3 h-3" />
+                                              <span>
+                                                <strong>Billing Period:</strong>{" "}
+                                                {formatBillingPeriod(
+                                                  billingPeriod,
+                                                )}
+                                              </span>
+                                            </div>
+                                          )}
+                                          {p.billingId?.dueDate &&
+                                            !isInstallation && (
+                                              <div>
+                                                <strong>Due Date:</strong>{" "}
+                                                {formatDateFixed(
+                                                  p.billingId.dueDate,
+                                                )}
+                                              </div>
+                                            )}
+                                          {p.billingId?.invoiceNumber && (
+                                            <div>
+                                              <strong>Invoice:</strong>{" "}
+                                              {p.billingId.invoiceNumber}
+                                            </div>
+                                          )}
+                                          {p.paymentDetails?.notes && (
+                                            <div>
+                                              <strong>Notes:</strong>{" "}
+                                              {p.paymentDetails.notes}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           </td>
@@ -1246,6 +1365,10 @@ export default function AdminPaymentsPage() {
             <div className="p-6">
               {(() => {
                 const info = extractCustomerInfo(selectedPayment);
+                const isInstallation =
+                  selectedPayment.paymentType === "installation" ||
+                  selectedPayment.billingId?.isInstallationBill;
+                const billingPeriod = selectedPayment.billingId?.billingPeriod;
                 return (
                   <>
                     <div className="mb-4">
@@ -1268,6 +1391,30 @@ export default function AdminPaymentsPage() {
                         {selectedPayment.referenceNumber}
                       </p>
                     </div>
+                    {!isInstallation && billingPeriod && (
+                      <div className="mb-4">
+                        <p className="text-xs text-gray-500">Billing Period</p>
+                        <p className="text-sm font-medium">
+                          {formatBillingPeriod(billingPeriod)}
+                        </p>
+                      </div>
+                    )}
+                    {!isInstallation && selectedPayment.billingId?.dueDate && (
+                      <div className="mb-4">
+                        <p className="text-xs text-gray-500">Due Date</p>
+                        <p className="text-sm">
+                          {formatDateFixed(selectedPayment.billingId.dueDate)}
+                        </p>
+                      </div>
+                    )}
+                    {selectedPayment.billingId?.invoiceNumber && (
+                      <div className="mb-4">
+                        <p className="text-xs text-gray-500">Invoice Number</p>
+                        <p className="font-mono text-sm">
+                          {selectedPayment.billingId.invoiceNumber}
+                        </p>
+                      </div>
+                    )}
                     <div className="mb-4">
                       <p className="text-xs text-gray-500">Status</p>
                       <span
