@@ -341,6 +341,7 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
+      // Example building names: "Silk", "Breeze", etc.
       setBuildings(data.data || []);
       setBuildingsList(data.data || []);
     } catch (error) {
@@ -1744,8 +1745,8 @@ export default function AdminBillingPage() {
                               {customer.email}
                             </p>
                             {customer.applicationId && (
-                              <p className="text-[10px] text-gray-400 font-mono">
-                                {customer.applicationId.slice(-8)}
+                              <p className="text-[10px] text-gray-400 font-mono break-all">
+                                {customer.applicationId}
                               </p>
                             )}
                           </div>
@@ -2050,6 +2051,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Rest of the modals remain the same... */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -2529,7 +2531,7 @@ export default function AdminBillingPage() {
                 <strong>Email:</strong> {selectedCustomerEmail}
               </p>
               {selectedApplicationId && (
-                <p className="font-mono text-xs">
+                <p className="font-mono text-xs break-all">
                   <strong>App ID:</strong> {selectedApplicationId}
                 </p>
               )}
@@ -2922,9 +2924,9 @@ export default function AdminBillingPage() {
                   </p>
                 </div>
                 {selectedCustomer.applicationId && (
-                  <div>
-                    <p className="text-gray-500">App ID</p>
-                    <p className="font-mono text-xs">
+                  <div className="col-span-2">
+                    <p className="text-gray-500">Application ID</p>
+                    <p className="font-mono text-xs break-all">
                       {selectedCustomer.applicationId}
                     </p>
                   </div>
@@ -3293,7 +3295,7 @@ export default function AdminBillingPage() {
                   value={emailType}
                   onChange={(e) => {
                     const newType = e.target.value;
-                    setEmailType(newType); /* template logic */
+                    setEmailType(newType);
                   }}
                   className="w-full px-3 py-2 text-sm border rounded-lg"
                 >
@@ -3389,9 +3391,9 @@ export default function AdminBillingPage() {
                       <td className="px-3 py-2">
                         {c.firstName} {c.lastName}
                       </td>
-                      <td>{c.email}</td>
-                      <td>{c.planName}</td>
-                      <td>
+                      <td className="px-3 py-2">{c.email}</td>
+                      <td className="px-3 py-2">{c.planName}</td>
+                      <td className="px-3 py-2">
                         <button
                           onClick={() => {
                             setSelectedApplicationId(c.applicationId);
