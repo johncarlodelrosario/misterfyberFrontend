@@ -95,6 +95,7 @@ const nameCache = new Map<
   { name: string; email: string; phone: string }
 >();
 
+// Helper to format billing period - SHOWS ACTUAL BILLED PERIOD
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -104,31 +105,18 @@ function formatBillingPeriod(billingPeriod?: {
   const start = new Date(billingPeriod.start);
   const end = new Date(billingPeriod.end);
 
-  const startDateObj = new Date(
-    start.getUTCFullYear(),
-    start.getUTCMonth(),
-    start.getUTCDate(),
-  );
-  const endDateObj = new Date(
-    end.getUTCFullYear(),
-    end.getUTCMonth(),
-    end.getUTCDate(),
-  );
+  const startMonth = start.getUTCMonth() + 1;
+  const startDay = start.getUTCDate();
+  const startYear = start.getUTCFullYear();
+  const endMonth = end.getUTCMonth() + 1;
+  const endDay = end.getUTCDate();
+  const endYear = end.getUTCFullYear();
 
-  const startFormatted = startDateObj.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const endFormatted = endDateObj.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  return `${startFormatted} - ${endFormatted}`;
+  // Format as "MM/DD/YYYY - MM/DD/YYYY"
+  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
+// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -1133,7 +1121,9 @@ export default function AdminPaymentsPage() {
                                           >
                                             {p.paymentType === "installation"
                                               ? "Installation Fee"
-                                              : "Monthly Subscription"}
+                                              : p.paymentType === "subscription"
+                                                ? "Monthly Subscription"
+                                                : p.paymentType}
                                           </span>
                                         </div>
                                         <div>
@@ -1167,23 +1157,28 @@ export default function AdminPaymentsPage() {
                                               </p>
                                             </div>
                                           )}
+                                        {/* BILLING PERIOD - ALWAYS SHOW FOR SUBSCRIPTION */}
                                         {!isInstallation && billingPeriod && (
-                                          <div className="md:col-span-2">
-                                            <p className="text-xs text-gray-400 flex items-center gap-1">
-                                              <FiCalendar className="w-3 h-3" />{" "}
-                                              Billing Period
-                                            </p>
-                                            <p className="text-sm font-medium text-gray-800">
-                                              {formatBillingPeriod(
-                                                billingPeriod,
-                                              )}
-                                            </p>
+                                          <>
+                                            <div className="md:col-span-2">
+                                              <p className="text-xs text-gray-400 flex items-center gap-1">
+                                                <FiCalendar className="w-3 h-3" />{" "}
+                                                Billing Period
+                                              </p>
+                                              <p className="text-sm font-mono bg-gray-50 p-1 rounded">
+                                                {formatBillingPeriod(
+                                                  billingPeriod,
+                                                )}
+                                              </p>
+                                            </div>
                                             {p.billingId?.isProRated && (
-                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
-                                                Pro-rated Bill
-                                              </span>
+                                              <div>
+                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                                  Pro-rated Bill
+                                                </span>
+                                              </div>
                                             )}
-                                          </div>
+                                          </>
                                         )}
                                         {!isInstallation &&
                                           p.billingId?.dueDate && (
@@ -1338,16 +1333,17 @@ export default function AdminPaymentsPage() {
                           </p>
                         </div>
                       )}
+                    {/* BILLING PERIOD - PROMINENTLY DISPLAYED */}
                     {!isInstallation && billingPeriod && (
-                      <div>
+                      <div className="bg-blue-50 p-3 rounded-lg">
                         <p className="text-xs text-gray-500 flex items-center gap-1">
                           <FiCalendar className="w-3 h-3" /> Billing Period
                         </p>
-                        <p className="text-sm font-medium">
+                        <p className="text-base font-bold text-blue-800">
                           {formatBillingPeriod(billingPeriod)}
                         </p>
                         {selectedPayment.billingId?.isProRated && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+                          <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
                             Pro-rated Bill
                           </span>
                         )}
