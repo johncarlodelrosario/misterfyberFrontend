@@ -93,6 +93,7 @@ interface CustomerItem {
     streetAddress: string;
     city: string;
   };
+  buildingId?: string;
   unitNumber?: string;
   floor?: string;
 }
@@ -741,6 +742,52 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Helper function to get building name from buildingId or building object
+  const getBuildingNameFromApplication = (
+    app: any,
+    buildingsListData: Building[],
+  ): { _id: string; buildingName: string } | null => {
+    // Case 1: app.building is already an object with buildingName
+    if (
+      app.building &&
+      typeof app.building === "object" &&
+      app.building.buildingName
+    ) {
+      return {
+        _id: app.building._id,
+        buildingName: app.building.buildingName,
+      };
+    }
+
+    // Case 2: app.building is a string (building ID)
+    if (app.building && typeof app.building === "string") {
+      const foundBuilding = buildingsListData.find(
+        (b) => b._id === app.building,
+      );
+      if (foundBuilding) {
+        return {
+          _id: foundBuilding._id,
+          buildingName: foundBuilding.buildingName,
+        };
+      }
+    }
+
+    // Case 3: app.buildingId exists (some APIs use this field)
+    if (app.buildingId) {
+      const foundBuilding = buildingsListData.find(
+        (b) => b._id === app.buildingId,
+      );
+      if (foundBuilding) {
+        return {
+          _id: foundBuilding._id,
+          buildingName: foundBuilding.buildingName,
+        };
+      }
+    }
+
+    return null;
+  };
+
   const loadData = useCallback(
     async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
@@ -814,6 +861,34 @@ export default function AdminBillingPage() {
               cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
+          // Get building data for user
+          let buildingData = null;
+          if (user.building) {
+            if (
+              typeof user.building === "object" &&
+              user.building.buildingName
+            ) {
+              buildingData = {
+                _id: user.building._id,
+                buildingName: user.building.buildingName,
+                streetAddress: user.building.streetAddress || "",
+                city: user.building.city || "",
+              };
+            } else if (typeof user.building === "string") {
+              const foundBuilding = buildingsList.find(
+                (b) => b._id === user.building,
+              );
+              if (foundBuilding) {
+                buildingData = {
+                  _id: foundBuilding._id,
+                  buildingName: foundBuilding.buildingName,
+                  streetAddress: foundBuilding.streetAddress,
+                  city: foundBuilding.city,
+                };
+              }
+            }
+          }
+
           return {
             _id: user._id,
             firstName: user.firstName,
@@ -831,7 +906,10 @@ export default function AdminBillingPage() {
             billingCycle: userCycle || null,
             installationFee: 0,
             installationFeePaid: true,
-            building: user.building,
+            building: buildingData,
+            buildingId:
+              user.buildingId ||
+              (typeof user.building === "string" ? user.building : undefined),
             unitNumber: user.unitNumber,
             floor: user.floor,
           };
@@ -862,31 +940,20 @@ export default function AdminBillingPage() {
               (cycle: any) => cycle.applicationId === app.applicationId,
             );
 
+            // FIXED: Get building name using the helper function
+            const buildingInfo = getBuildingNameFromApplication(
+              app,
+              buildingsList,
+            );
+
             let buildingData = null;
-            if (app.building) {
-              if (
-                typeof app.building === "object" &&
-                app.building.buildingName
-              ) {
-                buildingData = {
-                  _id: app.building._id,
-                  buildingName: app.building.buildingName,
-                  streetAddress: app.building.streetAddress || "",
-                  city: app.building.city || "",
-                };
-              } else if (typeof app.building === "string") {
-                const foundBuilding = buildingsList.find(
-                  (b) => b._id === app.building,
-                );
-                if (foundBuilding) {
-                  buildingData = {
-                    _id: foundBuilding._id,
-                    buildingName: foundBuilding.buildingName,
-                    streetAddress: foundBuilding.streetAddress,
-                    city: foundBuilding.city,
-                  };
-                }
-              }
+            if (buildingInfo) {
+              buildingData = {
+                _id: buildingInfo._id,
+                buildingName: buildingInfo.buildingName,
+                streetAddress: "",
+                city: "",
+              };
             }
 
             return {
@@ -907,6 +974,7 @@ export default function AdminBillingPage() {
               installationFee: app.installationFee || 0,
               installationFeePaid: app.installationFeePaid || false,
               building: buildingData,
+              buildingId: app.buildingId || app.building,
               unitNumber: app.unitNumber,
               floor: app.floor,
             };
@@ -1368,8 +1436,16 @@ export default function AdminBillingPage() {
   };
 
   const getBuildingDisplay = (customer: CustomerItem) => {
+    // Check building object first
     if (customer.building && customer.building.buildingName) {
       return customer.building.buildingName;
+    }
+    // If no building object but we have buildingId, try to find from buildingsList
+    if (customer.buildingId && buildingsList.length > 0) {
+      const found = buildingsList.find((b) => b._id === customer.buildingId);
+      if (found) {
+        return found.buildingName;
+      }
     }
     return "-";
   };
@@ -1384,9 +1460,15 @@ export default function AdminBillingPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()));
 
-    const matchesBuilding =
-      buildingFilter === "all" ||
-      (customer.building && customer.building._id === buildingFilter);
+    // Fix building filter - check both building object and buildingId
+    let matchesBuilding = buildingFilter === "all";
+    if (!matchesBuilding) {
+      if (customer.building && customer.building._id === buildingFilter) {
+        matchesBuilding = true;
+      } else if (customer.buildingId === buildingFilter) {
+        matchesBuilding = true;
+      }
+    }
 
     if (!matchesSearch || !matchesBuilding) return false;
 
@@ -2069,7 +2151,6 @@ export default function AdminBillingPage() {
           )}
         </div>
       </div>
-
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
