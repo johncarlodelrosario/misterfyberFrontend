@@ -340,10 +340,14 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
-      setBuildings(data.data || []);
-      setBuildingsList(data.data || []);
+      const buildingsData = data.data || [];
+      setBuildings(buildingsData);
+      setBuildingsList(buildingsData);
+      console.log("✅ Buildings loaded:", buildingsData.length);
+      return buildingsData;
     } catch (error) {
       console.error("Failed to load buildings:", error);
+      return [];
     } finally {
       setLoadingBuildings(false);
     }
@@ -742,20 +746,38 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Helper function to get building name from buildingId or building object
+  // FIXED: Improved helper function to get building name
   const getBuildingNameFromApplication = (
     app: any,
     buildingsListData: Building[],
-  ): { _id: string; buildingName: string } | null => {
+  ): {
+    _id: string;
+    buildingName: string;
+    streetAddress: string;
+    city: string;
+  } | null => {
+    console.log(
+      `🔍 Looking up building for: ${app.firstName} ${app.lastName}`,
+      {
+        appBuilding: app.building,
+        appBuildingId: app.buildingId,
+        appBuildingIdType: typeof app.buildingId,
+        buildingsAvailable: buildingsListData.length,
+      },
+    );
+
     // Case 1: app.building is already an object with buildingName
     if (
       app.building &&
       typeof app.building === "object" &&
       app.building.buildingName
     ) {
+      console.log(`✅ Found building object: ${app.building.buildingName}`);
       return {
         _id: app.building._id,
         buildingName: app.building.buildingName,
+        streetAddress: app.building.streetAddress || "",
+        city: app.building.city || "",
       };
     }
 
@@ -765,26 +787,55 @@ export default function AdminBillingPage() {
         (b) => b._id === app.building,
       );
       if (foundBuilding) {
+        console.log(
+          `✅ Found building by ID (building field): ${foundBuilding.buildingName}`,
+        );
         return {
           _id: foundBuilding._id,
           buildingName: foundBuilding.buildingName,
+          streetAddress: foundBuilding.streetAddress || "",
+          city: foundBuilding.city || "",
         };
       }
     }
 
-    // Case 3: app.buildingId exists (some APIs use this field)
+    // Case 3: app.buildingId exists
     if (app.buildingId) {
       const foundBuilding = buildingsListData.find(
         (b) => b._id === app.buildingId,
       );
       if (foundBuilding) {
+        console.log(
+          `✅ Found building by buildingId: ${foundBuilding.buildingName}`,
+        );
         return {
           _id: foundBuilding._id,
           buildingName: foundBuilding.buildingName,
+          streetAddress: foundBuilding.streetAddress || "",
+          city: foundBuilding.city || "",
         };
       }
     }
 
+    // Case 4: Check if buildingId is nested in app.building._id
+    if (app.building && typeof app.building === "object" && app.building._id) {
+      const foundBuilding = buildingsListData.find(
+        (b) => b._id === app.building._id,
+      );
+      if (foundBuilding) {
+        console.log(
+          `✅ Found building by building._id: ${foundBuilding.buildingName}`,
+        );
+        return {
+          _id: foundBuilding._id,
+          buildingName: foundBuilding.buildingName,
+          streetAddress: foundBuilding.streetAddress || "",
+          city: foundBuilding.city || "",
+        };
+      }
+    }
+
+    console.log(`❌ No building found for: ${app.firstName} ${app.lastName}`);
     return null;
   };
 
@@ -802,6 +853,13 @@ export default function AdminBillingPage() {
 
       try {
         console.log("🔄 Loading billing data...");
+
+        // ✅ CRITICAL FIX: Ensure buildings are loaded first
+        let currentBuildingsList = buildingsList;
+        if (currentBuildingsList.length === 0) {
+          console.log("📦 Loading buildings first...");
+          currentBuildingsList = await loadBuildings();
+        }
 
         const [
           cyclesResult,
@@ -875,7 +933,7 @@ export default function AdminBillingPage() {
                 city: user.building.city || "",
               };
             } else if (typeof user.building === "string") {
-              const foundBuilding = buildingsList.find(
+              const foundBuilding = currentBuildingsList.find(
                 (b) => b._id === user.building,
               );
               if (foundBuilding) {
@@ -940,10 +998,10 @@ export default function AdminBillingPage() {
               (cycle: any) => cycle.applicationId === app.applicationId,
             );
 
-            // FIXED: Get building name using the helper function
+            // FIXED: Get building name with improved helper
             const buildingInfo = getBuildingNameFromApplication(
               app,
-              buildingsList,
+              currentBuildingsList,
             );
 
             let buildingData = null;
@@ -951,8 +1009,8 @@ export default function AdminBillingPage() {
               buildingData = {
                 _id: buildingInfo._id,
                 buildingName: buildingInfo.buildingName,
-                streetAddress: "",
-                city: "",
+                streetAddress: buildingInfo.streetAddress,
+                city: buildingInfo.city,
               };
             }
 
@@ -1061,14 +1119,18 @@ export default function AdminBillingPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    loadData();
-    loadBillingFlowSettings();
-    loadPlans();
-    loadBuildings();
+    // Load buildings first, then data
+    const initialize = async () => {
+      await loadBuildings();
+      await loadData();
+      await loadBillingFlowSettings();
+      await loadPlans();
+    };
+    initialize();
     return () => {
       isMountedRef.current = false;
     };
-  }, [loadData]);
+  }, []);
 
   const handleRefresh = () => {
     loadedRef.current = false;
@@ -2151,6 +2213,8 @@ export default function AdminBillingPage() {
           )}
         </div>
       </div>
+
+      {/* Rest of the modals remain the same as in your original code */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
