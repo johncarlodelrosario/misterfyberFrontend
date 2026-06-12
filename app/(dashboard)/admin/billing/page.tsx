@@ -1666,8 +1666,8 @@ export default function AdminBillingPage() {
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-100 border-b border-gray-300">
+            <thead className="sticky top-0 z-10 bg-gray-100">
+              <tr className="border-b border-gray-300">
                 <th
                   className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
                   onClick={() => handleSort("name")}
@@ -3212,10 +3212,10 @@ export default function AdminBillingPage() {
                   <tbody>
                     {pendingActivations.map((cycle: any) => (
                       <tr key={cycle._id}>
-                        <tr>
+                        <td>
                           {cycle.applicationData?.firstName}{" "}
                           {cycle.applicationData?.lastName}
-                        </tr>
+                        </td>
                         <td>{cycle.planId?.name}</td>
                         <td>₱{cycle.monthlyRate?.toLocaleString()}</td>
                         <td>
