@@ -746,99 +746,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // FIXED: Improved helper function to get building name
-  const getBuildingNameFromApplication = (
-    app: any,
-    buildingsListData: Building[],
-  ): {
-    _id: string;
-    buildingName: string;
-    streetAddress: string;
-    city: string;
-  } | null => {
-    console.log(
-      `🔍 Looking up building for: ${app.firstName} ${app.lastName}`,
-      {
-        appBuilding: app.building,
-        appBuildingId: app.buildingId,
-        appBuildingIdType: typeof app.buildingId,
-        buildingsAvailable: buildingsListData.length,
-      },
-    );
-
-    // Case 1: app.building is already an object with buildingName
-    if (
-      app.building &&
-      typeof app.building === "object" &&
-      app.building.buildingName
-    ) {
-      console.log(`✅ Found building object: ${app.building.buildingName}`);
-      return {
-        _id: app.building._id,
-        buildingName: app.building.buildingName,
-        streetAddress: app.building.streetAddress || "",
-        city: app.building.city || "",
-      };
-    }
-
-    // Case 2: app.building is a string (building ID)
-    if (app.building && typeof app.building === "string") {
-      const foundBuilding = buildingsListData.find(
-        (b) => b._id === app.building,
-      );
-      if (foundBuilding) {
-        console.log(
-          `✅ Found building by ID (building field): ${foundBuilding.buildingName}`,
-        );
-        return {
-          _id: foundBuilding._id,
-          buildingName: foundBuilding.buildingName,
-          streetAddress: foundBuilding.streetAddress || "",
-          city: foundBuilding.city || "",
-        };
-      }
-    }
-
-    // Case 3: app.buildingId exists
-    if (app.buildingId) {
-      const foundBuilding = buildingsListData.find(
-        (b) => b._id === app.buildingId,
-      );
-      if (foundBuilding) {
-        console.log(
-          `✅ Found building by buildingId: ${foundBuilding.buildingName}`,
-        );
-        return {
-          _id: foundBuilding._id,
-          buildingName: foundBuilding.buildingName,
-          streetAddress: foundBuilding.streetAddress || "",
-          city: foundBuilding.city || "",
-        };
-      }
-    }
-
-    // Case 4: Check if buildingId is nested in app.building._id
-    if (app.building && typeof app.building === "object" && app.building._id) {
-      const foundBuilding = buildingsListData.find(
-        (b) => b._id === app.building._id,
-      );
-      if (foundBuilding) {
-        console.log(
-          `✅ Found building by building._id: ${foundBuilding.buildingName}`,
-        );
-        return {
-          _id: foundBuilding._id,
-          buildingName: foundBuilding.buildingName,
-          streetAddress: foundBuilding.streetAddress || "",
-          city: foundBuilding.city || "",
-        };
-      }
-    }
-
-    console.log(`❌ No building found for: ${app.firstName} ${app.lastName}`);
-    return null;
-  };
-
   const loadData = useCallback(
     async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
@@ -919,7 +826,6 @@ export default function AdminBillingPage() {
               cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
-          // Get building data for user
           let buildingData = null;
           if (user.building) {
             if (
@@ -973,6 +879,7 @@ export default function AdminBillingPage() {
           };
         });
 
+        // ✅ FIXED: Application customers with direct building lookup using buildingId
         const applicationCustomers: CustomerItem[] = applicationsList
           .filter(
             (app: any) =>
@@ -998,20 +905,29 @@ export default function AdminBillingPage() {
               (cycle: any) => cycle.applicationId === app.applicationId,
             );
 
-            // FIXED: Get building name with improved helper
-            const buildingInfo = getBuildingNameFromApplication(
-              app,
-              currentBuildingsList,
-            );
-
+            // ✅ DIRECT BUILDING LOOKUP using buildingId
+            let buildingName = "";
             let buildingData = null;
-            if (buildingInfo) {
-              buildingData = {
-                _id: buildingInfo._id,
-                buildingName: buildingInfo.buildingName,
-                streetAddress: buildingInfo.streetAddress,
-                city: buildingInfo.city,
-              };
+            const buildingId = app.buildingId || app.building || "";
+
+            if (buildingId && currentBuildingsList.length > 0) {
+              const foundBuilding = currentBuildingsList.find(
+                (b: Building) => b._id === buildingId,
+              );
+              if (foundBuilding) {
+                buildingName = foundBuilding.buildingName;
+                buildingData = {
+                  _id: foundBuilding._id,
+                  buildingName: foundBuilding.buildingName,
+                  streetAddress: foundBuilding.streetAddress || "",
+                  city: foundBuilding.city || "",
+                };
+                console.log(
+                  `✅ Found building: ${buildingName} for ${app.firstName} ${app.lastName}`,
+                );
+              } else {
+                console.log(`❌ No building found for ID: ${buildingId}`);
+              }
             }
 
             return {
@@ -1032,7 +948,7 @@ export default function AdminBillingPage() {
               installationFee: app.installationFee || 0,
               installationFeePaid: app.installationFeePaid || false,
               building: buildingData,
-              buildingId: app.buildingId || app.building,
+              buildingId: buildingId,
               unitNumber: app.unitNumber,
               floor: app.floor,
             };
@@ -1114,12 +1030,11 @@ export default function AdminBillingPage() {
         }
       }
     },
-    [buildingsList],
+    [buildingsList, loadBuildings],
   );
 
   useEffect(() => {
     isMountedRef.current = true;
-    // Load buildings first, then data
     const initialize = async () => {
       await loadBuildings();
       await loadData();
@@ -1498,11 +1413,9 @@ export default function AdminBillingPage() {
   };
 
   const getBuildingDisplay = (customer: CustomerItem) => {
-    // Check building object first
     if (customer.building && customer.building.buildingName) {
       return customer.building.buildingName;
     }
-    // If no building object but we have buildingId, try to find from buildingsList
     if (customer.buildingId && buildingsList.length > 0) {
       const found = buildingsList.find((b) => b._id === customer.buildingId);
       if (found) {
@@ -1522,7 +1435,6 @@ export default function AdminBillingPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()));
 
-    // Fix building filter - check both building object and buildingId
     let matchesBuilding = buildingFilter === "all";
     if (!matchesBuilding) {
       if (customer.building && customer.building._id === buildingFilter) {
@@ -2214,7 +2126,6 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Rest of the modals remain the same as in your original code */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
