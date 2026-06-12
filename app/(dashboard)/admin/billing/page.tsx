@@ -1688,7 +1688,10 @@ export default function AdminBillingPage() {
                   </div>
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  <div className="flex items-center gap-1">Building</div>
+                  <div className="flex items-center gap-1">
+                    <FiHome className="w-3 h-3" />
+                    Building
+                  </div>
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
@@ -3183,10 +3186,10 @@ export default function AdminBillingPage() {
                   <tbody>
                     {pendingActivations.map((cycle: any) => (
                       <tr key={cycle._id}>
-                        <tr>
+                        <td>
                           {cycle.applicationData?.firstName}{" "}
                           {cycle.applicationData?.lastName}
-                        </tr>
+                        </td>
                         <td>{cycle.planId?.name}</td>
                         <td>₱{cycle.monthlyRate?.toLocaleString()}</td>
                         <td>
