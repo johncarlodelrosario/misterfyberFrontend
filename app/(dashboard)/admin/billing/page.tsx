@@ -88,12 +88,11 @@ interface CustomerItem {
   installationFee?: number;
   installationFeePaid?: boolean;
   building?: {
-    _id: string;
+    _id?: string;
     buildingName: string;
-    streetAddress: string;
-    city: string;
-  };
-  buildingId?: string;
+    streetAddress?: string;
+    city?: string;
+  } | null;
   unitNumber?: string;
   floor?: string;
 }
@@ -116,6 +115,7 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
+// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -125,6 +125,7 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
+// Helper to format billing period correctly using ACTUAL dates
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   if (!startDateStr || !endDateStr) return "-";
 
@@ -139,6 +140,22 @@ function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   const endYear = end.getUTCFullYear();
 
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
+}
+
+// Helper to get building display name
+function getBuildingDisplay(customer: CustomerItem): string {
+  if (customer.building) {
+    if (
+      typeof customer.building === "object" &&
+      customer.building.buildingName
+    ) {
+      return customer.building.buildingName;
+    }
+    if (typeof customer.building === "string") {
+      return customer.building;
+    }
+  }
+  return "-";
 }
 
 export default function AdminBillingPage() {
@@ -192,6 +209,7 @@ export default function AdminBillingPage() {
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
+  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -273,6 +291,7 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
+  // Sorting function
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -282,6 +301,7 @@ export default function AdminBillingPage() {
     }
   };
 
+  // Get sorted customers
   const getSortedCustomers = (
     customersToSort: CustomerItem[],
   ): CustomerItem[] => {
@@ -340,14 +360,10 @@ export default function AdminBillingPage() {
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
-      const buildingsData = data.data || [];
-      setBuildings(buildingsData);
-      setBuildingsList(buildingsData);
-      console.log("✅ Buildings loaded:", buildingsData.length);
-      return buildingsData;
+      setBuildings(data.data || []);
+      setBuildingsList(data.data || []);
     } catch (error) {
       console.error("Failed to load buildings:", error);
-      return [];
     } finally {
       setLoadingBuildings(false);
     }
@@ -746,306 +762,252 @@ export default function AdminBillingPage() {
     }
   };
 
-  const loadData = useCallback(
-    async (forceRefresh = false) => {
+  const loadData = useCallback(async (forceRefresh = false) => {
+    if (!isMountedRef.current) return;
+    if (loadedRef.current && !forceRefresh) return;
+
+    if (forceRefresh) {
+      setRefreshing(true);
+      clearBillingCache();
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      console.log("🔄 Loading billing data...");
+
+      const [
+        cyclesResult,
+        billsResult,
+        usersResult,
+        applicationsResult,
+        pendingPaymentsResult,
+        customersWithoutAccountsResult,
+        pendingInstallationBillsResult,
+        unpaidReportResult,
+      ] = await Promise.all([
+        getAllBillingCycles({ limit: 100, forceRefresh }),
+        getAllBills({ limit: 100, forceRefresh }),
+        getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
+        getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
+          data: [],
+        })),
+        getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+        getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+        getPendingInstallationBills().catch(() => ({ data: [] })),
+        getUnpaidBillsReport({ includePaid: false }).catch(() => ({
+          data: { summary: {} },
+        })),
+      ]);
+
       if (!isMountedRef.current) return;
-      if (loadedRef.current && !forceRefresh) return;
 
-      if (forceRefresh) {
-        setRefreshing(true);
-        clearBillingCache();
-      } else {
-        setLoading(true);
-      }
+      const cyclesData = cyclesResult?.data || [];
+      const billsList = billsResult?.data || [];
+      const usersList = usersResult?.data || [];
+      const applicationsList = applicationsResult?.data || [];
+      const pendingPaymentsList = pendingPaymentsResult?.data || [];
+      const customersWithoutAccountsData =
+        customersWithoutAccountsResult?.data || [];
+      const pendingInstallationBillsData =
+        pendingInstallationBillsResult?.data || [];
 
-      try {
-        console.log("🔄 Loading billing data...");
+      setBillingCycles(cyclesData);
+      setBills(billsList);
+      setPendingPayments(pendingPaymentsList);
+      setCustomersWithoutAccounts(customersWithoutAccountsData);
+      setPendingInstallationBills(pendingInstallationBillsData);
 
-        // ✅ CRITICAL FIX: Ensure buildings are loaded first
-        let currentBuildingsList = buildingsList;
-        if (currentBuildingsList.length === 0) {
-          console.log("📦 Loading buildings first...");
-          currentBuildingsList = await loadBuildings();
-        }
+      const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+        const userBills = billsList.filter(
+          (bill: any) =>
+            bill.userId?._id === user._id &&
+            bill.status !== "paid" &&
+            !bill.isInstallationBill,
+        );
+        const totalBalance = userBills.reduce(
+          (sum: number, bill: any) => sum + (bill.total || 0),
+          0,
+        );
+        const overdueBills = userBills.filter(
+          (bill: any) =>
+            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+        );
+        const userCycle = cyclesData.find(
+          (cycle: any) =>
+            cycle.userId?._id === user._id || cycle.userId === user._id,
+        );
 
-        const [
-          cyclesResult,
-          billsResult,
-          usersResult,
-          applicationsResult,
-          pendingPaymentsResult,
-          customersWithoutAccountsResult,
-          pendingInstallationBillsResult,
-        ] = await Promise.all([
-          getAllBillingCycles({ limit: 100, forceRefresh }),
-          getAllBills({ limit: 100, forceRefresh }),
-          getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
-          getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-          getPendingInstallationBills().catch(() => ({ data: [] })),
-        ]);
+        return {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          username: user.username,
+          phoneNumber: user.phoneNumber,
+          status: user.status,
+          type: "user" as const,
+          planName: user.planId?.name || "No Plan",
+          planPrice: user.planId?.price || 0,
+          currentBalance: totalBalance,
+          unpaidBills: userBills,
+          overdueBills: overdueBills,
+          billingCycle: userCycle || null,
+          installationFee: 0,
+          installationFeePaid: true,
+          building: user.building,
+          unitNumber: user.unitNumber,
+          floor: user.floor,
+        };
+      });
 
-        if (!isMountedRef.current) return;
-
-        const cyclesData = cyclesResult?.data || [];
-        const billsList = billsResult?.data || [];
-        const usersList = usersResult?.data || [];
-        const applicationsList = applicationsResult?.data || [];
-        const pendingPaymentsList = pendingPaymentsResult?.data || [];
-        const customersWithoutAccountsData =
-          customersWithoutAccountsResult?.data || [];
-        const pendingInstallationBillsData =
-          pendingInstallationBillsResult?.data || [];
-
-        setBillingCycles(cyclesData);
-        setBills(billsList);
-        setPendingPayments(pendingPaymentsList);
-        setCustomersWithoutAccounts(customersWithoutAccountsData);
-        setPendingInstallationBills(pendingInstallationBillsData);
-
-        const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-          const userBills = billsList.filter(
+      // FIXED: Map applications with proper building data
+      const applicationCustomers: CustomerItem[] = applicationsList
+        .filter(
+          (app: any) =>
+            app.status === "approved" || app.billingStarted === true,
+        )
+        .map((app: any) => {
+          const appBills = billsList.filter(
             (bill: any) =>
-              bill.userId?._id === user._id &&
+              bill.applicationId === app.applicationId &&
               bill.status !== "paid" &&
               !bill.isInstallationBill,
           );
-          const totalBalance = userBills.reduce(
+          const totalBalance = appBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
             0,
           );
-          const overdueBills = userBills.filter(
+          const overdueBills = appBills.filter(
             (bill: any) =>
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
-          const userCycle = cyclesData.find(
-            (cycle: any) =>
-              cycle.userId?._id === user._id || cycle.userId === user._id,
+          const appCycle = cyclesData.find(
+            (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
-          let buildingData = null;
-          if (user.building) {
-            if (
-              typeof user.building === "object" &&
-              user.building.buildingName
-            ) {
-              buildingData = {
-                _id: user.building._id,
-                buildingName: user.building.buildingName,
-                streetAddress: user.building.streetAddress || "",
-                city: user.building.city || "",
-              };
-            } else if (typeof user.building === "string") {
-              const foundBuilding = currentBuildingsList.find(
-                (b) => b._id === user.building,
-              );
-              if (foundBuilding) {
-                buildingData = {
-                  _id: foundBuilding._id,
-                  buildingName: foundBuilding.buildingName,
-                  streetAddress: foundBuilding.streetAddress,
-                  city: foundBuilding.city,
-                };
-              }
-            }
+          // Get building object - either from populated buildingId or from buildingName
+          let buildingObj = null;
+          if (
+            app.buildingId &&
+            typeof app.buildingId === "object" &&
+            app.buildingId.buildingName
+          ) {
+            buildingObj = app.buildingId;
+          } else if (app.buildingName) {
+            buildingObj = { buildingName: app.buildingName };
           }
 
           return {
-            _id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            username: user.username,
-            phoneNumber: user.phoneNumber,
-            status: user.status,
-            type: "user" as const,
-            planName: user.planId?.name || "No Plan",
-            planPrice: user.planId?.price || 0,
+            _id: app._id,
+            firstName: app.firstName,
+            lastName: app.lastName,
+            email: app.email,
+            phoneNumber: app.phoneNumber,
+            status: app.billingStarted ? "billing_started" : "approved",
+            type: "application" as const,
+            planName: app.planId?.name || "No Plan",
+            planPrice: app.planId?.price || 0,
             currentBalance: totalBalance,
-            unpaidBills: userBills,
+            unpaidBills: appBills,
             overdueBills: overdueBills,
-            billingCycle: userCycle || null,
-            installationFee: 0,
-            installationFeePaid: true,
-            building: buildingData,
-            buildingId:
-              user.buildingId ||
-              (typeof user.building === "string" ? user.building : undefined),
-            unitNumber: user.unitNumber,
-            floor: user.floor,
+            billingCycle: appCycle || null,
+            applicationId: app.applicationId,
+            installationFee: app.installationFee || 0,
+            installationFeePaid: app.installationFeePaid || false,
+            building: buildingObj,
+            unitNumber: app.unitNumber,
+            floor: app.floor,
           };
         });
 
-        // ✅ FIXED: Application customers with direct building lookup using buildingId
-        const applicationCustomers: CustomerItem[] = applicationsList
-          .filter(
-            (app: any) =>
-              app.status === "approved" || app.billingStarted === true,
-          )
-          .map((app: any) => {
-            const appBills = billsList.filter(
-              (bill: any) =>
-                bill.applicationId === app.applicationId &&
-                bill.status !== "paid" &&
-                !bill.isInstallationBill,
-            );
-            const totalBalance = appBills.reduce(
-              (sum: number, bill: any) => sum + (bill.total || 0),
-              0,
-            );
-            const overdueBills = appBills.filter(
-              (bill: any) =>
-                bill.status === "overdue" ||
-                new Date(bill.dueDate) < new Date(),
-            );
-            const appCycle = cyclesData.find(
-              (cycle: any) => cycle.applicationId === app.applicationId,
-            );
+      const allCustomers = [...userCustomers, ...applicationCustomers];
+      allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
 
-            // ✅ DIRECT BUILDING LOOKUP using buildingId
-            let buildingName = "";
-            let buildingData = null;
-            const buildingId = app.buildingId || app.building || "";
+      setCustomers(allCustomers);
 
-            if (buildingId && currentBuildingsList.length > 0) {
-              const foundBuilding = currentBuildingsList.find(
-                (b: Building) => b._id === buildingId,
-              );
-              if (foundBuilding) {
-                buildingName = foundBuilding.buildingName;
-                buildingData = {
-                  _id: foundBuilding._id,
-                  buildingName: foundBuilding.buildingName,
-                  streetAddress: foundBuilding.streetAddress || "",
-                  city: foundBuilding.city || "",
-                };
-                console.log(
-                  `✅ Found building: ${buildingName} for ${app.firstName} ${app.lastName}`,
-                );
-              } else {
-                console.log(`❌ No building found for ID: ${buildingId}`);
-              }
-            }
+      const totalBalance = allCustomers.reduce(
+        (sum, c) => sum + c.currentBalance,
+        0,
+      );
+      const customersWithBalance = allCustomers.filter(
+        (c) => c.currentBalance > 0,
+      ).length;
+      const overdueCustomers = allCustomers.filter(
+        (c) => c.overdueBills.length > 0,
+      ).length;
+      const activeCycles = cyclesData.filter(
+        (c: any) => c.status === "active",
+      ).length;
+      const pausedCycles = cyclesData.filter(
+        (c: any) => c.status === "paused",
+      ).length;
+      const applicationsWithoutBilling = applicationsList.filter(
+        (app: any) => app.status === "approved" && !app.billingStarted,
+      ).length;
 
-            return {
-              _id: app._id,
-              firstName: app.firstName,
-              lastName: app.lastName,
-              email: app.email,
-              phoneNumber: app.phoneNumber,
-              status: app.billingStarted ? "billing_started" : "approved",
-              type: "application" as const,
-              planName: app.planId?.name || "No Plan",
-              planPrice: app.planId?.price || 0,
-              currentBalance: totalBalance,
-              unpaidBills: appBills,
-              overdueBills: overdueBills,
-              billingCycle: appCycle || null,
-              applicationId: app.applicationId,
-              installationFee: app.installationFee || 0,
-              installationFeePaid: app.installationFeePaid || false,
-              building: buildingData,
-              buildingId: buildingId,
-              unitNumber: app.unitNumber,
-              floor: app.floor,
-            };
-          });
+      const totalInstallationFeesDue = allCustomers
+        .filter(
+          (c) =>
+            c.type === "application" &&
+            !c.installationFeePaid &&
+            (c.installationFee || 0) > 0,
+        )
+        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+      const installationFeesPaidCount = allCustomers.filter(
+        (c) => c.type === "application" && c.installationFeePaid,
+      ).length;
 
-        const allCustomers = [...userCustomers, ...applicationCustomers];
-        allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+      const [proRatedResult, activationsResult] = await Promise.all([
+        getPendingProRatedBills(),
+        getPendingActivations(),
+      ]);
 
-        setCustomers(allCustomers);
+      setPendingProRated(proRatedResult?.data || []);
+      setPendingActivations(activationsResult?.data || []);
 
-        const totalBalance = allCustomers.reduce(
-          (sum, c) => sum + c.currentBalance,
-          0,
-        );
-        const customersWithBalance = allCustomers.filter(
-          (c) => c.currentBalance > 0,
-        ).length;
-        const overdueCustomers = allCustomers.filter(
-          (c) => c.overdueBills.length > 0,
-        ).length;
-        const activeCycles = cyclesData.filter(
-          (c: any) => c.status === "active",
-        ).length;
-        const pausedCycles = cyclesData.filter(
-          (c: any) => c.status === "paused",
-        ).length;
-        const applicationsWithoutBilling = applicationsList.filter(
-          (app: any) => app.status === "approved" && !app.billingStarted,
-        ).length;
+      const newStats = {
+        totalCustomers: allCustomers.length,
+        totalBalance: totalBalance,
+        customersWithBalanceCount: customersWithBalance,
+        overdueCustomersCount: overdueCustomers,
+        activeCyclesCount: activeCycles,
+        pausedCyclesCount: pausedCycles,
+        pendingProRatedCount: proRatedResult?.data?.length || 0,
+        pendingActivationsCount: activationsResult?.data?.length || 0,
+        pendingPaymentsCount: pendingPaymentsList.length,
+        pendingInstallationBillsCount: pendingInstallationBillsData.length,
+        applicationsWithoutBilling: applicationsWithoutBilling,
+        totalInstallationFeesDue: totalInstallationFeesDue,
+        installationFeesPaidCount: installationFeesPaidCount,
+      };
 
-        const totalInstallationFeesDue = allCustomers
-          .filter(
-            (c) =>
-              c.type === "application" &&
-              !c.installationFeePaid &&
-              (c.installationFee || 0) > 0,
-          )
-          .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-        const installationFeesPaidCount = allCustomers.filter(
-          (c) => c.type === "application" && c.installationFeePaid,
-        ).length;
-
-        const [proRatedResult, activationsResult] = await Promise.all([
-          getPendingProRatedBills(),
-          getPendingActivations(),
-        ]);
-
-        setPendingProRated(proRatedResult?.data || []);
-        setPendingActivations(activationsResult?.data || []);
-
-        const newStats = {
-          totalCustomers: allCustomers.length,
-          totalBalance: totalBalance,
-          customersWithBalanceCount: customersWithBalance,
-          overdueCustomersCount: overdueCustomers,
-          activeCyclesCount: activeCycles,
-          pausedCyclesCount: pausedCycles,
-          pendingProRatedCount: proRatedResult?.data?.length || 0,
-          pendingActivationsCount: activationsResult?.data?.length || 0,
-          pendingPaymentsCount: pendingPaymentsList.length,
-          pendingInstallationBillsCount: pendingInstallationBillsData.length,
-          applicationsWithoutBilling: applicationsWithoutBilling,
-          totalInstallationFeesDue: totalInstallationFeesDue,
-          installationFeesPaidCount: installationFeesPaidCount,
-        };
-
-        setStats(newStats);
-        loadedRef.current = true;
-        console.log(`✅ Loaded ${allCustomers.length} customers`);
-      } catch (error) {
-        console.error("Failed to load billing data:", error);
-        if (isMountedRef.current) {
-          toast.error("Failed to load billing data");
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
+      setStats(newStats);
+      loadedRef.current = true;
+      console.log(`✅ Loaded ${allCustomers.length} customers`);
+    } catch (error) {
+      console.error("Failed to load billing data:", error);
+      if (isMountedRef.current) {
+        toast.error("Failed to load billing data");
       }
-    },
-    [buildingsList, loadBuildings],
-  );
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
-    const initialize = async () => {
-      await loadBuildings();
-      await loadData();
-      await loadBillingFlowSettings();
-      await loadPlans();
-    };
-    initialize();
+    loadData();
+    loadBillingFlowSettings();
+    loadPlans();
+    loadBuildings();
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [loadData]);
 
   const handleRefresh = () => {
     loadedRef.current = false;
@@ -1412,19 +1374,6 @@ export default function AdminBillingPage() {
     return "text-orange-600";
   };
 
-  const getBuildingDisplay = (customer: CustomerItem) => {
-    if (customer.building && customer.building.buildingName) {
-      return customer.building.buildingName;
-    }
-    if (customer.buildingId && buildingsList.length > 0) {
-      const found = buildingsList.find((b) => b._id === customer.buildingId);
-      if (found) {
-        return found.buildingName;
-      }
-    }
-    return "-";
-  };
-
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
       customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1435,14 +1384,13 @@ export default function AdminBillingPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()));
 
-    let matchesBuilding = buildingFilter === "all";
-    if (!matchesBuilding) {
-      if (customer.building && customer.building._id === buildingFilter) {
-        matchesBuilding = true;
-      } else if (customer.buildingId === buildingFilter) {
-        matchesBuilding = true;
-      }
-    }
+    const matchesBuilding =
+      buildingFilter === "all" ||
+      (customer.building && customer.building._id === buildingFilter) ||
+      (customer.building &&
+        customer.building.buildingName
+          ?.toLowerCase()
+          .includes(buildingFilter.toLowerCase()));
 
     if (!matchesSearch || !matchesBuilding) return false;
 
@@ -3264,10 +3212,10 @@ export default function AdminBillingPage() {
                   <tbody>
                     {pendingActivations.map((cycle: any) => (
                       <tr key={cycle._id}>
-                        <td>
+                        <tr>
                           {cycle.applicationData?.firstName}{" "}
                           {cycle.applicationData?.lastName}
-                        </td>
+                        </tr>
                         <td>{cycle.planId?.name}</td>
                         <td>₱{cycle.monthlyRate?.toLocaleString()}</td>
                         <td>
