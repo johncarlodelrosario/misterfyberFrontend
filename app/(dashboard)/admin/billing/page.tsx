@@ -115,7 +115,6 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -125,7 +124,6 @@ function formatDateFixed(dateStr: string): string {
   return `${month}/${day}/${year}`;
 }
 
-// Helper to format billing period correctly using ACTUAL dates (not shifted to 1st)
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   if (!startDateStr || !endDateStr) return "-";
 
@@ -193,7 +191,6 @@ export default function AdminBillingPage() {
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
-  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -275,7 +272,6 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Sorting function
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -285,7 +281,6 @@ export default function AdminBillingPage() {
     }
   };
 
-  // Get sorted customers
   const getSortedCustomers = (
     customersToSort: CustomerItem[],
   ): CustomerItem[] => {
@@ -746,228 +741,255 @@ export default function AdminBillingPage() {
     }
   };
 
-  const loadData = useCallback(async (forceRefresh = false) => {
-    if (!isMountedRef.current) return;
-    if (loadedRef.current && !forceRefresh) return;
-
-    if (forceRefresh) {
-      setRefreshing(true);
-      clearBillingCache();
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      console.log("🔄 Loading billing data...");
-
-      const [
-        cyclesResult,
-        billsResult,
-        usersResult,
-        applicationsResult,
-        pendingPaymentsResult,
-        customersWithoutAccountsResult,
-        pendingInstallationBillsResult,
-        unpaidReportResult,
-      ] = await Promise.all([
-        getAllBillingCycles({ limit: 100, forceRefresh }),
-        getAllBills({ limit: 100, forceRefresh }),
-        getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
-        getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
-          data: [],
-        })),
-        getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-        getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-        getPendingInstallationBills().catch(() => ({ data: [] })),
-        getUnpaidBillsReport({ includePaid: false }).catch(() => ({
-          data: { summary: {} },
-        })),
-      ]);
-
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
+      if (loadedRef.current && !forceRefresh) return;
 
-      const cyclesData = cyclesResult?.data || [];
-      const billsList = billsResult?.data || [];
-      const usersList = usersResult?.data || [];
-      const applicationsList = applicationsResult?.data || [];
-      const pendingPaymentsList = pendingPaymentsResult?.data || [];
-      const customersWithoutAccountsData =
-        customersWithoutAccountsResult?.data || [];
-      const pendingInstallationBillsData =
-        pendingInstallationBillsResult?.data || [];
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
+      }
 
-      setBillingCycles(cyclesData);
-      setBills(billsList);
-      setPendingPayments(pendingPaymentsList);
-      setCustomersWithoutAccounts(customersWithoutAccountsData);
-      setPendingInstallationBills(pendingInstallationBillsData);
+      try {
+        console.log("🔄 Loading billing data...");
 
-      const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-        const userBills = billsList.filter(
-          (bill: any) =>
-            bill.userId?._id === user._id &&
-            bill.status !== "paid" &&
-            !bill.isInstallationBill,
-        );
-        const totalBalance = userBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
-        const overdueBills = userBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
-        const userCycle = cyclesData.find(
-          (cycle: any) =>
-            cycle.userId?._id === user._id || cycle.userId === user._id,
-        );
+        const [
+          cyclesResult,
+          billsResult,
+          usersResult,
+          applicationsResult,
+          pendingPaymentsResult,
+          customersWithoutAccountsResult,
+          pendingInstallationBillsResult,
+        ] = await Promise.all([
+          getAllBillingCycles({ limit: 100, forceRefresh }),
+          getAllBills({ limit: 100, forceRefresh }),
+          getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
+          getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+          getPendingInstallationBills().catch(() => ({ data: [] })),
+        ]);
 
-        return {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          username: user.username,
-          phoneNumber: user.phoneNumber,
-          status: user.status,
-          type: "user" as const,
-          planName: user.planId?.name || "No Plan",
-          planPrice: user.planId?.price || 0,
-          currentBalance: totalBalance,
-          unpaidBills: userBills,
-          overdueBills: overdueBills,
-          billingCycle: userCycle || null,
-          installationFee: 0,
-          installationFeePaid: true,
-          building: user.building,
-          unitNumber: user.unitNumber,
-          floor: user.floor,
-        };
-      });
+        if (!isMountedRef.current) return;
 
-      const applicationCustomers: CustomerItem[] = applicationsList
-        .filter(
-          (app: any) =>
-            app.status === "approved" || app.billingStarted === true,
-        )
-        .map((app: any) => {
-          const appBills = billsList.filter(
+        const cyclesData = cyclesResult?.data || [];
+        const billsList = billsResult?.data || [];
+        const usersList = usersResult?.data || [];
+        const applicationsList = applicationsResult?.data || [];
+        const pendingPaymentsList = pendingPaymentsResult?.data || [];
+        const customersWithoutAccountsData =
+          customersWithoutAccountsResult?.data || [];
+        const pendingInstallationBillsData =
+          pendingInstallationBillsResult?.data || [];
+
+        setBillingCycles(cyclesData);
+        setBills(billsList);
+        setPendingPayments(pendingPaymentsList);
+        setCustomersWithoutAccounts(customersWithoutAccountsData);
+        setPendingInstallationBills(pendingInstallationBillsData);
+
+        const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+          const userBills = billsList.filter(
             (bill: any) =>
-              bill.applicationId === app.applicationId &&
+              bill.userId?._id === user._id &&
               bill.status !== "paid" &&
               !bill.isInstallationBill,
           );
-          const totalBalance = appBills.reduce(
+          const totalBalance = userBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
             0,
           );
-          const overdueBills = appBills.filter(
+          const overdueBills = userBills.filter(
             (bill: any) =>
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
-          const appCycle = cyclesData.find(
-            (cycle: any) => cycle.applicationId === app.applicationId,
+          const userCycle = cyclesData.find(
+            (cycle: any) =>
+              cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
           return {
-            _id: app._id,
-            firstName: app.firstName,
-            lastName: app.lastName,
-            email: app.email,
-            phoneNumber: app.phoneNumber,
-            status: app.billingStarted ? "billing_started" : "approved",
-            type: "application" as const,
-            planName: app.planId?.name || "No Plan",
-            planPrice: app.planId?.price || 0,
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            username: user.username,
+            phoneNumber: user.phoneNumber,
+            status: user.status,
+            type: "user" as const,
+            planName: user.planId?.name || "No Plan",
+            planPrice: user.planId?.price || 0,
             currentBalance: totalBalance,
-            unpaidBills: appBills,
+            unpaidBills: userBills,
             overdueBills: overdueBills,
-            billingCycle: appCycle || null,
-            applicationId: app.applicationId,
-            installationFee: app.installationFee || 0,
-            installationFeePaid: app.installationFeePaid || false,
-            building: app.building,
-            unitNumber: app.unitNumber,
-            floor: app.floor,
+            billingCycle: userCycle || null,
+            installationFee: 0,
+            installationFeePaid: true,
+            building: user.building,
+            unitNumber: user.unitNumber,
+            floor: user.floor,
           };
         });
 
-      const allCustomers = [...userCustomers, ...applicationCustomers];
-      allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+        const applicationCustomers: CustomerItem[] = applicationsList
+          .filter(
+            (app: any) =>
+              app.status === "approved" || app.billingStarted === true,
+          )
+          .map((app: any) => {
+            const appBills = billsList.filter(
+              (bill: any) =>
+                bill.applicationId === app.applicationId &&
+                bill.status !== "paid" &&
+                !bill.isInstallationBill,
+            );
+            const totalBalance = appBills.reduce(
+              (sum: number, bill: any) => sum + (bill.total || 0),
+              0,
+            );
+            const overdueBills = appBills.filter(
+              (bill: any) =>
+                bill.status === "overdue" ||
+                new Date(bill.dueDate) < new Date(),
+            );
+            const appCycle = cyclesData.find(
+              (cycle: any) => cycle.applicationId === app.applicationId,
+            );
 
-      setCustomers(allCustomers);
+            let buildingData = null;
+            if (app.building) {
+              if (
+                typeof app.building === "object" &&
+                app.building.buildingName
+              ) {
+                buildingData = {
+                  _id: app.building._id,
+                  buildingName: app.building.buildingName,
+                  streetAddress: app.building.streetAddress || "",
+                  city: app.building.city || "",
+                };
+              } else if (typeof app.building === "string") {
+                const foundBuilding = buildingsList.find(
+                  (b) => b._id === app.building,
+                );
+                if (foundBuilding) {
+                  buildingData = {
+                    _id: foundBuilding._id,
+                    buildingName: foundBuilding.buildingName,
+                    streetAddress: foundBuilding.streetAddress,
+                    city: foundBuilding.city,
+                  };
+                }
+              }
+            }
 
-      const totalBalance = allCustomers.reduce(
-        (sum, c) => sum + c.currentBalance,
-        0,
-      );
-      const customersWithBalance = allCustomers.filter(
-        (c) => c.currentBalance > 0,
-      ).length;
-      const overdueCustomers = allCustomers.filter(
-        (c) => c.overdueBills.length > 0,
-      ).length;
-      const activeCycles = cyclesData.filter(
-        (c: any) => c.status === "active",
-      ).length;
-      const pausedCycles = cyclesData.filter(
-        (c: any) => c.status === "paused",
-      ).length;
-      const applicationsWithoutBilling = applicationsList.filter(
-        (app: any) => app.status === "approved" && !app.billingStarted,
-      ).length;
+            return {
+              _id: app._id,
+              firstName: app.firstName,
+              lastName: app.lastName,
+              email: app.email,
+              phoneNumber: app.phoneNumber,
+              status: app.billingStarted ? "billing_started" : "approved",
+              type: "application" as const,
+              planName: app.planId?.name || "No Plan",
+              planPrice: app.planId?.price || 0,
+              currentBalance: totalBalance,
+              unpaidBills: appBills,
+              overdueBills: overdueBills,
+              billingCycle: appCycle || null,
+              applicationId: app.applicationId,
+              installationFee: app.installationFee || 0,
+              installationFeePaid: app.installationFeePaid || false,
+              building: buildingData,
+              unitNumber: app.unitNumber,
+              floor: app.floor,
+            };
+          });
 
-      const totalInstallationFeesDue = allCustomers
-        .filter(
-          (c) =>
-            c.type === "application" &&
-            !c.installationFeePaid &&
-            (c.installationFee || 0) > 0,
-        )
-        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-      const installationFeesPaidCount = allCustomers.filter(
-        (c) => c.type === "application" && c.installationFeePaid,
-      ).length;
+        const allCustomers = [...userCustomers, ...applicationCustomers];
+        allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
 
-      const [proRatedResult, activationsResult] = await Promise.all([
-        getPendingProRatedBills(),
-        getPendingActivations(),
-      ]);
+        setCustomers(allCustomers);
 
-      setPendingProRated(proRatedResult?.data || []);
-      setPendingActivations(activationsResult?.data || []);
+        const totalBalance = allCustomers.reduce(
+          (sum, c) => sum + c.currentBalance,
+          0,
+        );
+        const customersWithBalance = allCustomers.filter(
+          (c) => c.currentBalance > 0,
+        ).length;
+        const overdueCustomers = allCustomers.filter(
+          (c) => c.overdueBills.length > 0,
+        ).length;
+        const activeCycles = cyclesData.filter(
+          (c: any) => c.status === "active",
+        ).length;
+        const pausedCycles = cyclesData.filter(
+          (c: any) => c.status === "paused",
+        ).length;
+        const applicationsWithoutBilling = applicationsList.filter(
+          (app: any) => app.status === "approved" && !app.billingStarted,
+        ).length;
 
-      const newStats = {
-        totalCustomers: allCustomers.length,
-        totalBalance: totalBalance,
-        customersWithBalanceCount: customersWithBalance,
-        overdueCustomersCount: overdueCustomers,
-        activeCyclesCount: activeCycles,
-        pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: proRatedResult?.data?.length || 0,
-        pendingActivationsCount: activationsResult?.data?.length || 0,
-        pendingPaymentsCount: pendingPaymentsList.length,
-        pendingInstallationBillsCount: pendingInstallationBillsData.length,
-        applicationsWithoutBilling: applicationsWithoutBilling,
-        totalInstallationFeesDue: totalInstallationFeesDue,
-        installationFeesPaidCount: installationFeesPaidCount,
-      };
+        const totalInstallationFeesDue = allCustomers
+          .filter(
+            (c) =>
+              c.type === "application" &&
+              !c.installationFeePaid &&
+              (c.installationFee || 0) > 0,
+          )
+          .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+        const installationFeesPaidCount = allCustomers.filter(
+          (c) => c.type === "application" && c.installationFeePaid,
+        ).length;
 
-      setStats(newStats);
-      loadedRef.current = true;
-      console.log(`✅ Loaded ${allCustomers.length} customers`);
-    } catch (error) {
-      console.error("Failed to load billing data:", error);
-      if (isMountedRef.current) {
-        toast.error("Failed to load billing data");
+        const [proRatedResult, activationsResult] = await Promise.all([
+          getPendingProRatedBills(),
+          getPendingActivations(),
+        ]);
+
+        setPendingProRated(proRatedResult?.data || []);
+        setPendingActivations(activationsResult?.data || []);
+
+        const newStats = {
+          totalCustomers: allCustomers.length,
+          totalBalance: totalBalance,
+          customersWithBalanceCount: customersWithBalance,
+          overdueCustomersCount: overdueCustomers,
+          activeCyclesCount: activeCycles,
+          pausedCyclesCount: pausedCycles,
+          pendingProRatedCount: proRatedResult?.data?.length || 0,
+          pendingActivationsCount: activationsResult?.data?.length || 0,
+          pendingPaymentsCount: pendingPaymentsList.length,
+          pendingInstallationBillsCount: pendingInstallationBillsData.length,
+          applicationsWithoutBilling: applicationsWithoutBilling,
+          totalInstallationFeesDue: totalInstallationFeesDue,
+          installationFeesPaidCount: installationFeesPaidCount,
+        };
+
+        setStats(newStats);
+        loadedRef.current = true;
+        console.log(`✅ Loaded ${allCustomers.length} customers`);
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, []);
+    },
+    [buildingsList],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1346,7 +1368,7 @@ export default function AdminBillingPage() {
   };
 
   const getBuildingDisplay = (customer: CustomerItem) => {
-    if (customer.building) {
+    if (customer.building && customer.building.buildingName) {
       return customer.building.buildingName;
     }
     return "-";
