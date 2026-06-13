@@ -1709,30 +1709,8 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons */}
+      {/* Table with horizontal scroll buttons - FIXED AT BOTTOM CENTER */}
       <div className="relative">
-        {/* Horizontal Scroll Buttons */}
-        {showLeftScrollBtn && (
-          <button
-            onClick={scrollLeft}
-            className="fixed left-4 bottom-1/2 transform -translate-y-1/2 z-20 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
-            style={{ bottom: "50%" }}
-            aria-label="Scroll left"
-          >
-            <FiChevronLeft className="w-5 h-5" />
-          </button>
-        )}
-        {showRightScrollBtn && (
-          <button
-            onClick={scrollRight}
-            className="fixed right-4 bottom-1/2 transform -translate-y-1/2 z-20 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
-            style={{ bottom: "50%" }}
-            aria-label="Scroll right"
-          >
-            <FiChevronRight className="w-5 h-5" />
-          </button>
-        )}
-
         <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
           <div
             ref={tableContainerRef}
@@ -2153,6 +2131,28 @@ export default function AdminBillingPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* FIXED BOTTOM CENTER SCROLL BUTTONS - Always visible kahit nasaan ka sa page */}
+      <div className="fixed bottom-6 left-0 right-0 flex justify-center items-center gap-4 z-50">
+        {showLeftScrollBtn && (
+          <button
+            onClick={scrollLeft}
+            className="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
+            aria-label="Scroll left"
+          >
+            <FiChevronLeft className="w-6 h-6" />
+          </button>
+        )}
+        {showRightScrollBtn && (
+          <button
+            onClick={scrollRight}
+            className="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
+            aria-label="Scroll right"
+          >
+            <FiChevronRight className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
       {/* Unpaid Bills Report Modal */}
