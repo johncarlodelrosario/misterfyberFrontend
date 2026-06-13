@@ -290,21 +290,21 @@ export default function AdminBillingPage() {
     installationFeesPaidCount: 0,
   });
 
-  // Horizontal scroll state
+  // Horizontal scroll state - buttons always shown
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const [showLeftScroll, setShowLeftScroll] = useState(false);
-  const [showRightScroll, setShowRightScroll] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Check scroll position to show/hide buttons
+  // Check scroll position to enable/disable buttons
   const checkScrollPosition = useCallback(() => {
     if (tableContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } =
         tableContainerRef.current;
-      setShowLeftScroll(scrollLeft > 0);
-      setShowRightScroll(scrollLeft + clientWidth < scrollWidth - 5);
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
     }
   }, []);
 
@@ -1705,29 +1705,37 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons */}
+      {/* Table with horizontal scroll buttons - ALWAYS SHOWN */}
       <div className="relative">
-        {/* Left scroll button */}
-        {showLeftScroll && (
-          <button
-            onClick={scrollLeft}
-            className="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-gray-100 rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200"
-            style={{ left: "-12px" }}
-          >
-            <FiChevronLeft className="w-5 h-5 text-gray-600" />
-          </button>
-        )}
+        {/* Left scroll button - always visible */}
+        <button
+          onClick={scrollLeft}
+          disabled={!canScrollLeft}
+          className={`absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
+            canScrollLeft
+              ? "hover:bg-gray-100 cursor-pointer"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          style={{ left: "-12px" }}
+          title="Scroll left"
+        >
+          <FiChevronLeft className="w-5 h-5 text-gray-600" />
+        </button>
 
-        {/* Right scroll button */}
-        {showRightScroll && (
-          <button
-            onClick={scrollRight}
-            className="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-gray-100 rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200"
-            style={{ right: "-12px" }}
-          >
-            <FiChevronRight className="w-5 h-5 text-gray-600" />
-          </button>
-        )}
+        {/* Right scroll button - always visible */}
+        <button
+          onClick={scrollRight}
+          disabled={!canScrollRight}
+          className={`absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
+            canScrollRight
+              ? "hover:bg-gray-100 cursor-pointer"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          style={{ right: "-12px" }}
+          title="Scroll right"
+        >
+          <FiChevronRight className="w-5 h-5 text-gray-600" />
+        </button>
 
         {/* Scrollable table container with always-visible scrollbar */}
         <div
