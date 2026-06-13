@@ -66,8 +66,6 @@ import {
   FiArrowUp,
   FiArrowDown,
   FiHome,
-  FiChevronLeft,
-  FiChevronRight,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -290,36 +288,157 @@ export default function AdminBillingPage() {
     installationFeesPaidCount: 0,
   });
 
-  // Horizontal scroll state - buttons always shown
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  // Horizontal scroll state - using a custom scrollbar at the bottom
+  const tableWrapperRef = useRef<HTMLDivElement>(null);
+  const tableContentRef = useRef<HTMLDivElement>(null);
+  const customScrollbarRef = useRef<HTMLDivElement>(null);
+  const scrollThumbRef = useRef<HTMLDivElement>(null);
+  const [scrollWidth, setScrollWidth] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [thumbWidth, setThumbWidth] = useState(0);
+  const [scrollLeft, setScrollLeftState] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Check scroll position to enable/disable buttons
-  const checkScrollPosition = useCallback(() => {
-    if (tableContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } =
-        tableContainerRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
+  // Update scrollbar dimensions
+  const updateScrollDimensions = useCallback(() => {
+    if (tableContentRef.current && customScrollbarRef.current) {
+      const contentWidth = tableContentRef.current.scrollWidth;
+      const containerWidthValue = customScrollbarRef.current.clientWidth;
+      setScrollWidth(contentWidth);
+      setContainerWidth(containerWidthValue);
+      
+      if (contentWidth > containerWidthValue) {
+        const thumbWidthValue = (containerWidthValue / contentWidth) * containerWidthValue;
+        setThumbWidth(Math.max(thumbWidthValue, 50));
+      } else {
+        setThumbWidth(0);
+      }
     }
   }, []);
 
-  // Scroll handlers
-  const scrollLeft = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+  // Sync scroll position
+  const syncScroll = useCallback((left: number) => {
+    if (tableContentRef.current) {
+      tableContentRef.current.scrollLeft = left;
     }
+    if (scrollThumbRef.current && customScrollbarRef.current) {
+      const maxScrollLeft = scrollWidth - containerWidth;
+      const percentage = maxScrollLeft > 0 ? left / maxScrollLeft : 0;
+      const maxThumbLeft = containerWidth - thumbWidth;
+      scrollThumbRef.current.style.left = `${percentage * maxThumbLeft}px`;
+    }
+    setScrollLeftState(left);
+  }, [scrollWidth, containerWidth, thumbWidth]);
+
+  // Handle custom scrollbar thumb drag
+  const handleThumbMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
   };
 
-  const scrollRight = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+  const handleThumbMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging || !scrollThumbRef.current || !customScrollbarRef.current) return;
+    
+    const scrollbarRect = customScrollbarRef.current.getBoundingClientRect();
+    const thumbRect = scrollThumbRef.current.getBoundingClientRect();
+    let newLeft = e.clientX - scrollbarRect.left - thumbRect.width / 2;
+    
+    const maxLeft = containerWidth - thumbWidth;
+    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    
+    const percentage = maxLeft > 0 ? newLeft / maxLeft : 0;
+    const maxScrollLeftValue = scrollWidth - containerWidth;
+    const newScrollLeft = percentage * maxScrollLeftValue;
+    
+    syncScroll(newScrollLeft);
+  }, [isDragging, containerWidth, thumbWidth, scrollWidth, syncScroll]);
+
+  const handleThumbMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Handle wheel scroll on table
+  const handleTableWheel = useCallback((e: React.WheelEvent) => {
+    if (tableContentRef.current) {
+      const newScrollLeft = tableContentRef.current.scrollLeft + e.deltaY;
+      syncScroll(newScrollLeft);
     }
-  };
+  }, [syncScroll]);
+
+  // Handle click on scrollbar track
+  const handleTrackClick = useCallback((e: React.MouseEvent) => {
+    if (!customScrollbarRef.current || !scrollThumbRef.current) return;
+    
+    const scrollbarRect = customScrollbarRef.current.getBoundingClientRect();
+    const thumbRect = scrollThumbRef.current.getBoundingClientRect();
+    const clickX = e.clientX - scrollbarRect.left;
+    const thumbCenter = thumbRect.left + thumbRect.width / 2 - scrollbarRect.left;
+    
+    let newLeft;
+    if (clickX < thumbCenter) {
+      newLeft = thumbRect.left - scrollbarRect.left - thumbRect.width;
+    } else {
+      newLeft = thumbRect.left - scrollbarRect.left + thumbRect.width;
+    }
+    
+    const maxLeft = containerWidth - thumbWidth;
+    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    
+    const percentage = maxLeft > 0 ? newLeft / maxLeft : 0;
+    const maxScrollLeftValue = scrollWidth - containerWidth;
+    const newScrollLeft = percentage * maxScrollLeftValue;
+    
+    syncScroll(newScrollLeft);
+  }, [containerWidth, thumbWidth, scrollWidth, syncScroll]);
+
+  // Listen to table scroll event
+  const handleTableScroll = useCallback(() => {
+    if (tableContentRef.current) {
+      syncScroll(tableContentRef.current.scrollLeft);
+    }
+  }, [syncScroll]);
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleThumbMouseMove);
+      document.addEventListener('mouseup', handleThumbMouseUp);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleThumbMouseMove);
+      document.removeEventListener('mouseup', handleThumbMouseUp);
+    };
+  }, [isDragging, handleThumbMouseMove, handleThumbMouseUp]);
+
+  // Update dimensions when customers change
+  useEffect(() => {
+    setTimeout(() => {
+      updateScrollDimensions();
+      if (tableContentRef.current) {
+        syncScroll(tableContentRef.current.scrollLeft);
+      }
+    }, 100);
+  }, [customers, updateScrollDimensions, syncScroll]);
+
+  // Resize observer
+  useEffect(() => {
+    const resizeObserver = new ResizeObserver(() => {
+      updateScrollDimensions();
+    });
+    if (tableContentRef.current) {
+      resizeObserver.observe(tableContentRef.current);
+    }
+    if (customScrollbarRef.current) {
+      resizeObserver.observe(customScrollbarRef.current);
+    }
+    window.addEventListener('resize', updateScrollDimensions);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateScrollDimensions);
+    };
+  }, [updateScrollDimensions]);
 
   // Sorting function
   const handleSort = (field: SortField) => {
@@ -1034,22 +1153,10 @@ export default function AdminBillingPage() {
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
-
-    // Add resize listener to check scroll position on window resize
-    const handleResize = () => {
-      checkScrollPosition();
-    };
-    window.addEventListener("resize", handleResize);
     return () => {
       isMountedRef.current = false;
-      window.removeEventListener("resize", handleResize);
     };
-  }, [loadData, checkScrollPosition]);
-
-  // Check scroll position when customers change (table content changes)
-  useEffect(() => {
-    setTimeout(checkScrollPosition, 100);
-  }, [customers, checkScrollPosition]);
+  }, [loadData]);
 
   const handleRefresh = () => {
     loadedRef.current = false;
@@ -1705,49 +1812,17 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons - ALWAYS SHOWN */}
-      <div className="relative">
-        {/* Left scroll button - always visible */}
-        <button
-          onClick={scrollLeft}
-          disabled={!canScrollLeft}
-          className={`absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
-            canScrollLeft
-              ? "hover:bg-gray-100 cursor-pointer"
-              : "opacity-40 cursor-not-allowed"
-          }`}
-          style={{ left: "-12px" }}
-          title="Scroll left"
-        >
-          <FiChevronLeft className="w-5 h-5 text-gray-600" />
-        </button>
-
-        {/* Right scroll button - always visible */}
-        <button
-          onClick={scrollRight}
-          disabled={!canScrollRight}
-          className={`absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
-            canScrollRight
-              ? "hover:bg-gray-100 cursor-pointer"
-              : "opacity-40 cursor-not-allowed"
-          }`}
-          style={{ right: "-12px" }}
-          title="Scroll right"
-        >
-          <FiChevronRight className="w-5 h-5 text-gray-600" />
-        </button>
-
-        {/* Scrollable table container with always-visible scrollbar */}
+      {/* Table with CUSTOM HORIZONTAL SCROLLBAR at the bottom - ALWAYS VISIBLE */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-300">
+        {/* Scrollable table container (no native scrollbar) */}
         <div
-          ref={tableContainerRef}
-          onScroll={checkScrollPosition}
-          className="overflow-x-auto scrollbar-always-visible"
-          style={{
-            scrollbarWidth: "thin",
-            msOverflowStyle: "auto",
-          }}
+          ref={tableContentRef}
+          onScroll={handleTableScroll}
+          onWheel={handleTableWheel}
+          className="overflow-x-hidden"
+          style={{ overflowX: 'hidden' }}
         >
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1000px]">
+          <div className="min-w-[1000px]">
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
@@ -1891,16 +1966,12 @@ export default function AdminBillingPage() {
                             <div>
                               <p className="text-sm font-medium">
                                 ₱
-                                {(
-                                  customer.installationFee ?? 0
-                                ).toLocaleString()}
+                                {(customer.installationFee ?? 0).toLocaleString()}
                               </p>
                               <p
                                 className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
                               >
-                                {customer.installationFeePaid
-                                  ? "Paid"
-                                  : "Unpaid"}
+                                {customer.installationFeePaid ? "Paid" : "Unpaid"}
                               </p>
                             </div>
                           ) : (
@@ -1986,9 +2057,7 @@ export default function AdminBillingPage() {
                                 {isPaused && (
                                   <button
                                     onClick={() =>
-                                      handleResumeBillingForApplication(
-                                        customer,
-                                      )
+                                      handleResumeBillingForApplication(customer)
                                     }
                                     className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                                     title="Resume Billing"
@@ -2146,45 +2215,42 @@ export default function AdminBillingPage() {
             </table>
           </div>
         </div>
+
+        {/* CUSTOM HORIZONTAL SCROLLBAR - ALWAYS VISIBLE */}
+        {scrollWidth > containerWidth && (
+          <div
+            ref={customScrollbarRef}
+            className="relative h-3 bg-gray-200 rounded-full mx-2 mb-2 cursor-pointer"
+            onClick={handleTrackClick}
+          >
+            <div
+              ref={scrollThumbRef}
+              className="absolute top-0 h-full bg-blue-500 rounded-full cursor-grab active:cursor-grabbing"
+              style={{ width: `${thumbWidth}px` }}
+              onMouseDown={handleThumbMouseDown}
+            />
+          </div>
+        )}
       </div>
 
       <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
         Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
         customers ({customers.filter((c) => c.type === "user").length} users,{" "}
-        {customers.filter((c) => c.type === "application").length} applications)
-        - Sorted by {sortField} (
+        {customers.filter((c) => c.type === "application").length}{" "}
+        applications) - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
         {buildingFilter !== "all" && (
           <span className="ml-2 text-blue-600">
             - Filtered by building:{" "}
-            {buildingsList.find((b) => b._id === buildingFilter)?.buildingName}
+            {
+              buildingsList.find((b) => b._id === buildingFilter)
+                ?.buildingName
+            }
           </span>
         )}
       </div>
 
-      {/* Add global styles for always-visible scrollbar */}
-      <style jsx global>{`
-        .scrollbar-always-visible {
-          scrollbar-width: thin;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar {
-          height: 10px;
-          display: block;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 10px;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 10px;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
-        }
-      `}</style>
-
-      {/* Rest of the modals remain the same */}
+      {/* Rest of the modals remain the same (omitted for brevity but they are identical to original) */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -3308,7 +3374,7 @@ export default function AdminBillingPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </tr>
               )}
               {pendingModalType === "activation" && (
                 <table className="min-w-full text-sm">
