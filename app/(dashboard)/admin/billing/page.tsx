@@ -215,11 +215,6 @@ export default function AdminBillingPage() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
-  // Horizontal scroll buttons state
-  const [showLeftScrollBtn, setShowLeftScrollBtn] = useState(false);
-  const [showRightScrollBtn, setShowRightScrollBtn] = useState(true);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
     serviceStartDate: "",
@@ -295,16 +290,21 @@ export default function AdminBillingPage() {
     installationFeesPaidCount: 0,
   });
 
+  // Horizontal scroll state
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftScroll, setShowLeftScroll] = useState(false);
+  const [showRightScroll, setShowRightScroll] = useState(false);
+
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Check and update scroll button visibility
-  const checkScrollButtons = useCallback(() => {
+  // Check scroll position to show/hide buttons
+  const checkScrollPosition = useCallback(() => {
     if (tableContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } =
         tableContainerRef.current;
-      setShowLeftScrollBtn(scrollLeft > 0);
-      setShowRightScrollBtn(scrollLeft + clientWidth < scrollWidth - 1);
+      setShowLeftScroll(scrollLeft > 0);
+      setShowRightScroll(scrollLeft + clientWidth < scrollWidth - 5);
     }
   }, []);
 
@@ -312,30 +312,14 @@ export default function AdminBillingPage() {
   const scrollLeft = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
-      setTimeout(checkScrollButtons, 300);
     }
   };
 
   const scrollRight = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
-      setTimeout(checkScrollButtons, 300);
     }
   };
-
-  // Setup scroll event listener
-  useEffect(() => {
-    const container = tableContainerRef.current;
-    if (container) {
-      container.addEventListener("scroll", checkScrollButtons);
-      window.addEventListener("resize", checkScrollButtons);
-      checkScrollButtons();
-      return () => {
-        container.removeEventListener("scroll", checkScrollButtons);
-        window.removeEventListener("resize", checkScrollButtons);
-      };
-    }
-  }, [checkScrollButtons, customers.length]);
 
   // Sorting function
   const handleSort = (field: SortField) => {
@@ -1050,10 +1034,22 @@ export default function AdminBillingPage() {
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
+
+    // Add resize listener to check scroll position on window resize
+    const handleResize = () => {
+      checkScrollPosition();
+    };
+    window.addEventListener("resize", handleResize);
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener("resize", handleResize);
     };
-  }, [loadData]);
+  }, [loadData, checkScrollPosition]);
+
+  // Check scroll position when customers change (table content changes)
+  useEffect(() => {
+    setTimeout(checkScrollPosition, 100);
+  }, [customers, checkScrollPosition]);
 
   const handleRefresh = () => {
     loadedRef.current = false;
@@ -1709,14 +1705,41 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons - FIXED AT BOTTOM CENTER */}
+      {/* Table with horizontal scroll buttons */}
       <div className="relative">
-        <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
-          <div
-            ref={tableContainerRef}
-            className="overflow-x-auto"
-            style={{ overflowX: "auto", whiteSpace: "nowrap" }}
+        {/* Left scroll button */}
+        {showLeftScroll && (
+          <button
+            onClick={scrollLeft}
+            className="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-gray-100 rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200"
+            style={{ left: "-12px" }}
           >
+            <FiChevronLeft className="w-5 h-5 text-gray-600" />
+          </button>
+        )}
+
+        {/* Right scroll button */}
+        {showRightScroll && (
+          <button
+            onClick={scrollRight}
+            className="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-gray-100 rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200"
+            style={{ right: "-12px" }}
+          >
+            <FiChevronRight className="w-5 h-5 text-gray-600" />
+          </button>
+        )}
+
+        {/* Scrollable table container with always-visible scrollbar */}
+        <div
+          ref={tableContainerRef}
+          onScroll={checkScrollPosition}
+          className="overflow-x-auto scrollbar-always-visible"
+          style={{
+            scrollbarWidth: "thin",
+            msOverflowStyle: "auto",
+          }}
+        >
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1000px]">
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
@@ -2114,47 +2137,46 @@ export default function AdminBillingPage() {
               </tbody>
             </table>
           </div>
-          <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
-            Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
-            customers ({customers.filter((c) => c.type === "user").length}{" "}
-            users, {customers.filter((c) => c.type === "application").length}{" "}
-            applications) - Sorted by {sortField} (
-            {sortDirection === "asc" ? "Ascending" : "Descending"})
-            {buildingFilter !== "all" && (
-              <span className="ml-2 text-blue-600">
-                - Filtered by building:{" "}
-                {
-                  buildingsList.find((b) => b._id === buildingFilter)
-                    ?.buildingName
-                }
-              </span>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* FIXED BOTTOM CENTER SCROLL BUTTONS - Always visible kahit nasaan ka sa page */}
-      <div className="fixed bottom-6 left-0 right-0 flex justify-center items-center gap-4 z-50">
-        {showLeftScrollBtn && (
-          <button
-            onClick={scrollLeft}
-            className="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
-            aria-label="Scroll left"
-          >
-            <FiChevronLeft className="w-6 h-6" />
-          </button>
-        )}
-        {showRightScrollBtn && (
-          <button
-            onClick={scrollRight}
-            className="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
-            aria-label="Scroll right"
-          >
-            <FiChevronRight className="w-6 h-6" />
-          </button>
+      <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
+        Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
+        customers ({customers.filter((c) => c.type === "user").length} users,{" "}
+        {customers.filter((c) => c.type === "application").length} applications)
+        - Sorted by {sortField} (
+        {sortDirection === "asc" ? "Ascending" : "Descending"})
+        {buildingFilter !== "all" && (
+          <span className="ml-2 text-blue-600">
+            - Filtered by building:{" "}
+            {buildingsList.find((b) => b._id === buildingFilter)?.buildingName}
+          </span>
         )}
       </div>
 
+      {/* Add global styles for always-visible scrollbar */}
+      <style jsx global>{`
+        .scrollbar-always-visible {
+          scrollbar-width: thin;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar {
+          height: 10px;
+          display: block;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 10px;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 10px;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
+        }
+      `}</style>
+
+      {/* Rest of the modals remain the same */}
       {/* Unpaid Bills Report Modal */}
       {showUnpaidBillsReportModal && unpaidBillsReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
