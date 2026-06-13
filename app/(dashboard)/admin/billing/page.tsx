@@ -290,6 +290,7 @@ export default function AdminBillingPage() {
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Sorting function
   const handleSort = (field: SortField) => {
@@ -489,7 +490,7 @@ export default function AdminBillingPage() {
     }
 
     const startFromDate = prompt(
-      "Enter start date for recovery (YYYY-MM-DD) or leave empty to auto-detect:",
+      "Enter start date for recovery (YYYY-MM-DD) or empty to auto-detect:",
       "",
     );
 
@@ -1663,398 +1664,407 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Scrollable Table Container with sticky actions column */}
       <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead className="sticky top-0 z-10 bg-gray-100">
-              <tr className="border-b border-gray-300">
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                  onClick={() => handleSort("name")}
-                >
-                  <div className="flex items-center gap-1">
-                    Customer
-                    <SortIcon field="name" />
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                  onClick={() => handleSort("plan")}
-                >
-                  <div className="flex items-center gap-1">
-                    Plan
-                    <SortIcon field="plan" />
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                  onClick={() => handleSort("balance")}
-                >
-                  <div className="flex items-center gap-1">
-                    Balance
-                    <SortIcon field="balance" />
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                  onClick={() => handleSort("status")}
-                >
-                  <div className="flex items-center gap-1">
-                    Status
-                    <SortIcon field="status" />
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                  onClick={() => handleSort("installationFee")}
-                >
-                  <div className="flex items-center gap-1">
-                    Install Fee
-                    <SortIcon field="installationFee" />
-                  </div>
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                  <div className="flex items-center gap-1">
-                    <FiHome className="w-3 h-3" />
-                    Building
-                  </div>
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {sortedAndFilteredCustomers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
+        <div className="overflow-x-auto" ref={tableContainerRef}>
+          <div className="relative min-w-max">
+            <table className="min-w-full border-collapse">
+              <thead className="sticky top-0 z-10 bg-gray-100">
+                <tr className="border-b border-gray-300">
+                  <th
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors sticky left-0 bg-gray-100 z-20"
+                    onClick={() => handleSort("name")}
                   >
-                    No customers found
-                  </td>
+                    <div className="flex items-center gap-1">
+                      Customer
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                    onClick={() => handleSort("plan")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Plan
+                      <SortIcon field="plan" />
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                    onClick={() => handleSort("balance")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Balance
+                      <SortIcon field="balance" />
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                    onClick={() => handleSort("status")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Status
+                      <SortIcon field="status" />
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                    onClick={() => handleSort("installationFee")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Install Fee
+                      <SortIcon field="installationFee" />
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                    <div className="flex items-center gap-1">
+                      <FiHome className="w-3 h-3" />
+                      Building
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider sticky right-0 bg-gray-100 z-20 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                    Actions
+                  </th>
                 </tr>
-              ) : (
-                sortedAndFilteredCustomers.map((customer, idx) => {
-                  const hasUnpaidBills =
-                    customer.unpaidBills && customer.unpaidBills.length > 0;
-                  const hasBillingCycle = !!customer.billingCycle;
-                  const isActive = customer.billingCycle?.status === "active";
-                  const isPaused = customer.billingCycle?.status === "paused";
-                  const isPendingActivation =
-                    customer.billingCycle?.status === "pending_activation";
-                  const hasUnpaidInstallationFee =
-                    customer.type === "application" &&
-                    (customer.installationFee ?? 0) > 0 &&
-                    !customer.installationFeePaid;
-
-                  return (
-                    <tr
-                      key={`${customer.type}-${customer._id}`}
-                      className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {sortedAndFilteredCustomers.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
                     >
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <div className="flex items-center gap-2">
-                          {customer.type === "application" ? (
-                            <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
-                          ) : (
-                            <FiUser className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                          )}
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {customer.firstName} {customer.lastName}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {customer.email}
-                            </p>
-                            {customer.applicationId && (
-                              <p className="text-[10px] text-gray-400 font-mono break-all">
-                                {customer.applicationId}
+                      No customers found
+                    </td>
+                  </tr>
+                ) : (
+                  sortedAndFilteredCustomers.map((customer, idx) => {
+                    const hasUnpaidBills =
+                      customer.unpaidBills && customer.unpaidBills.length > 0;
+                    const hasBillingCycle = !!customer.billingCycle;
+                    const isActive = customer.billingCycle?.status === "active";
+                    const isPaused = customer.billingCycle?.status === "paused";
+                    const isPendingActivation =
+                      customer.billingCycle?.status === "pending_activation";
+                    const hasUnpaidInstallationFee =
+                      customer.type === "application" &&
+                      (customer.installationFee ?? 0) > 0 &&
+                      !customer.installationFeePaid;
+
+                    return (
+                      <tr
+                        key={`${customer.type}-${customer._id}`}
+                        className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+                      >
+                        <td className="px-3 py-2 border-r border-gray-200 sticky left-0 bg-inherit z-10">
+                          <div className="flex items-center gap-2">
+                            {customer.type === "application" ? (
+                              <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
+                            ) : (
+                              <FiUser className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                            )}
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {customer.firstName} {customer.lastName}
                               </p>
-                            )}
+                              <p className="text-xs text-gray-500">
+                                {customer.email}
+                              </p>
+                              {customer.applicationId && (
+                                <p className="text-[10px] text-gray-400 font-mono break-all">
+                                  {customer.applicationId}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <p className="text-sm font-medium text-gray-900">
-                          {customer.planName}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          ₱{customer.planPrice.toLocaleString()}/mo
-                        </p>
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <p
-                          className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
-                        >
-                          ₱{customer.currentBalance.toLocaleString()}
-                        </p>
-                        {customer.unpaidBills.length > 0 && (
-                          <p className="text-[10px] text-red-500">
-                            {customer.unpaidBills.length} unpaid
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          <p className="text-sm font-medium text-gray-900">
+                            {customer.planName}
                           </p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <span
-                          className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
-                        >
-                          {getStatusText(customer)}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        {customer.type === "application" &&
-                        (customer.installationFee ?? 0) > 0 ? (
-                          <div>
-                            <p className="text-sm font-medium">
-                              ₱
-                              {(customer.installationFee ?? 0).toLocaleString()}
+                          <p className="text-xs text-gray-500">
+                            ₱{customer.planPrice.toLocaleString()}/mo
+                          </p>
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          <p
+                            className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
+                          >
+                            ₱{customer.currentBalance.toLocaleString()}
+                          </p>
+                          {customer.unpaidBills.length > 0 && (
+                            <p className="text-[10px] text-red-500">
+                              {customer.unpaidBills.length} unpaid
                             </p>
-                            <p
-                              className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
-                            >
-                              {customer.installationFeePaid ? "Paid" : "Unpaid"}
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400">—</p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
-                        <div className="flex items-center gap-1">
-                          <FiHome className="w-3 h-3 text-gray-400" />
-                          <span className="text-xs text-gray-600">
-                            {getBuildingDisplay(customer)}
+                          )}
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          <span
+                            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
+                          >
+                            {getStatusText(customer)}
                           </span>
-                          {customer.unitNumber && (
-                            <span className="text-xs text-gray-400">
-                              (Unit {customer.unitNumber})
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              setSelectedCustomer(customer);
-                              setShowCustomerDetailModal(true);
-                            }}
-                            className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                            title="View Details"
-                          >
-                            <FiEye className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => openEmailModal(customer, "custom")}
-                            className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
-                            title="Send Email"
-                          >
-                            <FiMail className="w-3.5 h-3.5" />
-                          </button>
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-200">
                           {customer.type === "application" &&
-                            hasBillingCycle && (
-                              <button
-                                onClick={() =>
-                                  handleRecoverMissingBills(customer)
-                                }
-                                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
-                                title="Recover Missing Bills"
+                          (customer.installationFee ?? 0) > 0 ? (
+                            <div>
+                              <p className="text-sm font-medium">
+                                ₱
+                                {(
+                                  customer.installationFee ?? 0
+                                ).toLocaleString()}
+                              </p>
+                              <p
+                                className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
                               >
-                                <FiCalendar className="w-3.5 h-3.5" />
-                              </button>
+                                {customer.installationFeePaid
+                                  ? "Paid"
+                                  : "Unpaid"}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400">—</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-200">
+                          <div className="flex items-center gap-1">
+                            <FiHome className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-600">
+                              {getBuildingDisplay(customer)}
+                            </span>
+                            {customer.unitNumber && (
+                              <span className="text-xs text-gray-400">
+                                (Unit {customer.unitNumber})
+                              </span>
                             )}
-                          {customer.type === "application" && (
-                            <>
-                              {!hasBillingCycle && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedApplicationId(
-                                      customer.applicationId || customer._id,
-                                    );
-                                    setSelectedCustomerName(
-                                      `${customer.firstName} ${customer.lastName}`,
-                                    );
-                                    setSelectedCustomerEmail(customer.email);
-                                    setIncludeInstallationFee(true);
-                                    setShowStartModal(true);
-                                  }}
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Start Billing"
-                                >
-                                  <FiPlay className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {isActive && (
-                                <button
-                                  onClick={() =>
-                                    handlePauseBillingForApplication(customer)
-                                  }
-                                  className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                                  title="Pause Billing"
-                                >
-                                  <FiPause className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {isPaused && (
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 sticky right-0 bg-inherit z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                setSelectedCustomer(customer);
+                                setShowCustomerDetailModal(true);
+                              }}
+                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                              title="View Details"
+                            >
+                              <FiEye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => openEmailModal(customer, "custom")}
+                              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+                              title="Send Email"
+                            >
+                              <FiMail className="w-3.5 h-3.5" />
+                            </button>
+                            {customer.type === "application" &&
+                              hasBillingCycle && (
                                 <button
                                   onClick={() =>
-                                    handleResumeBillingForApplication(customer)
+                                    handleRecoverMissingBills(customer)
                                   }
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Resume Billing"
+                                  className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                                  title="Recover Missing Bills"
                                 >
-                                  <FiPlay className="w-3.5 h-3.5" />
+                                  <FiCalendar className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              {(isActive || isPendingActivation) && (
-                                <button
-                                  onClick={() =>
-                                    handleDisconnectApplication(customer)
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Disconnect"
-                                >
-                                  <FiWifiOff className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.status === "suspended" && (
-                                <button
-                                  onClick={() =>
-                                    handleReconnectApplication(customer)
-                                  }
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Reconnect"
-                                >
-                                  <FiWifi className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {hasBillingCycle && (
-                                <button
-                                  onClick={() =>
-                                    handleStopBillingForApplication(customer)
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Cancel Subscription"
-                                >
-                                  <FiX className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {hasBillingCycle && (
-                                <button
-                                  onClick={() => {
-                                    setCustomerToDelete(customer);
-                                    setShowDeleteConfirmModal(true);
-                                  }}
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Delete Billing Cycle"
-                                >
-                                  <FiTrash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </>
-                          )}
-                          {customer.type === "user" && (
-                            <>
-                              {(!customer.billingCycle ||
-                                customer.billingCycle?.status ===
-                                  "cancelled") && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedUserId(customer._id);
-                                    setSelectedCustomerName(
-                                      `${customer.firstName} ${customer.lastName}`,
-                                    );
-                                    setSelectedCustomerEmail(customer.email);
-                                    setIncludeInstallationFee(true);
-                                    setShowStartModal(true);
-                                  }}
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Start Billing"
-                                >
-                                  <FiPlay className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.billingCycle?.status === "active" && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedUserId(customer._id);
-                                    setShowPauseModal(true);
-                                  }}
-                                  className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                                  title="Pause Billing"
-                                >
-                                  <FiPause className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.billingCycle?.status === "paused" && (
-                                <button
-                                  onClick={() =>
-                                    handleResumeBilling(
-                                      customer._id,
-                                      customer.firstName,
-                                    )
-                                  }
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Resume Billing"
-                                >
-                                  <FiPlay className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.billingCycle?.status === "active" && (
-                                <button
-                                  onClick={() =>
-                                    handleStopBilling(
-                                      customer._id,
-                                      customer.firstName,
-                                    )
-                                  }
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Cancel Subscription"
-                                >
-                                  <FiX className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.status === "active" && (
-                                <button
-                                  onClick={() => handleDisconnect(customer)}
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Disconnect"
-                                >
-                                  <FiWifiOff className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.status === "suspended" && (
-                                <button
-                                  onClick={() => handleReconnect(customer)}
-                                  className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Reconnect"
-                                >
-                                  <FiWifi className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {customer.billingCycle && (
-                                <button
-                                  onClick={() => {
-                                    setCustomerToDelete(customer);
-                                    setShowDeleteConfirmModal(true);
-                                  }}
-                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                  title="Delete Billing Cycle"
-                                >
-                                  <FiTrash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                            {customer.type === "application" && (
+                              <>
+                                {!hasBillingCycle && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedApplicationId(
+                                        customer.applicationId || customer._id,
+                                      );
+                                      setSelectedCustomerName(
+                                        `${customer.firstName} ${customer.lastName}`,
+                                      );
+                                      setSelectedCustomerEmail(customer.email);
+                                      setIncludeInstallationFee(true);
+                                      setShowStartModal(true);
+                                    }}
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Start Billing"
+                                  >
+                                    <FiPlay className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {isActive && (
+                                  <button
+                                    onClick={() =>
+                                      handlePauseBillingForApplication(customer)
+                                    }
+                                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                                    title="Pause Billing"
+                                  >
+                                    <FiPause className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {isPaused && (
+                                  <button
+                                    onClick={() =>
+                                      handleResumeBillingForApplication(
+                                        customer,
+                                      )
+                                    }
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Resume Billing"
+                                  >
+                                    <FiPlay className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {(isActive || isPendingActivation) && (
+                                  <button
+                                    onClick={() =>
+                                      handleDisconnectApplication(customer)
+                                    }
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Disconnect"
+                                  >
+                                    <FiWifiOff className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.status === "suspended" && (
+                                  <button
+                                    onClick={() =>
+                                      handleReconnectApplication(customer)
+                                    }
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Reconnect"
+                                  >
+                                    <FiWifi className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {hasBillingCycle && (
+                                  <button
+                                    onClick={() =>
+                                      handleStopBillingForApplication(customer)
+                                    }
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Cancel Subscription"
+                                  >
+                                    <FiX className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {hasBillingCycle && (
+                                  <button
+                                    onClick={() => {
+                                      setCustomerToDelete(customer);
+                                      setShowDeleteConfirmModal(true);
+                                    }}
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Delete Billing Cycle"
+                                  >
+                                    <FiTrash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                            {customer.type === "user" && (
+                              <>
+                                {(!customer.billingCycle ||
+                                  customer.billingCycle?.status ===
+                                    "cancelled") && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedUserId(customer._id);
+                                      setSelectedCustomerName(
+                                        `${customer.firstName} ${customer.lastName}`,
+                                      );
+                                      setSelectedCustomerEmail(customer.email);
+                                      setIncludeInstallationFee(true);
+                                      setShowStartModal(true);
+                                    }}
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Start Billing"
+                                  >
+                                    <FiPlay className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.billingCycle?.status === "active" && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedUserId(customer._id);
+                                      setShowPauseModal(true);
+                                    }}
+                                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                                    title="Pause Billing"
+                                  >
+                                    <FiPause className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.billingCycle?.status === "paused" && (
+                                  <button
+                                    onClick={() =>
+                                      handleResumeBilling(
+                                        customer._id,
+                                        customer.firstName,
+                                      )
+                                    }
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Resume Billing"
+                                  >
+                                    <FiPlay className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.billingCycle?.status === "active" && (
+                                  <button
+                                    onClick={() =>
+                                      handleStopBilling(
+                                        customer._id,
+                                        customer.firstName,
+                                      )
+                                    }
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Cancel Subscription"
+                                  >
+                                    <FiX className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.status === "active" && (
+                                  <button
+                                    onClick={() => handleDisconnect(customer)}
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Disconnect"
+                                  >
+                                    <FiWifiOff className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.status === "suspended" && (
+                                  <button
+                                    onClick={() => handleReconnect(customer)}
+                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Reconnect"
+                                  >
+                                    <FiWifi className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {customer.billingCycle && (
+                                  <button
+                                    onClick={() => {
+                                      setCustomerToDelete(customer);
+                                      setShowDeleteConfirmModal(true);
+                                    }}
+                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                    title="Delete Billing Cycle"
+                                  >
+                                    <FiTrash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
           Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
@@ -3137,12 +3147,14 @@ export default function AdminBillingPage() {
                         <td className="px-3 py-2 font-mono text-xs">
                           {bill.invoiceNumber}
                         </td>
-                        <td>
+                        <td className="px-3 py-2">
                           {bill.applicationData?.firstName}{" "}
                           {bill.applicationData?.lastName}
                         </td>
-                        <td>₱{bill.total.toLocaleString()}</td>
-                        <td>
+                        <td className="px-3 py-2">
+                          ₱{bill.total.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2">
                           <button
                             onClick={() =>
                               confirmProRatedPayment({
