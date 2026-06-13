@@ -66,6 +66,8 @@ import {
   FiArrowUp,
   FiArrowDown,
   FiHome,
+  FiChevronLeft,
+  FiChevronRight,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -213,6 +215,11 @@ export default function AdminBillingPage() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
+  // Horizontal scroll buttons state
+  const [showLeftScrollBtn, setShowLeftScrollBtn] = useState(false);
+  const [showRightScrollBtn, setShowRightScrollBtn] = useState(true);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
     serviceStartDate: "",
@@ -290,7 +297,45 @@ export default function AdminBillingPage() {
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Check and update scroll button visibility
+  const checkScrollButtons = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        tableContainerRef.current;
+      setShowLeftScrollBtn(scrollLeft > 0);
+      setShowRightScrollBtn(scrollLeft + clientWidth < scrollWidth - 1);
+    }
+  }, []);
+
+  // Scroll handlers
+  const scrollLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+      setTimeout(checkScrollButtons, 300);
+    }
+  };
+
+  const scrollRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+      setTimeout(checkScrollButtons, 300);
+    }
+  };
+
+  // Setup scroll event listener
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (container) {
+      container.addEventListener("scroll", checkScrollButtons);
+      window.addEventListener("resize", checkScrollButtons);
+      checkScrollButtons();
+      return () => {
+        container.removeEventListener("scroll", checkScrollButtons);
+        window.removeEventListener("resize", checkScrollButtons);
+      };
+    }
+  }, [checkScrollButtons, customers.length]);
 
   // Sorting function
   const handleSort = (field: SortField) => {
@@ -490,7 +535,7 @@ export default function AdminBillingPage() {
     }
 
     const startFromDate = prompt(
-      "Enter start date for recovery (YYYY-MM-DD) or empty to auto-detect:",
+      "Enter start date for recovery (YYYY-MM-DD) or leave empty to auto-detect:",
       "",
     );
 
@@ -1664,15 +1709,41 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Scrollable Table Container with sticky actions column */}
-      <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
-        <div className="overflow-x-auto" ref={tableContainerRef}>
-          <div className="relative min-w-max">
+      {/* Table with horizontal scroll buttons */}
+      <div className="relative">
+        {/* Horizontal Scroll Buttons */}
+        {showLeftScrollBtn && (
+          <button
+            onClick={scrollLeft}
+            className="fixed left-4 bottom-1/2 transform -translate-y-1/2 z-20 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
+            style={{ bottom: "50%" }}
+            aria-label="Scroll left"
+          >
+            <FiChevronLeft className="w-5 h-5" />
+          </button>
+        )}
+        {showRightScrollBtn && (
+          <button
+            onClick={scrollRight}
+            className="fixed right-4 bottom-1/2 transform -translate-y-1/2 z-20 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 focus:outline-none"
+            style={{ bottom: "50%" }}
+            aria-label="Scroll right"
+          >
+            <FiChevronRight className="w-5 h-5" />
+          </button>
+        )}
+
+        <div className="bg-white rounded-none shadow-sm overflow-hidden border border-gray-300">
+          <div
+            ref={tableContainerRef}
+            className="overflow-x-auto"
+            style={{ overflowX: "auto", whiteSpace: "nowrap" }}
+          >
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
                   <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors sticky left-0 bg-gray-100 z-20"
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
                     onClick={() => handleSort("name")}
                   >
                     <div className="flex items-center gap-1">
@@ -1722,7 +1793,7 @@ export default function AdminBillingPage() {
                       Building
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider sticky right-0 bg-gray-100 z-20 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -1756,7 +1827,7 @@ export default function AdminBillingPage() {
                         key={`${customer.type}-${customer._id}`}
                         className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
                       >
-                        <td className="px-3 py-2 border-r border-gray-200 sticky left-0 bg-inherit z-10">
+                        <td className="px-3 py-2 border-r border-gray-200">
                           <div className="flex items-center gap-2">
                             {customer.type === "application" ? (
                               <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
@@ -1840,7 +1911,7 @@ export default function AdminBillingPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-2 sticky right-0 bg-inherit z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                        <td className="px-3 py-2">
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
@@ -2065,22 +2136,22 @@ export default function AdminBillingPage() {
               </tbody>
             </table>
           </div>
-        </div>
-        <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
-          Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
-          customers ({customers.filter((c) => c.type === "user").length} users,{" "}
-          {customers.filter((c) => c.type === "application").length}{" "}
-          applications) - Sorted by {sortField} (
-          {sortDirection === "asc" ? "Ascending" : "Descending"})
-          {buildingFilter !== "all" && (
-            <span className="ml-2 text-blue-600">
-              - Filtered by building:{" "}
-              {
-                buildingsList.find((b) => b._id === buildingFilter)
-                  ?.buildingName
-              }
-            </span>
-          )}
+          <div className="px-3 py-2 bg-gray-50 border-t border-gray-300 text-xs text-gray-500">
+            Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
+            customers ({customers.filter((c) => c.type === "user").length}{" "}
+            users, {customers.filter((c) => c.type === "application").length}{" "}
+            applications) - Sorted by {sortField} (
+            {sortDirection === "asc" ? "Ascending" : "Descending"})
+            {buildingFilter !== "all" && (
+              <span className="ml-2 text-blue-600">
+                - Filtered by building:{" "}
+                {
+                  buildingsList.find((b) => b._id === buildingFilter)
+                    ?.buildingName
+                }
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -3147,14 +3218,12 @@ export default function AdminBillingPage() {
                         <td className="px-3 py-2 font-mono text-xs">
                           {bill.invoiceNumber}
                         </td>
-                        <td className="px-3 py-2">
+                        <td>
                           {bill.applicationData?.firstName}{" "}
                           {bill.applicationData?.lastName}
                         </td>
-                        <td className="px-3 py-2">
-                          ₱{bill.total.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2">
+                        <td>₱{bill.total.toLocaleString()}</td>
+                        <td>
                           <button
                             onClick={() =>
                               confirmProRatedPayment({
