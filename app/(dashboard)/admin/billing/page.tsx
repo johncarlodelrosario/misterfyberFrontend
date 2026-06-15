@@ -66,8 +66,11 @@ import {
   FiArrowUp,
   FiArrowDown,
   FiHome,
+  FiChevronLeft,
+  FiChevronRight,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
 
 interface CustomerItem {
   _id: string;
@@ -204,8 +207,7 @@ export default function AdminBillingPage() {
   const [emailType, setEmailType] = useState("custom");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [billingSettings, setBillingSettingsState] = useState<any>(null);
-  const [showUnpaidBillsReportModal, setShowUnpaidBillsReportModal] =
-    useState(false);
+  const [showBillingReportsModal, setShowBillingReportsModal] = useState(false);
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
@@ -288,157 +290,36 @@ export default function AdminBillingPage() {
     installationFeesPaidCount: 0,
   });
 
-  // Horizontal scroll state - using a custom scrollbar at the bottom
-  const tableWrapperRef = useRef<HTMLDivElement>(null);
-  const tableContentRef = useRef<HTMLDivElement>(null);
-  const customScrollbarRef = useRef<HTMLDivElement>(null);
-  const scrollThumbRef = useRef<HTMLDivElement>(null);
-  const [scrollWidth, setScrollWidth] = useState(0);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [thumbWidth, setThumbWidth] = useState(0);
-  const [scrollLeft, setScrollLeftState] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
+  // Horizontal scroll state - buttons always shown
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const isMountedRef = useRef(true);
   const loadedRef = useRef(false);
 
-  // Update scrollbar dimensions
-  const updateScrollDimensions = useCallback(() => {
-    if (tableContentRef.current && customScrollbarRef.current) {
-      const contentWidth = tableContentRef.current.scrollWidth;
-      const containerWidthValue = customScrollbarRef.current.clientWidth;
-      setScrollWidth(contentWidth);
-      setContainerWidth(containerWidthValue);
-      
-      if (contentWidth > containerWidthValue) {
-        const thumbWidthValue = (containerWidthValue / contentWidth) * containerWidthValue;
-        setThumbWidth(Math.max(thumbWidthValue, 50));
-      } else {
-        setThumbWidth(0);
-      }
+  // Check scroll position to enable/disable buttons
+  const checkScrollPosition = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        tableContainerRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
     }
   }, []);
 
-  // Sync scroll position
-  const syncScroll = useCallback((left: number) => {
-    if (tableContentRef.current) {
-      tableContentRef.current.scrollLeft = left;
+  // Scroll handlers
+  const scrollLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
     }
-    if (scrollThumbRef.current && customScrollbarRef.current) {
-      const maxScrollLeft = scrollWidth - containerWidth;
-      const percentage = maxScrollLeft > 0 ? left / maxScrollLeft : 0;
-      const maxThumbLeft = containerWidth - thumbWidth;
-      scrollThumbRef.current.style.left = `${percentage * maxThumbLeft}px`;
-    }
-    setScrollLeftState(left);
-  }, [scrollWidth, containerWidth, thumbWidth]);
-
-  // Handle custom scrollbar thumb drag
-  const handleThumbMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
   };
 
-  const handleThumbMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !scrollThumbRef.current || !customScrollbarRef.current) return;
-    
-    const scrollbarRect = customScrollbarRef.current.getBoundingClientRect();
-    const thumbRect = scrollThumbRef.current.getBoundingClientRect();
-    let newLeft = e.clientX - scrollbarRect.left - thumbRect.width / 2;
-    
-    const maxLeft = containerWidth - thumbWidth;
-    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-    
-    const percentage = maxLeft > 0 ? newLeft / maxLeft : 0;
-    const maxScrollLeftValue = scrollWidth - containerWidth;
-    const newScrollLeft = percentage * maxScrollLeftValue;
-    
-    syncScroll(newScrollLeft);
-  }, [isDragging, containerWidth, thumbWidth, scrollWidth, syncScroll]);
-
-  const handleThumbMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  // Handle wheel scroll on table
-  const handleTableWheel = useCallback((e: React.WheelEvent) => {
-    if (tableContentRef.current) {
-      const newScrollLeft = tableContentRef.current.scrollLeft + e.deltaY;
-      syncScroll(newScrollLeft);
+  const scrollRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
     }
-  }, [syncScroll]);
-
-  // Handle click on scrollbar track
-  const handleTrackClick = useCallback((e: React.MouseEvent) => {
-    if (!customScrollbarRef.current || !scrollThumbRef.current) return;
-    
-    const scrollbarRect = customScrollbarRef.current.getBoundingClientRect();
-    const thumbRect = scrollThumbRef.current.getBoundingClientRect();
-    const clickX = e.clientX - scrollbarRect.left;
-    const thumbCenter = thumbRect.left + thumbRect.width / 2 - scrollbarRect.left;
-    
-    let newLeft;
-    if (clickX < thumbCenter) {
-      newLeft = thumbRect.left - scrollbarRect.left - thumbRect.width;
-    } else {
-      newLeft = thumbRect.left - scrollbarRect.left + thumbRect.width;
-    }
-    
-    const maxLeft = containerWidth - thumbWidth;
-    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-    
-    const percentage = maxLeft > 0 ? newLeft / maxLeft : 0;
-    const maxScrollLeftValue = scrollWidth - containerWidth;
-    const newScrollLeft = percentage * maxScrollLeftValue;
-    
-    syncScroll(newScrollLeft);
-  }, [containerWidth, thumbWidth, scrollWidth, syncScroll]);
-
-  // Listen to table scroll event
-  const handleTableScroll = useCallback(() => {
-    if (tableContentRef.current) {
-      syncScroll(tableContentRef.current.scrollLeft);
-    }
-  }, [syncScroll]);
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleThumbMouseMove);
-      document.addEventListener('mouseup', handleThumbMouseUp);
-    }
-    return () => {
-      document.removeEventListener('mousemove', handleThumbMouseMove);
-      document.removeEventListener('mouseup', handleThumbMouseUp);
-    };
-  }, [isDragging, handleThumbMouseMove, handleThumbMouseUp]);
-
-  // Update dimensions when customers change
-  useEffect(() => {
-    setTimeout(() => {
-      updateScrollDimensions();
-      if (tableContentRef.current) {
-        syncScroll(tableContentRef.current.scrollLeft);
-      }
-    }, 100);
-  }, [customers, updateScrollDimensions, syncScroll]);
-
-  // Resize observer
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver(() => {
-      updateScrollDimensions();
-    });
-    if (tableContentRef.current) {
-      resizeObserver.observe(tableContentRef.current);
-    }
-    if (customScrollbarRef.current) {
-      resizeObserver.observe(customScrollbarRef.current);
-    }
-    window.addEventListener('resize', updateScrollDimensions);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateScrollDimensions);
-    };
-  }, [updateScrollDimensions]);
+  };
 
   // Sorting function
   const handleSort = (field: SortField) => {
@@ -553,24 +434,6 @@ export default function AdminBillingPage() {
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
-    }
-  };
-
-  const loadUnpaidBillsReport = async () => {
-    setLoadingReport(true);
-    try {
-      const result = await getUnpaidBillsReport({ includePaid: false });
-      if (result.success) {
-        setUnpaidBillsReport(result.data);
-        setShowUnpaidBillsReportModal(true);
-      } else {
-        toast.error("Failed to load report");
-      }
-    } catch (error) {
-      console.error("Error loading report:", error);
-      toast.error("Failed to load unpaid bills report");
-    } finally {
-      setLoadingReport(false);
     }
   };
 
@@ -933,7 +796,6 @@ export default function AdminBillingPage() {
         pendingPaymentsResult,
         customersWithoutAccountsResult,
         pendingInstallationBillsResult,
-        unpaidReportResult,
       ] = await Promise.all([
         getAllBillingCycles({ limit: 100, forceRefresh }),
         getAllBills({ limit: 100, forceRefresh }),
@@ -944,9 +806,6 @@ export default function AdminBillingPage() {
         getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
         getCustomersWithoutAccounts().catch(() => ({ data: [] })),
         getPendingInstallationBills().catch(() => ({ data: [] })),
-        getUnpaidBillsReport({ includePaid: false }).catch(() => ({
-          data: { summary: {} },
-        })),
       ]);
 
       if (!isMountedRef.current) return;
@@ -1010,7 +869,6 @@ export default function AdminBillingPage() {
         };
       });
 
-      // FIXED: Map applications with proper building data
       const applicationCustomers: CustomerItem[] = applicationsList
         .filter(
           (app: any) =>
@@ -1035,7 +893,6 @@ export default function AdminBillingPage() {
             (cycle: any) => cycle.applicationId === app.applicationId,
           );
 
-          // Get building object - either from populated buildingId or from buildingName
           let buildingObj = null;
           if (
             app.buildingId &&
@@ -1153,10 +1010,20 @@ export default function AdminBillingPage() {
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
+
+    const handleResize = () => {
+      checkScrollPosition();
+    };
+    window.addEventListener("resize", handleResize);
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener("resize", handleResize);
     };
-  }, [loadData]);
+  }, [loadData, checkScrollPosition]);
+
+  useEffect(() => {
+    setTimeout(checkScrollPosition, 100);
+  }, [customers, checkScrollPosition]);
 
   const handleRefresh = () => {
     loadedRef.current = false;
@@ -1687,10 +1554,10 @@ export default function AdminBillingPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={loadUnpaidBillsReport}
-              className="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 transition flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setShowBillingReportsModal(true)}
+              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-700 hover:to-indigo-700 transition flex items-center gap-1.5 cursor-pointer shadow-md"
             >
-              <FiPrinter className="w-3.5 h-3.5" /> Report
+              <FiFileText className="w-3.5 h-3.5" /> Reports
             </button>
             <button
               onClick={() => setShowBackdatedModal(true)}
@@ -1812,17 +1679,49 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with CUSTOM HORIZONTAL SCROLLBAR at the bottom - ALWAYS VISIBLE */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-300">
-        {/* Scrollable table container (no native scrollbar) */}
-        <div
-          ref={tableContentRef}
-          onScroll={handleTableScroll}
-          onWheel={handleTableWheel}
-          className="overflow-x-hidden"
-          style={{ overflowX: 'hidden' }}
+      {/* Table with horizontal scroll buttons - ALWAYS SHOWN */}
+      <div className="relative">
+        {/* Left scroll button - always visible */}
+        <button
+          onClick={scrollLeft}
+          disabled={!canScrollLeft}
+          className={`absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
+            canScrollLeft
+              ? "hover:bg-gray-100 cursor-pointer"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          style={{ left: "-12px" }}
+          title="Scroll left"
         >
-          <div className="min-w-[1000px]">
+          <FiChevronLeft className="w-5 h-5 text-gray-600" />
+        </button>
+
+        {/* Right scroll button - always visible */}
+        <button
+          onClick={scrollRight}
+          disabled={!canScrollRight}
+          className={`absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
+            canScrollRight
+              ? "hover:bg-gray-100 cursor-pointer"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          style={{ right: "-12px" }}
+          title="Scroll right"
+        >
+          <FiChevronRight className="w-5 h-5 text-gray-600" />
+        </button>
+
+        {/* Scrollable table container with always-visible scrollbar */}
+        <div
+          ref={tableContainerRef}
+          onScroll={checkScrollPosition}
+          className="overflow-x-auto scrollbar-always-visible"
+          style={{
+            scrollbarWidth: "thin",
+            msOverflowStyle: "auto",
+          }}
+        >
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1000px]">
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
@@ -1966,12 +1865,16 @@ export default function AdminBillingPage() {
                             <div>
                               <p className="text-sm font-medium">
                                 ₱
-                                {(customer.installationFee ?? 0).toLocaleString()}
+                                {(
+                                  customer.installationFee ?? 0
+                                ).toLocaleString()}
                               </p>
                               <p
                                 className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
                               >
-                                {customer.installationFeePaid ? "Paid" : "Unpaid"}
+                                {customer.installationFeePaid
+                                  ? "Paid"
+                                  : "Unpaid"}
                               </p>
                             </div>
                           ) : (
@@ -2057,7 +1960,9 @@ export default function AdminBillingPage() {
                                 {isPaused && (
                                   <button
                                     onClick={() =>
-                                      handleResumeBillingForApplication(customer)
+                                      handleResumeBillingForApplication(
+                                        customer,
+                                      )
                                     }
                                     className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                                     title="Resume Billing"
@@ -2215,225 +2120,53 @@ export default function AdminBillingPage() {
             </table>
           </div>
         </div>
-
-        {/* CUSTOM HORIZONTAL SCROLLBAR - ALWAYS VISIBLE */}
-        {scrollWidth > containerWidth && (
-          <div
-            ref={customScrollbarRef}
-            className="relative h-3 bg-gray-200 rounded-full mx-2 mb-2 cursor-pointer"
-            onClick={handleTrackClick}
-          >
-            <div
-              ref={scrollThumbRef}
-              className="absolute top-0 h-full bg-blue-500 rounded-full cursor-grab active:cursor-grabbing"
-              style={{ width: `${thumbWidth}px` }}
-              onMouseDown={handleThumbMouseDown}
-            />
-          </div>
-        )}
       </div>
 
       <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
         Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
         customers ({customers.filter((c) => c.type === "user").length} users,{" "}
-        {customers.filter((c) => c.type === "application").length}{" "}
-        applications) - Sorted by {sortField} (
+        {customers.filter((c) => c.type === "application").length} applications)
+        - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
         {buildingFilter !== "all" && (
           <span className="ml-2 text-blue-600">
             - Filtered by building:{" "}
-            {
-              buildingsList.find((b) => b._id === buildingFilter)
-                ?.buildingName
-            }
+            {buildingsList.find((b) => b._id === buildingFilter)?.buildingName}
           </span>
         )}
       </div>
 
-      {/* Rest of the modals remain the same (omitted for brevity but they are identical to original) */}
-      {/* Unpaid Bills Report Modal */}
-      {showUnpaidBillsReportModal && unpaidBillsReport && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-y-auto p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">
-                Unpaid Bills Report
-              </h2>
-              <button
-                onClick={() => setShowUnpaidBillsReportModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <div className="bg-red-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">Total Unpaid Bills</p>
-                <p className="text-xl font-bold text-red-600">
-                  {unpaidBillsReport.summary?.totalUnpaidBills || 0}
-                </p>
-              </div>
-              <div className="bg-orange-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">Total Amount Due</p>
-                <p className="text-xl font-bold text-orange-600">
-                  ₱
-                  {(
-                    unpaidBillsReport.summary?.totalAmountDue || 0
-                  ).toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-amber-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">Installation Fees Due</p>
-                <p className="text-xl font-bold text-amber-600">
-                  ₱
-                  {(
-                    unpaidBillsReport.summary?.totalInstallationFeesDue || 0
-                  ).toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-purple-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">Overdue Bills</p>
-                <p className="text-xl font-bold text-purple-600">
-                  {unpaidBillsReport.summary?.byStatus?.overdue || 0}
-                </p>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Invoice
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Customer
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Period
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Due Date
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Amount
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Install Fee
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Status
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {unpaidBillsReport.bills?.map((bill: any) => {
-                    let periodDisplay = "-";
-                    if (bill.billingPeriod?.start && bill.billingPeriod?.end) {
-                      periodDisplay = formatBillingPeriod(
-                        bill.billingPeriod.start,
-                        bill.billingPeriod.end,
-                      );
-                    }
-                    return (
-                      <tr key={bill._id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 font-mono text-xs">
-                          {bill.invoiceNumber}
-                        </td>
-                        <td className="px-3 py-2">
-                          <p className="text-sm font-medium">
-                            {bill.applicationData?.firstName}{" "}
-                            {bill.applicationData?.lastName}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {bill.applicationData?.email}
-                          </p>
-                        </td>
-                        <td className="px-3 py-2 text-xs">{periodDisplay}</td>
-                        <td className="px-3 py-2 text-xs">
-                          {formatDateFixed(bill.dueDate)}
-                        </td>
-                        <td className="px-3 py-2 text-xs font-medium text-red-600">
-                          ₱{bill.total.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 text-xs">
-                          {bill.installationFee > 0 ? (
-                            <span
-                              className={
-                                bill.installationFeePaid
-                                  ? "text-green-600"
-                                  : "text-amber-600"
-                              }
-                            >
-                              ₱{bill.installationFee.toLocaleString()}
-                            </span>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`px-2 py-0.5 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
-                          >
-                            {bill.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          {bill.isInstallationBill &&
-                            !bill.installationFeePaid && (
-                              <button
-                                onClick={() => {
-                                  const customer = customers.find(
-                                    (c) =>
-                                      c.applicationId === bill.applicationId,
-                                  );
-                                  if (customer)
-                                    handleMarkInstallationBillAsPaid(
-                                      bill,
-                                      customer,
-                                    );
-                                }}
-                                className="px-2 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
-                              >
-                                Mark Paid
-                              </button>
-                            )}
-                          {!bill.isInstallationBill &&
-                            bill.status !== "paid" && (
-                              <button
-                                onClick={() => {
-                                  const customer = customers.find(
-                                    (c) =>
-                                      c.applicationId === bill.applicationId,
-                                  );
-                                  if (customer)
-                                    handleMarkBillAsPaid(bill, customer);
-                                }}
-                                className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                              >
-                                Mark Paid
-                              </button>
-                            )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setShowUnpaidBillsReportModal(false)}
-                className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Add global styles for always-visible scrollbar */}
+      <style jsx global>{`
+        .scrollbar-always-visible {
+          scrollbar-width: thin;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar {
+          height: 10px;
+          display: block;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 10px;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 10px;
+        }
+        .scrollbar-always-visible::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
+        }
+      `}</style>
+
+      {/* Billing Reports Modal */}
+      <BillingReportsWithDownload
+        isOpen={showBillingReportsModal}
+        onClose={() => setShowBillingReportsModal(false)}
+        customers={customers}
+        buildings={buildingsList}
+        onMarkBillAsPaid={handleMarkBillAsPaid}
+        onMarkInstallationBillAsPaid={handleMarkInstallationBillAsPaid}
+      />
 
       {/* Backdated Billing Modal */}
       {showBackdatedModal && (
@@ -3374,7 +3107,7 @@ export default function AdminBillingPage() {
                       </tr>
                     ))}
                   </tbody>
-                </tr>
+                </table>
               )}
               {pendingModalType === "activation" && (
                 <table className="min-w-full text-sm">
