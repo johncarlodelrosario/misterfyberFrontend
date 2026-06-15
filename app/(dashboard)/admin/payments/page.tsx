@@ -754,12 +754,7 @@ export default function AdminPaymentsPage() {
             >
               <FiFilter /> Filters
             </button>
-            <button
-              onClick={exportToExcel}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
-            >
-              <FiDownload /> Export Excel
-            </button>
+
             <button
               onClick={handleRefresh}
               disabled={refreshing}

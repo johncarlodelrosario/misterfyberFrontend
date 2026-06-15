@@ -16,7 +16,6 @@ import {
   FiXCircle,
   FiCalendar,
   FiBarChart2,
-  FiDollarSign,
   FiUserCheck,
   FiActivity,
   FiSliders,
@@ -130,12 +129,16 @@ interface Application {
 // Utility Functions
 // ============================================================================
 const formatCurrency = (amount: number): string => {
+  // Removed the currency symbol ($ sign) - now displays as "1,234.56"
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  })
+    .format(amount)
+    .replace(/[A-Z]{3}/g, "")
+    .trim();
 };
 
 const formatDate = (dateString: string): string => {
@@ -1662,7 +1665,6 @@ export default function AdminDashboardPage() {
           <StatsCard
             title="Monthly Revenue"
             value={isLoadingStats ? "—" : formatCurrency(stats.monthlyRevenue)}
-            icon={FiDollarSign}
             trend={{ value: 5, isPositive: true }}
             color="purple"
           />

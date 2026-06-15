@@ -60,19 +60,8 @@ const BillingReportsLogo = () => (
   <div className="flex items-center gap-3">
     <div className="relative">
       <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="white"
-          className="w-5 h-5"
-        >
-          <path d="M3 6H21V8H3V6ZM3 10H21V12H3V10ZM3 14H21V16H3V14ZM3 18H21V20H3V18Z" />
-          <path d="M7 4H9V20H7V4Z" />
-          <path d="M15 4H17V20H15V4Z" />
-          <rect x="11" y="4" width="2" height="20" />
-        </svg>
+        <FiDollarSign className="w-5 h-5 text-white" />
       </div>
-      <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
     </div>
     <div>
       <h3 className="text-lg font-bold text-gray-900">Billing Reports</h3>
@@ -107,7 +96,7 @@ export default function BillingReportsWithDownload({
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "summary" | "details" | "buildings"
-  >("summary");
+  >("details");
 
   useEffect(() => {
     if (isOpen) {
@@ -485,7 +474,11 @@ export default function BillingReportsWithDownload({
             ${Object.entries(buildingStats)
               .map(
                 ([building, stats]: [string, any]) => `
-              <tr><td>${building}</td><td>${stats.count}</td><td>₱${stats.amount.toLocaleString()}</td></tr>
+              <tr>
+                <td>${building}</td>
+                <td>${stats.count}</td>
+                <td>₱${stats.amount.toLocaleString()}</td>
+              </tr>
             `,
               )
               .join("")}
@@ -912,25 +905,43 @@ export default function BillingReportsWithDownload({
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Invoice
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Customer
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Building
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Unit/Floor
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Period Start
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Period End
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Due Date
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Amount
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Installation Fee
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Days Overdue
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
@@ -939,86 +950,135 @@ export default function BillingReportsWithDownload({
                       {filteredBills.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={13}
                             className="px-3 py-8 text-center text-gray-500"
                           >
                             No bills found with the current filters
                           </td>
                         </tr>
                       ) : (
-                        filteredBills.map((bill) => (
-                          <tr key={bill._id} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 font-mono text-xs">
-                              {bill.invoiceNumber}
-                            </td>
-                            <td className="px-3 py-2">
-                              <p className="text-sm font-medium">
-                                {bill.customerName || "-"}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {bill.customerEmail || "-"}
-                              </p>
-                            </td>
-                            <td className="px-3 py-2 text-xs">
-                              {bill.buildingName || "-"}
-                            </td>
-                            <td className="px-3 py-2 text-xs">
-                              {new Date(bill.dueDate).toLocaleDateString()}
-                            </td>
-                            <td className="px-3 py-2 text-xs font-medium text-red-600">
-                              ₱{bill.total.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`px-2 py-0.5 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
-                              >
-                                {bill.status}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2">
-                              {bill.isInstallationBill &&
-                                !bill.installationFeePaid &&
-                                onMarkInstallationBillAsPaid && (
-                                  <button
-                                    onClick={() => {
-                                      const customer = customers.find(
-                                        (c) =>
-                                          c.applicationId ===
-                                          bill.applicationId,
-                                      );
-                                      if (customer)
-                                        onMarkInstallationBillAsPaid(
-                                          bill,
-                                          customer,
+                        filteredBills.map((bill) => {
+                          const periodStart = bill.billingPeriod?.start
+                            ? new Date(
+                                bill.billingPeriod.start,
+                              ).toLocaleDateString()
+                            : "-";
+                          const periodEnd = bill.billingPeriod?.end
+                            ? new Date(
+                                bill.billingPeriod.end,
+                              ).toLocaleDateString()
+                            : "-";
+                          const daysOverdue =
+                            bill.status === "overdue"
+                              ? Math.max(
+                                  0,
+                                  Math.floor(
+                                    (new Date().getTime() -
+                                      new Date(bill.dueDate).getTime()) /
+                                      (1000 * 60 * 60 * 24),
+                                  ),
+                                )
+                              : 0;
+
+                          return (
+                            <tr key={bill._id} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {bill.invoiceNumber}
+                              </td>
+                              <td className="px-3 py-2">
+                                <p className="text-sm font-medium">
+                                  {bill.customerName || "-"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {bill.customerEmail || "-"}
+                                </p>
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {bill.buildingName || "-"}
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {`${bill.unitNumber || ""} ${bill.floor ? `Fl. ${bill.floor}` : ""}`.trim() ||
+                                  "-"}
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {periodStart}
+                              </td>
+                              <td className="px-3 py-2 text-xs">{periodEnd}</td>
+                              <td className="px-3 py-2 text-xs">
+                                {new Date(bill.dueDate).toLocaleDateString()}
+                              </td>
+                              <td className="px-3 py-2 text-xs font-medium text-red-600">
+                                ₱{bill.total.toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                ₱{(bill.installationFee || 0).toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`px-2 py-0.5 text-xs rounded-full ${
+                                    bill.status === "overdue"
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-yellow-100 text-yellow-800"
+                                  }`}
+                                >
+                                  {bill.status}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {bill.isInstallationBill
+                                  ? "Installation"
+                                  : bill.isProRated
+                                    ? "Pro-rated"
+                                    : "Monthly"}
+                              </td>
+                              <td className="px-3 py-2 text-xs font-medium">
+                                {daysOverdue > 0 ? `${daysOverdue} days` : "-"}
+                              </td>
+                              <td className="px-3 py-2">
+                                {bill.isInstallationBill &&
+                                  !bill.installationFeePaid &&
+                                  onMarkInstallationBillAsPaid && (
+                                    <button
+                                      onClick={() => {
+                                        const customer = customers.find(
+                                          (c) =>
+                                            c.applicationId ===
+                                            bill.applicationId,
                                         );
-                                    }}
-                                    className="px-2 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
-                                  >
-                                    Mark Paid
-                                  </button>
-                                )}
-                              {!bill.isInstallationBill &&
-                                bill.status !== "paid" &&
-                                onMarkBillAsPaid && (
-                                  <button
-                                    onClick={() => {
-                                      const customer = customers.find(
-                                        (c) =>
-                                          c.applicationId ===
-                                            bill.applicationId ||
-                                          c._id === bill.userId?._id,
-                                      );
-                                      if (customer)
-                                        onMarkBillAsPaid(bill, customer);
-                                    }}
-                                    className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                                  >
-                                    Mark Paid
-                                  </button>
-                                )}
-                            </td>
-                          </tr>
-                        ))
+                                        if (customer)
+                                          onMarkInstallationBillAsPaid(
+                                            bill,
+                                            customer,
+                                          );
+                                      }}
+                                      className="px-2 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
+                                    >
+                                      Mark Paid
+                                    </button>
+                                  )}
+                                {!bill.isInstallationBill &&
+                                  bill.status !== "paid" &&
+                                  onMarkBillAsPaid && (
+                                    <button
+                                      onClick={() => {
+                                        const customer = customers.find(
+                                          (c) =>
+                                            c.applicationId ===
+                                              bill.applicationId ||
+                                            c._id === bill.userId?._id,
+                                        );
+                                        if (customer)
+                                          onMarkBillAsPaid(bill, customer);
+                                      }}
+                                      className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                    >
+                                      Mark Paid
+                                    </button>
+                                  )}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1072,7 +1132,11 @@ export default function BillingReportsWithDownload({
                                   </td>
                                   <td className="px-3 py-2">
                                     <span
-                                      className={`px-2 py-0.5 text-xs rounded-full ${bill.status === "overdue" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}
+                                      className={`px-2 py-0.5 text-xs rounded-full ${
+                                        bill.status === "overdue"
+                                          ? "bg-red-100 text-red-800"
+                                          : "bg-yellow-100 text-yellow-800"
+                                      }`}
                                     >
                                       {bill.status}
                                     </span>
