@@ -1665,6 +1665,7 @@ export default function AdminDashboardPage() {
           <StatsCard
             title="Monthly Revenue"
             value={isLoadingStats ? "—" : formatCurrency(stats.monthlyRevenue)}
+            icon={FiActivity}
             trend={{ value: 5, isPositive: true }}
             color="purple"
           />
