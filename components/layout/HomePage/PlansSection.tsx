@@ -102,10 +102,6 @@ export default function PlansSection() {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-full mb-4">
-            <FiZap className="w-4 h-4" />
-            <span className="text-sm font-semibold">Internet Plans</span>
-          </div>
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             Choose Your <span className="text-blue-600">Perfect Plan</span>
           </h2>
@@ -139,15 +135,6 @@ export default function PlansSection() {
                   {/* Popular Badge */}
                   {isPopular && (
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-blue-400"></div>
-                  )}
-
-                  {isPopular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                      <div className="bg-blue-600 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
-                        <FiStar className="w-3 h-3 fill-current" />
-                        Most Popular
-                      </div>
-                    </div>
                   )}
 
                   <div className="p-8 flex-1 flex flex-col">
@@ -254,60 +241,6 @@ export default function PlansSection() {
             );
           })}
         </div>
-
-        {/* Trust Badges */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          viewport={{ once: true }}
-          className="mt-20 grid grid-cols-1 md:grid-cols-4 gap-6 max-w-4xl mx-auto"
-        >
-          <div className="flex items-center gap-3 justify-center">
-            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-              <FiShield className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                No Contracts
-              </p>
-              <p className="text-xs text-gray-500">Cancel anytime</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 justify-center">
-            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-              <FiTrendingUp className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                99.9% Uptime
-              </p>
-              <p className="text-xs text-gray-500">Reliable connection</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 justify-center">
-            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-              <FiUsers className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                24/7 Support
-              </p>
-              <p className="text-xs text-gray-500">Dedicated team</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 justify-center">
-            <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-              <FiAward className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                Premium Quality
-              </p>
-              <p className="text-xs text-gray-500">Best service</p>
-            </div>
-          </div>
-        </motion.div>
       </div>
     </section>
   );
