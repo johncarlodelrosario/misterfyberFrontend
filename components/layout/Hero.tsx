@@ -102,8 +102,6 @@ export default function Hero({ stats }: HeroProps) {
         }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent"></div>
-        {/* Bottom gradient dim to #080616 */}
-        <div className="absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t from-[#080616] via-[#080616]/80 to-transparent"></div>
       </div>
 
       {/* MOBILE BACKGROUND - WITH FIXED ATTACHMENT */}
@@ -118,8 +116,6 @@ export default function Hero({ stats }: HeroProps) {
         }}
       >
         <div className="absolute inset-0 bg-black/60"></div>
-        {/* Bottom gradient dim to #080616 for mobile */}
-        <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-[#080616] via-[#080616]/80 to-transparent"></div>
       </div>
 
       {/* Navigation Arrows */}

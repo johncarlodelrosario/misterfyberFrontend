@@ -9,6 +9,11 @@ import {
   FiAlertCircle,
   FiArrowRight,
   FiStar,
+  FiWifi,
+  FiTrendingUp,
+  FiUsers,
+  FiClock,
+  FiZap,
 } from "react-icons/fi";
 import { getPlans, Plan } from "@/services/plan";
 
@@ -46,19 +51,16 @@ export default function PlansSection() {
 
   if (loading) {
     return (
-      <section
-        className="py-12 md:py-20"
-        style={{ backgroundColor: "#080616" }}
-      >
+      <section className="py-20 md:py-28 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col items-center justify-center py-12 md:py-20 bg-[#080616]/80 backdrop-blur-sm rounded-2xl border border-blue-900/30">
+          <div className="flex flex-col items-center justify-center py-20 md:py-28 bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-slate-100">
             <motion.div
               animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
             >
-              <FiLoader className="w-10 h-10 md:w-12 md:h-12 text-blue-400" />
+              <FiLoader className="w-14 h-14 md:w-20 md:h-20 text-blue-600" />
             </motion.div>
-            <p className="mt-4 text-blue-200/70 text-sm md:text-base">
+            <p className="mt-6 text-slate-500 text-sm md:text-base font-medium">
               Loading our plans...
             </p>
           </div>
@@ -69,19 +71,18 @@ export default function PlansSection() {
 
   if (error) {
     return (
-      <section
-        className="py-12 md:py-20"
-        style={{ backgroundColor: "#080616" }}
-      >
+      <section className="py-20 md:py-28 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center py-12 md:py-20 bg-[#080616]/80 backdrop-blur-sm rounded-2xl border border-blue-900/30">
-            <FiAlertCircle className="w-12 h-12 md:w-16 md:h-16 text-red-400 mx-auto mb-4" />
-            <p className="text-blue-200/70 text-base md:text-lg mb-4 px-4">
+          <div className="text-center py-20 md:py-28 bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-slate-100">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-6">
+              <FiAlertCircle className="w-12 h-12 md:w-16 md:h-16 text-red-500" />
+            </div>
+            <p className="text-slate-600 text-base md:text-lg mb-6 px-4 max-w-md mx-auto">
               {error}
             </p>
             <button
               onClick={fetchPlans}
-              className="mt-2 px-5 md:px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition"
+              className="px-8 md:px-10 py-3.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-xl hover:scale-105 transition-all duration-300"
             >
               Try Again
             </button>
@@ -96,35 +97,44 @@ export default function PlansSection() {
   }
 
   return (
-    <section
-      className="py-12 md:py-20 relative overflow-hidden"
-      style={{ backgroundColor: "#080616" }}
-    >
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
+    <section className="py-20 md:py-28 relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-slate-50">
+      {/* Enhanced background decorative elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-48 -right-48 w-96 h-96 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-48 -left-48 w-96 h-96 bg-gradient-to-tr from-purple-400/20 to-pink-400/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-blue-50/20 to-purple-50/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-200/50 to-transparent"></div>
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-200/50 to-transparent"></div>
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.7 }}
           viewport={{ once: true }}
-          className="text-center mb-8 md:mb-12"
+          className="text-center mb-14 md:mb-20"
         >
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 md:mb-4">
+          <div className="inline-flex items-center gap-2.5 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-100/50 text-blue-600 px-5 py-2.5 rounded-full mb-5 shadow-sm">
+            <FiZap className="w-4 h-4" />
+            <span className="text-xs md:text-sm font-semibold tracking-wide">
+              Premium Internet Plans
+            </span>
+          </div>
+          <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-slate-900 mb-5 leading-tight">
             Choose Your{" "}
-            <span className="bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
-              Internet Plan
+            <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+              Perfect Plan
             </span>
           </h2>
-          <p className="text-xs sm:text-sm md:text-base text-blue-200/60 max-w-2xl mx-auto px-4">
-            Select the perfect plan that fits your lifestyle. No hidden fees, no
-            contracts, just pure internet bliss.
+          <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto px-4 leading-relaxed">
+            Select the ideal plan that matches your lifestyle. Enjoy
+            lightning-fast internet with no hidden fees, no contracts, and
+            unlimited possibilities.
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6 items-stretch">
           {plans.map((plan, idx) => {
             const isPopular = idx === 1;
             return (
@@ -132,96 +142,240 @@ export default function PlansSection() {
                 key={plan._id}
                 initial={{ opacity: 0, y: 50 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.1, duration: 0.6 }}
+                transition={{
+                  delay: idx * 0.12,
+                  duration: 0.6,
+                  type: "spring",
+                  stiffness: 100,
+                }}
                 viewport={{ once: true }}
-                whileHover={{ y: -8 }}
-                className={`relative bg-[#080616]/80 backdrop-blur-sm rounded-2xl transition-all duration-300 ${
-                  isPopular
-                    ? "border-2 border-blue-500/70 shadow-xl shadow-blue-500/20 hover:shadow-blue-500/30"
-                    : "border border-blue-500/30 shadow-lg hover:shadow-xl hover:border-blue-500/50"
+                whileHover={{ y: -16, transition: { duration: 0.2 } }}
+                className={`relative group ${
+                  isPopular ? "md:-mt-6 md:mb-6 z-10" : "z-0"
                 }`}
               >
-                {isPopular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                    <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-[10px] md:text-xs font-bold px-3 md:px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
-                      <FiStar className="w-2.5 h-2.5 md:w-3 md:h-3" />
-                      Most Popular
-                    </div>
-                  </div>
-                )}
-                <div className="p-4 md:p-7">
-                  <h3 className="text-lg md:text-2xl font-bold text-white mb-1 md:mb-2">
-                    {plan.name}
-                  </h3>
-                  <p className="text-[11px] md:text-sm text-blue-200/60 mb-3 md:mb-5">
-                    {plan.description}
-                  </p>
-                  <div className="mb-3 md:mb-5">
-                    <span className="text-2xl md:text-4xl font-bold text-white">
-                      {formatPrice(plan.price)}
-                    </span>
-                    <span className="text-blue-200/50 text-xs md:text-sm ml-1">
-                      /month
-                    </span>
-                  </div>
-                  <div className="bg-[#080616]/80 rounded-xl p-2 md:p-4 mb-4 md:mb-6 border border-blue-900/50">
-                    <div className="flex justify-between items-center">
-                      <div className="text-center flex-1">
-                        <p className="text-[10px] md:text-xs text-blue-200/50 mb-1">
-                          Download
-                        </p>
-                        <p className="text-sm md:text-lg font-bold text-white">
-                          {plan.speed.download}{" "}
-                          <span className="text-[10px] md:text-sm font-normal text-blue-200/50">
-                            Mbps
-                          </span>
-                        </p>
-                      </div>
-                      <div className="w-px h-6 md:h-10 bg-blue-900/50" />
-                      <div className="text-center flex-1">
-                        <p className="text-[10px] md:text-xs text-blue-200/50 mb-1">
-                          Upload
-                        </p>
-                        <p className="text-sm md:text-lg font-bold text-white">
-                          {plan.speed.upload}{" "}
-                          <span className="text-[10px] md:text-sm font-normal text-blue-200/50">
-                            Mbps
-                          </span>
-                        </p>
+                <div
+                  className={`relative bg-white rounded-3xl overflow-hidden transition-all duration-500 h-full flex flex-col ${
+                    isPopular
+                      ? "shadow-2xl shadow-blue-200/50 ring-2 ring-blue-500 hover:shadow-3xl hover:ring-blue-600 scale-100 hover:scale-[1.02]"
+                      : "shadow-lg hover:shadow-2xl ring-1 ring-slate-200 hover:ring-blue-400"
+                  }`}
+                >
+                  {/* Popular plan gradient background - keeping it white with subtle overlay */}
+                  {isPopular && (
+                    <>
+                      <div className="absolute inset-0 bg-white"></div>
+                      <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+                    </>
+                  )}
+
+                  {/* Popular badge - Enhanced */}
+                  {isPopular && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 w-auto">
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full blur-md opacity-70"></div>
+                        <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white text-[11px] md:text-xs font-bold px-5 py-2 rounded-full shadow-lg flex items-center gap-2 animate-pulse-slow">
+                          <FiStar className="w-3.5 h-3.5 fill-current" />
+                          Most Popular
+                          <FiStar className="w-3.5 h-3.5 fill-current" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <ul className="space-y-1.5 md:space-y-3 mb-4 md:mb-8">
-                    {plan.features.slice(0, 5).map((feature, i) => (
-                      <motion.li
-                        key={i}
-                        initial={{ opacity: 0, x: -10 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.1 + i * 0.05 }}
-                        viewport={{ once: true }}
-                        className="flex items-start gap-1.5 md:gap-2 text-[11px] md:text-sm text-blue-200/70"
+                  )}
+
+                  <div className="p-7 md:p-9 flex-1 flex flex-col bg-white rounded-3xl">
+                    {/* Header with plan info */}
+                    <div className="flex items-start justify-between mb-5">
+                      <div className="flex-1">
+                        <h3
+                          className={`text-2xl md:text-3xl font-bold mb-1.5 text-slate-900`}
+                        >
+                          {plan.name}
+                        </h3>
+                        <p className="text-sm text-slate-500 leading-relaxed">
+                          {plan.description}
+                        </p>
+                      </div>
+                      <div
+                        className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ml-4 ${
+                          isPopular
+                            ? "bg-gradient-to-br from-blue-500 to-purple-500 shadow-lg shadow-blue-200/50"
+                            : "bg-gradient-to-br from-slate-100 to-slate-200"
+                        }`}
                       >
-                        <FiCheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </motion.li>
-                    ))}
-                  </ul>
-                  <a
-                    href={`/apply?plan=${plan._id}`}
-                    className={`block w-full text-center py-2 md:py-3 rounded-xl font-semibold transition-all duration-300 text-xs md:text-base ${
-                      isPopular
-                        ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg hover:opacity-90"
-                        : "bg-blue-900/50 text-blue-200 hover:bg-blue-900/70"
-                    }`}
-                  >
-                    Get Started
-                    <FiArrowRight className="inline ml-1.5 md:ml-2 w-3 h-3 md:w-4 md:h-4" />
-                  </a>
+                        <FiWifi
+                          className={`w-6 h-6 md:w-7 md:h-7 ${
+                            isPopular ? "text-white" : "text-blue-600"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Price */}
+                    <div className="mb-6">
+                      <span
+                        className={`text-4xl md:text-6xl font-bold text-slate-900`}
+                      >
+                        {formatPrice(plan.price)}
+                      </span>
+                      <span className="text-slate-400 text-sm ml-1.5 font-medium">
+                        /month
+                      </span>
+                    </div>
+
+                    {/* Speed indicators */}
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div
+                        className={`rounded-2xl p-3.5 text-center transition-all duration-300 ${
+                          isPopular
+                            ? "bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-100/50"
+                            : "bg-slate-50 border border-slate-100 hover:bg-slate-100"
+                        }`}
+                      >
+                        <p className="text-xs text-slate-400 font-medium mb-1">
+                          Download Speed
+                        </p>
+                        <p
+                          className={`text-lg md:text-xl font-bold ${
+                            isPopular ? "text-blue-600" : "text-slate-900"
+                          }`}
+                        >
+                          {plan.speed.download}
+                          <span className="text-xs font-normal text-slate-400 ml-1">
+                            Mbps
+                          </span>
+                        </p>
+                      </div>
+                      <div
+                        className={`rounded-2xl p-3.5 text-center transition-all duration-300 ${
+                          isPopular
+                            ? "bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100/50"
+                            : "bg-slate-50 border border-slate-100 hover:bg-slate-100"
+                        }`}
+                      >
+                        <p className="text-xs text-slate-400 font-medium mb-1">
+                          Upload Speed
+                        </p>
+                        <p
+                          className={`text-lg md:text-xl font-bold ${
+                            isPopular ? "text-purple-600" : "text-slate-900"
+                          }`}
+                        >
+                          {plan.speed.upload}
+                          <span className="text-xs font-normal text-slate-400 ml-1">
+                            Mbps
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Features */}
+                    <div className="mb-7 flex-1">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3.5">
+                        Key Features
+                      </p>
+                      <ul className="space-y-3">
+                        {plan.features.slice(0, 5).map((feature, i) => (
+                          <motion.li
+                            key={i}
+                            initial={{ opacity: 0, x: -10 }}
+                            whileInView={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.1 + i * 0.07 }}
+                            viewport={{ once: true }}
+                            className="flex items-start gap-3 text-sm text-slate-600"
+                          >
+                            <FiCheckCircle
+                              className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                                isPopular ? "text-blue-600" : "text-slate-400"
+                              }`}
+                            />
+                            <span className="leading-relaxed">{feature}</span>
+                          </motion.li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* CTA Button */}
+                    <a
+                      href={`/apply?plan=${plan._id}`}
+                      className={`block w-full text-center py-4 rounded-2xl font-semibold transition-all duration-300 text-sm group/btn ${
+                        isPopular
+                          ? "bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:scale-[1.02] active:scale-[0.98]"
+                      }`}
+                    >
+                      {isPopular && (
+                        <span className="absolute inset-0 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></span>
+                      )}
+                      <span className="relative flex items-center justify-center gap-2">
+                        Get Started
+                        <FiArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                      </span>
+                    </a>
+
+                    {/* Popular plan extra tag */}
+                    {isPopular && (
+                      <div className="mt-3 text-center">
+                        <span className="text-xs text-blue-600 font-medium bg-blue-50 px-3 py-1 rounded-full">
+                          ⚡ Best value for money
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             );
           })}
         </div>
+
+        {/* Enhanced Trust indicators */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.4 }}
+          viewport={{ once: true }}
+          className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto"
+        >
+          <div className="flex items-center gap-4 justify-center p-4 rounded-2xl bg-white/50 backdrop-blur-sm border border-slate-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
+              <FiCheckCircle className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                No Contracts
+              </p>
+              <p className="text-xs text-slate-500">
+                Cancel anytime, hassle-free
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 justify-center p-4 rounded-2xl bg-white/50 backdrop-blur-sm border border-slate-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+              <FiTrendingUp className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                99.9% Uptime
+              </p>
+              <p className="text-xs text-slate-500">
+                Reliable connection guaranteed
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 justify-center p-4 rounded-2xl bg-white/50 backdrop-blur-sm border border-slate-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center flex-shrink-0">
+              <FiUsers className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                24/7 Support
+              </p>
+              <p className="text-xs text-slate-500">
+                Dedicated team, always ready
+              </p>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   );
