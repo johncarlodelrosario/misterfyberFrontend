@@ -7,11 +7,11 @@ import { motion } from "framer-motion";
 const JoinFamilySection: React.FC = () => {
   return (
     <section className="relative w-full py-12 md:py-16 lg:py-20 overflow-hidden">
-      {/* Background container with Fam.png image */}
+      {/* Background container with joinourfam.png image */}
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `url('/Fam.png')`,
+          backgroundImage: `url('/joinourfam.png')`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
@@ -21,8 +21,8 @@ const JoinFamilySection: React.FC = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-[#080616] via-black/50 to-black/70"></div>
       </div>
 
-      {/* Content container with max-width constraints */}
-      <div className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 lg:px-12 text-center">
+      {/* Content container with max-width constraints - text on left */}
+      <div className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 lg:px-12 text-left">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
