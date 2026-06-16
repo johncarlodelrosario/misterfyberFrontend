@@ -6,14 +6,15 @@ import emailService, {
   Customer,
   Bill,
   EmailTemplate,
+  EmailSentRecord,
 } from "@/services/emailService";
 import toast from "react-hot-toast";
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<"single" | "bulk" | "templates">(
-    "single",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "single" | "bulk" | "templates" | "sent"
+  >("single");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
@@ -21,6 +22,7 @@ export default function ManualEmailPage() {
   );
   const [customerBills, setCustomerBills] = useState<Bill[]>([]);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [sentRecords, setSentRecords] = useState<EmailSentRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +39,7 @@ export default function ManualEmailPage() {
   const [bulkBillType, setBulkBillType] = useState<
     "unpaid" | "latest" | "installation"
   >("unpaid");
+  const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -61,6 +64,7 @@ export default function ManualEmailPage() {
   useEffect(() => {
     loadCustomers();
     loadTemplates();
+    loadSentRecords();
   }, []);
 
   const loadCustomers = async (search?: string) => {
@@ -101,6 +105,15 @@ export default function ManualEmailPage() {
       setTemplates(data);
     } catch (error) {
       console.error("Failed to load templates:", error);
+    }
+  };
+
+  const loadSentRecords = async () => {
+    try {
+      const data = await emailService.getSentRecords();
+      setSentRecords(data);
+    } catch (error) {
+      console.error("Failed to load sent records:", error);
     }
   };
 
@@ -188,6 +201,7 @@ export default function ManualEmailPage() {
       toast.success(
         `Email sent successfully to ${selectedCustomer.firstName} ${selectedCustomer.lastName}`,
       );
+      await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send email:", error);
       toast.error(error.response?.data?.message || "Failed to send email");
@@ -218,6 +232,7 @@ export default function ManualEmailPage() {
         sendCopyToAdmin,
       });
       toast.success(result.message);
+      await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send bulk emails:", error);
       toast.error(
@@ -238,6 +253,7 @@ export default function ManualEmailPage() {
       toast.success(result.message);
       setShowReminderDialog(false);
       setReminderMessage("");
+      await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
@@ -274,11 +290,24 @@ export default function ManualEmailPage() {
     if (window.confirm("Are you sure you want to delete this template?")) {
       try {
         await emailService.deleteTemplate(templateId);
-        toast.success("Template deleted");
+        toast.success("Template deleted successfully");
         await loadTemplates();
       } catch (error) {
         console.error("Failed to delete template:", error);
         toast.error("Failed to delete template");
+      }
+    }
+  };
+
+  const handleDeleteSentRecord = async (recordId: string) => {
+    if (window.confirm("Are you sure you want to delete this record?")) {
+      try {
+        await emailService.deleteSentRecord(recordId);
+        toast.success("Record deleted successfully");
+        await loadSentRecords();
+      } catch (error) {
+        console.error("Failed to delete record:", error);
+        toast.error("Failed to delete record");
       }
     }
   };
@@ -290,6 +319,24 @@ export default function ManualEmailPage() {
       c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.applicationId?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
+
+  const filteredUnpaidCustomers = filteredCustomers.filter(
+    (c) => c.hasUnpaidBills === true,
+  );
+
+  const displayCustomers = showUnpaidOnly
+    ? filteredUnpaidCustomers
+    : filteredCustomers;
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -312,6 +359,7 @@ export default function ManualEmailPage() {
               { id: "single", name: "Single Email", icon: "✉️" },
               { id: "bulk", name: "Bulk Email", icon: "👥" },
               { id: "templates", name: "Templates", icon: "📄" },
+              { id: "sent", name: "Sent Records", icon: "📨" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -595,13 +643,25 @@ export default function ManualEmailPage() {
                 Select Customers
               </h2>
 
-              <input
-                type="text"
-                placeholder="Search customers..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  placeholder="Search customers..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <button
+                  onClick={() => setShowUnpaidOnly(!showUnpaidOnly)}
+                  className={`px-4 py-2 rounded-lg border transition-colors ${
+                    showUnpaidOnly
+                      ? "bg-red-100 border-red-300 text-red-700"
+                      : "bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {showUnpaidOnly ? "🔴 Unpaid Only" : "Show All"}
+                </button>
+              </div>
 
               {loading && (
                 <div className="flex justify-center py-8">
@@ -617,12 +677,16 @@ export default function ManualEmailPage() {
 
               {!loading && !error && (
                 <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                  {filteredCustomers.length === 0 ? (
+                  {displayCustomers.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                      <p>No customers found</p>
+                      <p>
+                        {showUnpaidOnly
+                          ? "No unpaid customers found"
+                          : "No customers found"}
+                      </p>
                     </div>
                   ) : (
-                    filteredCustomers.map((customer) => (
+                    displayCustomers.map((customer) => (
                       <label
                         key={customer._id}
                         className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
@@ -655,16 +719,32 @@ export default function ManualEmailPage() {
                             }
                           }}
                         />
-                        <div className="ml-3">
-                          <p className="font-medium text-gray-900">
-                            {customer.firstName} {customer.lastName}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {customer.email}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            ID: {customer.applicationId}
-                          </p>
+                        <div className="ml-3 flex-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {customer.firstName} {customer.lastName}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                {customer.email}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                ID: {customer.applicationId}
+                              </p>
+                            </div>
+                            {customer.hasUnpaidBills && (
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                ⚠️ Unpaid
+                              </span>
+                            )}
+                          </div>
+                          {customer.lastBillAmount > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Last Bill: ₱
+                              {customer.lastBillAmount.toLocaleString()} -{" "}
+                              {customer.lastBillStatus || "N/A"}
+                            </p>
+                          )}
                         </div>
                       </label>
                     ))
@@ -676,6 +756,14 @@ export default function ManualEmailPage() {
                 <p className="text-sm text-gray-600">
                   Selected: <strong>{selectedCustomers.length}</strong>{" "}
                   customer(s)
+                  {selectedCustomers.filter((c) => c.hasUnpaidBills).length >
+                    0 && (
+                    <span className="ml-2 text-red-600">
+                      (
+                      {selectedCustomers.filter((c) => c.hasUnpaidBills).length}{" "}
+                      unpaid)
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -810,6 +898,7 @@ export default function ManualEmailPage() {
                     <button
                       onClick={() => handleDeleteTemplate(template.id)}
                       className="text-red-500 hover:text-red-700 transition-colors"
+                      title="Delete template"
                     >
                       🗑️
                     </button>
@@ -846,6 +935,129 @@ export default function ManualEmailPage() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Sent Records Tab */}
+        {activeTab === "sent" && (
+          <div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  📨 Sent Email Records
+                </h2>
+                <button
+                  onClick={loadSentRecords}
+                  className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  🔄 Refresh
+                </button>
+              </div>
+
+              {loading && (
+                <div className="flex justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+
+              {!loading && sentRecords.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <p className="text-4xl mb-4">📭</p>
+                  <p>No sent email records found</p>
+                  <p className="text-sm mt-2">Emails sent will appear here</p>
+                </div>
+              )}
+
+              {!loading && sentRecords.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          To
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Subject
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {sentRecords.map((record) => (
+                        <tr
+                          key={record.id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="py-3 px-4 text-sm text-gray-600">
+                            {formatDate(record.sentAt)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {record.customerName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {record.customerEmail}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                ID: {record.applicationId}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
+                            {record.subject}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                record.isBulk
+                                  ? "bg-purple-100 text-purple-700"
+                                  : "bg-blue-100 text-blue-700"
+                              }`}
+                            >
+                              {record.isBulk ? "Bulk" : "Single"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                record.status === "sent"
+                                  ? "bg-green-100 text-green-700"
+                                  : record.status === "failed"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {record.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => handleDeleteSentRecord(record.id)}
+                              className="text-red-500 hover:text-red-700 transition-colors text-sm"
+                              title="Delete record"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

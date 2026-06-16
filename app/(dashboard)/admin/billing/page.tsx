@@ -1721,10 +1721,13 @@ export default function AdminBillingPage() {
             msOverflowStyle: "auto",
           }}
         >
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1000px]">
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1100px]">
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20">
+                    #
+                  </th>
                   <th
                     className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
                     onClick={() => handleSort("name")}
@@ -1785,7 +1788,7 @@ export default function AdminBillingPage() {
                 {sortedAndFilteredCustomers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
                     >
                       No customers found
@@ -1810,6 +1813,11 @@ export default function AdminBillingPage() {
                         key={`${customer.type}-${customer._id}`}
                         className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
                       >
+                        <td className="px-3 py-2 border-r border-gray-200 text-center bg-white sticky left-0 z-10">
+                          <span className="text-sm font-medium text-gray-500">
+                            {idx + 1}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 border-r border-gray-200">
                           <div className="flex items-center gap-2">
                             {customer.type === "application" ? (

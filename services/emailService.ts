@@ -39,6 +39,22 @@ export interface EmailTemplate {
   updatedBy: string;
 }
 
+export interface EmailSentRecord {
+  id: string;
+  applicationId: string;
+  customerName: string;
+  customerEmail: string;
+  subject: string;
+  message: string;
+  sentAt: string;
+  status: "sent" | "failed" | "pending";
+  isBulk: boolean;
+  recipientCount?: number;
+  includeBilling: boolean;
+  billType?: string;
+  error?: string;
+}
+
 export interface SendEmailParams {
   applicationId: string;
   subject: string;
@@ -185,6 +201,39 @@ class EmailService {
       return response.data.data;
     } catch (error) {
       console.error("Failed to preview email:", error);
+      throw error;
+    }
+  }
+
+  // Get sent email records
+  async getSentRecords(params?: {
+    applicationId?: string;
+    status?: string;
+    isBulk?: boolean;
+  }): Promise<EmailSentRecord[]> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.applicationId)
+        queryParams.append("applicationId", params.applicationId);
+      if (params?.status) queryParams.append("status", params.status);
+      if (params?.isBulk !== undefined)
+        queryParams.append("isBulk", String(params.isBulk));
+
+      const url = `${this.baseUrl}/sent-records${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const response = await api.get(url);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to fetch sent records:", error);
+      throw error;
+    }
+  }
+
+  // Delete a sent record
+  async deleteSentRecord(recordId: string): Promise<void> {
+    try {
+      await api.delete(`${this.baseUrl}/sent-records/${recordId}`);
+    } catch (error) {
+      console.error("Failed to delete sent record:", error);
       throw error;
     }
   }
