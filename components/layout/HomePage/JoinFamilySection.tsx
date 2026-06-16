@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 
 const JoinFamilySection: React.FC = () => {
   return (
-    <section className="relative w-full py-12 md:py-16 lg:py-20 overflow-hidden">
+    <section className="relative w-full py-24 md:py-32 lg:py-40 overflow-hidden">
       {/* Background container with joinourfam.png image */}
       <div
         className="absolute inset-0"
@@ -29,18 +29,6 @@ const JoinFamilySection: React.FC = () => {
           transition={{ duration: 0.6, ease: "easeOut" }}
           viewport={{ once: true }}
         >
-          {/* Badge/Subtitle */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-            viewport={{ once: true }}
-          >
-            <span className="inline-block px-3 py-1 mb-4 text-xs font-semibold text-[#00A3E0] bg-white/10 backdrop-blur-sm rounded-full">
-              Join Our Community
-            </span>
-          </motion.div>
-
           {/* Main Heading - Smaller font */}
           <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight">
             Ready to Join{" "}
@@ -72,9 +60,6 @@ const JoinFamilySection: React.FC = () => {
             viewport={{ once: true }}
             className="mt-6 md:mt-8 pt-4 md:pt-6 border-t border-white/10"
           >
-            <p className="text-xs text-gray-300 mb-2">
-              Trusted by thousands of happy customers
-            </p>
             <div className="flex flex-wrap justify-center gap-3 md:gap-4 text-gray-300 text-xs">
               <span>✓ 24/7 Support</span>
               <span>✓ 99.9% Uptime</span>
