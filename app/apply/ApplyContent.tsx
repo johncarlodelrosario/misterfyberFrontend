@@ -272,20 +272,20 @@ export default function ApplyContent() {
         planSpeed={getSelectedPlanSpeed()}
       />
 
-      <div className="min-h-screen bg-[#080616] pt-24 pb-16">
+      <div className="min-h-screen bg-white pt-24 pb-16">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="text-center mb-8"
           >
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3">
               Apply for{" "}
-              <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
                 Internet Service
               </span>
             </h1>
-            <p className="text-gray-300 max-w-2xl mx-auto text-sm sm:text-base px-4">
+            <p className="text-gray-600 max-w-2xl mx-auto text-sm sm:text-base px-4">
               Fill out the form below to start your internet connection
             </p>
           </motion.div>
@@ -294,15 +294,15 @@ export default function ApplyContent() {
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="max-w-2xl mx-auto bg-[#0f172a] rounded-2xl shadow-xl p-6 sm:p-8 text-center border border-blue-800/30"
+              className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-6 sm:p-8 text-center border border-gray-200"
             >
               <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <FiCheckCircle className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" />
               </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-3">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
                 Application Submitted!
               </h2>
-              <p className="text-gray-300 mb-6 text-sm sm:text-base">
+              <p className="text-gray-600 mb-6 text-sm sm:text-base">
                 Thank you for applying. Our team will review your application
                 and contact you within 24-48 hours.
               </p>
@@ -327,7 +327,7 @@ export default function ApplyContent() {
                   setAcceptedTerms(false);
                   window.scrollTo(0, 0);
                 }}
-                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-500 to-emerald-500 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
+                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
               >
                 Apply Again
               </button>
@@ -340,15 +340,15 @@ export default function ApplyContent() {
                   <motion.div
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 border border-gray-200"
                   >
-                    <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
-                      <FiUser className="text-blue-400" />
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <FiUser className="text-blue-600" />
                       Personal Information
                     </h2>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           First Name *
                         </label>
                         <input
@@ -357,11 +357,11 @@ export default function ApplyContent() {
                           value={formData.firstName}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Last Name *
                         </label>
                         <input
@@ -370,11 +370,11 @@ export default function ApplyContent() {
                           value={formData.lastName}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Email Address *
                         </label>
                         <input
@@ -383,11 +383,11 @@ export default function ApplyContent() {
                           value={formData.email}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Phone Number *
                         </label>
                         <input
@@ -396,7 +396,7 @@ export default function ApplyContent() {
                           value={formData.phoneNumber}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                         />
                       </div>
                     </div>
@@ -407,19 +407,19 @@ export default function ApplyContent() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 border border-gray-200"
                   >
-                    <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
-                      <FiMapPin className="text-blue-400" />
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <FiMapPin className="text-blue-600" />
                       Address Information
                     </h2>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Select Building *
                         </label>
                         {loadingBuildings ? (
-                          <div className="flex items-center gap-2 text-gray-400 text-sm">
+                          <div className="flex items-center gap-2 text-gray-500 text-sm">
                             <FiLoader className="w-4 h-4 animate-spin" />
                             Loading buildings...
                           </div>
@@ -430,7 +430,7 @@ export default function ApplyContent() {
                               handleBuildingChange(e.target.value)
                             }
                             required
-                            className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base"
+                            className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base"
                           >
                             <option value="" disabled className="text-gray-400">
                               Select a building
@@ -439,7 +439,7 @@ export default function ApplyContent() {
                               <option
                                 key={building._id}
                                 value={building._id}
-                                className="text-white"
+                                className="text-gray-900"
                               >
                                 {building.buildingName}
                               </option>
@@ -448,8 +448,8 @@ export default function ApplyContent() {
                         )}
                       </div>
                       {selectedBuildingDetails && (
-                        <div className="bg-blue-900/30 p-3 rounded-lg border border-blue-700/50">
-                          <p className="text-xs sm:text-sm text-blue-200">
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                          <p className="text-xs sm:text-sm text-blue-800">
                             {selectedBuildingDetails.buildingName}
                             <br />
                             {selectedBuildingDetails.streetAddress},{" "}
@@ -463,7 +463,7 @@ export default function ApplyContent() {
                       )}
                       <div className="grid sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                             Floor
                           </label>
                           <input
@@ -472,11 +472,11 @@ export default function ApplyContent() {
                             value={formData.floor}
                             onChange={handleInputChange}
                             placeholder="Floor number"
-                            className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                            className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                             Unit Number
                           </label>
                           <input
@@ -485,7 +485,7 @@ export default function ApplyContent() {
                             value={formData.unitNumber}
                             onChange={handleInputChange}
                             placeholder="Unit #"
-                            className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                            className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                           />
                         </div>
                       </div>
@@ -497,10 +497,10 @@ export default function ApplyContent() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 border border-gray-200"
                   >
-                    <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
-                      <FiClipboard className="text-blue-400" />
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <FiClipboard className="text-blue-600" />
                       Additional Notes (Optional)
                     </h2>
                     <div>
@@ -510,9 +510,9 @@ export default function ApplyContent() {
                         onChange={handleInputChange}
                         placeholder="Any special requests or additional information you'd like to share? (e.g., preferred installation date, special instructions, etc.)"
                         rows={4}
-                        className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-white text-sm sm:text-base placeholder-gray-500"
+                        className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-gray-900 text-sm sm:text-base placeholder-gray-400"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-500 mt-1">
                         Max 500 characters. Tell us anything we should know
                         about your application.
                       </p>
@@ -524,15 +524,15 @@ export default function ApplyContent() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 border border-gray-200"
                   >
-                    <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
-                      <FiFileText className="text-blue-400" />
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <FiFileText className="text-blue-600" />
                       ID Verification
                     </h2>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           ID Type *
                         </label>
                         <select
@@ -540,7 +540,7 @@ export default function ApplyContent() {
                           value={formData.idType}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base"
                         >
                           <option value="" className="text-gray-400">
                             Select ID type
@@ -576,7 +576,7 @@ export default function ApplyContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           ID Number *
                         </label>
                         <input
@@ -585,15 +585,15 @@ export default function ApplyContent() {
                           value={formData.idNumber}
                           onChange={handleInputChange}
                           required
-                          className="w-full px-4 py-2 bg-[#1e293b] border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm sm:text-base placeholder-gray-500"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
                         />
                       </div>
                     </div>
                     <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Upload ID Image *
                       </label>
-                      <div className="border-2 border-dashed border-gray-600 rounded-lg p-4 text-center hover:border-blue-500 transition bg-[#1e293b]/50">
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-500 transition bg-gray-50">
                         <input
                           type="file"
                           accept="image/*"
@@ -610,17 +610,17 @@ export default function ApplyContent() {
                                 alt="ID Preview"
                                 className="max-h-40 mx-auto rounded"
                               />
-                              <p className="text-sm text-blue-400">
+                              <p className="text-sm text-blue-600">
                                 Click to change
                               </p>
                             </div>
                           ) : (
                             <div className="space-y-2">
                               <FiUpload className="w-8 h-8 mx-auto text-gray-400" />
-                              <p className="text-sm text-gray-300">
+                              <p className="text-sm text-gray-600">
                                 Click to upload ID image
                               </p>
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs text-gray-400">
                                 JPG, PNG, JPEG (Max 5MB)
                               </p>
                             </div>
@@ -635,7 +635,7 @@ export default function ApplyContent() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.25 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 border border-gray-200"
                   >
                     <div className="flex items-start gap-3">
                       <button
@@ -644,34 +644,34 @@ export default function ApplyContent() {
                         className="mt-0.5 flex-shrink-0"
                       >
                         {acceptedTerms ? (
-                          <FiCheckSquare className="w-5 h-5 text-blue-500" />
+                          <FiCheckSquare className="w-5 h-5 text-blue-600" />
                         ) : (
-                          <FiSquare className="w-5 h-5 text-gray-400 hover:text-blue-400 transition" />
+                          <FiSquare className="w-5 h-5 text-gray-400 hover:text-blue-600 transition" />
                         )}
                       </button>
                       <div className="flex-1">
-                        <p className="text-sm text-gray-300">
+                        <p className="text-sm text-gray-700">
                           I have read, understood, and agree to the{" "}
                           <button
                             type="button"
                             onClick={() => setShowTermsModal(true)}
-                            className="text-blue-400 hover:text-blue-300 underline font-semibold"
+                            className="text-blue-600 hover:text-blue-800 underline font-semibold"
                           >
                             Terms and Conditions
                           </button>{" "}
                           of Mister Fyber's internet service. I confirm that I
                           avail Plan{" "}
-                          <span className="font-semibold text-white">
+                          <span className="font-semibold text-gray-900">
                             {getSelectedPlanName()}
                           </span>{" "}
                           with{" "}
-                          <span className="font-semibold text-white">
+                          <span className="font-semibold text-gray-900">
                             {getSelectedPlanSpeed()}
                           </span>
                           .
                         </p>
                         {!acceptedTerms && (
-                          <p className="text-xs text-red-400 mt-1">
+                          <p className="text-xs text-red-600 mt-1">
                             * You must accept the Terms and Conditions to
                             proceed
                           </p>
@@ -683,7 +683,7 @@ export default function ApplyContent() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-emerald-500 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 text-sm sm:text-base"
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 text-sm sm:text-base"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -701,14 +701,14 @@ export default function ApplyContent() {
                   <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="bg-[#0f172a] rounded-2xl shadow-lg p-5 sm:p-6 lg:sticky lg:top-24 border border-blue-800/30"
+                    className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 lg:sticky lg:top-24 border border-gray-200"
                   >
-                    <h2 className="text-lg sm:text-xl font-bold text-white mb-4">
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
                       Select Plan
                     </h2>
                     {loadingPlans ? (
                       <div className="text-center py-8">
-                        <FiLoader className="w-8 h-8 animate-spin mx-auto text-blue-400" />
+                        <FiLoader className="w-8 h-8 animate-spin mx-auto text-blue-600" />
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -717,8 +717,8 @@ export default function ApplyContent() {
                             key={plan._id}
                             className={`block p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition ${
                               selectedPlan === plan._id
-                                ? "border-blue-500 bg-blue-900/30"
-                                : "border-gray-700 hover:border-blue-400 bg-[#1e293b]"
+                                ? "border-blue-600 bg-blue-50"
+                                : "border-gray-200 hover:border-blue-400 bg-gray-50"
                             }`}
                           >
                             <input
@@ -731,15 +731,15 @@ export default function ApplyContent() {
                             />
                             <div className="flex justify-between items-start">
                               <div>
-                                <h3 className="font-bold text-white text-sm sm:text-base">
+                                <h3 className="font-bold text-gray-900 text-sm sm:text-base">
                                   {plan.name}
                                 </h3>
-                                <p className="text-xs text-gray-400 mt-1">
+                                <p className="text-xs text-gray-500 mt-1">
                                   {plan.speed?.download} Mbps
                                 </p>
                               </div>
                               <div className="text-right">
-                                <p className="font-bold text-blue-400 text-sm sm:text-base">
+                                <p className="font-bold text-blue-600 text-sm sm:text-base">
                                   ₱{plan.price.toLocaleString()}
                                 </p>
                                 <p className="text-xs text-gray-500">/month</p>
@@ -750,9 +750,9 @@ export default function ApplyContent() {
                       </div>
                     )}
                     {selectedPlanDetails && (
-                      <div className="mt-4 p-3 sm:p-4 bg-blue-900/20 rounded-lg border border-blue-800/30">
-                        <p className="text-xs sm:text-sm text-gray-300">
-                          <span className="font-semibold text-blue-300">
+                      <div className="mt-4 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-xs sm:text-sm text-gray-700">
+                          <span className="font-semibold text-blue-700">
                             Selected Plan:
                           </span>{" "}
                           {selectedPlanDetails.name} - ₱
@@ -760,13 +760,13 @@ export default function ApplyContent() {
                         </p>
                       </div>
                     )}
-                    <div className="mt-4 p-3 bg-blue-900/20 rounded-lg border border-blue-800/30">
-                      <p className="text-xs text-blue-300">
+                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-xs text-blue-700">
                         <FiAlertCircle className="inline mr-1" />
                         You can change the plan anytime before submitting
                       </p>
                     </div>
-                    <div className="mt-4 p-3 bg-[#1e293b] rounded-lg border border-gray-700"></div>
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200"></div>
                   </motion.div>
                 </div>
               </div>
