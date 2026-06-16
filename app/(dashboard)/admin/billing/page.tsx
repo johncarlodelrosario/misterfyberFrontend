@@ -1679,8 +1679,8 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons - FIXED AT PAGE CENTER */}
-      <div className="relative">
+      {/* Table with horizontal scroll buttons - FIXED AT PAGE CENTER, HIDDEN WHEN NOT IN TABLE SECTION */}
+      <div className="relative" id="table-section">
         {/* Scrollable table container with always-visible scrollbar */}
         <div
           ref={tableContainerRef}
@@ -2097,28 +2097,28 @@ export default function AdminBillingPage() {
           </div>
         </div>
 
-        {/* Left scroll button - fixed at page center left */}
+        {/* Left scroll button - fixed at page center left, hidden when not in table section */}
         <button
           onClick={scrollLeft}
           disabled={!canScrollLeft}
           className={`fixed left-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
             canScrollLeft
               ? "hover:bg-gray-100 cursor-pointer opacity-100"
-              : "opacity-40 cursor-not-allowed"
+              : "opacity-0 pointer-events-none"
           }`}
           title="Scroll left"
         >
           <FiChevronLeft className="w-6 h-6 text-gray-700" />
         </button>
 
-        {/* Right scroll button - fixed at page center right */}
+        {/* Right scroll button - fixed at page center right, hidden when not in table section */}
         <button
           onClick={scrollRight}
           disabled={!canScrollRight}
           className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
             canScrollRight
               ? "hover:bg-gray-100 cursor-pointer opacity-100"
-              : "opacity-40 cursor-not-allowed"
+              : "opacity-0 pointer-events-none"
           }`}
           title="Scroll right"
         >
