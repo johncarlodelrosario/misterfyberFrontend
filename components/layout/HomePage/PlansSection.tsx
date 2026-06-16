@@ -132,11 +132,6 @@ export default function PlansSection() {
                       : "shadow-lg hover:shadow-xl ring-1 ring-gray-200"
                   }`}
                 >
-                  {/* Popular Badge */}
-                  {isPopular && (
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-blue-400"></div>
-                  )}
-
                   <div className="p-8 flex-1 flex flex-col">
                     {/* Plan Name & Icon */}
                     <div className="flex items-start justify-between mb-6">
@@ -229,12 +224,6 @@ export default function PlansSection() {
                       Get Started
                       <FiArrowRight className="inline ml-2 w-4 h-4" />
                     </a>
-
-                    {isPopular && (
-                      <p className="text-xs text-center text-blue-600 mt-3 font-medium">
-                        ⚡ Best value for money
-                      </p>
-                    )}
                   </div>
                 </div>
               </motion.div>
