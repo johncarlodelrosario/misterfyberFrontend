@@ -55,6 +55,12 @@ export default function ManualEmailPage() {
     includeBillingDefault: false,
   });
 
+  // Edit Template dialog
+  const [showEditTemplateDialog, setShowEditTemplateDialog] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(
+    null,
+  );
+
   // Reminder dialog
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [reminderMessage, setReminderMessage] = useState("");
@@ -280,9 +286,51 @@ export default function ManualEmailPage() {
         includeBillingDefault: false,
       });
       await loadTemplates();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save template:", error);
-      toast.error("Failed to save template");
+      toast.error(error.response?.data?.message || "Failed to save template");
+    }
+  };
+
+  const handleEditTemplate = (template: EmailTemplate) => {
+    setEditingTemplate(template);
+    setNewTemplate({
+      name: template.name,
+      subject: template.subject,
+      message: template.message,
+      category: template.category,
+      includeBillingDefault: template.includeBillingDefault,
+    });
+    setShowEditTemplateDialog(true);
+  };
+
+  const handleUpdateTemplate = async () => {
+    if (!editingTemplate) {
+      toast.error("No template selected for editing");
+      return;
+    }
+
+    if (!newTemplate.name || !newTemplate.subject || !newTemplate.message) {
+      toast.error("Please fill in all template fields");
+      return;
+    }
+
+    try {
+      await emailService.updateTemplate(editingTemplate.id, newTemplate);
+      toast.success("Template updated successfully");
+      setShowEditTemplateDialog(false);
+      setEditingTemplate(null);
+      setNewTemplate({
+        name: "",
+        subject: "",
+        message: "",
+        category: "general",
+        includeBillingDefault: false,
+      });
+      await loadTemplates();
+    } catch (error: any) {
+      console.error("Failed to update template:", error);
+      toast.error(error.response?.data?.message || "Failed to update template");
     }
   };
 
@@ -895,13 +943,22 @@ export default function ManualEmailPage() {
                     <h3 className="font-semibold text-gray-900">
                       {template.name}
                     </h3>
-                    <button
-                      onClick={() => handleDeleteTemplate(template.id)}
-                      className="text-red-500 hover:text-red-700 transition-colors"
-                      title="Delete template"
-                    >
-                      🗑️
-                    </button>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => handleEditTemplate(template)}
+                        className="text-blue-500 hover:text-blue-700 transition-colors p-1"
+                        title="Edit template"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTemplate(template.id)}
+                        className="text-red-500 hover:text-red-700 transition-colors p-1"
+                        title="Delete template"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
                     Category: {template.category}
@@ -1090,7 +1147,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Template Dialog */}
+      {/* Save Template Dialog */}
       {showTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
@@ -1163,6 +1220,95 @@ export default function ManualEmailPage() {
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Save Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Template Dialog */}
+      {showEditTemplateDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold">Edit Email Template</h3>
+            </div>
+            <div className="p-4 space-y-4">
+              <input
+                type="text"
+                placeholder="Template Name"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                value={newTemplate.name}
+                onChange={(e) =>
+                  setNewTemplate({ ...newTemplate, name: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="Category"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                value={newTemplate.category}
+                onChange={(e) =>
+                  setNewTemplate({ ...newTemplate, category: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="Subject"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                value={newTemplate.subject}
+                onChange={(e) =>
+                  setNewTemplate({ ...newTemplate, subject: e.target.value })
+                }
+              />
+              <textarea
+                rows={4}
+                placeholder="Message"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                value={newTemplate.message}
+                onChange={(e) =>
+                  setNewTemplate({ ...newTemplate, message: e.target.value })
+                }
+              />
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                  checked={newTemplate.includeBillingDefault}
+                  onChange={(e) =>
+                    setNewTemplate({
+                      ...newTemplate,
+                      includeBillingDefault: e.target.checked,
+                    })
+                  }
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Include billing by default
+                </span>
+              </label>
+            </div>
+            <div className="p-4 border-t flex gap-3">
+              <button
+                onClick={() => {
+                  setShowEditTemplateDialog(false);
+                  setEditingTemplate(null);
+                  setNewTemplate({
+                    name: "",
+                    subject: "",
+                    message: "",
+                    category: "general",
+                    includeBillingDefault: false,
+                  });
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateTemplate}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Update Template
               </button>
             </div>
           </div>

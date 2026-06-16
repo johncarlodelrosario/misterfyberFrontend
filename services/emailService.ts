@@ -167,6 +167,23 @@ class EmailService {
     }
   }
 
+  // Update email template
+  async updateTemplate(
+    templateId: string,
+    template: Partial<Omit<EmailTemplate, "id" | "createdAt" | "updatedBy">>,
+  ): Promise<EmailTemplate> {
+    try {
+      const response = await api.put(
+        `${this.baseUrl}/templates/${templateId}`,
+        template,
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to update template:", error);
+      throw error;
+    }
+  }
+
   // Get all email templates
   async getTemplates(): Promise<EmailTemplate[]> {
     try {

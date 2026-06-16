@@ -1690,7 +1690,7 @@ export default function AdminBillingPage() {
               ? "hover:bg-gray-100 cursor-pointer"
               : "opacity-40 cursor-not-allowed"
           }`}
-          style={{ left: "-12px" }}
+          style={{ left: "0px" }}
           title="Scroll left"
         >
           <FiChevronLeft className="w-5 h-5 text-gray-600" />
@@ -1705,7 +1705,7 @@ export default function AdminBillingPage() {
               ? "hover:bg-gray-100 cursor-pointer"
               : "opacity-40 cursor-not-allowed"
           }`}
-          style={{ right: "-12px" }}
+          style={{ right: "0px" }}
           title="Scroll right"
         >
           <FiChevronRight className="w-5 h-5 text-gray-600" />
@@ -1725,9 +1725,7 @@ export default function AdminBillingPage() {
             <table className="min-w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-gray-100">
                 <tr className="border-b border-gray-300">
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20">
-                    #
-                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20"></th>
                   <th
                     className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
                     onClick={() => handleSort("name")}
