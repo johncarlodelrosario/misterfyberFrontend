@@ -1679,38 +1679,8 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons - ALWAYS SHOWN */}
+      {/* Table with horizontal scroll buttons - FIXED AT PAGE CENTER */}
       <div className="relative">
-        {/* Left scroll button - always visible */}
-        <button
-          onClick={scrollLeft}
-          disabled={!canScrollLeft}
-          className={`absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-r-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
-            canScrollLeft
-              ? "hover:bg-gray-100 cursor-pointer"
-              : "opacity-40 cursor-not-allowed"
-          }`}
-          style={{ left: "0px" }}
-          title="Scroll left"
-        >
-          <FiChevronLeft className="w-5 h-5 text-gray-600" />
-        </button>
-
-        {/* Right scroll button - always visible */}
-        <button
-          onClick={scrollRight}
-          disabled={!canScrollRight}
-          className={`absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white rounded-l-lg shadow-md p-2 transition-all duration-200 border border-gray-200 ${
-            canScrollRight
-              ? "hover:bg-gray-100 cursor-pointer"
-              : "opacity-40 cursor-not-allowed"
-          }`}
-          style={{ right: "0px" }}
-          title="Scroll right"
-        >
-          <FiChevronRight className="w-5 h-5 text-gray-600" />
-        </button>
-
         {/* Scrollable table container with always-visible scrollbar */}
         <div
           ref={tableContainerRef}
@@ -2126,6 +2096,34 @@ export default function AdminBillingPage() {
             </table>
           </div>
         </div>
+
+        {/* Left scroll button - fixed at page center left */}
+        <button
+          onClick={scrollLeft}
+          disabled={!canScrollLeft}
+          className={`fixed left-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
+            canScrollLeft
+              ? "hover:bg-gray-100 cursor-pointer opacity-100"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          title="Scroll left"
+        >
+          <FiChevronLeft className="w-6 h-6 text-gray-700" />
+        </button>
+
+        {/* Right scroll button - fixed at page center right */}
+        <button
+          onClick={scrollRight}
+          disabled={!canScrollRight}
+          className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
+            canScrollRight
+              ? "hover:bg-gray-100 cursor-pointer opacity-100"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          title="Scroll right"
+        >
+          <FiChevronRight className="w-6 h-6 text-gray-700" />
+        </button>
       </div>
 
       <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
