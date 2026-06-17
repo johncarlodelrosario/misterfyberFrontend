@@ -90,6 +90,7 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
+// Cache for customer names
 const nameCache = new Map<
   string,
   { name: string; email: string; phone: string }
@@ -140,33 +141,53 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
+// Extract customer info with proper name resolution
 function extractCustomerInfo(payment: Payment): CustomerInfo {
+  // Check application object first (most reliable)
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
     const firstName = app.firstName || "";
     const lastName = app.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
-    return {
-      name: fullName || app.name || app.applicantName || "—",
-      email: app.email || "—",
-      phone: app.phoneNumber || app.phone || "—",
-      applicationId: app.applicationId || payment.applicationId || "—",
-    };
+
+    // If we have a valid name, use it
+    if (fullName && fullName !== " ") {
+      return {
+        name: fullName,
+        email: app.email || "—",
+        phone: app.phoneNumber || app.phone || "—",
+        applicationId: app.applicationId || payment.applicationId || "—",
+      };
+    }
   }
 
+  // Check userId object
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
-    return {
-      name: fullName || user.username || user.name || "—",
-      email: user.email || "—",
-      phone: user.phoneNumber || user.phone || "—",
-      applicationId: payment.applicationId || "—",
-    };
+
+    if (fullName && fullName !== " ") {
+      return {
+        name: fullName,
+        email: user.email || "—",
+        phone: user.phoneNumber || user.phone || "—",
+        applicationId: payment.applicationId || "—",
+      };
+    }
+
+    if (user.username) {
+      return {
+        name: user.username,
+        email: user.email || "—",
+        phone: user.phoneNumber || user.phone || "—",
+        applicationId: payment.applicationId || "—",
+      };
+    }
   }
 
+  // Check gateway response
   if (payment.paymentDetails?.gatewayResponse?.customerName) {
     const gr = payment.paymentDetails.gatewayResponse;
     return {
@@ -177,13 +198,34 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
+  // If we have an applicationId, check cache
   const appId =
     typeof payment.applicationId === "string" ? payment.applicationId : "";
+  if (appId) {
+    const cached = nameCache.get(appId);
+    if (cached) {
+      return {
+        name: cached.name,
+        email: cached.email,
+        phone: cached.phone,
+        applicationId: appId,
+      };
+    }
+    // Return placeholder with appId - will be updated when fetch completes
+    return {
+      name: appId,
+      email: "—",
+      phone: "—",
+      applicationId: appId,
+    };
+  }
+
+  // Fallback
   return {
-    name: appId ? `Loading... (${appId})` : "—",
+    name: "—",
     email: "—",
     phone: "—",
-    applicationId: appId || "—",
+    applicationId: "—",
   };
 }
 
@@ -197,25 +239,31 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
     );
     if (response.data?.success && response.data?.data) {
       const data = response.data.data;
+      const firstName = data.firstName || "";
+      const lastName = data.lastName || "";
+      const fullName =
+        `${firstName} ${lastName}`.trim() || data.name || applicationId;
+
       const customerInfo = {
-        name:
-          `${data.firstName || ""} ${data.lastName || ""}`.trim() ||
-          data.name ||
-          applicationId,
+        name: fullName,
         email: data.email || "—",
         phone: data.phoneNumber || data.phone || "—",
       };
       nameCache.set(applicationId, customerInfo);
       return customerInfo;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.log(`Failed to fetch application data for ${applicationId}:`, e);
+  }
 
+  // Fallback: use applicationId as name
   const fallbackInfo = { name: applicationId, email: "—", phone: "—" };
   nameCache.set(applicationId, fallbackInfo);
   return fallbackInfo;
 }
 
 async function enrichPayment(payment: Payment): Promise<Payment> {
+  // Check if we already have customer name from application object
   if (
     payment.application &&
     typeof payment.application === "object" &&
@@ -243,9 +291,11 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
   if (appId) {
     const customerData = await fetchApplicationData(appId);
     if (customerData) {
+      // Create a proper application object with the fetched data
+      const nameParts = customerData.name.split(" ");
       payment.application = {
-        firstName: customerData.name.split(" ")[0] || "",
-        lastName: customerData.name.split(" ").slice(1).join(" ") || "",
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
         email: customerData.email,
         phoneNumber: customerData.phone,
         applicationId: appId,
@@ -303,10 +353,14 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
     }
   }
 
+  // Update group info with best available name
   for (const group of Array.from(groups.values())) {
+    // Find a payment with a proper name
     const paymentWithName = group.payments.find((p) => {
       const info = extractCustomerInfo(p);
-      return info.name !== "—" && !info.name.includes("Loading...");
+      return (
+        info.name !== "—" && info.name !== group.customerInfo.applicationId
+      );
     });
     if (paymentWithName) {
       group.customerInfo = extractCustomerInfo(paymentWithName);
@@ -404,12 +458,16 @@ export default function AdminPaymentsPage() {
           );
         }
 
+        // Enrich payments with customer data
         const enrichedPayments = await Promise.all(
           paymentsList.map((p: Payment) => enrichPayment(p)),
         );
+
+        // Group payments by customer
         const grouped = groupPayments(enrichedPayments);
         setPaymentGroups(grouped);
 
+        // Get pending payments
         const pendingResult = await getPendingPayments(forceRefresh).catch(
           () => ({ data: [] }),
         );
