@@ -111,7 +111,7 @@ export default function Footer() {
                   className="object-contain"
                 />
               </Link>
-              <p className="text-white mb-5 leading-relaxed">
+              <p className="text-black mb-5 leading-relaxed">
                 Providing lightning-fast and reliable internet service to homes
                 and businesses since 2026.
               </p>
