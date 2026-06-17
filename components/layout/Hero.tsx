@@ -230,14 +230,6 @@ export default function Hero({ stats }: HeroProps) {
                   <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
                     <span className="text-white font-bold text-sm">+</span>
                   </div>
-                  <div>
-                    <p className="text-white font-bold text-lg">
-                      {stats.users.toLocaleString()}
-                    </p>
-                    <p className="text-white/60 text-xs font-medium">
-                      Active Users
-                    </p>
-                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
