@@ -202,31 +202,6 @@ export default function PlansSection() {
     },
   ];
 
-  // Testimonials data
-  const testimonials = [
-    {
-      name: "Maria Santos",
-      role: "Business Owner",
-      content:
-        "The Professional plan is perfect for my small business. No downtime and speed is consistent!",
-      rating: 5,
-    },
-    {
-      name: "John Dela Cruz",
-      role: "Gamer",
-      content:
-        "Ultimate plan gives me low ping in games. Best ISP I've tried so far!",
-      rating: 5,
-    },
-    {
-      name: "Sarah Reyes",
-      role: "Remote Worker",
-      content:
-        "Reliable connection for video calls. Customer support is very responsive.",
-      rating: 5,
-    },
-  ];
-
   return (
     <>
       <motion.div
@@ -458,90 +433,6 @@ export default function PlansSection() {
                 </motion.div>
               ))}
             </div>
-          </div>
-        </section>
-
-        {/* Testimonials Section */}
-        <section className="py-20 bg-white">
-          <div className="max-w-6xl mx-auto px-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              viewport={{ once: true }}
-              className="text-center mb-12"
-            >
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-                What Our{" "}
-                <span className="bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
-                  Customers Say
-                </span>
-              </h2>
-              <p className="text-gray-600 max-w-2xl mx-auto">
-                Real stories from real people who love our service
-              </p>
-            </motion.div>
-
-            <div className="grid md:grid-cols-3 gap-6">
-              {testimonials.map((testimonial, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1, duration: 0.5 }}
-                  viewport={{ once: true }}
-                  className="bg-gray-50 p-6 rounded-2xl border border-gray-200 hover:shadow-lg hover:shadow-blue-100 transition-all duration-300"
-                >
-                  <div className="flex mb-4">
-                    {[...Array(5)].map((_, i) => (
-                      <FiStar
-                        key={i}
-                        className="w-4 h-4 text-yellow-400 fill-current"
-                      />
-                    ))}
-                  </div>
-                  <p className="text-gray-700 mb-4">"{testimonial.content}"</p>
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      {testimonial.name}
-                    </p>
-                    <p className="text-sm text-gray-500">{testimonial.role}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* CTA Section */}
-        <section className="py-20 bg-gradient-to-r from-blue-600 to-emerald-600">
-          <div className="max-w-4xl mx-auto px-4 text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              viewport={{ once: true }}
-            >
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Ready to Get Started?
-              </h2>
-              <p className="text-blue-50 mb-8 max-w-2xl mx-auto">
-                Join thousands of satisfied customers and experience the best
-                internet service today.
-              </p>
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Link
-                  href="/apply"
-                  className="inline-flex items-center gap-2 bg-white text-blue-600 px-8 py-3 rounded-xl font-semibold hover:shadow-lg hover:shadow-white/30 transition-all duration-300"
-                >
-                  Apply Now
-                  <FiArrowRight className="w-5 h-5" />
-                </Link>
-              </motion.div>
-            </motion.div>
           </div>
         </section>
       </div>
