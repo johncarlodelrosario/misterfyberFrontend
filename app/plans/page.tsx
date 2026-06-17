@@ -239,7 +239,7 @@ export default function PlansSection() {
           <Header />
         </div>
 
-        {/* Full Width Hero Section with Image Background */}
+        {/* Full Width Hero Section with Image Background - IMAGE VISIBLE ONLY */}
         <section
           className="relative w-full min-h-[650px] md:min-h-[700px] flex items-start pt-32 md:pt-36 bg-cover bg-center bg-no-repeat"
           style={{
@@ -248,27 +248,22 @@ export default function PlansSection() {
             backgroundPosition: "center 30%",
           }}
         >
-          {/* Light overlay for text contrast */}
-          <div className="absolute inset-0 bg-white/80" />
+          {/* NO OVERLAY - Image is fully visible with all its details */}
+          {/* Gradient overlay removed for full image visibility */}
 
-          {/* Animated background elements */}
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-100/60 via-white/50 to-emerald-100/60" />
+          {/* Minimal blur at bottom for text readability if needed - keeping it minimal */}
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-50/40 via-gray-50/20 to-transparent" />
 
-          {/* Smooth blur overlay at the bottom of banner */}
-          <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-gray-50 via-gray-50/95 to-transparent backdrop-blur-lg" />
-          <div className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent backdrop-blur-md" />
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-gray-50 via-gray-50/70 to-transparent backdrop-blur-sm" />
-
-          {/* Content - pushed up to allow space for cards */}
+          {/* Content - positioned to not interfere with the image */}
           <div className="max-w-5xl mx-auto px-4 text-center relative z-10 w-full">
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.5 }}
-              className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-5"
+              className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white drop-shadow-lg mb-5"
             >
               Choose Your{" "}
-              <span className="bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm">
                 Internet Plan
               </span>
             </motion.h1>
@@ -276,7 +271,7 @@ export default function PlansSection() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="text-base md:text-lg text-gray-700 max-w-2xl mx-auto"
+              className="text-base md:text-lg text-white drop-shadow-lg max-w-2xl mx-auto"
             >
               Select the perfect plan that fits your lifestyle. No hidden fees,
               no contracts, just pure internet bliss.

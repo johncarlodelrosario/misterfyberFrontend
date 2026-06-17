@@ -41,42 +41,33 @@ export default function Footer() {
   return (
     <>
       <footer
-        className="relative text-white bg-cover bg-center bg-no-repeat"
+        className="relative bg-white bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: "url('/footer/view.png')",
           backgroundAttachment: "fixed",
         }}
       >
-        {/* Dark overlay for text readability */}
-        <div className="absolute inset-0 bg-black/80" />
-
-        {/* Top dim effect with #080616 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#080616] via-transparent to-transparent" />
-
-        {/* Bottom gradient with #080616 */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#080616] via-transparent to-transparent" />
-
-        {/* Subtle gradient overlay for depth */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/50" />
+        {/* White overlay for text readability */}
+        <div className="absolute inset-0 bg-white/95" />
 
         {/* Top accent line */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-accent-500 to-transparent z-10" />
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent z-10" />
 
         {/* Newsletter Section */}
-        <div className="relative border-b border-white/10 z-10">
+        <div className="relative border-b border-white/30 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
             <div className="grid lg:grid-cols-2 gap-10 items-center">
               <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 mb-4">
-                  <FiSend className="w-4 h-4 text-accent-400" />
-                  <span className="text-xs font-semibold tracking-wide text-accent-300">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-sm mb-4 border border-white/40">
+                  <FiSend className="w-4 h-4 text-gray-700" />
+                  <span className="text-xs font-semibold tracking-wide text-gray-700">
                     STAY UPDATED
                   </span>
                 </div>
-                <h3 className="text-3xl md:text-4xl font-bold mb-3 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                <h3 className="text-3xl md:text-4xl font-bold mb-3 text-gray-900">
                   Subscribe to Newsletter
                 </h3>
-                <p className="text-gray-300 text-lg">
+                <p className="text-gray-700 text-lg">
                   Get the latest updates on promos, new plans, and exclusive
                   offers
                 </p>
@@ -93,13 +84,13 @@ export default function Footer() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="Enter your email address"
-                      className="w-full px-12 py-3.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 transition-all"
+                      className="w-full px-12 py-3.5 rounded-xl bg-white/80 backdrop-blur-sm border border-white/40 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-gray-400 focus:ring-2 focus:ring-gray-300/50 transition-all"
                       required
                     />
                   </div>
                   <button
                     type="submit"
-                    className="px-8 py-3.5 bg-gradient-to-r from-accent-600 to-accent-700 rounded-xl font-semibold hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2 group"
+                    className="px-8 py-3.5 bg-gray-900 text-white rounded-xl font-semibold hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2 group border border-white/20"
                   >
                     <span>Subscribe</span>
                     <FiSend className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -123,7 +114,7 @@ export default function Footer() {
                   className="object-contain"
                 />
               </Link>
-              <p className="text-gray-300 mb-5 leading-relaxed">
+              <p className="text-gray-700 mb-5 leading-relaxed">
                 Providing lightning-fast and reliable internet service to homes
                 and businesses since 2026.
               </p>
@@ -131,15 +122,15 @@ export default function Footer() {
 
             {/* Quick Links */}
             <div>
-              <h3 className="font-bold text-xl mb-5 relative inline-block">
+              <h3 className="font-bold text-xl mb-5 relative inline-block text-gray-900">
                 Quick Links
-                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gradient-to-r from-accent-500 to-transparent rounded-full"></div>
+                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-400 rounded-full"></div>
               </h3>
               <ul className="space-y-3.5">
                 <li>
                   <Link
                     href="/"
-                    className="text-gray-300 hover:text-accent-400 transition-all duration-300 flex items-center gap-2 group"
+                    className="text-gray-700 hover:text-gray-900 transition-all duration-300 flex items-center gap-2 group"
                   >
                     <span className="group-hover:translate-x-1 transition-transform">
                       →
@@ -150,7 +141,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/plans"
-                    className="text-gray-300 hover:text-accent-400 transition-all duration-300 flex items-center gap-2 group"
+                    className="text-gray-700 hover:text-gray-900 transition-all duration-300 flex items-center gap-2 group"
                   >
                     <span className="group-hover:translate-x-1 transition-transform">
                       →
@@ -161,7 +152,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/support"
-                    className="text-gray-300 hover:text-accent-400 transition-all duration-300 flex items-center gap-2 group"
+                    className="text-gray-700 hover:text-gray-900 transition-all duration-300 flex items-center gap-2 group"
                   >
                     <span className="group-hover:translate-x-1 transition-transform">
                       →
@@ -172,7 +163,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/about"
-                    className="text-gray-300 hover:text-accent-400 transition-all duration-300 flex items-center gap-2 group"
+                    className="text-gray-700 hover:text-gray-900 transition-all duration-300 flex items-center gap-2 group"
                   >
                     <span className="group-hover:translate-x-1 transition-transform">
                       →
@@ -183,7 +174,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/apply"
-                    className="text-gray-300 hover:text-accent-400 transition-all duration-300 flex items-center gap-2 group"
+                    className="text-gray-700 hover:text-gray-900 transition-all duration-300 flex items-center gap-2 group"
                   >
                     <span className="group-hover:translate-x-1 transition-transform">
                       →
@@ -196,49 +187,49 @@ export default function Footer() {
 
             {/* Contact Info */}
             <div>
-              <h3 className="font-bold text-xl mb-5 relative inline-block">
+              <h3 className="font-bold text-xl mb-5 relative inline-block text-gray-900">
                 Contact Us
-                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gradient-to-r from-accent-500 to-transparent rounded-full"></div>
+                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-400 rounded-full"></div>
               </h3>
               <ul className="space-y-4">
                 <li className="flex items-start space-x-3 group">
-                  <FiMapPin className="mt-1 text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                  <span className="text-gray-300 group-hover:text-gray-200 transition">
+                  <FiMapPin className="mt-1 text-gray-700 group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="text-gray-700 group-hover:text-gray-900 transition">
                     630 Anonas, Sta. Mesa, Manila, 1016 Kalakhang Maynila
                   </span>
                 </li>
                 <li className="flex items-center space-x-3 group">
-                  <FiPhone className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                  <span className="text-gray-300 group-hover:text-gray-200 transition">
+                  <FiPhone className="text-gray-700 group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="text-gray-700 group-hover:text-gray-900 transition">
                     (0969) 341 4876 - Fountain Breeze Condominium
                   </span>
                 </li>
                 <li className="flex items-center space-x-3 group">
-                  <FiPhone className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                  <span className="text-gray-300 group-hover:text-gray-200 transition">
+                  <FiPhone className="text-gray-700 group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="text-gray-700 group-hover:text-gray-900 transition">
                     (0955) 732 7694 - Silk Residences
                   </span>
                 </li>
                 <li className="flex items-center space-x-3 group">
-                  <FiMail className="text-accent-400 group-hover:scale-110 transition-transform flex-shrink-0" />
-                  <span className="text-gray-300 group-hover:text-gray-200 transition">
+                  <FiMail className="text-gray-700 group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="text-gray-700 group-hover:text-gray-900 transition">
                     admin@misterfyber.com
                   </span>
                 </li>
               </ul>
 
-              <div className="mt-8 pt-6 border-t border-white/10">
+              <div className="mt-8 pt-6 border-t border-white/30">
                 <div className="flex items-center gap-2 mb-2">
-                  <FiGlobe className="text-accent-400 w-4 h-4" />
-                  <p className="text-sm text-gray-400 font-medium">
+                  <FiGlobe className="text-gray-700 w-4 h-4" />
+                  <p className="text-sm text-gray-600 font-medium">
                     Business Hours
                   </p>
                 </div>
-                <p className="text-sm text-gray-300">
+                <p className="text-sm text-gray-700">
                   Mon - Fri:{" "}
-                  <span className="text-white">8:00 AM - 5:00 PM</span>
+                  <span className="text-gray-900">8:00 AM - 5:00 PM</span>
                 </p>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-gray-600 mt-1">
                   Weekend support via chat
                 </p>
               </div>
@@ -246,18 +237,20 @@ export default function Footer() {
 
             {/* Trust Badge */}
             <div>
-              <h3 className="font-bold text-xl mb-5 relative inline-block">
+              <h3 className="font-bold text-xl mb-5 relative inline-block text-gray-900">
                 Trust & Safety
-                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gradient-to-r from-accent-500 to-transparent rounded-full"></div>
+                <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-400 rounded-full"></div>
               </h3>
-              <div className="bg-white/10 rounded-xl p-4 border border-white/20">
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/40">
                 <div className="flex items-center gap-3 mb-3">
-                  <FiShield className="text-accent-400 w-5 h-5" />
-                  <span className="font-semibold">99.5% Uptime Guarantee</span>
+                  <FiShield className="text-gray-700 w-5 h-5" />
+                  <span className="font-semibold text-gray-900">
+                    99.5% Uptime Guarantee
+                  </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <FiUsers className="text-accent-400 w-5 h-5" />
-                  <span className="font-semibold">
+                  <FiUsers className="text-gray-700 w-5 h-5" />
+                  <span className="font-semibold text-gray-900">
                     24/7 Security Monitoring
                   </span>
                 </div>
@@ -266,19 +259,16 @@ export default function Footer() {
           </div>
 
           {/* Bottom Bar */}
-          <div className="border-t border-white/10 mt-12 pt-8 text-center">
-            <p className="text-gray-400 text-sm flex items-center justify-center gap-2 flex-wrap">
+          <div className="border-t border-white/30 mt-12 pt-8 text-center">
+            <p className="text-gray-600 text-sm flex items-center justify-center gap-2 flex-wrap">
               &copy; {new Date().getFullYear()} MisterFyber. All rights
               reserved.
               <span className="hidden md:inline">•</span>
-              <Link
-                href="/privacy"
-                className="hover:text-accent-400 transition"
-              >
+              <Link href="/privacy" className="hover:text-gray-900 transition">
                 Privacy Policy
               </Link>
               <span>•</span>
-              <Link href="/terms" className="hover:text-accent-400 transition">
+              <Link href="/terms" className="hover:text-gray-900 transition">
                 Terms of Service
               </Link>
               <span className="flex items-center gap-1 text-gray-500">
@@ -295,7 +285,7 @@ export default function Footer() {
       {showScrollTop && (
         <button
           onClick={scrollToTop}
-          className="fixed bottom-8 right-8 w-12 h-12 bg-gradient-to-r from-accent-600 to-accent-700 rounded-2xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all duration-300 z-40 hover:shadow-accent-500/30 group"
+          className="fixed bottom-8 right-8 w-12 h-12 bg-gray-900 rounded-2xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all duration-300 z-40 hover:shadow-gray-500/30 group border border-white/20"
         >
           <FiArrowUp className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
         </button>
