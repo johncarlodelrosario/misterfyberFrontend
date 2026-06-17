@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiArrowRight } from "react-icons/fi";
 
 interface HeroProps {
   stats: {
@@ -179,30 +179,90 @@ export default function Hero({ stats }: HeroProps) {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1.5 mb-5 border border-white/20">
-                <span className="text-white text-xs font-medium">
+              {/* Modern Badge */}
+              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 mb-6 border border-white/20">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-white text-xs font-medium tracking-wider uppercase">
                   Trusted Fiber Provider
                 </span>
               </div>
 
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight text-white">
+              {/* Modern Title */}
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold mb-4 leading-tight text-white">
                 {currentBanner.title}
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
                   {currentBanner.highlight}
                 </span>
               </h1>
 
-              <p className="text-sm md:text-base lg:text-lg mb-6 text-white/90 leading-relaxed max-w-2xl">
+              {/* Modern Description */}
+              <p className="text-sm md:text-base lg:text-lg mb-8 text-white/90 leading-relaxed max-w-2xl font-light tracking-wide">
                 {currentBanner.description}
               </p>
 
-              <div className="flex flex-wrap gap-3">
+              {/* Modern Button Group */}
+              <div className="flex flex-wrap gap-4">
                 <Link
                   href="/plans"
-                  className="group border-2 border-white/30 backdrop-blur-sm px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-white hover:text-gray-900 transition-all duration-300 inline-flex items-center gap-2 text-white"
+                  className="group relative overflow-hidden bg-white text-gray-900 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/25 inline-flex items-center gap-3"
                 >
-                  Apply Now
+                  <span className="relative z-10">Apply Now</span>
+                  <FiArrowRight className="relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 group-hover:opacity-100 opacity-0 transition-opacity duration-300"></div>
                 </Link>
+                <Link
+                  href="/about"
+                  className="group border-2 border-white/30 backdrop-blur-sm px-8 py-3.5 rounded-full text-sm font-semibold hover:bg-white/10 transition-all duration-300 inline-flex items-center gap-2 text-white hover:border-white/50"
+                >
+                  Learn More
+                  <span className="group-hover:translate-x-1 transition-transform duration-300">
+                    →
+                  </span>
+                </Link>
+              </div>
+
+              {/* Stats - Modern */}
+              <div className="mt-12 flex flex-wrap gap-8 md:gap-12">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                    <span className="text-white font-bold text-sm">+</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-bold text-lg">
+                      {stats.users.toLocaleString()}
+                    </p>
+                    <p className="text-white/60 text-xs font-medium">
+                      Active Users
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                    <span className="text-white font-bold text-sm">⚡</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-bold text-lg">
+                      {stats.speed} Mbps
+                    </p>
+                    <p className="text-white/60 text-xs font-medium">
+                      Speed Test
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                    <span className="text-white font-bold text-sm">✓</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-bold text-lg">
+                      {stats.uptime}%
+                    </p>
+                    <p className="text-white/60 text-xs font-medium">Uptime</p>
+                  </div>
+                </div>
               </div>
             </motion.div>
           </AnimatePresence>
