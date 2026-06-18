@@ -153,7 +153,7 @@ export default function SupportPage() {
               className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 px-2"
             >
               How can we{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+              <span className="text-transparent bg-clip-text bg-blue">
                 help you?
               </span>
             </motion.h1>

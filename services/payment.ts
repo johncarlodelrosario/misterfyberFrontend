@@ -291,6 +291,18 @@ export const getAllPayments = async (
   }
 };
 
+// DELETE PAYMENT
+export const deletePayment = async (paymentId: string): Promise<any> => {
+  try {
+    const response = await api.delete(`/payments/${paymentId}`);
+    clearPaymentsCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting payment:", error);
+    throw error;
+  }
+};
+
 export default {
   createPayment,
   getPayments,
@@ -301,5 +313,6 @@ export default {
   getPendingPayments,
   getPaymentStats,
   getAllPayments,
+  deletePayment,
   clearPaymentsCache,
 };

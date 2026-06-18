@@ -292,6 +292,21 @@ export const rejectPayment = async (paymentId: string, reason: string) => {
   }
 };
 
+// DELETE PAYMENT - Admin only
+export const deletePayment = async (paymentId: string) => {
+  try {
+    const response = await api.delete(`/payments/${paymentId}`);
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error deleting payment:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
 // ==================== BILL MANAGEMENT ====================
 export const getAllBills = async (params?: {
   page?: number;
@@ -616,6 +631,7 @@ export default {
   getPendingPayments,
   confirmPayment,
   rejectPayment,
+  deletePayment,
   getAllBills,
   createManualCustomer,
   getCustomersWithoutAccounts,

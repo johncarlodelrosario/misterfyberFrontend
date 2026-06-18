@@ -12,6 +12,7 @@ import {
   confirmPayment,
   rejectPayment,
   getPendingPayments,
+  deletePayment,
 } from "@/services/admin";
 import {
   FiSearch,
@@ -31,6 +32,7 @@ import {
   FiChevronsDown,
   FiChevronsUp,
   FiCalendar,
+  FiTrash2,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -555,6 +557,7 @@ export default function AdminPaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [sortField, setSortField] =
     useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -699,6 +702,29 @@ export default function AdminPaymentsPage() {
       toast.error(error.response?.data?.message || "Failed to reject payment");
     } finally {
       setRejecting(false);
+    }
+  };
+
+  const handleDeletePayment = async (
+    paymentId: string,
+    referenceNumber: string,
+  ) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete payment ${referenceNumber}? This action cannot be undone.`,
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      await deletePayment(paymentId);
+      toast.success(`Payment ${referenceNumber} deleted successfully`);
+      loadPayments(true);
+      setSelectedPayment(null);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to delete payment");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1077,7 +1103,7 @@ export default function AdminPaymentsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             <button
                               onClick={() => handleConfirmPayment(payment._id)}
                               disabled={confirming}
@@ -1097,6 +1123,18 @@ export default function AdminPaymentsPage() {
                               className="px-3 py-1 bg-gray-600 text-white rounded text-sm"
                             >
                               View
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeletePayment(
+                                  payment._id,
+                                  payment.referenceNumber,
+                                )
+                              }
+                              disabled={deleting}
+                              className="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 flex items-center gap-1"
+                            >
+                              <FiTrash2 className="w-3 h-3" /> Delete
                             </button>
                           </div>
                         </td>
@@ -1395,13 +1433,26 @@ export default function AdminPaymentsPage() {
                                             </div>
                                           )}
                                       </div>
-                                      <div className="mt-3 flex justify-end">
+                                      <div className="mt-3 flex justify-end gap-2">
                                         <button
                                           onClick={() => setSelectedPayment(p)}
                                           className="text-blue-600 text-xs hover:underline flex items-center gap-1"
                                         >
                                           <FiEye className="w-3 h-3" /> View
                                           Full Details
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleDeletePayment(
+                                              p._id,
+                                              p.referenceNumber,
+                                            )
+                                          }
+                                          disabled={deleting}
+                                          className="text-red-600 text-xs hover:underline flex items-center gap-1"
+                                        >
+                                          <FiTrash2 className="w-3 h-3" />{" "}
+                                          Delete
                                         </button>
                                       </div>
                                     </div>
@@ -1580,28 +1631,42 @@ export default function AdminPaymentsPage() {
                         </p>
                       </div>
                     )}
-                    {selectedPayment.status === "pending" && (
-                      <div className="flex gap-3 pt-4 border-t">
-                        <button
-                          onClick={() =>
-                            handleConfirmPayment(selectedPayment._id)
-                          }
-                          disabled={confirming}
-                          className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                        >
-                          Confirm Payment
-                        </button>
-                        <button
-                          onClick={() =>
-                            handleRejectPayment(selectedPayment._id)
-                          }
-                          disabled={rejecting}
-                          className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex gap-3 pt-4 border-t flex-wrap">
+                      {selectedPayment.status === "pending" && (
+                        <>
+                          <button
+                            onClick={() =>
+                              handleConfirmPayment(selectedPayment._id)
+                            }
+                            disabled={confirming}
+                            className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                          >
+                            Confirm Payment
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleRejectPayment(selectedPayment._id)
+                            }
+                            disabled={rejecting}
+                            className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() =>
+                          handleDeletePayment(
+                            selectedPayment._id,
+                            selectedPayment.referenceNumber,
+                          )
+                        }
+                        disabled={deleting}
+                        className="w-full py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <FiTrash2 className="w-4 h-4" /> Delete Payment
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
