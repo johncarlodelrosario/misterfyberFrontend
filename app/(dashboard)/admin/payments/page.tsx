@@ -96,7 +96,7 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
-// Helper to format billing period - SHOWS ACTUAL BILLED PERIOD
+// Helper to format billing period
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -116,7 +116,6 @@ function formatBillingPeriod(billingPeriod?: {
   return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
-// Helper to format date as MM/DD/YYYY (no timezone shift)
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -140,12 +139,14 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// IMPROVED: Extract customer info with proper name resolution
+// FIXED: Extract customer info with proper name resolution
 function extractCustomerInfo(payment: Payment): CustomerInfo {
-  // 1. Check if payment has customerName directly (from backend enrichment)
+  // 1. CHECK customerName DIRECTLY from backend (MOST RELIABLE)
   if (payment.customerName && payment.customerName.length > 1) {
     const isAppIdPattern = /^[A-Z]{3}\d+/.test(payment.customerName);
+    // If it's NOT an app ID pattern, use it as the name
     if (!isAppIdPattern) {
+      console.log(`✅ Using customerName: ${payment.customerName}`);
       return {
         name: payment.customerName,
         email: payment.customerEmail || "—",
@@ -155,73 +156,80 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 2. Check if payment has application object with firstName (MOST RELIABLE)
+  // 2. Check application object (from backend population)
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
     const firstName = app.firstName || app.first_name || "";
     const lastName = app.lastName || app.last_name || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (firstName && firstName.length > 0 && fullName.length > 1) {
-      return {
-        name: fullName,
-        email: app.email || "—",
-        phone: app.phoneNumber || app.phone || "—",
-        applicationId: app.applicationId || payment.applicationId || "—",
-      };
+    if (fullName.length > 1) {
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppIdPattern) {
+        console.log(`✅ Using application name: ${fullName}`);
+        return {
+          name: fullName,
+          email: app.email || "—",
+          phone: app.phoneNumber || app.phone || "—",
+          applicationId: app.applicationId || payment.applicationId || "—",
+        };
+      }
     }
 
     // Check if app has fullName directly
     if (app.fullName && app.fullName.length > 1) {
-      return {
-        name: app.fullName,
-        email: app.email || "—",
-        phone: app.phoneNumber || app.phone || "—",
-        applicationId: app.applicationId || payment.applicationId || "—",
-      };
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(app.fullName);
+      if (!isAppIdPattern) {
+        console.log(`✅ Using app.fullName: ${app.fullName}`);
+        return {
+          name: app.fullName,
+          email: app.email || "—",
+          phone: app.phoneNumber || app.phone || "—",
+          applicationId: app.applicationId || payment.applicationId || "—",
+        };
+      }
     }
   }
 
-  // 3. Check userId object for user data
+  // 3. Check userId object
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (firstName && firstName.length > 0 && fullName.length > 1) {
-      return {
-        name: fullName,
-        email: user.email || "—",
-        phone: user.phoneNumber || user.phone || "—",
-        applicationId: payment.applicationId || "—",
-      };
-    }
-
-    if (user.username && user.username !== "—" && user.username.length > 1) {
-      return {
-        name: user.username,
-        email: user.email || "—",
-        phone: user.phoneNumber || user.phone || "—",
-        applicationId: payment.applicationId || "—",
-      };
+    if (fullName.length > 1) {
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppIdPattern) {
+        console.log(`✅ Using userId name: ${fullName}`);
+        return {
+          name: fullName,
+          email: user.email || "—",
+          phone: user.phoneNumber || user.phone || "—",
+          applicationId: payment.applicationId || "—",
+        };
+      }
     }
   }
 
-  // 4. Check user object (sometimes it's just "user" not "userId")
+  // 4. Check user object
   if (payment.user && typeof payment.user === "object") {
     const user = payment.user;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (firstName && firstName.length > 0 && fullName.length > 1) {
-      return {
-        name: fullName,
-        email: user.email || "—",
-        phone: user.phoneNumber || user.phone || "—",
-        applicationId: payment.applicationId || "—",
-      };
+    if (fullName.length > 1) {
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppIdPattern) {
+        console.log(`✅ Using user name: ${fullName}`);
+        return {
+          name: fullName,
+          email: user.email || "—",
+          phone: user.phoneNumber || user.phone || "—",
+          applicationId: payment.applicationId || "—",
+        };
+      }
     }
   }
 
@@ -230,16 +238,20 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     const gr = payment.paymentDetails.gatewayResponse;
     const name = gr.customerName || "—";
     if (name !== "—" && name.length > 1) {
-      return {
-        name: name,
-        email: gr.customerEmail || "—",
-        phone: gr.customerPhone || "—",
-        applicationId: gr.applicationId || payment.applicationId || "—",
-      };
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
+      if (!isAppIdPattern) {
+        console.log(`✅ Using gateway name: ${name}`);
+        return {
+          name: name,
+          email: gr.customerEmail || "—",
+          phone: gr.customerPhone || "—",
+          applicationId: gr.applicationId || payment.applicationId || "—",
+        };
+      }
     }
   }
 
-  // 6. Get application ID from various possible locations
+  // 6. Get application ID from various locations
   let appId: string | null = null;
   if (typeof payment.applicationId === "string") {
     appId = payment.applicationId;
@@ -249,25 +261,44 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // 7. Check if payment has applicant info in paymentDetails notes
+  // 7. Check paymentDetails notes
   if (payment.paymentDetails?.notes) {
     const notes = payment.paymentDetails.notes;
     const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
     if (nameMatch && nameMatch[1]) {
       const name = nameMatch[1].trim();
       if (name && name !== "—" && name.length > 1) {
-        return {
-          name: name,
-          email: "—",
-          phone: "—",
-          applicationId: appId || "—",
-        };
+        const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
+        if (!isAppIdPattern) {
+          console.log(`✅ Using notes name: ${name}`);
+          return {
+            name: name,
+            email: "—",
+            phone: "—",
+            applicationId: appId || "—",
+          };
+        }
       }
     }
   }
 
-  // 8. If we have an appId, use it as fallback
+  // 8. If we have an appId, check if it's a valid application ID pattern
   if (appId && appId !== "—" && appId.length > 0) {
+    // Check if it looks like an application ID (e.g., SIL26067944109)
+    const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
+    if (isAppIdPattern) {
+      // It IS an app ID, so we need to display it as "Unknown Customer"
+      console.log(
+        `⚠️ App ID detected, showing as "Unknown Customer": ${appId}`,
+      );
+      return {
+        name: "Unknown Customer",
+        email: "—",
+        phone: "—",
+        applicationId: appId,
+      };
+    }
+    // If it's not an app ID pattern, use it as name
     return {
       name: appId,
       email: "—",
@@ -276,15 +307,17 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     };
   }
 
-  // Final fallback
+  // Final fallback - Unknown Customer
+  console.log(`⚠️ No name found, showing "Unknown Customer"`);
   return {
-    name: "—",
+    name: "Unknown Customer",
     email: "—",
     phone: "—",
     applicationId: "—",
   };
 }
 
+// Group payments by customer
 function groupPayments(payments: Payment[]): PaymentGroup[] {
   const groups = new Map<string, PaymentGroup>();
 
@@ -341,14 +374,14 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
 
   // Update group info with best available name
   for (const group of Array.from(groups.values())) {
-    // Find a payment with a proper name (not just appId)
+    // Find a payment with a proper name (not "Unknown Customer" or app ID)
     const paymentWithName = group.payments.find((p) => {
       const info = extractCustomerInfo(p);
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(info.name);
       return (
         info.name !== "—" &&
         info.name !== "Loading..." &&
-        !isAppIdPattern &&
+        info.name !== "Unknown Customer" &&
+        !/^[A-Z]{3}\d+/.test(info.name) &&
         info.name.length > 1
       );
     });
@@ -447,6 +480,9 @@ export default function AdminPaymentsPage() {
             (p: Payment) => p.paymentType === paymentTypeFilter,
           );
         }
+
+        console.log("📊 Payments loaded:", paymentsList.length);
+        console.log("📝 First payment sample:", paymentsList[0]);
 
         // Group payments by customer
         const grouped = groupPayments(paymentsList);
