@@ -51,9 +51,9 @@ interface Payment {
   application?: any;
   userId?: any;
   user?: any;
-  customerName?: string; // Added for easy access
-  customerEmail?: string; // Added for easy access
-  customerPhone?: string; // Added for easy access
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
   billingId?: {
     _id: string;
     invoiceNumber: string;
@@ -139,14 +139,13 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// FIXED: Extract customer info with proper name resolution
+// FIXED: Extract customer info - NOW PRIORITIZES customerName FROM DATABASE
 function extractCustomerInfo(payment: Payment): CustomerInfo {
-  // 1. CHECK customerName DIRECTLY from backend (MOST RELIABLE)
-  if (payment.customerName && payment.customerName.length > 1) {
+  // 1. FIRST CHECK: customerName DIRECTLY from database (MOST RELIABLE)
+  if (payment.customerName && payment.customerName.length > 0) {
     const isAppIdPattern = /^[A-Z]{3}\d+/.test(payment.customerName);
-    // If it's NOT an app ID pattern, use it as the name
     if (!isAppIdPattern) {
-      console.log(`✅ Using customerName: ${payment.customerName}`);
+      console.log(`✅ Using database customerName: ${payment.customerName}`);
       return {
         name: payment.customerName,
         email: payment.customerEmail || "—",
@@ -156,7 +155,27 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 2. Check application object (from backend population)
+  // 2. Check customerEmail from database
+  if (payment.customerEmail && payment.customerEmail.length > 0) {
+    // Try to extract name from email (before @)
+    const emailName = payment.customerEmail.split("@")[0];
+    if (emailName && emailName.length > 0) {
+      const formattedName = emailName
+        .replace(/[._-]/g, " ")
+        .replace(/\b\w/g, (l) => l.toUpperCase());
+      if (formattedName.length > 1) {
+        console.log(`✅ Using email-based name: ${formattedName}`);
+        return {
+          name: formattedName,
+          email: payment.customerEmail,
+          phone: payment.customerPhone || "—",
+          applicationId: payment.applicationId || "—",
+        };
+      }
+    }
+  }
+
+  // 3. Check application object (from backend population)
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
     const firstName = app.firstName || app.first_name || "";
@@ -191,7 +210,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 3. Check userId object
+  // 4. Check userId object
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     const firstName = user.firstName || "";
@@ -212,7 +231,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 4. Check user object
+  // 5. Check user object
   if (payment.user && typeof payment.user === "object") {
     const user = payment.user;
     const firstName = user.firstName || "";
@@ -233,7 +252,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 5. Check gateway response
+  // 6. Check gateway response
   if (payment.paymentDetails?.gatewayResponse?.customerName) {
     const gr = payment.paymentDetails.gatewayResponse;
     const name = gr.customerName || "—";
@@ -251,7 +270,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 6. Get application ID from various locations
+  // 7. Get application ID from various locations
   let appId: string | null = null;
   if (typeof payment.applicationId === "string") {
     appId = payment.applicationId;
@@ -261,7 +280,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // 7. Check paymentDetails notes
+  // 8. Check paymentDetails notes
   if (payment.paymentDetails?.notes) {
     const notes = payment.paymentDetails.notes;
     const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
@@ -282,7 +301,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // 8. If we have an appId, check if it's a valid application ID pattern
+  // 9. If we have an appId, check if it's a valid application ID pattern
   if (appId && appId !== "—" && appId.length > 0) {
     // Check if it looks like an application ID (e.g., SIL26067944109)
     const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);

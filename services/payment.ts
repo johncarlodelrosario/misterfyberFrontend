@@ -1,3 +1,5 @@
+// frontend/src/services/payment.ts
+
 import api from "./api";
 
 export interface CreatePaymentData {
@@ -7,6 +9,9 @@ export interface CreatePaymentData {
   paymentType?: "subscription" | "installation" | "others";
   referenceNumber?: string;
   notes?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
 }
 
 export interface PaymentResponse {
@@ -27,6 +32,9 @@ export interface Payment {
   status: "pending" | "processing" | "completed" | "failed" | "refunded";
   referenceNumber: string;
   billingId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
   paymentDetails: {
     gateway: string;
     gatewayResponse: any;
@@ -116,6 +124,9 @@ export const createPayment = async (
       paymentType: data.paymentType || "subscription",
       referenceNumber: data.referenceNumber,
       notes: data.notes,
+      customerName: data.customerName,
+      customerEmail: data.customerEmail,
+      customerPhone: data.customerPhone,
     });
     clearPaymentsCache();
     return response.data;
