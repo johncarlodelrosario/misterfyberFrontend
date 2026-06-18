@@ -35,6 +35,7 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+import api from "@/services/api";
 
 interface Payment {
   _id: string;
@@ -94,7 +95,13 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
-// Helper to format billing period
+// ==================== CUSTOMER NAME CACHE ====================
+// Para hindi na natin kailangan mag-fetch ulit ng same customer
+const customerNameCache = new Map<
+  string,
+  { name: string; email: string; phone: string }
+>();
+
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -137,208 +144,68 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// ==================== CRITICAL FIX: EXTRACT CUSTOMER NAME ====================
-function extractCustomerInfo(payment: Payment): CustomerInfo {
-  console.log("🔍 Extracting customer info for payment:", payment._id);
-  console.log("📝 Payment data:", {
-    customerName: payment.customerName,
-    customerEmail: payment.customerEmail,
-    applicationId: payment.applicationId,
-    hasApplication: !!payment.application,
-    hasUserId: !!payment.userId,
-  });
+// ============================================================
+// CRITICAL FIX: KUHAIN ANG TUNAY NA PANGALAN NG CUSTOMER
+// ============================================================
+async function fetchCustomerName(
+  applicationId: string,
+): Promise<{ name: string; email: string; phone: string }> {
+  if (!applicationId || applicationId === "—" || applicationId === "") {
+    return { name: "Unknown Customer", email: "—", phone: "—" };
+  }
 
-  // ============================================================
-  // PRIORITY 1: DIRECT customerName FROM DATABASE (MOST RELIABLE)
-  // ============================================================
-  if (payment.customerName && payment.customerName.trim() !== "") {
-    const name = payment.customerName.trim();
-    // Check if it's an application ID pattern (e.g., SIL26067944109)
-    const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
-    if (!isAppIdPattern) {
-      console.log(`✅ [PRIORITY 1] Using database customerName: "${name}"`);
-      return {
-        name: name,
-        email: payment.customerEmail || "—",
-        phone: payment.customerPhone || "—",
-        applicationId:
-          typeof payment.applicationId === "string"
-            ? payment.applicationId
-            : payment.applicationId?.applicationId || "—",
+  // Check cache muna
+  if (customerNameCache.has(applicationId)) {
+    const cached = customerNameCache.get(applicationId)!;
+    console.log(`📦 Cache hit for ${applicationId}: "${cached.name}"`);
+    return cached;
+  }
+
+  try {
+    console.log(`🔍 Fetching customer info for application: ${applicationId}`);
+
+    // Kuhain ang application details gamit ang API
+    const response = await api.get(`/applications/status/${applicationId}`);
+
+    if (response.data?.success && response.data?.data) {
+      const app = response.data.data;
+      const firstName = app.firstName || "";
+      const lastName = app.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      const finalName = fullName || app.applicationId || applicationId;
+
+      const customerInfo = {
+        name: finalName,
+        email: app.email || "—",
+        phone: app.phoneNumber || "—",
       };
-    } else {
+
+      // I-save sa cache
+      customerNameCache.set(applicationId, customerInfo);
       console.log(
-        `⚠️ Database customerName is an App ID: "${name}", checking other sources...`,
+        `✅ Fetched customer name: "${finalName}" for ${applicationId}`,
       );
+      return customerInfo;
     }
+
+    console.log(`⚠️ No data found for application: ${applicationId}`);
+    return { name: applicationId, email: "—", phone: "—" };
+  } catch (error) {
+    console.error(`❌ Error fetching customer for ${applicationId}:`, error);
+    return { name: applicationId, email: "—", phone: "—" };
   }
+}
+
+// ============================================================
+// KUHAIN ANG CUSTOMER INFO - PRIORITIZE APPLICATION ID LOOKUP
+// ============================================================
+async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
+  console.log(`🔍 Extracting customer info for payment: ${payment._id}`);
 
   // ============================================================
-  // PRIORITY 2: Check application object (populated from backend)
+  // PRIORITY 1: Kung may applicationId, i-fetch ang totoong pangalan
   // ============================================================
-  if (payment.application && typeof payment.application === "object") {
-    const app = payment.application;
-    console.log("📋 Application object:", app);
-
-    // Try to get name from application
-    const firstName = app.firstName || app.first_name || "";
-    const lastName = app.lastName || app.last_name || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-
-    if (fullName.length > 1) {
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
-      if (!isAppIdPattern) {
-        console.log(`✅ [PRIORITY 2] Using application name: "${fullName}"`);
-        return {
-          name: fullName,
-          email: app.email || payment.customerEmail || "—",
-          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
-          applicationId: app.applicationId || payment.applicationId || "—",
-        };
-      }
-    }
-
-    // Try app.fullName
-    if (app.fullName && app.fullName.length > 1) {
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(app.fullName);
-      if (!isAppIdPattern) {
-        console.log(`✅ [PRIORITY 2] Using app.fullName: "${app.fullName}"`);
-        return {
-          name: app.fullName,
-          email: app.email || payment.customerEmail || "—",
-          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
-          applicationId: app.applicationId || payment.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 3: Check userId object (populated from backend)
-  // ============================================================
-  if (payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId;
-    console.log("👤 User object:", user);
-
-    const firstName = user.firstName || "";
-    const lastName = user.lastName || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-
-    if (fullName.length > 1) {
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
-      if (!isAppIdPattern) {
-        console.log(`✅ [PRIORITY 3] Using userId name: "${fullName}"`);
-        return {
-          name: fullName,
-          email: user.email || payment.customerEmail || "—",
-          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
-          applicationId: payment.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 4: Check user object
-  // ============================================================
-  if (payment.user && typeof payment.user === "object") {
-    const user = payment.user;
-    const firstName = user.firstName || "";
-    const lastName = user.lastName || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-
-    if (fullName.length > 1) {
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
-      if (!isAppIdPattern) {
-        console.log(`✅ [PRIORITY 4] Using user name: "${fullName}"`);
-        return {
-          name: fullName,
-          email: user.email || payment.customerEmail || "—",
-          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
-          applicationId: payment.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 5: Check customerEmail from database
-  // ============================================================
-  if (payment.customerEmail && payment.customerEmail.trim() !== "") {
-    const email = payment.customerEmail.trim();
-    // Try to extract name from email (before @)
-    const emailName = email.split("@")[0];
-    if (emailName && emailName.length > 0) {
-      const formattedName = emailName
-        .replace(/[._-]/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase());
-      if (formattedName.length > 1) {
-        console.log(
-          `✅ [PRIORITY 5] Using email-based name: "${formattedName}"`,
-        );
-        return {
-          name: formattedName,
-          email: email,
-          phone: payment.customerPhone || "—",
-          applicationId:
-            typeof payment.applicationId === "string"
-              ? payment.applicationId
-              : payment.applicationId?.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 6: Check gateway response
-  // ============================================================
-  if (payment.paymentDetails?.gatewayResponse?.customerName) {
-    const gr = payment.paymentDetails.gatewayResponse;
-    const name = gr.customerName?.trim() || "";
-    if (name.length > 1) {
-      const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
-      if (!isAppIdPattern) {
-        console.log(`✅ [PRIORITY 6] Using gateway name: "${name}"`);
-        return {
-          name: name,
-          email: gr.customerEmail || payment.customerEmail || "—",
-          phone: gr.customerPhone || payment.customerPhone || "—",
-          applicationId: gr.applicationId || payment.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 7: Check paymentDetails notes
-  // ============================================================
-  if (payment.paymentDetails?.notes) {
-    const notes = payment.paymentDetails.notes;
-    const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
-    if (nameMatch && nameMatch[1]) {
-      const name = nameMatch[1].trim();
-      if (name.length > 1) {
-        const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
-        if (!isAppIdPattern) {
-          console.log(`✅ [PRIORITY 7] Using notes name: "${name}"`);
-          return {
-            name: name,
-            email: payment.customerEmail || "—",
-            phone: payment.customerPhone || "—",
-            applicationId:
-              typeof payment.applicationId === "string"
-                ? payment.applicationId
-                : payment.applicationId?.applicationId || "—",
-          };
-        }
-      }
-    }
-  }
-
-  // ============================================================
-  // FALLBACK: Use whatever we have
-  // ============================================================
-  let appId = "—";
+  let appId = "";
   if (typeof payment.applicationId === "string") {
     appId = payment.applicationId;
   } else if (payment.applicationId?.applicationId) {
@@ -347,62 +214,143 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // Check if we have a valid application ID that looks like one
-  if (appId !== "—" && /^[A-Z]{3}\d+/.test(appId)) {
-    // Try to find name in applicationId object
-    if (payment.applicationId && typeof payment.applicationId === "object") {
-      const app = payment.applicationId as any;
-      const firstName = app.firstName || "";
-      const lastName = app.lastName || "";
-      const fullName = `${firstName} ${lastName}`.trim();
-      if (fullName.length > 1) {
-        console.log(`✅ Using appId object name: "${fullName}"`);
+  // Check kung ang appId ay mukhang application ID (e.g., SIL26067944109)
+  const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
+
+  if (appId && isAppIdPattern) {
+    console.log(`📌 Application ID detected: ${appId}, fetching real name...`);
+    const customerData = await fetchCustomerName(appId);
+    return {
+      name: customerData.name,
+      email: customerData.email,
+      phone: customerData.phone,
+      applicationId: appId,
+    };
+  }
+
+  // ============================================================
+  // PRIORITY 2: Direct customerName FROM DATABASE
+  // ============================================================
+  if (payment.customerName && payment.customerName.trim() !== "") {
+    const name = payment.customerName.trim();
+    const isAppId = /^[A-Z]{3}\d+/.test(name);
+    if (!isAppId) {
+      console.log(`✅ Using database customerName: "${name}"`);
+      return {
+        name: name,
+        email: payment.customerEmail || "—",
+        phone: payment.customerPhone || "—",
+        applicationId: appId || "—",
+      };
+    }
+  }
+
+  // ============================================================
+  // PRIORITY 3: Application object (populated from backend)
+  // ============================================================
+  if (payment.application && typeof payment.application === "object") {
+    const app = payment.application;
+    const firstName = app.firstName || app.first_name || "";
+    const lastName = app.lastName || app.last_name || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (fullName.length > 1) {
+      const isAppId = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppId) {
+        console.log(`✅ Using application name: "${fullName}"`);
         return {
           name: fullName,
-          email: app.email || "—",
-          phone: app.phoneNumber || "—",
-          applicationId: app.applicationId || appId,
+          email: app.email || payment.customerEmail || "—",
+          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
+          applicationId: app.applicationId || appId || "—",
         };
       }
     }
+  }
 
-    console.log(`⚠️ Showing application ID as name: "${appId}"`);
+  // ============================================================
+  // PRIORITY 4: User object
+  // ============================================================
+  if (payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (fullName.length > 1) {
+      const isAppId = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppId) {
+        console.log(`✅ Using userId name: "${fullName}"`);
+        return {
+          name: fullName,
+          email: user.email || payment.customerEmail || "—",
+          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
+          applicationId: appId || "—",
+        };
+      }
+    }
+  }
+
+  // ============================================================
+  // FALLBACK: Gamitin ang application ID o "Unknown Customer"
+  // ============================================================
+  if (appId && appId.length > 0) {
+    // Try to fetch name one more time for any app ID
+    const customerData = await fetchCustomerName(appId);
+    if (customerData.name !== appId) {
+      return {
+        name: customerData.name,
+        email: customerData.email,
+        phone: customerData.phone,
+        applicationId: appId,
+      };
+    }
     return {
-      name: appId, // Show application ID as name
+      name: appId,
       email: payment.customerEmail || "—",
       phone: payment.customerPhone || "—",
       applicationId: appId,
     };
   }
 
-  // Final fallback
   console.log(`⚠️ No name found, showing "Unknown Customer"`);
   return {
     name: "Unknown Customer",
     email: payment.customerEmail || "—",
     phone: payment.customerPhone || "—",
-    applicationId: appId,
+    applicationId: appId || "—",
   };
 }
 
-// Group payments by customer
-function groupPayments(payments: Payment[]): PaymentGroup[] {
+// ============================================================
+// GROUP PAYMENTS BY CUSTOMER - ASYNC VERSION
+// ============================================================
+async function groupPaymentsAsync(
+  payments: Payment[],
+): Promise<PaymentGroup[]> {
   const groups = new Map<string, PaymentGroup>();
 
-  for (const payment of payments) {
-    const customerInfo = extractCustomerInfo(payment);
+  // Process payments in parallel for speed
+  const paymentPromises = payments.map(async (payment) => {
+    const customerInfo = await extractCustomerInfo(payment);
+    return { payment, customerInfo };
+  });
 
-    // Determine a unique customer ID
+  const results = await Promise.all(paymentPromises);
+
+  for (const { payment, customerInfo } of results) {
+    // Determine unique customer ID
     let customerId = customerInfo.applicationId;
     if (
       customerId === "—" ||
       customerId === "Loading..." ||
-      customerId === ""
+      customerId === "" ||
+      customerId === "Unknown Customer"
     ) {
       customerId =
         customerInfo.email !== "—"
           ? customerInfo.email
-          : payment.userId?._id || "unknown";
+          : payment.userId?._id || `unknown-${payment._id}`;
     }
 
     if (!groups.has(customerId)) {
@@ -442,20 +390,32 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
 
   // Update group info with best available name
   for (const group of Array.from(groups.values())) {
-    // Find a payment with a proper name (not "Unknown Customer" or app ID)
     const paymentWithName = group.payments.find((p) => {
-      const info = extractCustomerInfo(p);
-      return (
-        info.name !== "—" &&
-        info.name !== "Loading..." &&
-        info.name !== "Unknown Customer" &&
-        !/^[A-Z]{3}\d+/.test(info.name) &&
-        info.name.length > 1
-      );
+      const info = customerNameCache.get(p.applicationId || "");
+      if (info) {
+        return (
+          info.name !== "—" &&
+          info.name !== "Unknown Customer" &&
+          info.name.length > 1
+        );
+      }
+      return false;
     });
 
     if (paymentWithName) {
-      group.customerInfo = extractCustomerInfo(paymentWithName);
+      const appId =
+        typeof paymentWithName.applicationId === "string"
+          ? paymentWithName.applicationId
+          : paymentWithName.applicationId?.applicationId || "";
+      const info = customerNameCache.get(appId);
+      if (info) {
+        group.customerInfo = {
+          name: info.name,
+          email: info.email,
+          phone: info.phone,
+          applicationId: appId || group.customerInfo.applicationId,
+        };
+      }
     }
   }
 
@@ -528,6 +488,8 @@ export default function AdminPaymentsPage() {
     async (forceRefresh = false) => {
       if (forceRefresh) {
         setRefreshing(true);
+        // Clear cache para fresh ang data
+        customerNameCache.clear();
       } else {
         setLoading(true);
       }
@@ -549,19 +511,10 @@ export default function AdminPaymentsPage() {
           );
         }
 
-        console.log("📊 Payments loaded:", paymentsList.length);
-        if (paymentsList.length > 0) {
-          console.log("📝 Sample payment:", {
-            _id: paymentsList[0]._id,
-            customerName: paymentsList[0].customerName,
-            customerEmail: paymentsList[0].customerEmail,
-            applicationId: paymentsList[0].applicationId,
-            hasApplication: !!paymentsList[0].application,
-          });
-        }
+        console.log(`📊 Payments loaded: ${paymentsList.length}`);
 
-        // Group payments by customer
-        const grouped = groupPayments(paymentsList);
+        // Group payments by customer with async name fetching
+        const grouped = await groupPaymentsAsync(paymentsList);
         setPaymentGroups(grouped);
 
         // Get pending payments
@@ -930,7 +883,6 @@ export default function AdminPaymentsPage() {
             >
               <FiFilter /> Filters
             </button>
-
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -1007,11 +959,33 @@ export default function AdminPaymentsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {pendingPayments.map((payment) => {
-                    const info = extractCustomerInfo(payment);
+                    const [info, setInfo] = useState<CustomerInfo | null>(null);
+                    const [loading, setLoading] = useState(true);
+
+                    React.useEffect(() => {
+                      extractCustomerInfo(payment).then((result) => {
+                        setInfo(result);
+                        setLoading(false);
+                      });
+                    }, [payment]);
+
+                    if (loading || !info) {
+                      return (
+                        <tr key={payment._id}>
+                          <td colSpan={6} className="px-4 py-3 text-center">
+                            <span className="animate-pulse">
+                              Loading customer info...
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     const billingPeriod = payment.billingId?.billingPeriod;
                     const isInstallation =
                       payment.paymentType === "installation" ||
                       payment.billingId?.isInstallationBill;
+
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm">
@@ -1477,143 +1451,115 @@ export default function AdminPaymentsPage() {
               </button>
             </div>
             <div className="p-6">
-              {(() => {
-                const info = extractCustomerInfo(selectedPayment);
-                const isInstallation =
-                  selectedPayment.paymentType === "installation" ||
-                  selectedPayment.billingId?.isInstallationBill;
-                const billingPeriod = selectedPayment.billingId?.billingPeriod;
-                return (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Customer</p>
-                      <p className="font-semibold text-lg">{info.name}</p>
-                      <p className="text-sm text-gray-600">{info.email}</p>
-                      <p className="text-sm font-mono text-gray-500">
-                        {info.applicationId}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-gray-500">Amount</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          {formatCurrency(selectedPayment.amount)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Status</p>
-                        <span
-                          className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(selectedPayment.status)}`}
-                        >
-                          {selectedPayment.status === "completed"
-                            ? "Paid"
-                            : selectedPayment.status}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Reference Number</p>
-                      <p className="font-mono text-sm break-all">
-                        {selectedPayment.referenceNumber}
-                      </p>
-                    </div>
-                    {!isInstallation &&
-                      selectedPayment.billingId?.invoiceNumber && (
-                        <div>
-                          <p className="text-xs text-gray-500">
-                            Invoice Number
-                          </p>
-                          <p className="font-mono text-sm">
-                            {selectedPayment.billingId.invoiceNumber}
-                          </p>
-                        </div>
-                      )}
-                    {!isInstallation && billingPeriod && (
-                      <div className="bg-blue-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                          <FiCalendar className="w-3 h-3" /> Billing Period
-                        </p>
-                        <p className="text-base font-bold text-blue-800">
-                          {formatBillingPeriod(billingPeriod)}
-                        </p>
-                        {selectedPayment.billingId?.isProRated && (
-                          <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
-                            Pro-rated Bill
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {!isInstallation && selectedPayment.billingId?.dueDate && (
-                      <div>
-                        <p className="text-xs text-gray-500">Due Date</p>
-                        <p className="text-sm font-medium text-red-600">
-                          {formatDateFixed(selectedPayment.billingId.dueDate)}
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-xs text-gray-500">Payment Date</p>
-                      <p className="text-sm">
-                        {formatShortDate(selectedPayment.createdAt)}
-                      </p>
-                    </div>
-                    {selectedPayment.paidAt && (
-                      <div>
-                        <p className="text-xs text-gray-500">Paid At</p>
-                        <p className="text-sm">
-                          {formatShortDate(selectedPayment.paidAt)}
-                        </p>
-                      </div>
-                    )}
-                    {selectedPayment.paymentDetails?.notes && (
-                      <div>
-                        <p className="text-xs text-gray-500">Notes</p>
-                        <p className="text-sm text-gray-600">
-                          {selectedPayment.paymentDetails.notes}
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex gap-3 pt-4 border-t flex-wrap">
-                      {selectedPayment.status === "pending" && (
-                        <>
-                          <button
-                            onClick={() =>
-                              handleConfirmPayment(selectedPayment._id)
-                            }
-                            disabled={confirming}
-                            className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                          >
-                            Confirm Payment
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleRejectPayment(selectedPayment._id)
-                            }
-                            disabled={rejecting}
-                            className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() =>
-                          handleDeletePayment(
-                            selectedPayment._id,
-                            selectedPayment.referenceNumber,
-                          )
-                        }
-                        disabled={deleting}
-                        className="w-full py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        <FiTrash2 className="w-4 h-4" /> Delete Payment
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
+              <CustomerDetails payment={selectedPayment} />
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// CUSTOMER DETAILS COMPONENT (for modal)
+// ============================================================
+function CustomerDetails({ payment }: { payment: Payment }) {
+  const [info, setInfo] = useState<CustomerInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    extractCustomerInfo(payment).then((result) => {
+      setInfo(result);
+      setLoading(false);
+    });
+  }, [payment]);
+
+  if (loading || !info) {
+    return (
+      <div className="animate-pulse text-center py-4">
+        Loading customer info...
+      </div>
+    );
+  }
+
+  const isInstallation =
+    payment.paymentType === "installation" ||
+    payment.billingId?.isInstallationBill;
+  const billingPeriod = payment.billingId?.billingPeriod;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs text-gray-500">Customer</p>
+        <p className="font-semibold text-lg">{info.name}</p>
+        <p className="text-sm text-gray-600">{info.email}</p>
+        <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-gray-500">Amount</p>
+          <p className="text-2xl font-bold text-green-600">
+            {formatCurrency(payment.amount)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Status</p>
+          <span
+            className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(payment.status)}`}
+          >
+            {payment.status === "completed" ? "Paid" : payment.status}
+          </span>
+        </div>
+      </div>
+      <div>
+        <p className="text-xs text-gray-500">Reference Number</p>
+        <p className="font-mono text-sm break-all">{payment.referenceNumber}</p>
+      </div>
+      {!isInstallation && payment.billingId?.invoiceNumber && (
+        <div>
+          <p className="text-xs text-gray-500">Invoice Number</p>
+          <p className="font-mono text-sm">{payment.billingId.invoiceNumber}</p>
+        </div>
+      )}
+      {!isInstallation && billingPeriod && (
+        <div className="bg-blue-50 p-3 rounded-lg">
+          <p className="text-xs text-gray-500 flex items-center gap-1">
+            <FiCalendar className="w-3 h-3" /> Billing Period
+          </p>
+          <p className="text-base font-bold text-blue-800">
+            {formatBillingPeriod(billingPeriod)}
+          </p>
+          {payment.billingId?.isProRated && (
+            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+              Pro-rated Bill
+            </span>
+          )}
+        </div>
+      )}
+      {!isInstallation && payment.billingId?.dueDate && (
+        <div>
+          <p className="text-xs text-gray-500">Due Date</p>
+          <p className="text-sm font-medium text-red-600">
+            {formatDateFixed(payment.billingId.dueDate)}
+          </p>
+        </div>
+      )}
+      <div>
+        <p className="text-xs text-gray-500">Payment Date</p>
+        <p className="text-sm">{formatShortDate(payment.createdAt)}</p>
+      </div>
+      {payment.paidAt && (
+        <div>
+          <p className="text-xs text-gray-500">Paid At</p>
+          <p className="text-sm">{formatShortDate(payment.paidAt)}</p>
+        </div>
+      )}
+      {payment.paymentDetails?.notes && (
+        <div>
+          <p className="text-xs text-gray-500">Notes</p>
+          <p className="text-sm text-gray-600">
+            {payment.paymentDetails.notes}
+          </p>
         </div>
       )}
     </div>
