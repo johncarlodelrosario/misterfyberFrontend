@@ -1,5 +1,3 @@
-// frontend/src/app/admin/payments/page.tsx
-
 "use client";
 
 import React, {
@@ -139,45 +137,50 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// FIXED: Extract customer info - NOW PRIORITIZES customerName FROM DATABASE
+// ==================== CRITICAL FIX: EXTRACT CUSTOMER NAME ====================
 function extractCustomerInfo(payment: Payment): CustomerInfo {
-  // 1. FIRST CHECK: customerName DIRECTLY from database (MOST RELIABLE)
-  if (payment.customerName && payment.customerName.length > 0) {
-    const isAppIdPattern = /^[A-Z]{3}\d+/.test(payment.customerName);
+  console.log("🔍 Extracting customer info for payment:", payment._id);
+  console.log("📝 Payment data:", {
+    customerName: payment.customerName,
+    customerEmail: payment.customerEmail,
+    applicationId: payment.applicationId,
+    hasApplication: !!payment.application,
+    hasUserId: !!payment.userId,
+  });
+
+  // ============================================================
+  // PRIORITY 1: DIRECT customerName FROM DATABASE (MOST RELIABLE)
+  // ============================================================
+  if (payment.customerName && payment.customerName.trim() !== "") {
+    const name = payment.customerName.trim();
+    // Check if it's an application ID pattern (e.g., SIL26067944109)
+    const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
     if (!isAppIdPattern) {
-      console.log(`✅ Using database customerName: ${payment.customerName}`);
+      console.log(`✅ [PRIORITY 1] Using database customerName: "${name}"`);
       return {
-        name: payment.customerName,
+        name: name,
         email: payment.customerEmail || "—",
         phone: payment.customerPhone || "—",
-        applicationId: payment.applicationId || "—",
+        applicationId:
+          typeof payment.applicationId === "string"
+            ? payment.applicationId
+            : payment.applicationId?.applicationId || "—",
       };
+    } else {
+      console.log(
+        `⚠️ Database customerName is an App ID: "${name}", checking other sources...`,
+      );
     }
   }
 
-  // 2. Check customerEmail from database
-  if (payment.customerEmail && payment.customerEmail.length > 0) {
-    // Try to extract name from email (before @)
-    const emailName = payment.customerEmail.split("@")[0];
-    if (emailName && emailName.length > 0) {
-      const formattedName = emailName
-        .replace(/[._-]/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase());
-      if (formattedName.length > 1) {
-        console.log(`✅ Using email-based name: ${formattedName}`);
-        return {
-          name: formattedName,
-          email: payment.customerEmail,
-          phone: payment.customerPhone || "—",
-          applicationId: payment.applicationId || "—",
-        };
-      }
-    }
-  }
-
-  // 3. Check application object (from backend population)
+  // ============================================================
+  // PRIORITY 2: Check application object (populated from backend)
+  // ============================================================
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
+    console.log("📋 Application object:", app);
+
+    // Try to get name from application
     const firstName = app.firstName || app.first_name || "";
     const lastName = app.lastName || app.last_name || "";
     const fullName = `${firstName} ${lastName}`.trim();
@@ -185,34 +188,38 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     if (fullName.length > 1) {
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppIdPattern) {
-        console.log(`✅ Using application name: ${fullName}`);
+        console.log(`✅ [PRIORITY 2] Using application name: "${fullName}"`);
         return {
           name: fullName,
-          email: app.email || "—",
-          phone: app.phoneNumber || app.phone || "—",
+          email: app.email || payment.customerEmail || "—",
+          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
           applicationId: app.applicationId || payment.applicationId || "—",
         };
       }
     }
 
-    // Check if app has fullName directly
+    // Try app.fullName
     if (app.fullName && app.fullName.length > 1) {
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(app.fullName);
       if (!isAppIdPattern) {
-        console.log(`✅ Using app.fullName: ${app.fullName}`);
+        console.log(`✅ [PRIORITY 2] Using app.fullName: "${app.fullName}"`);
         return {
           name: app.fullName,
-          email: app.email || "—",
-          phone: app.phoneNumber || app.phone || "—",
+          email: app.email || payment.customerEmail || "—",
+          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
           applicationId: app.applicationId || payment.applicationId || "—",
         };
       }
     }
   }
 
-  // 4. Check userId object
+  // ============================================================
+  // PRIORITY 3: Check userId object (populated from backend)
+  // ============================================================
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
+    console.log("👤 User object:", user);
+
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
@@ -220,18 +227,20 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     if (fullName.length > 1) {
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppIdPattern) {
-        console.log(`✅ Using userId name: ${fullName}`);
+        console.log(`✅ [PRIORITY 3] Using userId name: "${fullName}"`);
         return {
           name: fullName,
-          email: user.email || "—",
-          phone: user.phoneNumber || user.phone || "—",
+          email: user.email || payment.customerEmail || "—",
+          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
           applicationId: payment.applicationId || "—",
         };
       }
     }
   }
 
-  // 5. Check user object
+  // ============================================================
+  // PRIORITY 4: Check user object
+  // ============================================================
   if (payment.user && typeof payment.user === "object") {
     const user = payment.user;
     const firstName = user.firstName || "";
@@ -241,37 +250,95 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     if (fullName.length > 1) {
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppIdPattern) {
-        console.log(`✅ Using user name: ${fullName}`);
+        console.log(`✅ [PRIORITY 4] Using user name: "${fullName}"`);
         return {
           name: fullName,
-          email: user.email || "—",
-          phone: user.phoneNumber || user.phone || "—",
+          email: user.email || payment.customerEmail || "—",
+          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
           applicationId: payment.applicationId || "—",
         };
       }
     }
   }
 
-  // 6. Check gateway response
+  // ============================================================
+  // PRIORITY 5: Check customerEmail from database
+  // ============================================================
+  if (payment.customerEmail && payment.customerEmail.trim() !== "") {
+    const email = payment.customerEmail.trim();
+    // Try to extract name from email (before @)
+    const emailName = email.split("@")[0];
+    if (emailName && emailName.length > 0) {
+      const formattedName = emailName
+        .replace(/[._-]/g, " ")
+        .replace(/\b\w/g, (l) => l.toUpperCase());
+      if (formattedName.length > 1) {
+        console.log(
+          `✅ [PRIORITY 5] Using email-based name: "${formattedName}"`,
+        );
+        return {
+          name: formattedName,
+          email: email,
+          phone: payment.customerPhone || "—",
+          applicationId:
+            typeof payment.applicationId === "string"
+              ? payment.applicationId
+              : payment.applicationId?.applicationId || "—",
+        };
+      }
+    }
+  }
+
+  // ============================================================
+  // PRIORITY 6: Check gateway response
+  // ============================================================
   if (payment.paymentDetails?.gatewayResponse?.customerName) {
     const gr = payment.paymentDetails.gatewayResponse;
-    const name = gr.customerName || "—";
-    if (name !== "—" && name.length > 1) {
+    const name = gr.customerName?.trim() || "";
+    if (name.length > 1) {
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
       if (!isAppIdPattern) {
-        console.log(`✅ Using gateway name: ${name}`);
+        console.log(`✅ [PRIORITY 6] Using gateway name: "${name}"`);
         return {
           name: name,
-          email: gr.customerEmail || "—",
-          phone: gr.customerPhone || "—",
+          email: gr.customerEmail || payment.customerEmail || "—",
+          phone: gr.customerPhone || payment.customerPhone || "—",
           applicationId: gr.applicationId || payment.applicationId || "—",
         };
       }
     }
   }
 
-  // 7. Get application ID from various locations
-  let appId: string | null = null;
+  // ============================================================
+  // PRIORITY 7: Check paymentDetails notes
+  // ============================================================
+  if (payment.paymentDetails?.notes) {
+    const notes = payment.paymentDetails.notes;
+    const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
+    if (nameMatch && nameMatch[1]) {
+      const name = nameMatch[1].trim();
+      if (name.length > 1) {
+        const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
+        if (!isAppIdPattern) {
+          console.log(`✅ [PRIORITY 7] Using notes name: "${name}"`);
+          return {
+            name: name,
+            email: payment.customerEmail || "—",
+            phone: payment.customerPhone || "—",
+            applicationId:
+              typeof payment.applicationId === "string"
+                ? payment.applicationId
+                : payment.applicationId?.applicationId || "—",
+          };
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // FALLBACK: Use whatever we have
+  // ============================================================
+  let appId = "—";
   if (typeof payment.applicationId === "string") {
     appId = payment.applicationId;
   } else if (payment.applicationId?.applicationId) {
@@ -280,59 +347,41 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // 8. Check paymentDetails notes
-  if (payment.paymentDetails?.notes) {
-    const notes = payment.paymentDetails.notes;
-    const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
-    if (nameMatch && nameMatch[1]) {
-      const name = nameMatch[1].trim();
-      if (name && name !== "—" && name.length > 1) {
-        const isAppIdPattern = /^[A-Z]{3}\d+/.test(name);
-        if (!isAppIdPattern) {
-          console.log(`✅ Using notes name: ${name}`);
-          return {
-            name: name,
-            email: "—",
-            phone: "—",
-            applicationId: appId || "—",
-          };
-        }
+  // Check if we have a valid application ID that looks like one
+  if (appId !== "—" && /^[A-Z]{3}\d+/.test(appId)) {
+    // Try to find name in applicationId object
+    if (payment.applicationId && typeof payment.applicationId === "object") {
+      const app = payment.applicationId as any;
+      const firstName = app.firstName || "";
+      const lastName = app.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName.length > 1) {
+        console.log(`✅ Using appId object name: "${fullName}"`);
+        return {
+          name: fullName,
+          email: app.email || "—",
+          phone: app.phoneNumber || "—",
+          applicationId: app.applicationId || appId,
+        };
       }
     }
-  }
 
-  // 9. If we have an appId, check if it's a valid application ID pattern
-  if (appId && appId !== "—" && appId.length > 0) {
-    // Check if it looks like an application ID (e.g., SIL26067944109)
-    const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
-    if (isAppIdPattern) {
-      // It IS an app ID, so we need to display it as "Unknown Customer"
-      console.log(
-        `⚠️ App ID detected, showing as "Unknown Customer": ${appId}`,
-      );
-      return {
-        name: "Unknown Customer",
-        email: "—",
-        phone: "—",
-        applicationId: appId,
-      };
-    }
-    // If it's not an app ID pattern, use it as name
+    console.log(`⚠️ Showing application ID as name: "${appId}"`);
     return {
-      name: appId,
-      email: "—",
-      phone: "—",
+      name: appId, // Show application ID as name
+      email: payment.customerEmail || "—",
+      phone: payment.customerPhone || "—",
       applicationId: appId,
     };
   }
 
-  // Final fallback - Unknown Customer
+  // Final fallback
   console.log(`⚠️ No name found, showing "Unknown Customer"`);
   return {
     name: "Unknown Customer",
-    email: "—",
-    phone: "—",
-    applicationId: "—",
+    email: payment.customerEmail || "—",
+    phone: payment.customerPhone || "—",
+    applicationId: appId,
   };
 }
 
@@ -501,7 +550,15 @@ export default function AdminPaymentsPage() {
         }
 
         console.log("📊 Payments loaded:", paymentsList.length);
-        console.log("📝 First payment sample:", paymentsList[0]);
+        if (paymentsList.length > 0) {
+          console.log("📝 Sample payment:", {
+            _id: paymentsList[0]._id,
+            customerName: paymentsList[0].customerName,
+            customerEmail: paymentsList[0].customerEmail,
+            applicationId: paymentsList[0].applicationId,
+            hasApplication: !!paymentsList[0].application,
+          });
+        }
 
         // Group payments by customer
         const grouped = groupPayments(paymentsList);
