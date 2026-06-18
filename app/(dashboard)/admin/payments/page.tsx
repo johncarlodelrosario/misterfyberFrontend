@@ -92,11 +92,17 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
-// Cache for customer names
-const nameCache = new Map<
-  string,
-  { name: string; email: string; phone: string; loading?: boolean }
->();
+// Cache for customer names with improved storage
+interface CustomerCacheData {
+  name: string;
+  email: string;
+  phone: string;
+  loading?: boolean;
+  firstName?: string;
+  lastName?: string;
+}
+
+const nameCache = new Map<string, CustomerCacheData>();
 
 // Helper to format billing period - SHOWS ACTUAL BILLED PERIOD
 function formatBillingPeriod(billingPeriod?: {
@@ -143,17 +149,17 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// Extract customer info with proper name resolution
+// Extract customer info with proper name resolution - IMPROVED
 function extractCustomerInfo(payment: Payment): CustomerInfo {
-  // Check if payment has application object with firstName
+  // 1. Check if payment has application object with firstName (MOST RELIABLE)
   if (payment.application && typeof payment.application === "object") {
     const app = payment.application;
     const firstName = app.firstName || "";
     const lastName = app.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    // If we have a valid name, use it
-    if (fullName && fullName !== " " && fullName.length > 1) {
+    // If we have a valid name with actual first name (not just app ID)
+    if (firstName && firstName.length > 0 && fullName.length > 1) {
       return {
         name: fullName,
         email: app.email || "—",
@@ -163,14 +169,14 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Check userId object for user data
+  // 2. Check userId object for user data
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (fullName && fullName !== " " && fullName.length > 1) {
+    if (firstName && firstName.length > 0 && fullName.length > 1) {
       return {
         name: fullName,
         email: user.email || "—",
@@ -179,7 +185,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
       };
     }
 
-    if (user.username && user.username !== "—") {
+    if (user.username && user.username !== "—" && user.username.length > 1) {
       return {
         name: user.username,
         email: user.email || "—",
@@ -189,14 +195,14 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Check user object (sometimes it's just "user" not "userId")
+  // 3. Check user object (sometimes it's just "user" not "userId")
   if (payment.user && typeof payment.user === "object") {
     const user = payment.user;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
 
-    if (fullName && fullName !== " " && fullName.length > 1) {
+    if (firstName && firstName.length > 0 && fullName.length > 1) {
       return {
         name: fullName,
         email: user.email || "—",
@@ -206,11 +212,11 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Check gateway response
+  // 4. Check gateway response
   if (payment.paymentDetails?.gatewayResponse?.customerName) {
     const gr = payment.paymentDetails.gatewayResponse;
     const name = gr.customerName || "—";
-    if (name !== "—") {
+    if (name !== "—" && name.length > 1) {
       return {
         name: name,
         email: gr.customerEmail || "—",
@@ -220,26 +226,62 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // If we have an applicationId, try to get from cache
-  const appId =
-    typeof payment.applicationId === "string" ? payment.applicationId : "";
+  // 5. Get application ID from various possible locations
+  let appId: string | null = null;
+  if (typeof payment.applicationId === "string") {
+    appId = payment.applicationId;
+  } else if (payment.applicationId?.applicationId) {
+    appId = payment.applicationId.applicationId;
+  } else if (payment.paymentDetails?.gatewayResponse?.applicationId) {
+    appId = payment.paymentDetails.gatewayResponse.applicationId;
+  }
+
+  // 6. If we have an applicationId, try to get from cache (MOST IMPORTANT FIX)
   if (appId && appId !== "—" && appId.length > 0) {
     const cached = nameCache.get(appId);
-    if (cached && cached.name && cached.name !== appId) {
+
+    // Check if we have a valid cached name (not just the appId)
+    if (
+      cached &&
+      cached.name &&
+      cached.name !== appId &&
+      cached.name !== "Loading..."
+    ) {
+      // Check if it has first name to verify it's a real name
+      if (cached.firstName && cached.firstName.length > 0) {
+        return {
+          name: cached.name,
+          email: cached.email || "—",
+          phone: cached.phone || "—",
+          applicationId: appId,
+        };
+      }
+      // If no firstName but name looks like a real name (not app ID pattern)
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(cached.name);
+      if (!isAppIdPattern && cached.name.length > 1) {
+        return {
+          name: cached.name,
+          email: cached.email || "—",
+          phone: cached.phone || "—",
+          applicationId: appId,
+        };
+      }
+    }
+
+    // Check if we have a cached entry that's still loading
+    if (cached && cached.loading) {
       return {
-        name: cached.name,
-        email: cached.email || "—",
-        phone: cached.phone || "—",
+        name: "Loading...",
+        email: "—",
+        phone: "—",
         applicationId: appId,
       };
     }
   }
 
-  // Check if payment has applicant info in paymentDetails
+  // 7. Check if payment has applicant info in paymentDetails notes
   if (payment.paymentDetails?.notes) {
-    // Try to extract name from notes if it contains customer info
     const notes = payment.paymentDetails.notes;
-    // Look for patterns like "Customer: John Doe" or "Name: John Doe"
     const nameMatch = notes.match(/(?:Customer|Name|Applicant):\s*([^\n,]+)/i);
     if (nameMatch && nameMatch[1]) {
       const name = nameMatch[1].trim();
@@ -254,8 +296,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // If we have an applicationId but no name yet, return a placeholder
-  // The actual name will be fetched asynchronously
+  // 8. If we still have an appId but no name, check if it's pending fetch
   if (appId && appId !== "—" && appId.length > 0) {
     // Check if we have a cached entry that's still loading
     const cached = nameCache.get(appId);
@@ -268,7 +309,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
       };
     }
 
-    // Return the appId as name for now - will be updated when fetch completes
+    // Return the appId as last resort - will be updated when fetch completes
     return {
       name: appId,
       email: "—",
@@ -286,76 +327,94 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
   };
 }
 
-async function fetchApplicationData(applicationId: string): Promise<any> {
-  if (!applicationId || applicationId === "—" || applicationId.length < 3)
+// IMPROVED: Fetch application data with better error handling and cache management
+async function fetchApplicationData(
+  applicationId: string,
+): Promise<CustomerCacheData | null> {
+  if (!applicationId || applicationId === "—" || applicationId.length < 3) {
     return null;
+  }
 
-  // Check cache first
+  // Check cache first - if we have a valid name, return it
   if (nameCache.has(applicationId)) {
-    const cached = nameCache.get(applicationId);
+    const cached = nameCache.get(applicationId)!;
     // If we already have a valid name (not just the appId), return it
-    if (cached && cached.name && cached.name !== applicationId) {
-      return cached;
+    if (
+      cached.name &&
+      cached.name !== applicationId &&
+      cached.name !== "Loading..."
+    ) {
+      // Check if it has firstName to verify it's a real name
+      if (cached.firstName && cached.firstName.length > 0) {
+        return cached;
+      }
+      // If no firstName but name looks like a real name
+      const isAppIdPattern = /^[A-Z]{3}\d+/.test(cached.name);
+      if (!isAppIdPattern && cached.name.length > 1) {
+        return cached;
+      }
     }
     // If it's currently loading, return null to avoid duplicate requests
-    if (cached && cached.loading) {
+    if (cached.loading) {
       return null;
     }
   }
 
   // Mark as loading
   nameCache.set(applicationId, {
-    name: applicationId,
+    name: "Loading...",
     email: "—",
     phone: "—",
     loading: true,
   });
 
   try {
-    // Try multiple API endpoints to get application data
-    let response = null;
     let data = null;
 
-    // Try the main endpoint first
-    try {
-      response = await api.get(
-        `/applications/by-application-id/${encodeURIComponent(applicationId)}`,
-      );
-      if (response.data?.success && response.data?.data) {
-        data = response.data.data;
-      }
-    } catch (e) {
-      console.log(
-        `Main endpoint failed for ${applicationId}, trying alternative...`,
-      );
-    }
+    // Try multiple API endpoints to get application data
+    const endpoints = [
+      `/applications/by-application-id/${encodeURIComponent(applicationId)}`,
+      `/applications/application-id/${encodeURIComponent(applicationId)}`,
+      `/applications/${encodeURIComponent(applicationId)}`,
+    ];
 
-    // If main endpoint failed, try alternative endpoint
-    if (!data) {
+    for (const endpoint of endpoints) {
       try {
-        response = await api.get(
-          `/applications/application-id/${encodeURIComponent(applicationId)}`,
-        );
+        const response = await api.get(endpoint);
         if (response.data?.success && response.data?.data) {
           data = response.data.data;
+          break;
+        }
+        if (response.data?.data) {
+          data = response.data.data;
+          break;
         }
       } catch (e) {
-        console.log(`Alternative endpoint failed for ${applicationId}`);
+        // Continue to next endpoint
+        continue;
       }
     }
 
     if (data) {
-      const firstName = data.firstName || "";
-      const lastName = data.lastName || "";
+      const firstName = data.firstName || data.first_name || "";
+      const lastName = data.lastName || data.last_name || "";
       const fullName =
-        `${firstName} ${lastName}`.trim() || data.name || applicationId;
+        `${firstName} ${lastName}`.trim() ||
+        data.name ||
+        data.fullName ||
+        applicationId;
+      const email = data.email || data.emailAddress || "—";
+      const phone = data.phoneNumber || data.phone || data.mobile || "—";
 
-      const customerInfo = {
+      const customerInfo: CustomerCacheData = {
         name: fullName,
-        email: data.email || "—",
-        phone: data.phoneNumber || data.phone || "—",
+        email: email,
+        phone: phone,
+        firstName: firstName,
+        lastName: lastName,
         loading: false,
       };
+
       nameCache.set(applicationId, customerInfo);
       return customerInfo;
     }
@@ -363,8 +422,8 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
     console.log(`Failed to fetch application data for ${applicationId}:`, e);
   }
 
-  // If all attempts failed, store a fallback
-  const fallbackInfo = {
+  // If all attempts failed, store a fallback with the appId
+  const fallbackInfo: CustomerCacheData = {
     name: applicationId,
     email: "—",
     phone: "—",
@@ -374,6 +433,7 @@ async function fetchApplicationData(applicationId: string): Promise<any> {
   return fallbackInfo;
 }
 
+// IMPROVED: Enrich payment with customer data
 async function enrichPayment(payment: Payment): Promise<Payment> {
   // Check if we already have customer name from application object
   if (
@@ -382,6 +442,24 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
     payment.application.firstName &&
     payment.application.firstName.length > 0
   ) {
+    // Cache the application data for future use
+    const appId = payment.application.applicationId || payment.applicationId;
+    if (appId && typeof appId === "string") {
+      const firstName = payment.application.firstName || "";
+      const lastName = payment.application.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName.length > 1) {
+        nameCache.set(appId, {
+          name: fullName,
+          email: payment.application.email || "—",
+          phone:
+            payment.application.phoneNumber || payment.application.phone || "—",
+          firstName: firstName,
+          lastName: lastName,
+          loading: false,
+        });
+      }
+    }
     return payment;
   }
 
@@ -392,12 +470,31 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
       payment.userId.firstName) ||
     (payment.user && typeof payment.user === "object" && payment.user.firstName)
   ) {
+    const user = payment.userId || payment.user;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName.length > 1) {
+      const appId =
+        typeof payment.applicationId === "string"
+          ? payment.applicationId
+          : null;
+      if (appId) {
+        nameCache.set(appId, {
+          name: fullName,
+          email: user.email || "—",
+          phone: user.phoneNumber || user.phone || "—",
+          firstName: firstName,
+          lastName: lastName,
+          loading: false,
+        });
+      }
+    }
     return payment;
   }
 
-  let appId: string | null = null;
-
   // Extract application ID from various possible locations
+  let appId: string | null = null;
   if (typeof payment.applicationId === "string") {
     appId = payment.applicationId;
   } else if (payment.applicationId?.applicationId) {
@@ -408,18 +505,56 @@ async function enrichPayment(payment: Payment): Promise<Payment> {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
+  // If we have an appId, fetch the data
   if (appId && appId !== "—" && appId.length > 0) {
-    const customerData = await fetchApplicationData(appId);
-    if (customerData && customerData.name && customerData.name !== appId) {
-      // Create a proper application object with the fetched data
-      const nameParts = customerData.name.split(" ");
-      payment.application = {
-        firstName: nameParts[0] || "",
-        lastName: nameParts.slice(1).join(" ") || "",
-        email: customerData.email,
-        phoneNumber: customerData.phone,
-        applicationId: appId,
-      };
+    // Check if we already have a valid name in cache
+    const cached = nameCache.get(appId);
+    if (
+      cached &&
+      cached.name &&
+      cached.name !== appId &&
+      cached.name !== "Loading..."
+    ) {
+      // Check if it has firstName to verify it's a real name
+      if (cached.firstName && cached.firstName.length > 0) {
+        payment.application = {
+          firstName: cached.firstName,
+          lastName: cached.lastName || "",
+          email: cached.email,
+          phoneNumber: cached.phone,
+          applicationId: appId,
+        };
+      } else {
+        // If no firstName but name looks like a real name (not app ID pattern)
+        const isAppIdPattern = /^[A-Z]{3}\d+/.test(cached.name);
+        if (!isAppIdPattern && cached.name.length > 1) {
+          const nameParts = cached.name.split(" ");
+          payment.application = {
+            firstName: nameParts[0] || "",
+            lastName: nameParts.slice(1).join(" ") || "",
+            email: cached.email,
+            phoneNumber: cached.phone,
+            applicationId: appId,
+          };
+        }
+      }
+      return payment;
+    }
+
+    // Only fetch if not already loading
+    if (!cached || !cached.loading) {
+      const customerData = await fetchApplicationData(appId);
+      if (customerData && customerData.name && customerData.name !== appId) {
+        const nameParts = customerData.name.split(" ");
+        payment.application = {
+          firstName: customerData.firstName || nameParts[0] || "",
+          lastName: customerData.lastName || nameParts.slice(1).join(" ") || "",
+          email: customerData.email,
+          phoneNumber: customerData.phone,
+          applicationId: appId,
+        };
+        return payment;
+      }
     }
   }
 
@@ -434,7 +569,11 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
 
     // Determine a unique customer ID
     let customerId = customerInfo.applicationId;
-    if (customerId === "—" || customerId === "Loading...") {
+    if (
+      customerId === "—" ||
+      customerId === "Loading..." ||
+      customerId === ""
+    ) {
       customerId =
         customerInfo.email !== "—"
           ? customerInfo.email
@@ -481,7 +620,6 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
     // Find a payment with a proper name (not just appId)
     const paymentWithName = group.payments.find((p) => {
       const info = extractCustomerInfo(p);
-      // Check if the name is a valid name (not just an appId pattern)
       const isAppIdPattern = /^[A-Z]{3}\d+/.test(info.name);
       return (
         info.name !== "—" &&
@@ -500,14 +638,33 @@ function groupPayments(payments: Payment[]): PaymentGroup[] {
           typeof p.applicationId === "string" ? p.applicationId : "";
         if (appId) {
           const cached = nameCache.get(appId);
-          if (cached && cached.name && cached.name !== appId) {
-            group.customerInfo = {
-              name: cached.name,
-              email: cached.email || "—",
-              phone: cached.phone || "—",
-              applicationId: appId,
-            };
-            break;
+          if (
+            cached &&
+            cached.name &&
+            cached.name !== appId &&
+            cached.name !== "Loading..."
+          ) {
+            // Check if it has firstName to verify it's a real name
+            if (cached.firstName && cached.firstName.length > 0) {
+              group.customerInfo = {
+                name: cached.name,
+                email: cached.email || "—",
+                phone: cached.phone || "—",
+                applicationId: appId,
+              };
+              break;
+            }
+            // If no firstName but name looks like a real name
+            const isAppIdPattern = /^[A-Z]{3}\d+/.test(cached.name);
+            if (!isAppIdPattern && cached.name.length > 1) {
+              group.customerInfo = {
+                name: cached.name,
+                email: cached.email || "—",
+                phone: cached.phone || "—",
+                applicationId: appId,
+              };
+              break;
+            }
           }
         }
       }
@@ -579,18 +736,20 @@ export default function AdminPaymentsPage() {
   const [currentTablePage, setCurrentTablePage] = useState(1);
   const isMountedRef = useRef(true);
   const [enrichmentComplete, setEnrichmentComplete] = useState(false);
+  // Use a ref for fetchAttempted instead of state to avoid re-renders
+  const fetchAttemptedRef = useRef<Set<string>>(new Set());
 
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
       if (forceRefresh) {
         setRefreshing(true);
+        nameCache.clear();
+        fetchAttemptedRef.current = new Set();
       } else {
         setLoading(true);
       }
 
       try {
-        if (forceRefresh) nameCache.clear();
-
         const allPaymentsResult = await getAllPayments({
           page: currentPage,
           limit: 100,
@@ -607,6 +766,43 @@ export default function AdminPaymentsPage() {
           );
         }
 
+        // Collect all unique application IDs that need fetching
+        const appIdsToFetch = new Set<string>();
+        paymentsList.forEach((p: Payment) => {
+          let appId: string | null = null;
+          if (typeof p.applicationId === "string") {
+            appId = p.applicationId;
+          } else if (p.applicationId?.applicationId) {
+            appId = p.applicationId.applicationId;
+          } else if (p.paymentDetails?.gatewayResponse?.applicationId) {
+            appId = p.paymentDetails.gatewayResponse.applicationId;
+          }
+
+          if (appId && appId !== "—" && appId.length > 0) {
+            // Only fetch if not already in cache with valid name
+            const cached = nameCache.get(appId);
+            if (
+              !cached ||
+              cached.name === appId ||
+              cached.name === "Loading..."
+            ) {
+              if (!fetchAttemptedRef.current.has(appId)) {
+                appIdsToFetch.add(appId);
+              }
+            }
+          }
+        });
+
+        // Fetch all missing application data in parallel
+        const fetchPromises = Array.from(appIdsToFetch).map(async (appId) => {
+          fetchAttemptedRef.current.add(appId);
+          return fetchApplicationData(appId);
+        });
+
+        if (fetchPromises.length > 0) {
+          await Promise.all(fetchPromises);
+        }
+
         // Enrich payments with customer data
         const enrichedPayments = await Promise.all(
           paymentsList.map((p: Payment) => enrichPayment(p)),
@@ -621,9 +817,12 @@ export default function AdminPaymentsPage() {
           () => ({ data: [] }),
         );
         let pendingList = pendingResult.data || [];
+
+        // Enrich pending payments
         const enrichedPending = await Promise.all(
           pendingList.map((p: Payment) => enrichPayment(p)),
         );
+
         if (paymentTypeFilter) {
           setPendingPayments(
             enrichedPending.filter(
@@ -1054,7 +1253,7 @@ export default function AdminPaymentsPage() {
                       Amount
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                      Billing Period{" "}
+                      Billing Period
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
                       Actions
@@ -1396,7 +1595,6 @@ export default function AdminPaymentsPage() {
                                               </p>
                                             </div>
                                           )}
-                                        {/* BILLING PERIOD - ALWAYS SHOW FOR SUBSCRIPTION */}
                                         {!isInstallation && billingPeriod && (
                                           <>
                                             <div className="md:col-span-2">
@@ -1585,7 +1783,6 @@ export default function AdminPaymentsPage() {
                           </p>
                         </div>
                       )}
-                    {/* BILLING PERIOD - PROMINENTLY DISPLAYED */}
                     {!isInstallation && billingPeriod && (
                       <div className="bg-blue-50 p-3 rounded-lg">
                         <p className="text-xs text-gray-500 flex items-center gap-1">
