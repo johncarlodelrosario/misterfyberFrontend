@@ -228,11 +228,6 @@ export default function Hero({ stats }: HeroProps) {
               <div className="mt-12 flex flex-wrap gap-8 md:gap-12">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                    <span className="text-white font-bold text-sm">+</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
                     <span className="text-white font-bold text-sm">⚡</span>
                   </div>
                   <div>

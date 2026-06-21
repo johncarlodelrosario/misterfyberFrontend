@@ -1215,9 +1215,12 @@ export default function ApplicationsPage() {
 
       <div className="bg-white rounded-md border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-[900px] w-full border-collapse">
+          <table className="min-w-[950px] w-full border-collapse">
             <thead>
               <tr className="bg-[#f0f0f0] border-b border-gray-300">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300 w-[50px]">
+                  #
+                </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
                   ID
                 </th>
@@ -1248,7 +1251,7 @@ export default function ApplicationsPage() {
               {filteredApplications.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-gray-500 text-sm"
                   >
                     {applications.length === 0
@@ -1262,6 +1265,9 @@ export default function ApplicationsPage() {
                     key={app._id}
                     className={`hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}`}
                   >
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100 text-center">
+                      {idx + 1}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs font-mono text-gray-900 border-r border-gray-100">
                       {app.applicationId}
                     </td>

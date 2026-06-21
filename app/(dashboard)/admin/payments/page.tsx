@@ -756,7 +756,7 @@ export default function AdminPaymentsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Payment Management</h1>
         <p className="text-gray-600">
@@ -766,7 +766,7 @@ export default function AdminPaymentsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-4 border">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Total Revenue</p>
@@ -782,7 +782,7 @@ export default function AdminPaymentsPage() {
             {stats.totalCount} transactions
           </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Monthly Revenue</p>
@@ -798,7 +798,7 @@ export default function AdminPaymentsPage() {
             {stats.monthlyCount} this month
           </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Subscription Revenue</p>
@@ -814,7 +814,7 @@ export default function AdminPaymentsPage() {
             {stats.subscriptionCount} subscriptions
           </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Installation Fees</p>
@@ -864,7 +864,7 @@ export default function AdminPaymentsPage() {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm mb-6 border">
+      <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-200">
         <div className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -874,19 +874,19 @@ export default function AdminPaymentsPage() {
                 placeholder="Search by name, email, application ID..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center gap-2"
+              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 border border-gray-300"
             >
               <FiFilter /> Filters
             </button>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300"
             >
               <FiRefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -895,14 +895,14 @@ export default function AdminPaymentsPage() {
             </button>
           </div>
           {showFilters && (
-            <div className="mt-4 pt-4 border-t flex flex-wrap gap-4">
+            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4">
               <select
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="px-4 py-2 border rounded-lg"
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">All Status</option>
                 <option value="pending">Pending</option>
@@ -915,7 +915,7 @@ export default function AdminPaymentsPage() {
                   setPaymentTypeFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="px-4 py-2 border rounded-lg"
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">All Types</option>
                 <option value="subscription">Subscription</option>
@@ -932,33 +932,36 @@ export default function AdminPaymentsPage() {
           <h2 className="text-lg font-semibold mb-4">
             Pending Confirmation ({pendingPayments.length})
           </h2>
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-yellow-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Customer Name
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Application ID
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Amount
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Billing Period
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {pendingPayments.map((payment) => {
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {pendingPayments.map((payment, index) => {
                     const [info, setInfo] = useState<CustomerInfo | null>(null);
                     const [loading, setLoading] = useState(true);
 
@@ -972,7 +975,7 @@ export default function AdminPaymentsPage() {
                     if (loading || !info) {
                       return (
                         <tr key={payment._id}>
-                          <td colSpan={6} className="px-4 py-3 text-center">
+                          <td colSpan={7} className="px-4 py-3 text-center">
                             <span className="animate-pulse">
                               Loading customer info...
                             </span>
@@ -988,6 +991,9 @@ export default function AdminPaymentsPage() {
 
                     return (
                       <tr key={payment._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {index + 1}
+                        </td>
                         <td className="px-4 py-3 text-sm">
                           {formatShortDate(payment.createdAt)}
                         </td>
@@ -1000,7 +1006,7 @@ export default function AdminPaymentsPage() {
                         </td>
                         <td className="px-4 py-3 text-sm">
                           {isInstallation ? (
-                            <span className="text-orange-600">
+                            <span className="text-orange-600 font-medium">
                               Installation Fee
                             </span>
                           ) : (
@@ -1025,20 +1031,20 @@ export default function AdminPaymentsPage() {
                             <button
                               onClick={() => handleConfirmPayment(payment._id)}
                               disabled={confirming}
-                              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
                             >
                               Confirm
                             </button>
                             <button
                               onClick={() => handleRejectPayment(payment._id)}
                               disabled={rejecting}
-                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
                             >
                               Reject
                             </button>
                             <button
                               onClick={() => setSelectedPayment(payment)}
-                              className="px-3 py-1 bg-gray-600 text-white rounded text-sm"
+                              className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition"
                             >
                               View
                             </button>
@@ -1050,7 +1056,7 @@ export default function AdminPaymentsPage() {
                                 )
                               }
                               disabled={deleting}
-                              className="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 flex items-center gap-1"
+                              className="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 transition flex items-center gap-1"
                             >
                               <FiTrash2 className="w-3 h-3" /> Delete
                             </button>
@@ -1067,8 +1073,8 @@ export default function AdminPaymentsPage() {
       )}
 
       {/* Customer Summary Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
-        <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
           <div>
             <h2 className="text-lg font-semibold">
               Customer Payment Summary ({totalFilteredCount})
@@ -1085,7 +1091,7 @@ export default function AdminPaymentsPage() {
                 setItemsPerPage(Number(e.target.value));
                 setCurrentTablePage(1);
               }}
-              className="px-3 py-1 border rounded-lg text-sm"
+              className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
             >
               <option value={10}>10 per page</option>
               <option value={25}>25 per page</option>
@@ -1104,49 +1110,52 @@ export default function AdminPaymentsPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  #
+                </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("customerInfo")}
                 >
                   Customer Name <SortIcon field="customerInfo" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Application ID
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Email / Phone
                 </th>
                 <th
-                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("paymentCount")}
                 >
                   Payments <SortIcon field="paymentCount" />
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("totalAmount")}
                 >
                   Total Paid <SortIcon field="totalAmount" />
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Pending
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("lastPaymentDate")}
                 >
                   Last Payment <SortIcon field="lastPaymentDate" />
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 bg-white">
               {paginatedGroups.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -1154,14 +1163,19 @@ export default function AdminPaymentsPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedGroups.map((group) => {
+                paginatedGroups.map((group, index) => {
                   const isExpanded = expandedCustomer === group.customerId;
                   const hasMultiple = group.paymentCount > 1;
+                  const rowNumber =
+                    (currentTablePage - 1) * itemsPerPage + index + 1;
                   return (
                     <Fragment key={group.customerId}>
                       <tr
                         className={`hover:bg-gray-50 ${group.hasPendingPayments ? "bg-yellow-50/30" : ""}`}
                       >
+                        <td className="px-4 py-4 text-sm text-gray-500">
+                          {rowNumber}
+                        </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
                             {hasMultiple && (
@@ -1174,9 +1188,9 @@ export default function AdminPaymentsPage() {
                                 className="text-blue-600 hover:text-blue-800"
                               >
                                 {isExpanded ? (
-                                  <FiChevronsUp />
+                                  <FiChevronsUp className="w-4 h-4" />
                                 ) : (
-                                  <FiChevronsDown />
+                                  <FiChevronsDown className="w-4 h-4" />
                                 )}
                               </button>
                             )}
@@ -1190,7 +1204,7 @@ export default function AdminPaymentsPage() {
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-1 text-sm">
-                            <FiMail className="w-3 h-3" />{" "}
+                            <FiMail className="w-3 h-3 text-gray-400" />{" "}
                             {group.customerInfo.email}
                           </div>
                           {group.customerInfo.phone !== "—" && (
@@ -1201,7 +1215,7 @@ export default function AdminPaymentsPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
                             {group.paymentCount}
                           </span>
                         </td>
@@ -1212,7 +1226,7 @@ export default function AdminPaymentsPage() {
                         </td>
                         <td className="px-4 py-4 text-right">
                           {group.totalPendingAmount > 0 ? (
-                            <span className="text-yellow-600">
+                            <span className="text-yellow-600 font-medium">
                               {formatCurrency(group.totalPendingAmount)}
                             </span>
                           ) : (
@@ -1235,13 +1249,13 @@ export default function AdminPaymentsPage() {
                       </tr>
                       {isExpanded && hasMultiple && (
                         <tr className="bg-gray-50">
-                          <td colSpan={8} className="px-4 py-4 pl-12">
+                          <td colSpan={9} className="px-4 py-4 pl-12">
                             <div className="border-l-4 border-blue-400 pl-4">
-                              <p className="text-xs font-semibold text-gray-500 mb-3">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                                 Payment History
                               </p>
                               <div className="space-y-3">
-                                {group.payments.map((p) => {
+                                {group.payments.map((p, idx) => {
                                   const billingPeriod =
                                     p.billingId?.billingPeriod;
                                   const isInstallation =
@@ -1250,12 +1264,12 @@ export default function AdminPaymentsPage() {
                                   return (
                                     <div
                                       key={p._id}
-                                      className="border rounded-lg p-3 bg-white"
+                                      className="border border-gray-200 rounded-lg p-3 bg-white"
                                     >
                                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
                                         <div>
                                           <p className="text-xs text-gray-400">
-                                            Date
+                                            #{idx + 1} - Date
                                           </p>
                                           <p className="font-medium">
                                             {formatShortDate(p.createdAt)}
@@ -1388,7 +1402,7 @@ export default function AdminPaymentsPage() {
           </table>
         </div>
         {totalFilteredCount > 0 && (
-          <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between flex-wrap gap-4">
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
             <div className="text-sm text-gray-600">
               Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
               {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
@@ -1398,7 +1412,7 @@ export default function AdminPaymentsPage() {
               <button
                 onClick={() => setCurrentTablePage(1)}
                 disabled={currentTablePage === 1}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
               >
                 First
               </button>
@@ -1407,11 +1421,11 @@ export default function AdminPaymentsPage() {
                   setCurrentTablePage((prev) => Math.max(1, prev - 1))
                 }
                 disabled={currentTablePage === 1}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
               >
                 Previous
               </button>
-              <span className="px-3 py-1">
+              <span className="px-3 py-1 text-sm">
                 Page {currentTablePage} of {totalPagesCount || 1}
               </span>
               <button
@@ -1421,14 +1435,14 @@ export default function AdminPaymentsPage() {
                   )
                 }
                 disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
               >
                 Next
               </button>
               <button
                 onClick={() => setCurrentTablePage(totalPagesCount)}
                 disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50"
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
               >
                 Last
               </button>
