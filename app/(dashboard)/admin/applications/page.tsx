@@ -1328,14 +1328,14 @@ export default function ApplicationsPage() {
         {showLeftButton && (
           <button
             onClick={scrollTableLeft}
-            className="fixed top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
+            className="fixed top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
             aria-label="Scroll table left"
             style={{
-              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
-              left: sidebarOpen ? "260px" : "20px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
+              left: sidebarOpen ? "265px" : "12px",
             }}
           >
-            <FiChevronLeft className="w-6 h-6" />
+            <FiChevronLeft className="w-4 h-4" />
           </button>
         )}
 
@@ -1343,13 +1343,13 @@ export default function ApplicationsPage() {
         {showRightButton && (
           <button
             onClick={scrollTableRight}
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
+            className="fixed right-3 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
             aria-label="Scroll table right"
             style={{
-              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
             }}
           >
-            <FiChevronRight className="w-6 h-6" />
+            <FiChevronRight className="w-4 h-4" />
           </button>
         )}
 
