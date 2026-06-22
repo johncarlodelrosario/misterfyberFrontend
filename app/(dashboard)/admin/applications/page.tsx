@@ -53,6 +53,7 @@ const STORAGE_KEYS = {
 const CACHE_DURATION = 60 * 60 * 1000;
 const MAX_STORED_APPLICATIONS = 500;
 const CHECK_INTERVAL = 15000;
+const ITEMS_PER_PAGE = 20;
 
 interface StoredApplicationsData {
   applications: any[];
@@ -178,6 +179,9 @@ export default function ApplicationsPage() {
     failed: any[];
   } | null>(null);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -198,7 +202,7 @@ export default function ApplicationsPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
 
-  // Table scroll controls
+  // Table scroll controls - using ref for the table container
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollTableLeft = () => {
@@ -212,6 +216,11 @@ export default function ApplicationsPage() {
       tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
     }
   };
+
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter.searchTerm, filter.statusFilter]);
 
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
@@ -732,6 +741,17 @@ export default function ApplicationsPage() {
     });
   }, [applications, filter.searchTerm, filter.statusFilter]);
 
+  // Pagination calculations
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
+  }, [filteredApplications.length]);
+
+  const currentApplications = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return filteredApplications.slice(startIndex, endIndex);
+  }, [filteredApplications, currentPage]);
+
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
@@ -1230,23 +1250,30 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
+      {/* Table with scroll buttons */}
       <div className="relative">
-        {/* Left Scroll Button */}
+        {/* Left Scroll Button - Fixed Position on Page */}
         <button
           onClick={scrollTableLeft}
-          className="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 -ml-3"
+          className="fixed left-2 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
           aria-label="Scroll table left"
+          style={{
+            boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+          }}
         >
-          <FiChevronLeft className="w-5 h-5" />
+          <FiChevronLeft className="w-6 h-6" />
         </button>
 
-        {/* Right Scroll Button */}
+        {/* Right Scroll Button - Fixed Position on Page */}
         <button
           onClick={scrollTableRight}
-          className="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 -mr-3"
+          className="fixed right-2 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
           aria-label="Scroll table right"
+          style={{
+            boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+          }}
         >
-          <FiChevronRight className="w-5 h-5" />
+          <FiChevronRight className="w-6 h-6" />
         </button>
 
         <div
@@ -1306,7 +1333,7 @@ export default function ApplicationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredApplications.length === 0 ? (
+              {currentApplications.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
@@ -1318,102 +1345,137 @@ export default function ApplicationsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredApplications.map((app: any, idx: number) => (
-                  <tr
-                    key={app._id}
-                    className={`hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}`}
-                  >
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100 text-center">
-                      {idx + 1}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs font-mono text-gray-900 border-r border-gray-100">
-                      {app.applicationId}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 border-r border-gray-100">
-                      {app.firstName} {app.lastName}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                      {app.email}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                      {app.planId?.name || "N/A"}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs font-mono border-r border-gray-100">
-                      {editingMacAddress === app._id ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={tempMacAddress}
-                            onChange={(e) => setTempMacAddress(e.target.value)}
-                            className="w-28 px-1.5 py-0.5 text-xs border border-gray-300 rounded font-mono"
-                            placeholder="AA:BB:CC:DD:EE:FF"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() =>
-                              handleUpdateMacAddress(app._id, tempMacAddress)
-                            }
-                            className="text-green-600 hover:text-green-800"
-                          >
-                            <FiSave className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingMacAddress(null);
-                              setTempMacAddress("");
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <FiX className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-gray-500">
-                            {app.macAddress || "—"}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setEditingMacAddress(app._id);
-                              setTempMacAddress(app.macAddress || "");
-                            }}
-                            className="text-gray-400 hover:text-blue-600"
-                            title="Edit MAC Address"
-                          >
-                            <FiEdit2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap border-r border-gray-100">
-                      <span
-                        className={`px-1.5 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(app.status)}`}
-                      >
-                        {app.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100">
-                      {new Date(app.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleViewApplication(app)}
-                          className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
+                currentApplications.map((app: any, idx: number) => {
+                  const globalIndex =
+                    (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  return (
+                    <tr
+                      key={app._id}
+                      className={`hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}`}
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100 text-center">
+                        {globalIndex}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs font-mono text-gray-900 border-r border-gray-100">
+                        {app.applicationId}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 border-r border-gray-100">
+                        {app.firstName} {app.lastName}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
+                        {app.email}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
+                        {app.planId?.name || "N/A"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs font-mono border-r border-gray-100">
+                        {editingMacAddress === app._id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={tempMacAddress}
+                              onChange={(e) =>
+                                setTempMacAddress(e.target.value)
+                              }
+                              className="w-28 px-1.5 py-0.5 text-xs border border-gray-300 rounded font-mono"
+                              placeholder="AA:BB:CC:DD:EE:FF"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() =>
+                                handleUpdateMacAddress(app._id, tempMacAddress)
+                              }
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <FiSave className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingMacAddress(null);
+                                setTempMacAddress("");
+                              }}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <FiX className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-500">
+                              {app.macAddress || "—"}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditingMacAddress(app._id);
+                                setTempMacAddress(app.macAddress || "");
+                              }}
+                              className="text-gray-400 hover:text-blue-600"
+                              title="Edit MAC Address"
+                            >
+                              <FiEdit2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap border-r border-gray-100">
+                        <span
+                          className={`px-1.5 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(app.status)}`}
                         >
-                          <FiEye className="w-3.5 h-3.5" />
-                          <span className="hidden xs:inline">View</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {app.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100">
+                        {new Date(app.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleViewApplication(app)}
+                            className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
+                          >
+                            <FiEye className="w-3.5 h-3.5" />
+                            <span className="hidden xs:inline">View</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
-          <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600">
-            Showing {filteredApplications.length} of {applications.length}{" "}
-            applications
+          <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <span>
+              Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{" "}
+              {Math.min(
+                currentPage * ITEMS_PER_PAGE,
+                filteredApplications.length,
+              )}{" "}
+              of {filteredApplications.length} applications
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+              >
+                <FiChevronLeft className="w-3.5 h-3.5" />
+                Prev
+              </button>
+              <span className="text-xs text-gray-700">
+                Page {currentPage} of {totalPages || 1}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                }
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+              >
+                Next
+                <FiChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
