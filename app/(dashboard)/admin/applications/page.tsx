@@ -270,11 +270,6 @@ export default function ApplicationsPage() {
     };
   }, [checkTableScroll]);
 
-  // Check scroll when data changes
-  useEffect(() => {
-    setTimeout(checkTableScroll, 100);
-  }, [currentApplications, checkTableScroll]);
-
   const scrollTableLeft = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
@@ -823,6 +818,11 @@ export default function ApplicationsPage() {
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return filteredApplications.slice(startIndex, endIndex);
   }, [filteredApplications, currentPage]);
+
+  // Check scroll when data changes - moved AFTER currentApplications is declared
+  useEffect(() => {
+    setTimeout(checkTableScroll, 100);
+  }, [currentApplications, checkTableScroll]);
 
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
