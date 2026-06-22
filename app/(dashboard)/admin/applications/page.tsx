@@ -35,6 +35,8 @@ import {
   FiWifi,
   FiEdit2,
   FiSave,
+  FiChevronLeft,
+  FiChevronRight,
 } from "react-icons/fi";
 
 const STORAGE_KEYS = {
@@ -195,6 +197,21 @@ export default function ApplicationsPage() {
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
+
+  // Table scroll controls
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollTableLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+    }
+  };
 
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
@@ -1056,7 +1073,7 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden">
+    <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden relative">
       {hasNewApplicant && (
         <div className="mb-3 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-3 rounded-lg shadow-md animate-pulse">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1213,8 +1230,49 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-md border border-gray-200 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+      <div className="relative">
+        {/* Left Scroll Button */}
+        <button
+          onClick={scrollTableLeft}
+          className="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 -ml-3"
+          aria-label="Scroll table left"
+        >
+          <FiChevronLeft className="w-5 h-5" />
+        </button>
+
+        {/* Right Scroll Button */}
+        <button
+          onClick={scrollTableRight}
+          className="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 -mr-3"
+          aria-label="Scroll table right"
+        >
+          <FiChevronRight className="w-5 h-5" />
+        </button>
+
+        <div
+          ref={tableContainerRef}
+          className="bg-white rounded-md border border-gray-200 overflow-x-auto shadow-sm scroll-smooth"
+          style={{
+            scrollbarWidth: "thin",
+            msOverflowStyle: "none",
+          }}
+        >
+          <style jsx>{`
+            div::-webkit-scrollbar {
+              height: 6px;
+            }
+            div::-webkit-scrollbar-track {
+              background: #f1f1f1;
+              border-radius: 10px;
+            }
+            div::-webkit-scrollbar-thumb {
+              background: #c1c1c1;
+              border-radius: 10px;
+            }
+            div::-webkit-scrollbar-thumb:hover {
+              background: #a8a8a8;
+            }
+          `}</style>
           <table className="min-w-[950px] w-full border-collapse">
             <thead>
               <tr className="bg-[#f0f0f0] border-b border-gray-300">
@@ -1353,10 +1411,10 @@ export default function ApplicationsPage() {
               )}
             </tbody>
           </table>
-        </div>
-        <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600">
-          Showing {filteredApplications.length} of {applications.length}{" "}
-          applications
+          <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600">
+            Showing {filteredApplications.length} of {applications.length}{" "}
+            applications
+          </div>
         </div>
       </div>
 
