@@ -182,6 +182,11 @@ export default function ApplicationsPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
 
+  // State to track if table is fully visible
+  const [showLeftButton, setShowLeftButton] = useState(false);
+  const [showRightButton, setShowRightButton] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -205,15 +210,82 @@ export default function ApplicationsPage() {
   // Table scroll controls - using ref for the table container
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // Check if sidebar is open
+  useEffect(() => {
+    const checkSidebar = () => {
+      const sidebar = document.querySelector("aside");
+      if (sidebar) {
+        const isOpen =
+          !sidebar.classList.contains("hidden") &&
+          sidebar.classList.contains("translate-x-0");
+        setSidebarOpen(isOpen);
+      }
+    };
+
+    checkSidebar();
+    window.addEventListener("resize", checkSidebar);
+
+    // Observe sidebar changes
+    const observer = new MutationObserver(checkSidebar);
+    const sidebar = document.querySelector("aside");
+    if (sidebar) {
+      observer.observe(sidebar, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
+
+    return () => {
+      window.removeEventListener("resize", checkSidebar);
+      observer.disconnect();
+    };
+  }, []);
+
+  const checkTableScroll = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        tableContainerRef.current;
+      setShowLeftButton(scrollLeft > 10);
+      setShowRightButton(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  }, []);
+
+  // Check scroll on mount and resize
+  useEffect(() => {
+    const checkScroll = () => {
+      checkTableScroll();
+    };
+
+    checkScroll();
+    window.addEventListener("resize", checkScroll);
+
+    const observer = new ResizeObserver(checkScroll);
+    if (tableContainerRef.current) {
+      observer.observe(tableContainerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", checkScroll);
+      observer.disconnect();
+    };
+  }, [checkTableScroll]);
+
+  // Check scroll when data changes
+  useEffect(() => {
+    setTimeout(checkTableScroll, 100);
+  }, [currentApplications, checkTableScroll]);
+
   const scrollTableLeft = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+      setTimeout(checkTableScroll, 300);
     }
   };
 
   const scrollTableRight = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+      setTimeout(checkTableScroll, 300);
     }
   };
 
@@ -1252,29 +1324,34 @@ export default function ApplicationsPage() {
 
       {/* Table with scroll buttons */}
       <div className="relative">
-        {/* Left Scroll Button - Fixed Position on Page */}
-        <button
-          onClick={scrollTableLeft}
-          className="fixed left-2 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
-          aria-label="Scroll table left"
-          style={{
-            boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
-          }}
-        >
-          <FiChevronLeft className="w-6 h-6" />
-        </button>
+        {/* Left Scroll Button - Only show when table is not fully visible */}
+        {showLeftButton && (
+          <button
+            onClick={scrollTableLeft}
+            className="fixed top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
+            aria-label="Scroll table left"
+            style={{
+              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+              left: sidebarOpen ? "260px" : "20px",
+            }}
+          >
+            <FiChevronLeft className="w-6 h-6" />
+          </button>
+        )}
 
-        {/* Right Scroll Button - Fixed Position on Page */}
-        <button
-          onClick={scrollTableRight}
-          className="fixed right-2 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
-          aria-label="Scroll table right"
-          style={{
-            boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
-          }}
-        >
-          <FiChevronRight className="w-6 h-6" />
-        </button>
+        {/* Right Scroll Button - Only show when table is not fully visible */}
+        {showRightButton && (
+          <button
+            onClick={scrollTableRight}
+            className="fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white/95 hover:bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-200 hover:scale-110"
+            aria-label="Scroll table right"
+            style={{
+              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+            }}
+          >
+            <FiChevronRight className="w-6 h-6" />
+          </button>
+        )}
 
         <div
           ref={tableContainerRef}
@@ -1283,6 +1360,7 @@ export default function ApplicationsPage() {
             scrollbarWidth: "thin",
             msOverflowStyle: "none",
           }}
+          onScroll={checkTableScroll}
         >
           <style jsx>{`
             div::-webkit-scrollbar {
