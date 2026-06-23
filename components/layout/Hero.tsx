@@ -135,8 +135,8 @@ export default function Hero({ stats }: HeroProps) {
         <FiChevronRight className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
       </button>
 
-      {/* Dots Indicator with TEXT sa mismong button - Moved higher on mobile */}
-      <div className="absolute bottom-20 sm:bottom-16 md:bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-1.5 sm:gap-2 md:gap-3">
+      {/* Dots Indicator with TEXT - Made bigger */}
+      <div className="absolute bottom-20 sm:bottom-16 md:bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-2 sm:gap-3 md:gap-4">
         {banners.map((banner, index) => (
           <motion.button
             key={index}
@@ -150,12 +150,12 @@ export default function Hero({ stats }: HeroProps) {
             }`}
             aria-label={`Go to slide ${banner.dotLabel}`}
           >
-            <div className="flex items-center gap-0.5 sm:gap-1.5 md:gap-2 px-0.5 sm:px-1 md:px-3 py-0.5 sm:py-1 md:py-1.5">
+            <div className="flex items-center gap-1 sm:gap-2 md:gap-3 px-2 sm:px-3 md:px-5 py-1 sm:py-1.5 md:py-2.5">
               {/* Dot indicator */}
               <div />
-              {/* Text label - Smaller on mobile */}
+              {/* Text label - Made bigger */}
               <span
-                className={`text-[8px] xs:text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                className={`text-[10px] xs:text-xs sm:text-sm md:text-base font-medium transition-all duration-300 whitespace-nowrap ${
                   currentIndex === index
                     ? "text-white opacity-100"
                     : "text-white/70 hover:text-white/90"
@@ -168,9 +168,9 @@ export default function Hero({ stats }: HeroProps) {
         ))}
       </div>
 
-      {/* TEXT CONTENT - Smaller and higher on mobile */}
+      {/* TEXT CONTENT - Smaller and higher on mobile with margins to avoid buttons */}
       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-16 sm:py-20 md:py-24 lg:py-32 relative z-10 min-h-screen flex items-center">
-        <div className="max-w-3xl ml-2 sm:ml-4 md:ml-8 lg:ml-16 xl:ml-24 mt-[-40px] sm:mt-[-60px] md:mt-0">
+        <div className="max-w-3xl mx-8 sm:mx-12 md:mx-16 lg:mx-20 xl:mx-24 mt-[-40px] sm:mt-[-60px] md:mt-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={`content-${currentIndex}`}
