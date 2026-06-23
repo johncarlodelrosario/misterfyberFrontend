@@ -51,7 +51,7 @@ export default function Hero({ stats }: HeroProps) {
       ctaText: "View Plans",
       ctaLink: "/plans",
       desktopImage: "/homeBanner/FountainBreeze.png",
-      mobileImage: "/homeBanner/FountainBreeze.png",
+      mobileImage: "/breezePortrait.png",
       dotLabel: "Fountain Breeze",
     },
   ];
@@ -118,25 +118,25 @@ export default function Hero({ stats }: HeroProps) {
         <div className="absolute inset-0 bg-black/60"></div>
       </div>
 
-      {/* Navigation Arrows */}
+      {/* Navigation Arrows - Smaller on mobile */}
       <button
         onClick={goToPrevious}
-        className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white p-2 md:p-3 rounded-full transition-all duration-300 hover:scale-110 border border-white/20"
+        className="absolute left-2 sm:left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white p-1.5 sm:p-2 md:p-3 rounded-full transition-all duration-300 hover:scale-110 border border-white/20"
         aria-label="Previous banner"
       >
-        <FiChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
+        <FiChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
       </button>
 
       <button
         onClick={goToNext}
-        className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white p-2 md:p-3 rounded-full transition-all duration-300 hover:scale-110 border border-white/20"
+        className="absolute right-2 sm:right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white p-1.5 sm:p-2 md:p-3 rounded-full transition-all duration-300 hover:scale-110 border border-white/20"
         aria-label="Next banner"
       >
-        <FiChevronRight className="w-5 h-5 md:w-6 md:h-6" />
+        <FiChevronRight className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
       </button>
 
-      {/* Dots Indicator na may TEXT sa mismong button */}
-      <div className="absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-2 md:gap-3">
+      {/* Dots Indicator with TEXT sa mismong button - Moved higher on mobile */}
+      <div className="absolute bottom-20 sm:bottom-16 md:bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-1.5 sm:gap-2 md:gap-3">
         {banners.map((banner, index) => (
           <motion.button
             key={index}
@@ -150,12 +150,12 @@ export default function Hero({ stats }: HeroProps) {
             }`}
             aria-label={`Go to slide ${banner.dotLabel}`}
           >
-            <div className="flex items-center gap-1.5 md:gap-2 px-1 md:px-3 py-1 md:py-1.5">
+            <div className="flex items-center gap-0.5 sm:gap-1.5 md:gap-2 px-0.5 sm:px-1 md:px-3 py-0.5 sm:py-1 md:py-1.5">
               {/* Dot indicator */}
               <div />
-              {/* Text label */}
+              {/* Text label - Smaller on mobile */}
               <span
-                className={`text-xs md:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                className={`text-[8px] xs:text-[10px] sm:text-xs md:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
                   currentIndex === index
                     ? "text-white opacity-100"
                     : "text-white/70 hover:text-white/90"
@@ -168,9 +168,9 @@ export default function Hero({ stats }: HeroProps) {
         ))}
       </div>
 
-      {/* TEXT CONTENT ONLY - with animation */}
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 relative z-10 min-h-screen flex items-center">
-        <div className="max-w-3xl ml-8 md:ml-16 lg:ml-24">
+      {/* TEXT CONTENT - Smaller and higher on mobile */}
+      <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-16 sm:py-20 md:py-24 lg:py-32 relative z-10 min-h-screen flex items-center">
+        <div className="max-w-3xl ml-2 sm:ml-4 md:ml-8 lg:ml-16 xl:ml-24 mt-[-40px] sm:mt-[-60px] md:mt-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={`content-${currentIndex}`}
@@ -179,35 +179,35 @@ export default function Hero({ stats }: HeroProps) {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
-              {/* Modern Title */}
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold mb-4 leading-tight text-white">
+              {/* Modern Title - Smaller on mobile */}
+              <h1 className="text-lg xs:text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl 2xl:text-6xl font-bold mb-2 sm:mb-3 md:mb-4 leading-tight text-white">
                 {currentBanner.title}
                 <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
                   {currentBanner.highlight}
                 </span>
               </h1>
 
-              {/* Modern Description */}
-              <p className="text-sm md:text-base lg:text-lg mb-8 text-white/90 leading-relaxed max-w-2xl font-light tracking-wide">
+              {/* Modern Description - Smaller on mobile */}
+              <p className="text-[10px] xs:text-xs sm:text-sm md:text-base lg:text-lg mb-4 sm:mb-6 md:mb-8 text-white/90 leading-relaxed max-w-2xl font-light tracking-wide">
                 {currentBanner.description}
               </p>
 
-              {/* Modern Button Group */}
-              <div className="flex flex-wrap gap-4">
+              {/* Modern Button Group - Smaller on mobile */}
+              <div className="flex flex-wrap gap-2 sm:gap-3 md:gap-4">
                 <Link
                   href="/plans"
-                  className="group relative overflow-hidden bg-white text-gray-900 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/25 inline-flex items-center gap-3"
+                  className="group relative overflow-hidden bg-white text-gray-900 px-4 sm:px-5 md:px-6 lg:px-8 py-1.5 sm:py-2.5 md:py-3 lg:py-3.5 rounded-full text-[10px] xs:text-xs sm:text-sm font-semibold transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/25 inline-flex items-center gap-1.5 sm:gap-2 md:gap-3"
                 >
                   <span className="relative z-10">Apply Now</span>
-                  <FiArrowRight className="relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
+                  <FiArrowRight className="relative z-10 group-hover:translate-x-1 transition-transform duration-300 text-[10px] xs:text-xs sm:text-sm md:text-base" />
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 group-hover:opacity-100 opacity-0 transition-opacity duration-300"></div>
                 </Link>
                 <Link
                   href="/about"
-                  className="group border-2 border-white/30 backdrop-blur-sm px-8 py-3.5 rounded-full text-sm font-semibold hover:bg-white/10 transition-all duration-300 inline-flex items-center gap-2 text-white hover:border-white/50"
+                  className="group border-2 border-white/30 backdrop-blur-sm px-4 sm:px-5 md:px-6 lg:px-8 py-1.5 sm:py-2.5 md:py-3 lg:py-3.5 rounded-full text-[10px] xs:text-xs sm:text-sm font-semibold hover:bg-white/10 transition-all duration-300 inline-flex items-center gap-1.5 sm:gap-2 text-white hover:border-white/50"
                 >
                   Learn More
-                  <span className="group-hover:translate-x-1 transition-transform duration-300">
+                  <span className="group-hover:translate-x-1 transition-transform duration-300 text-[10px] xs:text-xs sm:text-sm">
                     →
                   </span>
                 </Link>
