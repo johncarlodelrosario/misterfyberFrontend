@@ -1,29 +1,51 @@
-// app/components/PlansSection.tsx
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import Link from "next/link";
+import { motion, useScroll, useTransform } from "framer-motion";
 import {
+  FiWifi,
+  FiShield,
+  FiZap,
+  FiUsers,
+  FiAward,
+  FiHeadphones,
+  FiCpu,
+  FiClock,
+  FiGlobe,
+  FiStar,
+  FiThumbsUp,
   FiCheckCircle,
   FiLoader,
   FiAlertCircle,
   FiArrowRight,
-  FiStar,
-  FiWifi,
-  FiTrendingUp,
-  FiUsers,
-  FiZap,
-  FiShield,
-  FiAward,
 } from "react-icons/fi";
-import { getPlans, Plan } from "@/services/plan";
+
+export interface Plan {
+  _id: string;
+  name: string;
+  description: string;
+  price: number;
+  speed: {
+    download: number;
+    upload: number;
+  };
+  features: string[];
+  duration: number;
+  mikrotikProfile: string;
+  isActive: boolean;
+}
 
 export default function PlansSection() {
+  const [stats, setStats] = useState({ users: 0, speed: 0, uptime: 0 });
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { scrollYProgress } = useScroll();
+  const scaleX = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
   useEffect(() => {
+    setStats({ users: 128, speed: 200, uptime: 99.5 });
     fetchPlans();
   }, []);
 
@@ -31,12 +53,119 @@ export default function PlansSection() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getPlans();
-      const activePlans = data.filter((plan: Plan) => plan.isActive !== false);
-      setPlans(activePlans.slice(0, 3));
+
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+      const response = await fetch(`${apiUrl}/plans`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      let plansData = [];
+      if (data.data && Array.isArray(data.data)) {
+        plansData = data.data;
+      } else if (Array.isArray(data)) {
+        plansData = data;
+      } else if (data.plans && Array.isArray(data.plans)) {
+        plansData = data.plans;
+      } else {
+        plansData = [];
+      }
+
+      const activePlans = plansData.filter(
+        (plan: Plan) => plan.isActive !== false,
+      );
+      setPlans(activePlans);
+
+      if (activePlans.length === 0) {
+        setError("No active plans available at the moment.");
+      }
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");
+      setPlans([
+        {
+          _id: "1",
+          name: "Essential",
+          description: "Light browsing",
+          price: 999,
+          speed: { download: 50, upload: 25 },
+          features: [
+            "50 Mbps Speed",
+            "Unlimited Data",
+            "Basic Security",
+            "12/7 Support",
+          ],
+          duration: 30,
+          mikrotikProfile: "basic",
+          isActive: true,
+        },
+        {
+          _id: "2",
+          name: "Professional",
+          description: "Family & streaming",
+          price: 1499,
+          speed: { download: 150, upload: 75 },
+          features: [
+            "150 Mbps Speed",
+            "Unlimited Data",
+            "Enhanced Security",
+            "Priority Support",
+            "Free Installation",
+            "Free WiFi Router",
+          ],
+          duration: 30,
+          mikrotikProfile: "standard",
+          isActive: true,
+        },
+        {
+          _id: "3",
+          name: "Ultimate",
+          description: "Heavy users & gamers",
+          price: 1999,
+          speed: { download: 300, upload: 150 },
+          features: [
+            "300 Mbps Speed",
+            "Unlimited Data",
+            "Advanced Security",
+            "24/7 Premium Support",
+            "Free Installation",
+            "Free Mesh Router",
+            "Static IP Address",
+          ],
+          duration: 30,
+          mikrotikProfile: "premium",
+          isActive: true,
+        },
+        {
+          _id: "4",
+          name: "Business",
+          description: "Growing businesses",
+          price: 2999,
+          speed: { download: 500, upload: 250 },
+          features: [
+            "500 Mbps Speed",
+            "Unlimited Data",
+            "Business Security",
+            "24/7 Priority Support",
+            "Free Installation",
+            "Free Mesh Router",
+            "Static IP Address",
+            "Dedicated Manager",
+          ],
+          duration: 30,
+          mikrotikProfile: "business",
+          isActive: true,
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -50,187 +179,401 @@ export default function PlansSection() {
     }).format(price);
   };
 
-  if (loading) {
-    return (
-      <section className="py-24 bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex flex-col items-center justify-center py-16">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            >
-              <FiLoader className="w-12 h-12 text-blue-600" />
-            </motion.div>
-            <p className="mt-4 text-gray-500">Loading plans...</p>
-          </div>
-        </div>
-      </section>
-    );
-  }
+  const getPlanCardStyle = (index: number, isPopular: boolean) => {
+    if (isPopular) {
+      return "border-accent-400 shadow-xl shadow-accent-500/10";
+    }
+    const styles = [
+      "border-blue-100 shadow-md hover:border-blue-200",
+      "border-purple-100 shadow-md hover:border-purple-200",
+      "border-emerald-100 shadow-md hover:border-emerald-200",
+      "border-amber-100 shadow-md hover:border-amber-200",
+    ];
+    return styles[index % styles.length];
+  };
 
-  if (error) {
-    return (
-      <section className="py-24 bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="text-center py-16">
-            <FiAlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <p className="text-gray-600 mb-4">{error}</p>
-            <button
-              onClick={fetchPlans}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition"
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (plans.length === 0) {
-    return null;
-  }
+  // Get first 4 plans for mobile (2x2 grid)
+  const mobilePlans = plans.slice(0, 4);
 
   return (
-    <section className="py-24 bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Choose Your <span className="text-blue-600">Perfect Plan</span>
-          </h2>
-          <p className="text-gray-500 max-w-2xl mx-auto">
-            Select the ideal plan that fits your needs. High-speed internet with
-            no hidden fees.
-          </p>
-        </motion.div>
+    <>
+      <motion.div
+        className="fixed top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary-600 via-accent-500 to-primary-600 z-50 origin-left"
+        style={{ scaleX }}
+      />
 
-        {/* Plans Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {plans.map((plan, idx) => {
-            const isPopular = idx === 1;
-            return (
+      <main className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 overflow-x-hidden">
+        {/* Hero Section - SUPER COMPACT for mobile */}
+        <section className="relative pt-8 pb-3 md:pt-32 md:pb-16">
+          <div className="absolute inset-0 bg-gradient-to-b from-primary-50/30 via-transparent to-transparent pointer-events-none" />
+          <div className="absolute top-10 right-5 w-24 h-24 md:w-64 md:h-64 bg-accent-100 rounded-full blur-3xl opacity-30" />
+          <div className="absolute bottom-5 left-5 w-24 h-24 md:w-64 md:h-64 bg-primary-100 rounded-full blur-3xl opacity-30" />
+
+          <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8 text-center relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="inline-flex items-center gap-1 bg-white/80 backdrop-blur-sm rounded-full px-2 py-0.5 mb-1 shadow-sm border border-gray-100 md:px-2.5 md:py-1 md:mb-3"
+            >
+              <FiZap className="w-2 h-2 md:w-2.5 md:h-2.5 text-accent-500" />
+              <span className="text-[6px] md:text-xs font-semibold uppercase tracking-wider text-gray-600">
+                Flexible Plans
+              </span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.5 }}
+              className="text-sm md:text-4xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-0.5 md:mb-4"
+            >
+              Choose Your{" "}
+              <span className="bg-gradient-to-r from-primary-700 to-accent-600 bg-clip-text text-transparent">
+                Internet Plan
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="text-[7px] md:text-lg text-gray-500 max-w-2xl mx-auto px-2"
+            >
+              Select the perfect plan that fits your lifestyle.
+            </motion.p>
+          </div>
+        </section>
+
+        {/* Plans Grid Section - SUPER COMPACT MOBILE */}
+        <section className="relative pb-4 md:pb-32">
+          <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8">
+            {/* Loading State */}
+            {loading && (
               <motion.div
-                key={plan._id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.1, duration: 0.5 }}
-                viewport={{ once: true }}
-                whileHover={{ y: -8 }}
-                className={`relative ${isPopular ? "md:-mt-4 md:mb-4" : ""}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex flex-col items-center justify-center py-10 md:py-20"
               >
-                <div
-                  className={`bg-white rounded-2xl overflow-hidden transition-all duration-300 h-full flex flex-col ${
-                    isPopular
-                      ? "shadow-2xl ring-2 ring-blue-600"
-                      : "shadow-lg hover:shadow-xl ring-1 ring-gray-200"
-                  }`}
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                 >
-                  <div className="p-8 flex-1 flex flex-col">
-                    {/* Plan Name & Icon */}
-                    <div className="flex items-start justify-between mb-6">
-                      <div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-1">
-                          {plan.name}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {plan.description}
-                        </p>
-                      </div>
-                      <div
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ml-4 ${
-                          isPopular ? "bg-blue-600" : "bg-gray-100"
-                        }`}
-                      >
-                        <FiWifi
-                          className={`w-6 h-6 ${
-                            isPopular ? "text-white" : "text-blue-600"
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Price */}
-                    <div className="mb-6">
-                      <span className="text-4xl font-bold text-gray-900">
-                        {formatPrice(plan.price)}
-                      </span>
-                      <span className="text-gray-400 text-sm ml-1">/month</span>
-                    </div>
-
-                    {/* Speed */}
-                    <div className="grid grid-cols-2 gap-3 mb-6">
-                      <div className="bg-gray-50 rounded-xl p-3 text-center">
-                        <p className="text-xs text-gray-400 mb-1">Download</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {plan.speed.download}
-                          <span className="text-xs font-normal text-gray-400 ml-1">
-                            Mbps
-                          </span>
-                        </p>
-                      </div>
-                      <div className="bg-gray-50 rounded-xl p-3 text-center">
-                        <p className="text-xs text-gray-400 mb-1">Upload</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {plan.speed.upload}
-                          <span className="text-xs font-normal text-gray-400 ml-1">
-                            Mbps
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Features */}
-                    <div className="mb-8 flex-1">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Features
-                      </p>
-                      <ul className="space-y-2.5">
-                        {plan.features.slice(0, 5).map((feature, i) => (
-                          <motion.li
-                            key={i}
-                            initial={{ opacity: 0, x: -10 }}
-                            whileInView={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.1 + i * 0.05 }}
-                            viewport={{ once: true }}
-                            className="flex items-start gap-3 text-sm text-gray-600"
-                          >
-                            <FiCheckCircle
-                              className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                                isPopular ? "text-blue-600" : "text-gray-400"
-                              }`}
-                            />
-                            <span>{feature}</span>
-                          </motion.li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {/* CTA Button */}
-                    <a
-                      href={`/apply?plan=${plan._id}`}
-                      className={`block w-full text-center py-3.5 rounded-xl font-semibold transition-all duration-300 text-sm ${
-                        isPopular
-                          ? "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      Get Started
-                      <FiArrowRight className="inline ml-2 w-4 h-4" />
-                    </a>
-                  </div>
-                </div>
+                  <FiLoader className="w-6 h-6 md:w-10 md:h-10 text-accent-500" />
+                </motion.div>
+                <p className="mt-2 text-[8px] md:text-base text-gray-500">
+                  Loading our plans...
+                </p>
               </motion.div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
+            )}
+
+            {/* Error State */}
+            {error && !loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col items-center justify-center py-10 md:py-20 text-center"
+              >
+                <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-red-50 flex items-center justify-center mb-2 md:mb-4">
+                  <FiAlertCircle className="w-5 h-5 md:w-8 md:h-8 text-red-400" />
+                </div>
+                <p className="text-[8px] md:text-base text-gray-600 mb-2 md:mb-4 px-4">
+                  {error}
+                </p>
+                <button
+                  onClick={fetchPlans}
+                  className="px-3 py-1 md:px-6 md:py-2.5 bg-gradient-to-r from-primary-600 to-accent-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-300 text-[8px] md:text-base"
+                >
+                  Try Again
+                </button>
+              </motion.div>
+            )}
+
+            {/* Plans Grid - SUPER COMPACT MOBILE: 2 columns x 2 rows */}
+            {!loading && !error && plans.length > 0 && (
+              <>
+                {/* Mobile: 2 columns x 2 rows - FIT IN ONE SCREEN */}
+                <div className="grid grid-cols-2 gap-1 md:hidden">
+                  {mobilePlans.map((plan, index) => {
+                    const isPopular =
+                      plan.name === "Professional" || index === 1;
+                    const cardStyle = getPlanCardStyle(index, isPopular);
+
+                    return (
+                      <motion.div
+                        key={plan._id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.05, duration: 0.2 }}
+                        className={`relative bg-white rounded-lg transition-all duration-300 border ${cardStyle} overflow-hidden`}
+                      >
+                        {/* Popular Badge - Super Tiny */}
+                        {isPopular && (
+                          <div className="absolute top-0 right-0">
+                            <div className="bg-gradient-to-r from-accent-500 to-accent-600 text-white text-[4px] font-semibold px-1 py-0.5 rounded-bl-md shadow-md">
+                              POPULAR
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-1.5">
+                          {/* Plan Name - Micro */}
+                          <div className="mb-0.5">
+                            <h3 className="text-[7px] font-bold text-gray-900 leading-tight">
+                              {plan.name}
+                            </h3>
+                            <p className="text-[4px] text-gray-500 truncate">
+                              {plan.description}
+                            </p>
+                          </div>
+
+                          {/* Price - Tiny */}
+                          <div className="mb-0.5">
+                            <span className="text-[10px] font-bold text-gray-900">
+                              ₱{plan.price}
+                            </span>
+                            <span className="text-[4px] text-gray-500 ml-0.5">
+                              /mo
+                            </span>
+                          </div>
+
+                          {/* Speed - Super Compact */}
+                          <div className="bg-gray-50 rounded-md p-0.5 mb-0.5">
+                            <div className="flex justify-between items-center">
+                              <div className="flex-1 text-center">
+                                <p className="text-[3px] text-gray-500">↓</p>
+                                <p className="text-[6px] font-semibold text-gray-900">
+                                  {plan.speed.download}
+                                </p>
+                              </div>
+                              <div className="w-px h-3 bg-gray-200" />
+                              <div className="flex-1 text-center">
+                                <p className="text-[3px] text-gray-500">↑</p>
+                                <p className="text-[6px] font-semibold text-gray-900">
+                                  {plan.speed.upload}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Features - 1 feature only */}
+                          <ul className="space-y-0 mb-0.5">
+                            {plan.features.slice(0, 1).map((feature, i) => (
+                              <li key={i} className="flex items-start gap-0.5">
+                                <FiCheckCircle className="w-1.5 h-1.5 text-accent-500 mt-0.5 flex-shrink-0" />
+                                <span className="text-[4px] text-gray-600 truncate">
+                                  {feature}
+                                </span>
+                              </li>
+                            ))}
+                            {plan.features.length > 1 && (
+                              <li className="text-[3px] text-gray-400 ml-2">
+                                +{plan.features.length - 1} features
+                              </li>
+                            )}
+                          </ul>
+
+                          {/* CTA Button - Tiny */}
+                          <Link
+                            href={`/apply?plan=${plan._id}`}
+                            className={`flex items-center justify-center gap-0.5 w-full py-0.5 rounded-md font-medium transition-all duration-300 text-[6px] ${
+                              isPopular
+                                ? "bg-gradient-to-r from-primary-700 to-accent-600 text-white hover:opacity-90"
+                                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                            }`}
+                          >
+                            <span>Get Started</span>
+                            <FiArrowRight className="w-1.5 h-1.5" />
+                          </Link>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* Tablet and Desktop: Show all plans in 3 columns */}
+                <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                  {plans.map((plan, index) => {
+                    const isPopular =
+                      plan.name === "Professional" || index === 1;
+                    const cardStyle = getPlanCardStyle(index, isPopular);
+
+                    return (
+                      <motion.div
+                        key={plan._id}
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1, duration: 0.5 }}
+                        whileHover={{ y: -4 }}
+                        className={`relative bg-white rounded-2xl transition-all duration-300 border ${cardStyle} overflow-hidden`}
+                      >
+                        {/* Popular Badge */}
+                        {isPopular && (
+                          <div className="absolute top-0 right-0">
+                            <div className="bg-gradient-to-r from-accent-500 to-accent-600 text-white text-xs font-semibold px-4 py-1.5 rounded-bl-xl shadow-md">
+                              Most Popular
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-5 lg:p-7">
+                          {/* Plan Name */}
+                          <div className="mb-4">
+                            <h3 className="text-xl font-bold text-gray-900 mb-1">
+                              {plan.name}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {plan.description}
+                            </p>
+                          </div>
+
+                          {/* Price */}
+                          <div className="mb-5">
+                            <span className="text-3xl lg:text-4xl font-bold text-gray-900">
+                              {formatPrice(plan.price)}
+                            </span>
+                            <span className="text-gray-500 text-sm ml-1">
+                              /month
+                            </span>
+                          </div>
+
+                          {/* Speed Card */}
+                          <div className="bg-gray-50 rounded-xl p-3 mb-5">
+                            <div className="flex justify-between items-center">
+                              <div className="flex-1 text-center">
+                                <p className="text-xs text-gray-500">
+                                  Download
+                                </p>
+                                <p className="font-semibold text-gray-900">
+                                  {plan.speed.download} Mbps
+                                </p>
+                              </div>
+                              <div className="w-px h-8 bg-gray-200" />
+                              <div className="flex-1 text-center">
+                                <p className="text-xs text-gray-500">Upload</p>
+                                <p className="font-semibold text-gray-900">
+                                  {plan.speed.upload} Mbps
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Features */}
+                          <ul className="space-y-2.5 mb-6">
+                            {plan.features.slice(0, 4).map((feature, i) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <FiCheckCircle className="w-4 h-4 text-accent-500 mt-0.5 flex-shrink-0" />
+                                <span className="text-sm text-gray-600">
+                                  {feature}
+                                </span>
+                              </li>
+                            ))}
+                            {plan.features.length > 4 && (
+                              <li className="text-xs text-gray-400 ml-6">
+                                +{plan.features.length - 4} more features
+                              </li>
+                            )}
+                          </ul>
+
+                          {/* CTA Button */}
+                          <Link
+                            href={`/apply?plan=${plan._id}`}
+                            className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-medium transition-all duration-300 ${
+                              isPopular
+                                ? "bg-gradient-to-r from-primary-700 to-accent-600 text-white hover:shadow-md hover:opacity-90"
+                                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                            }`}
+                          >
+                            <span>Get Started</span>
+                            <FiArrowRight className="w-4 h-4" />
+                          </Link>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* No Plans Message */}
+            {!loading && !error && plans.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center py-10 md:py-20"
+              >
+                <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-2 md:mb-4">
+                  <FiWifi className="w-5 h-5 md:w-8 md:h-8 text-gray-400" />
+                </div>
+                <p className="text-[8px] md:text-base text-gray-500">
+                  No plans available at the moment.
+                </p>
+                <p className="text-[6px] md:text-sm text-gray-400 mt-0.5">
+                  Please check back later.
+                </p>
+              </motion.div>
+            )}
+
+            {/* Custom Plan Note - Super compact */}
+            {!loading && !error && plans.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-center mt-2 md:mt-10 pt-2 border-t border-gray-100"
+              >
+                <p className="text-[5px] sm:text-sm md:text-base text-gray-500">
+                  Need a custom plan?{" "}
+                  <Link
+                    href="/contact"
+                    className="text-accent-600 font-medium hover:underline"
+                  >
+                    Contact us
+                  </Link>
+                </p>
+              </motion.div>
+            )}
+          </div>
+        </section>
+
+        {/* CTA Banner - Super compact mobile */}
+        <section className="relative py-4 md:py-16">
+          <div className="absolute inset-0 bg-gradient-to-r from-primary-900 via-primary-800 to-accent-900" />
+          <div className="absolute inset-0 bg-black/20" />
+
+          <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 text-center relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className="inline-flex items-center gap-1 bg-white/10 backdrop-blur-sm rounded-full px-2 py-0.5 md:px-4 md:py-1.5 mb-1 md:mb-5">
+                <FiAward className="w-2 h-2 md:w-3.5 md:h-3.5 text-accent-300" />
+                <span className="text-[6px] md:text-xs font-semibold uppercase tracking-wider text-white">
+                  Limited Offer
+                </span>
+              </div>
+
+              <h2 className="text-sm sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-0.5 md:mb-3 px-2">
+                Ready to Upgrade?
+              </h2>
+
+              <p className="text-primary-100 text-[8px] sm:text-base max-w-md mx-auto mb-2 md:mb-6 px-2">
+                Get up to 3 months free on annual plans
+              </p>
+
+              <Link
+                href="/apply"
+                className="inline-flex items-center gap-1 bg-white text-primary-700 px-3 py-1.5 sm:px-6 sm:py-3 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-300 hover:shadow-lg group text-[8px] sm:text-base"
+              >
+                <span>Apply Now</span>
+                <FiArrowRight className="w-2 h-2 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </motion.div>
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
