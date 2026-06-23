@@ -95,7 +95,7 @@ export default function PlansSection() {
         {
           _id: "1",
           name: "Essential",
-          description: "Perfect for light browsing",
+          description: "Light browsing",
           price: 999,
           speed: { download: 50, upload: 25 },
           features: [
@@ -111,7 +111,7 @@ export default function PlansSection() {
         {
           _id: "2",
           name: "Professional",
-          description: "Great for families & streaming",
+          description: "Family & streaming",
           price: 1499,
           speed: { download: 150, upload: 75 },
           features: [
@@ -129,7 +129,7 @@ export default function PlansSection() {
         {
           _id: "3",
           name: "Ultimate",
-          description: "For heavy users & gamers",
+          description: "Heavy users & gamers",
           price: 1999,
           speed: { download: 300, upload: 150 },
           features: [
@@ -148,7 +148,7 @@ export default function PlansSection() {
         {
           _id: "4",
           name: "Business",
-          description: "For growing businesses",
+          description: "Growing businesses",
           price: 2999,
           speed: { download: 500, upload: 250 },
           features: [
@@ -204,20 +204,20 @@ export default function PlansSection() {
 
       <main className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 overflow-x-hidden">
         {/* Hero Section - Plans Header */}
-        <section className="relative pt-20 pb-8 md:pt-32 md:pb-16">
+        <section className="relative pt-16 pb-6 md:pt-32 md:pb-16">
           <div className="absolute inset-0 bg-gradient-to-b from-primary-50/30 via-transparent to-transparent pointer-events-none" />
           <div className="absolute top-20 right-10 w-48 h-48 md:w-64 md:h-64 bg-accent-100 rounded-full blur-3xl opacity-30" />
           <div className="absolute bottom-10 left-10 w-48 h-48 md:w-64 md:h-64 bg-primary-100 rounded-full blur-3xl opacity-30" />
 
-          <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 text-center relative z-10">
+          <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8 text-center relative z-10">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm rounded-full px-3 py-1.5 mb-4 shadow-sm border border-gray-100"
+              className="inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-full px-2.5 py-1 mb-3 shadow-sm border border-gray-100"
             >
-              <FiZap className="w-3 h-3 text-accent-500" />
-              <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-gray-600">
+              <FiZap className="w-2.5 h-2.5 text-accent-500" />
+              <span className="text-[8px] md:text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Flexible Plans
               </span>
             </motion.div>
@@ -226,7 +226,7 @@ export default function PlansSection() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.5 }}
-              className="text-2xl md:text-4xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-2 md:mb-4"
+              className="text-xl md:text-4xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-1 md:mb-4"
             >
               Choose Your{" "}
               <span className="bg-gradient-to-r from-primary-700 to-accent-600 bg-clip-text text-transparent">
@@ -238,7 +238,7 @@ export default function PlansSection() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="text-sm md:text-lg text-gray-500 max-w-2xl mx-auto px-2"
+              className="text-[10px] md:text-lg text-gray-500 max-w-2xl mx-auto px-2"
             >
               Select the perfect plan that fits your lifestyle. No hidden fees,
               no surprises.
@@ -247,8 +247,8 @@ export default function PlansSection() {
         </section>
 
         {/* Plans Grid Section */}
-        <section className="relative pb-16 md:pb-32">
-          <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+        <section className="relative pb-12 md:pb-32">
+          <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8">
             {/* Loading State */}
             {loading && (
               <motion.div
@@ -293,8 +293,8 @@ export default function PlansSection() {
             {/* Plans Grid - 2 columns on mobile, 3 on desktop */}
             {!loading && !error && plans.length > 0 && (
               <>
-                {/* Mobile: 2 columns x 2 rows = 4 plans */}
-                <div className="grid grid-cols-2 gap-2 md:hidden">
+                {/* Mobile: 2 columns x 2 rows = 4 plans - SUPER COMPACT */}
+                <div className="grid grid-cols-2 gap-1.5 md:hidden">
                   {mobilePlans.map((plan, index) => {
                     const isPopular =
                       plan.name === "Professional" || index === 1;
@@ -303,88 +303,88 @@ export default function PlansSection() {
                     return (
                       <motion.div
                         key={plan._id}
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1, duration: 0.4 }}
-                        className={`relative bg-white rounded-xl transition-all duration-300 border ${cardStyle} overflow-hidden`}
+                        transition={{ delay: index * 0.05, duration: 0.3 }}
+                        className={`relative bg-white rounded-lg transition-all duration-300 border ${cardStyle} overflow-hidden`}
                       >
                         {/* Popular Badge - Mobile */}
                         {isPopular && (
                           <div className="absolute top-0 right-0">
-                            <div className="bg-gradient-to-r from-accent-500 to-accent-600 text-white text-[6px] font-semibold px-1.5 py-0.5 rounded-bl-lg shadow-md">
+                            <div className="bg-gradient-to-r from-accent-500 to-accent-600 text-white text-[5px] font-semibold px-1.5 py-0.5 rounded-bl-md shadow-md">
                               Popular
                             </div>
                           </div>
                         )}
 
-                        <div className="p-2">
+                        <div className="p-1.5">
                           {/* Plan Name */}
-                          <div className="mb-1">
-                            <h3 className="text-xs font-bold text-gray-900">
+                          <div className="mb-0.5">
+                            <h3 className="text-[9px] font-bold text-gray-900 leading-tight">
                               {plan.name}
                             </h3>
-                            <p className="text-[6px] text-gray-500 line-clamp-1">
+                            <p className="text-[5px] text-gray-500 truncate">
                               {plan.description}
                             </p>
                           </div>
 
                           {/* Price */}
-                          <div className="mb-1">
-                            <span className="text-sm font-bold text-gray-900">
+                          <div className="mb-0.5">
+                            <span className="text-[11px] font-bold text-gray-900">
                               ₱{plan.price}
                             </span>
-                            <span className="text-[6px] text-gray-500 ml-0.5">
+                            <span className="text-[5px] text-gray-500 ml-0.5">
                               /mo
                             </span>
                           </div>
 
-                          {/* Speed */}
-                          <div className="bg-gray-50 rounded-lg p-1 mb-1">
+                          {/* Speed - Ultra Compact */}
+                          <div className="bg-gray-50 rounded-md p-0.5 mb-0.5">
                             <div className="flex justify-between items-center">
                               <div className="flex-1 text-center">
-                                <p className="text-[5px] text-gray-500">Down</p>
-                                <p className="text-[8px] font-semibold text-gray-900">
+                                <p className="text-[4px] text-gray-500">D</p>
+                                <p className="text-[7px] font-semibold text-gray-900">
                                   {plan.speed.download}
                                 </p>
                               </div>
-                              <div className="w-px h-4 bg-gray-200" />
+                              <div className="w-px h-3 bg-gray-200" />
                               <div className="flex-1 text-center">
-                                <p className="text-[5px] text-gray-500">Up</p>
-                                <p className="text-[8px] font-semibold text-gray-900">
+                                <p className="text-[4px] text-gray-500">U</p>
+                                <p className="text-[7px] font-semibold text-gray-900">
                                   {plan.speed.upload}
                                 </p>
                               </div>
                             </div>
                           </div>
 
-                          {/* Features - Only show 2 on mobile */}
-                          <ul className="space-y-0.5 mb-1">
-                            {plan.features.slice(0, 2).map((feature, i) => (
+                          {/* Features - Only show 1 on mobile */}
+                          <ul className="space-y-0 mb-0.5">
+                            {plan.features.slice(0, 1).map((feature, i) => (
                               <li key={i} className="flex items-start gap-0.5">
                                 <FiCheckCircle className="w-1.5 h-1.5 text-accent-500 mt-0.5 flex-shrink-0" />
-                                <span className="text-[6px] text-gray-600 line-clamp-1">
+                                <span className="text-[5px] text-gray-600 truncate">
                                   {feature}
                                 </span>
                               </li>
                             ))}
-                            {plan.features.length > 2 && (
-                              <li className="text-[5px] text-gray-400 ml-2">
-                                +{plan.features.length - 2}
+                            {plan.features.length > 1 && (
+                              <li className="text-[4px] text-gray-400 ml-2">
+                                +{plan.features.length - 1}
                               </li>
                             )}
                           </ul>
 
-                          {/* CTA Button */}
+                          {/* CTA Button - Ultra Compact */}
                           <Link
                             href={`/apply?plan=${plan._id}`}
-                            className={`flex items-center justify-center gap-0.5 w-full py-1 rounded-lg font-medium transition-all duration-300 text-[8px] ${
+                            className={`flex items-center justify-center gap-0.5 w-full py-0.5 rounded-md font-medium transition-all duration-300 text-[7px] ${
                               isPopular
                                 ? "bg-gradient-to-r from-primary-700 to-accent-600 text-white hover:opacity-90"
                                 : "bg-gray-100 text-gray-800 hover:bg-gray-200"
                             }`}
                           >
                             <span>Get Started</span>
-                            <FiArrowRight className="w-2 h-2" />
+                            <FiArrowRight className="w-1.5 h-1.5" />
                           </Link>
                         </div>
                       </motion.div>
@@ -521,9 +521,9 @@ export default function PlansSection() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="text-center mt-6 md:mt-10 pt-4 border-t border-gray-100"
+                className="text-center mt-4 md:mt-10 pt-4 border-t border-gray-100"
               >
-                <p className="text-xs sm:text-sm md:text-base text-gray-500">
+                <p className="text-[10px] sm:text-sm md:text-base text-gray-500">
                   Need a custom plan for your business?{" "}
                   <Link
                     href="/contact"
@@ -538,7 +538,7 @@ export default function PlansSection() {
         </section>
 
         {/* CTA Banner - Responsive */}
-        <section className="relative py-10 md:py-16">
+        <section className="relative py-8 md:py-16">
           <div className="absolute inset-0 bg-gradient-to-r from-primary-900 via-primary-800 to-accent-900" />
           <div className="absolute inset-0 bg-black/20" />
 
@@ -556,11 +556,11 @@ export default function PlansSection() {
                 </span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2 md:mb-3 px-2">
+              <h2 className="text-lg sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2 md:mb-3 px-2">
                 Ready to Upgrade Your Internet?
               </h2>
 
-              <p className="text-primary-100 text-sm sm:text-base max-w-md mx-auto mb-4 md:mb-6 px-2">
+              <p className="text-primary-100 text-xs sm:text-base max-w-md mx-auto mb-4 md:mb-6 px-2">
                 Get up to 3 months free when you sign up for any annual plan
               </p>
 
