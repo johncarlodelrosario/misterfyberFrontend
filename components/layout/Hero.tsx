@@ -39,7 +39,7 @@ export default function Hero({ stats }: HeroProps) {
       ctaText: "View Plans",
       ctaLink: "/plans",
       desktopImage: "/homeBanner/SilkResidences.png",
-      mobileImage: "/homeBanner/SilkResidences.png",
+      mobileImage: "/SilkPortrait.png",
       dotLabel: "Silk Residences",
     },
     {
@@ -179,17 +179,6 @@ export default function Hero({ stats }: HeroProps) {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
-              {/* Modern Badge */}
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 mb-6 border border-white/20">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-white text-xs font-medium tracking-wider uppercase">
-                  Trusted Fiber Provider
-                </span>
-              </div>
-
               {/* Modern Title */}
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold mb-4 leading-tight text-white">
                 {currentBanner.title}
@@ -222,34 +211,6 @@ export default function Hero({ stats }: HeroProps) {
                     →
                   </span>
                 </Link>
-              </div>
-
-              {/* Stats - Modern */}
-              <div className="mt-12 flex flex-wrap gap-8 md:gap-12">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                    <span className="text-white font-bold text-sm">⚡</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-bold text-lg">
-                      {stats.speed} Mbps
-                    </p>
-                    <p className="text-white/60 text-xs font-medium">
-                      Speed Test
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                    <span className="text-white font-bold text-sm">✓</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-bold text-lg">
-                      {stats.uptime}%
-                    </p>
-                    <p className="text-white/60 text-xs font-medium">Uptime</p>
-                  </div>
-                </div>
               </div>
             </motion.div>
           </AnimatePresence>
