@@ -145,6 +145,26 @@ export default function PlansSection() {
           mikrotikProfile: "premium",
           isActive: true,
         },
+        {
+          _id: "4",
+          name: "Business",
+          description: "For growing businesses with multiple users",
+          price: 2999,
+          speed: { download: 500, upload: 250 },
+          features: [
+            "500 Mbps Speed",
+            "Unlimited Data",
+            "Business Security Suite",
+            "24/7 Priority Support",
+            "Free Installation",
+            "Free Mesh Router",
+            "Static IP Address",
+            "Dedicated Account Manager",
+          ],
+          duration: 30,
+          mikrotikProfile: "business",
+          isActive: true,
+        },
       ]);
     } finally {
       setLoading(false);
@@ -167,6 +187,7 @@ export default function PlansSection() {
       "border-blue-100 shadow-md hover:border-blue-200",
       "border-purple-100 shadow-md hover:border-purple-200",
       "border-emerald-100 shadow-md hover:border-emerald-200",
+      "border-amber-100 shadow-md hover:border-amber-200",
     ];
     return styles[index % styles.length];
   };
@@ -266,15 +287,15 @@ export default function PlansSection() {
               </motion.div>
             )}
 
-            {/* Plans Grid - 2 columns on mobile, 3 on desktop */}
+            {/* Plans Grid - 2 columns on mobile (2 rows = 4 cards), 3 on desktop */}
             {!loading && !error && plans.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
-                className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-6"
+                className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-6"
               >
-                {plans.map((plan, index) => {
+                {plans.slice(0, 4).map((plan, index) => {
                   const isPopular = plan.name === "Professional" || index === 1;
                   const cardStyle = getPlanCardStyle(index, isPopular);
 
@@ -298,42 +319,42 @@ export default function PlansSection() {
 
                       <div className="p-2.5 sm:p-3 md:p-5 lg:p-7">
                         {/* Plan Name - Smaller on mobile */}
-                        <div className="mb-2 md:mb-4">
-                          <h3 className="text-sm sm:text-base md:text-xl font-bold text-gray-900 mb-0.5 md:mb-1">
+                        <div className="mb-1.5 md:mb-4">
+                          <h3 className="text-xs sm:text-sm md:text-xl font-bold text-gray-900 mb-0.5 md:mb-1">
                             {plan.name}
                           </h3>
-                          <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 line-clamp-2">
+                          <p className="text-[8px] sm:text-[10px] md:text-sm text-gray-500 line-clamp-1 md:line-clamp-2">
                             {plan.description}
                           </p>
                         </div>
 
                         {/* Price - Smaller on mobile */}
-                        <div className="mb-2 md:mb-5">
-                          <span className="text-base sm:text-lg md:text-3xl lg:text-4xl font-bold text-gray-900">
+                        <div className="mb-1.5 md:mb-5">
+                          <span className="text-sm sm:text-base md:text-3xl lg:text-4xl font-bold text-gray-900">
                             {formatPrice(plan.price)}
                           </span>
-                          <span className="text-[10px] sm:text-xs md:text-sm text-gray-500 ml-0.5 md:ml-1">
+                          <span className="text-[8px] sm:text-[10px] md:text-sm text-gray-500 ml-0.5 md:ml-1">
                             /mo
                           </span>
                         </div>
 
                         {/* Speed Card - Compact on mobile */}
-                        <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 md:p-3 mb-2 md:mb-5">
+                        <div className="bg-gray-50 rounded-lg p-1 sm:p-1.5 md:p-3 mb-1.5 md:mb-5">
                           <div className="flex justify-between items-center">
                             <div className="flex-1 text-center">
-                              <p className="text-[8px] sm:text-[10px] md:text-xs text-gray-500">
+                              <p className="text-[6px] sm:text-[8px] md:text-xs text-gray-500">
                                 Download
                               </p>
-                              <p className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">
+                              <p className="text-[10px] sm:text-xs md:text-base font-semibold text-gray-900">
                                 {plan.speed.download}
                               </p>
                             </div>
-                            <div className="w-px h-6 sm:h-8 bg-gray-200" />
+                            <div className="w-px h-4 sm:h-6 md:h-8 bg-gray-200" />
                             <div className="flex-1 text-center">
-                              <p className="text-[8px] sm:text-[10px] md:text-xs text-gray-500">
+                              <p className="text-[6px] sm:text-[8px] md:text-xs text-gray-500">
                                 Upload
                               </p>
-                              <p className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">
+                              <p className="text-[10px] sm:text-xs md:text-base font-semibold text-gray-900">
                                 {plan.speed.upload}
                               </p>
                             </div>
@@ -341,21 +362,21 @@ export default function PlansSection() {
                         </div>
 
                         {/* Features - Simplified on mobile */}
-                        <ul className="space-y-1 sm:space-y-1.5 md:space-y-2.5 mb-2 md:mb-6">
-                          {plan.features.slice(0, 3).map((feature, i) => (
+                        <ul className="space-y-0.5 sm:space-y-1 md:space-y-2.5 mb-1.5 md:mb-6">
+                          {plan.features.slice(0, 2).map((feature, i) => (
                             <li
                               key={i}
-                              className="flex items-start gap-1 sm:gap-2"
+                              className="flex items-start gap-0.5 sm:gap-1 md:gap-2"
                             >
-                              <FiCheckCircle className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-4 md:h-4 text-accent-500 mt-0.5 flex-shrink-0" />
-                              <span className="text-[9px] sm:text-xs md:text-sm text-gray-600 line-clamp-1">
+                              <FiCheckCircle className="w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-4 md:h-4 text-accent-500 mt-0.5 flex-shrink-0" />
+                              <span className="text-[7px] sm:text-[9px] md:text-sm text-gray-600 line-clamp-1">
                                 {feature}
                               </span>
                             </li>
                           ))}
-                          {plan.features.length > 3 && (
-                            <li className="text-[8px] sm:text-[10px] md:text-xs text-gray-400 ml-3 sm:ml-4 md:ml-6">
-                              +{plan.features.length - 3} more
+                          {plan.features.length > 2 && (
+                            <li className="text-[6px] sm:text-[8px] md:text-xs text-gray-400 ml-2 sm:ml-3 md:ml-6">
+                              +{plan.features.length - 2} more
                             </li>
                           )}
                         </ul>
@@ -363,14 +384,102 @@ export default function PlansSection() {
                         {/* CTA Button - Smaller on mobile */}
                         <Link
                           href={`/apply?plan=${plan._id}`}
-                          className={`flex items-center justify-center gap-1 sm:gap-2 w-full py-1.5 sm:py-2 md:py-2.5 rounded-lg md:rounded-xl font-medium transition-all duration-300 text-xs sm:text-sm md:text-base ${
+                          className={`flex items-center justify-center gap-0.5 sm:gap-1 md:gap-2 w-full py-1 sm:py-1.5 md:py-2.5 rounded-lg md:rounded-xl font-medium transition-all duration-300 text-[10px] sm:text-xs md:text-base ${
                             isPopular
                               ? "bg-gradient-to-r from-primary-700 to-accent-600 text-white hover:shadow-md hover:opacity-90"
                               : "bg-gray-100 text-gray-800 hover:bg-gray-200"
                           }`}
                         >
                           <span>Get Started</span>
-                          <FiArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" />
+                          <FiArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-4 md:h-4" />
+                        </Link>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            )}
+
+            {/* Show remaining plans on desktop (if more than 4) */}
+            {!loading && !error && plans.length > 4 && (
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+                className="hidden lg:grid grid-cols-3 gap-6 mt-6"
+              >
+                {plans.slice(4).map((plan, index) => {
+                  const isPopular = false;
+                  const cardStyle = getPlanCardStyle(index + 4, isPopular);
+
+                  return (
+                    <motion.div
+                      key={plan._id}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: (index + 4) * 0.1, duration: 0.5 }}
+                      whileHover={{ y: -2 }}
+                      className={`relative bg-white rounded-2xl transition-all duration-300 border ${cardStyle} overflow-hidden`}
+                    >
+                      <div className="p-5 lg:p-7">
+                        <div className="mb-4">
+                          <h3 className="text-xl font-bold text-gray-900 mb-1">
+                            {plan.name}
+                          </h3>
+                          <p className="text-sm text-gray-500 line-clamp-2">
+                            {plan.description}
+                          </p>
+                        </div>
+
+                        <div className="mb-5">
+                          <span className="text-3xl lg:text-4xl font-bold text-gray-900">
+                            {formatPrice(plan.price)}
+                          </span>
+                          <span className="text-sm text-gray-500 ml-1">
+                            /mo
+                          </span>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-xl p-3 mb-5">
+                          <div className="flex justify-between items-center">
+                            <div className="flex-1 text-center">
+                              <p className="text-xs text-gray-500">Download</p>
+                              <p className="font-semibold text-gray-900">
+                                {plan.speed.download} Mbps
+                              </p>
+                            </div>
+                            <div className="w-px h-8 bg-gray-200" />
+                            <div className="flex-1 text-center">
+                              <p className="text-xs text-gray-500">Upload</p>
+                              <p className="font-semibold text-gray-900">
+                                {plan.speed.upload} Mbps
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <ul className="space-y-2.5 mb-6">
+                          {plan.features.slice(0, 4).map((feature, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <FiCheckCircle className="w-4 h-4 text-accent-500 mt-0.5 flex-shrink-0" />
+                              <span className="text-sm text-gray-600">
+                                {feature}
+                              </span>
+                            </li>
+                          ))}
+                          {plan.features.length > 4 && (
+                            <li className="text-xs text-gray-400 ml-6">
+                              +{plan.features.length - 4} more features
+                            </li>
+                          )}
+                        </ul>
+
+                        <Link
+                          href={`/apply?plan=${plan._id}`}
+                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-medium transition-all duration-300 bg-gray-100 text-gray-800 hover:bg-gray-200"
+                        >
+                          <span>Get Started</span>
+                          <FiArrowRight className="w-4 h-4" />
                         </Link>
                       </div>
                     </motion.div>
