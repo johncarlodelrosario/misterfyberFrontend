@@ -9,11 +9,12 @@ import emailService, {
   EmailSentRecord,
 } from "@/services/emailService";
 import toast from "react-hot-toast";
+import LocationEmailSettings from "@/components/admin/LocationEmailSettings";
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    "single" | "bulk" | "templates" | "sent"
+    "single" | "bulk" | "templates" | "sent" | "location"
   >("single");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -402,17 +403,18 @@ export default function ManualEmailPage() {
 
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <nav className="flex space-x-8">
+          <nav className="flex space-x-8 overflow-x-auto">
             {[
               { id: "single", name: "Single Email", icon: "✉️" },
               { id: "bulk", name: "Bulk Email", icon: "👥" },
               { id: "templates", name: "Templates", icon: "📄" },
               { id: "sent", name: "Sent Records", icon: "📨" },
+              { id: "location", name: "Location Settings", icon: "📍" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? "border-blue-500 text-blue-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -1115,6 +1117,13 @@ export default function ManualEmailPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Location Settings Tab */}
+        {activeTab === "location" && (
+          <div className="flex justify-center">
+            <LocationEmailSettings />
           </div>
         )}
       </div>
