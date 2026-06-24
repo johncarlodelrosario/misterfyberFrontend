@@ -25,9 +25,11 @@ import {
   FiSettings,
   FiHelpCircle,
   FiMail,
+  FiFileText,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { getAllApplications } from "@/services/admin";
+import invoiceService from "@/services/invoiceService";
 
 // ==================== PRELOAD CACHE CONFIGURATION ====================
 const PRELOAD_CACHE_KEY = "misterfyber_preload_applications";
@@ -56,7 +58,7 @@ interface Notification {
   id: string;
   title: string;
   description: string;
-  type: "application" | "billing" | "payment" | "system";
+  type: "application" | "billing" | "payment" | "system" | "invoice";
   time: string;
   read: boolean;
   link: string;
@@ -67,6 +69,7 @@ const navItems: NavItem[] = [
   { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
   { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
   { name: "Billing", href: "/admin/billing", icon: FiClipboard },
+  { name: "Invoices", href: "/admin/invoice", icon: FiFileText },
   { name: "Manual Email", href: "/admin/manual-email", icon: FiMail },
   { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
   { name: "Plans", href: "/admin/plans", icon: FiPackage },
@@ -181,6 +184,7 @@ export default function AdminLayout({
   const [mounted, setMounted] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingPlanChanges, setPendingPlanChanges] = useState(0);
+  const [overdueInvoices, setOverdueInvoices] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -279,6 +283,26 @@ export default function AdminLayout({
     preloadApplications();
   }, [isAuthenticated, user]);
 
+  // Fetch overdue invoices count
+  useEffect(() => {
+    const fetchOverdueInvoices = async () => {
+      if (!isAuthenticated || !user?.role) return;
+
+      try {
+        const result = await invoiceService.getInvoices({
+          status: "overdue",
+          limit: 100,
+        });
+        const overdueCount = result.data?.length || 0;
+        setOverdueInvoices(overdueCount);
+      } catch (error) {
+        console.error("Failed to fetch overdue invoices:", error);
+      }
+    };
+
+    fetchOverdueInvoices();
+  }, [isAuthenticated, user]);
+
   const generateNotifications = useCallback(() => {
     const newNotifications: Notification[] = [];
 
@@ -306,9 +330,21 @@ export default function AdminLayout({
       });
     }
 
+    if (overdueInvoices > 0) {
+      newNotifications.push({
+        id: "overdue-invoices",
+        title: "Overdue Invoices",
+        description: `${overdueInvoices} invoice${overdueInvoices > 1 ? "s" : ""} are overdue`,
+        type: "invoice",
+        time: "Now",
+        read: false,
+        link: "/admin/invoice",
+      });
+    }
+
     setNotifications(newNotifications);
     setUnreadCount(newNotifications.length);
-  }, [pendingCount, pendingPlanChanges]);
+  }, [pendingCount, pendingPlanChanges, overdueInvoices]);
 
   useEffect(() => {
     generateNotifications();
@@ -513,7 +549,8 @@ export default function AdminLayout({
                   pathname?.startsWith(`${item.href}/`);
                 const showBadge =
                   (item.name === "Applications" && pendingCount > 0) ||
-                  (item.name === "Billing" && pendingPlanChanges > 0);
+                  (item.name === "Billing" && pendingPlanChanges > 0) ||
+                  (item.name === "Invoices" && overdueInvoices > 0);
 
                 return (
                   <Link
@@ -538,7 +575,9 @@ export default function AdminLayout({
                       <span className="bg-amber-100 text-amber-700 text-xs px-2.5 py-1 rounded-full font-semibold">
                         {item.name === "Applications"
                           ? pendingCount
-                          : pendingPlanChanges}
+                          : item.name === "Invoices"
+                            ? overdueInvoices
+                            : pendingPlanChanges}
                       </span>
                     )}
                   </Link>
@@ -678,6 +717,13 @@ export default function AdminLayout({
                                 <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
                                   <span className="text-blue-600 text-sm font-bold">
                                     ₱
+                                  </span>
+                                </div>
+                              )}
+                              {notification.type === "invoice" && (
+                                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                                  <span className="text-red-600 text-sm">
+                                    📄
                                   </span>
                                 </div>
                               )}
