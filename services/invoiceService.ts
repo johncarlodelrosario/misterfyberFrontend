@@ -85,7 +85,8 @@ export interface InvoiceFilters {
 }
 
 class InvoiceService {
-  private baseUrl = "/api/invoices";
+  // ✅ FIXED: Removed duplicate /api - now just /invoices
+  private baseUrl = "/invoices";
 
   // Create invoice from billing
   async createInvoiceFromBilling(data: CreateInvoiceData): Promise<Invoice> {
