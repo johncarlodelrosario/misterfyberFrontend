@@ -1,4 +1,4 @@
-// frontend/services/billing.ts - COMPLETE FIXED VERSION
+// frontend/services/billing.ts - OPTIMIZED VERSION
 import api from "./api";
 
 export interface BillingCycle {
@@ -137,12 +137,16 @@ const CACHE_KEYS = {
   BILLING_STATS: "billing_stats_cache",
 };
 
-const CACHE_DURATION = 5 * 60 * 1000;
+const CACHE_DURATION = 3 * 60 * 1000; // Reduced to 3 minutes
 
 interface CacheItem<T> {
   data: T;
   timestamp: number;
 }
+
+// LRU Cache for localStorage
+let cacheKeys: string[] = [];
+const MAX_CACHE_ITEMS = 15;
 
 function getCachedData<T>(key: string): T | null {
   try {
@@ -151,6 +155,15 @@ function getCachedData<T>(key: string): T | null {
     const item: CacheItem<T> = JSON.parse(cached);
     if (Date.now() - item.timestamp > CACHE_DURATION) {
       localStorage.removeItem(key);
+      // Update cache keys
+      try {
+        const storedKeys = localStorage.getItem("billing_cache_keys");
+        if (storedKeys) {
+          const keys = JSON.parse(storedKeys);
+          const filtered = keys.filter((k: string) => k !== key);
+          localStorage.setItem("billing_cache_keys", JSON.stringify(filtered));
+        }
+      } catch (e) {}
       return null;
     }
     return item.data;
@@ -161,6 +174,24 @@ function getCachedData<T>(key: string): T | null {
 
 function setCachedData<T>(key: string, data: T): void {
   try {
+    // LRU: Remove oldest if cache is full
+    try {
+      const storedKeys = localStorage.getItem("billing_cache_keys");
+      cacheKeys = storedKeys ? JSON.parse(storedKeys) : [];
+
+      if (cacheKeys.length >= MAX_CACHE_ITEMS && !cacheKeys.includes(key)) {
+        const oldestKey = cacheKeys.shift();
+        if (oldestKey) localStorage.removeItem(oldestKey);
+      }
+
+      if (!cacheKeys.includes(key)) {
+        cacheKeys.push(key);
+        localStorage.setItem("billing_cache_keys", JSON.stringify(cacheKeys));
+      }
+    } catch (e) {
+      // Ignore cache key errors
+    }
+
     const item: CacheItem<T> = { data, timestamp: Date.now() };
     localStorage.setItem(key, JSON.stringify(item));
   } catch (error) {
@@ -169,10 +200,15 @@ function setCachedData<T>(key: string, data: T): void {
 }
 
 export function clearBillingCache(): void {
-  Object.values(CACHE_KEYS).forEach((key) => localStorage.removeItem(key));
+  Object.values(CACHE_KEYS).forEach((key) => {
+    localStorage.removeItem(key);
+  });
+  try {
+    localStorage.removeItem("billing_cache_keys");
+  } catch (e) {}
 }
 
-// ==================== BACKDATED BILLING FOR EXISTING CUSTOMERS ====================
+// ==================== BACKDATED BILLING ====================
 export const initializeBackdatedBilling = async (data: {
   applicationId: string;
   serviceStartDate: string;
@@ -192,7 +228,7 @@ export const initializeBackdatedBilling = async (data: {
   }
 };
 
-// ==================== APPLICATION BILLING FUNCTIONS ====================
+// ==================== APPLICATION BILLING ====================
 export const startBillingForApplication = async (
   applicationId: string,
   data?: {
@@ -260,7 +296,7 @@ export const getApplicationBillingHistory = async (
   }
 };
 
-// ==================== USER BILLING FUNCTIONS ====================
+// ==================== USER BILLING ====================
 export const getUserBillingCycle = async (): Promise<{
   billingCycle: BillingCycle | null;
   upcomingBills: Bill[];
@@ -327,7 +363,7 @@ export const getUserBillingSummary = async (): Promise<any> => {
   }
 };
 
-// ==================== ADMIN BILLING FUNCTIONS ====================
+// ==================== ADMIN BILLING ====================
 export const getAllBillingCycles = async (params?: {
   page?: number;
   limit?: number;
@@ -340,22 +376,29 @@ export const getAllBillingCycles = async (params?: {
   total: number;
 }> => {
   try {
+    const cacheKey = `${CACHE_KEYS.BILLING_CYCLES}_${params?.page || 1}_${params?.limit || 20}`;
+
     if (!params?.forceRefresh) {
       const cached = getCachedData<{
         data: BillingCycle[];
         totalPages: number;
         currentPage: number;
         total: number;
-      }>(CACHE_KEYS.BILLING_CYCLES);
+      }>(cacheKey);
       if (cached) return cached;
     }
 
-    const response = await api.get("/billing/cycles", { params });
+    const response = await api.get("/billing/cycles", {
+      params: {
+        ...params,
+        limit: params?.limit || 20,
+      },
+    });
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 10;
+    const limit = params?.limit || 20;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -364,7 +407,7 @@ export const getAllBillingCycles = async (params?: {
       currentPage,
       total,
     };
-    setCachedData(CACHE_KEYS.BILLING_CYCLES, returnData);
+    setCachedData(cacheKey, returnData);
     return returnData;
   } catch (error) {
     console.error("Error fetching billing cycles:", error);
@@ -387,6 +430,8 @@ export const getAllBills = async (params?: {
   total: number;
 }> => {
   try {
+    const cacheKey = `${CACHE_KEYS.BILLS}_${params?.page || 1}_${params?.limit || 20}_${params?.status || "all"}`;
+
     if (!params?.forceRefresh) {
       const cached = getCachedData<{
         data: Bill[];
@@ -394,16 +439,21 @@ export const getAllBills = async (params?: {
         totalPages: number;
         currentPage: number;
         total: number;
-      }>(CACHE_KEYS.BILLS);
+      }>(cacheKey);
       if (cached) return cached;
     }
 
-    const response = await api.get("/billing/all-bills", { params });
+    const response = await api.get("/billing/all-bills", {
+      params: {
+        ...params,
+        limit: params?.limit || 20,
+      },
+    });
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 10;
+    const limit = params?.limit || 20;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -413,7 +463,7 @@ export const getAllBills = async (params?: {
       currentPage,
       total,
     };
-    setCachedData(CACHE_KEYS.BILLS, returnData);
+    setCachedData(cacheKey, returnData);
     return returnData;
   } catch (error) {
     console.error("Error fetching all bills:", error);

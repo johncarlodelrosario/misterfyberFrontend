@@ -179,6 +179,9 @@ export default function AdminUsersPage() {
                   Phone
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Tower
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Plan
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -196,7 +199,7 @@ export default function AdminUsersPage() {
               {users.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     No users found
@@ -231,6 +234,9 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {user.phoneNumber || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {user.tower || "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {user.planId?.name || "No Plan"}
@@ -353,6 +359,12 @@ export default function AdminUsersPage() {
                     <label className="text-sm text-gray-500">Phone</label>
                     <p className="font-medium text-gray-900">
                       {selectedUser.phoneNumber || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Tower</label>
+                    <p className="font-medium text-gray-900">
+                      {selectedUser.tower || "N/A"}
                     </p>
                   </div>
                   <div>

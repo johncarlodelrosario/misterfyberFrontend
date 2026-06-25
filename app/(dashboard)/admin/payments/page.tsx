@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useRef,
   Fragment,
+  useMemo,
 } from "react";
 import {
   getAllPayments,
@@ -13,7 +14,8 @@ import {
   rejectPayment,
   getPendingPayments,
   deletePayment,
-} from "@/services/admin";
+  type Payment as ServicePayment,
+} from "@/services/payment";
 import {
   FiSearch,
   FiEye,
@@ -37,43 +39,8 @@ import {
 import toast from "react-hot-toast";
 import api from "@/services/api";
 
-interface Payment {
-  _id: string;
-  amount: number;
-  referenceNumber: string;
-  paymentMethod: string;
-  paymentType: "subscription" | "installation" | "others";
-  status: "pending" | "processing" | "completed" | "failed" | "refunded";
-  createdAt: string;
-  paidAt?: string;
-  applicationId?: any;
-  application?: any;
-  userId?: any;
-  user?: any;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
-  billingId?: {
-    _id: string;
-    invoiceNumber: string;
-    billingPeriod?: {
-      start: string;
-      end: string;
-    };
-    dueDate?: string;
-    isProRated?: boolean;
-    isInstallationBill?: boolean;
-  };
-  paymentDetails?: {
-    notes?: string;
-    gatewayResponse?: {
-      applicationId?: string;
-      customerName?: string;
-      customerEmail?: string;
-      customerPhone?: string;
-    };
-  };
-}
+// Re-export the Payment type from the service to ensure consistency
+type Payment = ServicePayment;
 
 interface CustomerInfo {
   name: string;
@@ -96,38 +63,31 @@ interface PaymentGroup {
 }
 
 // ==================== CUSTOMER NAME CACHE ====================
-// Para hindi na natin kailangan mag-fetch ulit ng same customer
 const customerNameCache = new Map<
   string,
   { name: string; email: string; phone: string }
 >();
 
+// ==================== GLOBAL CACHE ====================
+let globalCache: any = null;
+let globalCacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// ==================== HELPERS ====================
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
 }): string {
   if (!billingPeriod?.start || !billingPeriod?.end) return "-";
-
   const start = new Date(billingPeriod.start);
   const end = new Date(billingPeriod.end);
-
-  const startMonth = start.getUTCMonth() + 1;
-  const startDay = start.getUTCDate();
-  const startYear = start.getUTCFullYear();
-  const endMonth = end.getUTCMonth() + 1;
-  const endDay = end.getUTCDate();
-  const endYear = end.getUTCFullYear();
-
-  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
+  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
 }
 
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  const year = date.getUTCFullYear();
-  return `${month}/${day}/${year}`;
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
 }
 
 function formatShortDate(dateStr: string): string {
@@ -144,9 +104,7 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// ============================================================
-// CRITICAL FIX: KUHAIN ANG TUNAY NA PANGALAN NG CUSTOMER
-// ============================================================
+// ==================== FETCH CUSTOMER NAME ====================
 async function fetchCustomerName(
   applicationId: string,
 ): Promise<{ name: string; email: string; phone: string }> {
@@ -154,19 +112,12 @@ async function fetchCustomerName(
     return { name: "Unknown Customer", email: "—", phone: "—" };
   }
 
-  // Check cache muna
   if (customerNameCache.has(applicationId)) {
-    const cached = customerNameCache.get(applicationId)!;
-    console.log(`📦 Cache hit for ${applicationId}: "${cached.name}"`);
-    return cached;
+    return customerNameCache.get(applicationId)!;
   }
 
   try {
-    console.log(`🔍 Fetching customer info for application: ${applicationId}`);
-
-    // Kuhain ang application details gamit ang API
     const response = await api.get(`/applications/status/${applicationId}`);
-
     if (response.data?.success && response.data?.data) {
       const app = response.data.data;
       const firstName = app.firstName || "";
@@ -179,46 +130,44 @@ async function fetchCustomerName(
         email: app.email || "—",
         phone: app.phoneNumber || "—",
       };
-
-      // I-save sa cache
       customerNameCache.set(applicationId, customerInfo);
-      console.log(
-        `✅ Fetched customer name: "${finalName}" for ${applicationId}`,
-      );
       return customerInfo;
     }
-
-    console.log(`⚠️ No data found for application: ${applicationId}`);
     return { name: applicationId, email: "—", phone: "—" };
   } catch (error) {
-    console.error(`❌ Error fetching customer for ${applicationId}:`, error);
+    console.error(`Error fetching customer for ${applicationId}:`, error);
     return { name: applicationId, email: "—", phone: "—" };
   }
 }
 
-// ============================================================
-// KUHAIN ANG CUSTOMER INFO - PRIORITIZE APPLICATION ID LOOKUP
-// ============================================================
+// ==================== EXTRACT CUSTOMER INFO ====================
 async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
-  console.log(`🔍 Extracting customer info for payment: ${payment._id}`);
-
-  // ============================================================
-  // PRIORITY 1: Kung may applicationId, i-fetch ang totoong pangalan
-  // ============================================================
   let appId = "";
-  if (typeof payment.applicationId === "string") {
-    appId = payment.applicationId;
-  } else if (payment.applicationId?.applicationId) {
-    appId = payment.applicationId.applicationId;
-  } else if (payment.paymentDetails?.gatewayResponse?.applicationId) {
+
+  // Safely extract applicationId with proper type checking
+  if (payment.applicationId) {
+    if (typeof payment.applicationId === "string") {
+      appId = payment.applicationId;
+    } else if (
+      typeof payment.applicationId === "object" &&
+      payment.applicationId !== null
+    ) {
+      // Check if it has an applicationId property
+      const appObj = payment.applicationId as any;
+      if (appObj.applicationId && typeof appObj.applicationId === "string") {
+        appId = appObj.applicationId;
+      }
+    }
+  }
+
+  // Also check paymentDetails for gatewayResponse
+  if (!appId && payment.paymentDetails?.gatewayResponse?.applicationId) {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // Check kung ang appId ay mukhang application ID (e.g., SIL26067944109)
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
   if (appId && isAppIdPattern) {
-    console.log(`📌 Application ID detected: ${appId}, fetching real name...`);
     const customerData = await fetchCustomerName(appId);
     return {
       name: customerData.name,
@@ -228,14 +177,10 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     };
   }
 
-  // ============================================================
-  // PRIORITY 2: Direct customerName FROM DATABASE
-  // ============================================================
   if (payment.customerName && payment.customerName.trim() !== "") {
     const name = payment.customerName.trim();
     const isAppId = /^[A-Z]{3}\d+/.test(name);
     if (!isAppId) {
-      console.log(`✅ Using database customerName: "${name}"`);
       return {
         name: name,
         email: payment.customerEmail || "—",
@@ -245,42 +190,15 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     }
   }
 
-  // ============================================================
-  // PRIORITY 3: Application object (populated from backend)
-  // ============================================================
-  if (payment.application && typeof payment.application === "object") {
-    const app = payment.application;
-    const firstName = app.firstName || app.first_name || "";
-    const lastName = app.lastName || app.last_name || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-
-    if (fullName.length > 1) {
-      const isAppId = /^[A-Z]{3}\d+/.test(fullName);
-      if (!isAppId) {
-        console.log(`✅ Using application name: "${fullName}"`);
-        return {
-          name: fullName,
-          email: app.email || payment.customerEmail || "—",
-          phone: app.phoneNumber || app.phone || payment.customerPhone || "—",
-          applicationId: app.applicationId || appId || "—",
-        };
-      }
-    }
-  }
-
-  // ============================================================
-  // PRIORITY 4: User object
-  // ============================================================
+  // Check if userId contains customer information
   if (payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId;
+    const user = payment.userId as any;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
-
     if (fullName.length > 1) {
       const isAppId = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppId) {
-        console.log(`✅ Using userId name: "${fullName}"`);
         return {
           name: fullName,
           email: user.email || payment.customerEmail || "—",
@@ -291,11 +209,7 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     }
   }
 
-  // ============================================================
-  // FALLBACK: Gamitin ang application ID o "Unknown Customer"
-  // ============================================================
   if (appId && appId.length > 0) {
-    // Try to fetch name one more time for any app ID
     const customerData = await fetchCustomerName(appId);
     if (customerData.name !== appId) {
       return {
@@ -313,7 +227,6 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     };
   }
 
-  console.log(`⚠️ No name found, showing "Unknown Customer"`);
   return {
     name: "Unknown Customer",
     email: payment.customerEmail || "—",
@@ -322,15 +235,12 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
   };
 }
 
-// ============================================================
-// GROUP PAYMENTS BY CUSTOMER - ASYNC VERSION
-// ============================================================
+// ==================== GROUP PAYMENTS ====================
 async function groupPaymentsAsync(
   payments: Payment[],
 ): Promise<PaymentGroup[]> {
   const groups = new Map<string, PaymentGroup>();
 
-  // Process payments in parallel for speed
   const paymentPromises = payments.map(async (payment) => {
     const customerInfo = await extractCustomerInfo(payment);
     return { payment, customerInfo };
@@ -339,7 +249,6 @@ async function groupPaymentsAsync(
   const results = await Promise.all(paymentPromises);
 
   for (const { payment, customerInfo } of results) {
-    // Determine unique customer ID
     let customerId = customerInfo.applicationId;
     if (
       customerId === "—" ||
@@ -350,7 +259,7 @@ async function groupPaymentsAsync(
       customerId =
         customerInfo.email !== "—"
           ? customerInfo.email
-          : payment.userId?._id || `unknown-${payment._id}`;
+          : (payment.userId as any)?._id || `unknown-${payment._id}`;
     }
 
     if (!groups.has(customerId)) {
@@ -388,40 +297,10 @@ async function groupPaymentsAsync(
     }
   }
 
-  // Update group info with best available name
-  for (const group of Array.from(groups.values())) {
-    const paymentWithName = group.payments.find((p) => {
-      const info = customerNameCache.get(p.applicationId || "");
-      if (info) {
-        return (
-          info.name !== "—" &&
-          info.name !== "Unknown Customer" &&
-          info.name.length > 1
-        );
-      }
-      return false;
-    });
-
-    if (paymentWithName) {
-      const appId =
-        typeof paymentWithName.applicationId === "string"
-          ? paymentWithName.applicationId
-          : paymentWithName.applicationId?.applicationId || "";
-      const info = customerNameCache.get(appId);
-      if (info) {
-        group.customerInfo = {
-          name: info.name,
-          email: info.email,
-          phone: info.phone,
-          applicationId: appId || group.customerInfo.applicationId,
-        };
-      }
-    }
-  }
-
   return Array.from(groups.values());
 }
 
+// ==================== HELPER FUNCTIONS ====================
 function getStatusColor(status: string): string {
   switch (status) {
     case "completed":
@@ -450,6 +329,463 @@ function getPaymentTypeColor(type: string): string {
   }
 }
 
+// ==================== MEMOIZED CUSTOMER DETAILS ====================
+const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
+  const [info, setInfo] = useState<CustomerInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    extractCustomerInfo(payment).then((result) => {
+      if (mounted) {
+        setInfo(result);
+        setLoading(false);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [payment]);
+
+  if (loading || !info) {
+    return (
+      <div className="animate-pulse text-center py-4">
+        Loading customer info...
+      </div>
+    );
+  }
+
+  const isInstallation =
+    payment.paymentType === "installation" ||
+    (payment.billingId as any)?.isInstallationBill;
+  const billingPeriod = (payment.billingId as any)?.billingPeriod;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs text-gray-500">Customer</p>
+        <p className="font-semibold text-lg">{info.name}</p>
+        <p className="text-sm text-gray-600">{info.email}</p>
+        <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-gray-500">Amount</p>
+          <p className="text-2xl font-bold text-green-600">
+            {formatCurrency(payment.amount)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Status</p>
+          <span
+            className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(payment.status)}`}
+          >
+            {payment.status === "completed" ? "Paid" : payment.status}
+          </span>
+        </div>
+      </div>
+      <div>
+        <p className="text-xs text-gray-500">Reference Number</p>
+        <p className="font-mono text-sm break-all">{payment.referenceNumber}</p>
+      </div>
+      {!isInstallation && (payment.billingId as any)?.invoiceNumber && (
+        <div>
+          <p className="text-xs text-gray-500">Invoice Number</p>
+          <p className="font-mono text-sm">
+            {(payment.billingId as any).invoiceNumber}
+          </p>
+        </div>
+      )}
+      {!isInstallation && billingPeriod && (
+        <div className="bg-blue-50 p-3 rounded-lg">
+          <p className="text-xs text-gray-500 flex items-center gap-1">
+            <FiCalendar className="w-3 h-3" /> Billing Period
+          </p>
+          <p className="text-base font-bold text-blue-800">
+            {formatBillingPeriod(billingPeriod)}
+          </p>
+          {(payment.billingId as any)?.isProRated && (
+            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+              Pro-rated Bill
+            </span>
+          )}
+        </div>
+      )}
+      {!isInstallation && (payment.billingId as any)?.dueDate && (
+        <div>
+          <p className="text-xs text-gray-500">Due Date</p>
+          <p className="text-sm font-medium text-red-600">
+            {formatDateFixed((payment.billingId as any).dueDate)}
+          </p>
+        </div>
+      )}
+      <div>
+        <p className="text-xs text-gray-500">Payment Date</p>
+        <p className="text-sm">{formatShortDate(payment.createdAt)}</p>
+      </div>
+      {payment.paidAt && (
+        <div>
+          <p className="text-xs text-gray-500">Paid At</p>
+          <p className="text-sm">{formatShortDate(payment.paidAt)}</p>
+        </div>
+      )}
+      {payment.paymentDetails?.notes && (
+        <div>
+          <p className="text-xs text-gray-500">Notes</p>
+          <p className="text-sm text-gray-600">
+            {payment.paymentDetails.notes}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+});
+
+CustomerDetails.displayName = "CustomerDetails";
+
+// ==================== MEMOIZED PENDING PAYMENT ROW ====================
+const PendingPaymentRow = React.memo(
+  ({
+    payment,
+    index,
+    onConfirm,
+    onReject,
+    onView,
+    onDelete,
+    confirming,
+    rejecting,
+    deleting,
+  }: {
+    payment: Payment;
+    index: number;
+    onConfirm: (id: string) => void;
+    onReject: (id: string) => void;
+    onView: (payment: Payment) => void;
+    onDelete: (id: string, ref: string) => void;
+    confirming: boolean;
+    rejecting: boolean;
+    deleting: boolean;
+  }) => {
+    const [info, setInfo] = useState<CustomerInfo | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      let mounted = true;
+      extractCustomerInfo(payment).then((result) => {
+        if (mounted) {
+          setInfo(result);
+          setLoading(false);
+        }
+      });
+      return () => {
+        mounted = false;
+      };
+    }, [payment]);
+
+    if (loading || !info) {
+      return (
+        <tr>
+          <td colSpan={7} className="px-4 py-3 text-center">
+            <span className="animate-pulse">Loading customer info...</span>
+          </td>
+        </tr>
+      );
+    }
+
+    const billingPeriod = (payment.billingId as any)?.billingPeriod;
+    const isInstallation =
+      payment.paymentType === "installation" ||
+      (payment.billingId as any)?.isInstallationBill;
+
+    return (
+      <tr className="hover:bg-gray-50">
+        <td className="px-4 py-3 text-sm text-gray-500">{index + 1}</td>
+        <td className="px-4 py-3 text-sm">
+          {formatShortDate(payment.createdAt)}
+        </td>
+        <td className="px-4 py-3 font-medium">{info.name}</td>
+        <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
+        <td className="px-4 py-3 font-semibold">
+          {formatCurrency(payment.amount)}
+        </td>
+        <td className="px-4 py-3 text-sm">
+          {isInstallation ? (
+            <span className="text-orange-600 font-medium">
+              Installation Fee
+            </span>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1">
+                <FiCalendar className="w-3 h-3 text-gray-400" />
+                <span className="text-xs font-medium">
+                  {formatBillingPeriod(billingPeriod)}
+                </span>
+              </div>
+              {(payment.billingId as any)?.dueDate && (
+                <span className="text-xs text-gray-500">
+                  Due: {formatDateFixed((payment.billingId as any).dueDate)}
+                </span>
+              )}
+            </div>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => onConfirm(payment._id)}
+              disabled={confirming}
+              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => onReject(payment._id)}
+              disabled={rejecting}
+              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition disabled:opacity-50"
+            >
+              Reject
+            </button>
+            <button
+              onClick={() => onView(payment)}
+              className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition"
+            >
+              View
+            </button>
+            <button
+              onClick={() => onDelete(payment._id, payment.referenceNumber)}
+              disabled={deleting}
+              className="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 transition flex items-center gap-1 disabled:opacity-50"
+            >
+              <FiTrash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  },
+);
+
+PendingPaymentRow.displayName = "PendingPaymentRow";
+
+// ==================== MEMOIZED CUSTOMER SUMMARY ROW ====================
+const CustomerSummaryRow = React.memo(
+  ({
+    group,
+    index,
+    rowNumber,
+    isExpanded,
+    onToggleExpand,
+    onView,
+    onDelete,
+    deleting,
+  }: {
+    group: PaymentGroup;
+    index: number;
+    rowNumber: number;
+    isExpanded: boolean;
+    onToggleExpand: (id: string) => void;
+    onView: (payment: Payment) => void;
+    onDelete: (id: string, ref: string) => void;
+    deleting: boolean;
+  }) => {
+    const hasMultiple = group.paymentCount > 1;
+
+    return (
+      <Fragment>
+        <tr
+          className={`hover:bg-gray-50 ${group.hasPendingPayments ? "bg-yellow-50/30" : ""}`}
+        >
+          <td className="px-4 py-4 text-sm text-gray-500">{rowNumber}</td>
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-2">
+              {hasMultiple && (
+                <button
+                  onClick={() => onToggleExpand(group.customerId)}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  {isExpanded ? (
+                    <FiChevronsUp className="w-4 h-4" />
+                  ) : (
+                    <FiChevronsDown className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+              <span className="font-semibold">{group.customerInfo.name}</span>
+            </div>
+          </td>
+          <td className="px-4 py-4 font-mono text-sm">
+            {group.customerInfo.applicationId}
+          </td>
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-1 text-sm">
+              <FiMail className="w-3 h-3 text-gray-400" />{" "}
+              {group.customerInfo.email}
+            </div>
+            {group.customerInfo.phone !== "—" && (
+              <div className="flex items-center gap-1 text-xs text-gray-400">
+                <FiPhone className="w-3 h-3" /> {group.customerInfo.phone}
+              </div>
+            )}
+          </td>
+          <td className="px-4 py-4 text-center">
+            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+              {group.paymentCount}
+            </span>
+          </td>
+          <td className="px-4 py-4 text-right">
+            <span className="font-bold text-green-600">
+              {formatCurrency(group.totalPaidAmount)}
+            </span>
+          </td>
+          <td className="px-4 py-4 text-right">
+            {group.totalPendingAmount > 0 ? (
+              <span className="text-yellow-600 font-medium">
+                {formatCurrency(group.totalPendingAmount)}
+              </span>
+            ) : (
+              "—"
+            )}
+          </td>
+          <td className="px-4 py-4 text-sm">
+            {formatShortDate(group.lastPaymentDate)}
+          </td>
+          <td className="px-4 py-4 text-center">
+            <button
+              onClick={() => onView(group.payments[0])}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              <FiEye className="w-5 h-5" />
+            </button>
+          </td>
+        </tr>
+        {isExpanded && hasMultiple && (
+          <tr className="bg-gray-50">
+            <td colSpan={9} className="px-4 py-4 pl-12">
+              <div className="border-l-4 border-blue-400 pl-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  Payment History
+                </p>
+                <div className="space-y-3">
+                  {group.payments.map((p, idx) => {
+                    const billingPeriod = (p.billingId as any)?.billingPeriod;
+                    const isInstallation =
+                      p.paymentType === "installation" ||
+                      (p.billingId as any)?.isInstallationBill;
+                    return (
+                      <div
+                        key={p._id}
+                        className="border border-gray-200 rounded-lg p-3 bg-white"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-400">
+                              #{idx + 1} - Date
+                            </p>
+                            <p className="font-medium">
+                              {formatShortDate(p.createdAt)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Reference</p>
+                            <p className="font-mono text-xs break-all">
+                              {p.referenceNumber}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Type</p>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs inline-block ${getPaymentTypeColor(p.paymentType)}`}
+                            >
+                              {p.paymentType === "installation"
+                                ? "Installation Fee"
+                                : p.paymentType === "subscription"
+                                  ? "Monthly Subscription"
+                                  : p.paymentType}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Amount</p>
+                            <p className="font-bold text-green-600">
+                              {formatCurrency(p.amount)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Status</p>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
+                            >
+                              {p.status === "completed" ? "Paid" : p.status}
+                            </span>
+                          </div>
+                          {!isInstallation &&
+                            (p.billingId as any)?.invoiceNumber && (
+                              <div>
+                                <p className="text-xs text-gray-400">Invoice</p>
+                                <p className="font-mono text-xs">
+                                  {(p.billingId as any).invoiceNumber}
+                                </p>
+                              </div>
+                            )}
+                          {!isInstallation && billingPeriod && (
+                            <>
+                              <div className="md:col-span-2">
+                                <p className="text-xs text-gray-400 flex items-center gap-1">
+                                  <FiCalendar className="w-3 h-3" /> Billing
+                                  Period
+                                </p>
+                                <p className="text-sm font-mono bg-gray-50 p-1 rounded">
+                                  {formatBillingPeriod(billingPeriod)}
+                                </p>
+                              </div>
+                              {(p.billingId as any)?.isProRated && (
+                                <div>
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                    Pro-rated Bill
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {!isInstallation && (p.billingId as any)?.dueDate && (
+                            <div>
+                              <p className="text-xs text-gray-400">Due Date</p>
+                              <p className="text-sm font-medium text-red-600">
+                                {formatDateFixed((p.billingId as any).dueDate)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            onClick={() => onView(p)}
+                            className="text-blue-600 text-xs hover:underline flex items-center gap-1"
+                          >
+                            <FiEye className="w-3 h-3" /> View Full Details
+                          </button>
+                          <button
+                            onClick={() => onDelete(p._id, p.referenceNumber)}
+                            disabled={deleting}
+                            className="text-red-600 text-xs hover:underline flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <FiTrash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  },
+);
+
+CustomerSummaryRow.displayName = "CustomerSummaryRow";
+
+// ==================== MAIN PAGE ====================
 export default function AdminPaymentsPage() {
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
   const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
@@ -483,12 +819,35 @@ export default function AdminPaymentsPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentTablePage, setCurrentTablePage] = useState(1);
   const isMountedRef = useRef(true);
+  const initialLoadDone = useRef(false);
 
+  // ==================== LOAD PAYMENTS ====================
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
+      if (!isMountedRef.current) return;
+
+      // Check global cache first
+      const now = Date.now();
+      if (!forceRefresh && globalCache) {
+        // Check if cache is still valid (within TTL)
+        if (now - globalCacheTimestamp < CACHE_TTL) {
+          const cached = globalCache;
+          setPaymentGroups(cached.paymentGroups);
+          setPendingPayments(cached.pendingPayments);
+          setStats(cached.stats);
+          setLoading(false);
+          setRefreshing(false);
+          initialLoadDone.current = true;
+          console.log("✅ Using global cached payment data");
+          return;
+        } else {
+          // Cache expired, clear it
+          globalCache = null;
+        }
+      }
+
       if (forceRefresh) {
         setRefreshing(true);
-        // Clear cache para fresh ang data
         customerNameCache.clear();
       } else {
         setLoading(true);
@@ -504,37 +863,31 @@ export default function AdminPaymentsPage() {
 
         if (!isMountedRef.current) return;
 
-        let paymentsList = allPaymentsResult.data || [];
+        let paymentsList: Payment[] = allPaymentsResult.data || [];
         if (paymentTypeFilter) {
           paymentsList = paymentsList.filter(
             (p: Payment) => p.paymentType === paymentTypeFilter,
           );
         }
 
-        console.log(`📊 Payments loaded: ${paymentsList.length}`);
-
-        // Group payments by customer with async name fetching
         const grouped = await groupPaymentsAsync(paymentsList);
         setPaymentGroups(grouped);
 
-        // Get pending payments
         const pendingResult = await getPendingPayments(forceRefresh).catch(
           () => ({ data: [] }),
         );
-        let pendingList = pendingResult.data || [];
+        let pendingList: Payment[] = pendingResult.data || [];
 
         if (paymentTypeFilter) {
-          setPendingPayments(
-            pendingList.filter(
-              (p: Payment) => p.paymentType === paymentTypeFilter,
-            ),
+          pendingList = pendingList.filter(
+            (p: Payment) => p.paymentType === paymentTypeFilter,
           );
-        } else {
-          setPendingPayments(pendingList);
         }
+        setPendingPayments(pendingList);
 
+        let newStats;
         if (allPaymentsResult.stats) {
-          setStats({
+          newStats = {
             totalAmount: allPaymentsResult.stats.total || 0,
             totalCount: allPaymentsResult.stats.totalCount || 0,
             monthlyAmount: allPaymentsResult.stats.monthly || 0,
@@ -546,8 +899,22 @@ export default function AdminPaymentsPage() {
               allPaymentsResult.stats.installationFeeCount || 0,
             pendingAmount: allPaymentsResult.stats.pending || 0,
             pendingCount: allPaymentsResult.stats.pendingCount || 0,
-          });
+          };
+          setStats(newStats);
         }
+
+        // Save to global cache
+        globalCache = {
+          paymentGroups: grouped,
+          pendingPayments: pendingList,
+          stats: newStats || stats,
+        };
+        globalCacheTimestamp = now;
+
+        initialLoadDone.current = true;
+        console.log(
+          `✅ Loaded ${grouped.length} payment groups (cached globally)`,
+        );
       } catch (error: any) {
         console.error("Failed to load payments:", error);
         if (!forceRefresh) toast.error("Failed to load payments");
@@ -558,9 +925,10 @@ export default function AdminPaymentsPage() {
         }
       }
     },
-    [currentPage, statusFilter, paymentTypeFilter],
+    [currentPage, statusFilter, paymentTypeFilter, stats],
   );
 
+  // ==================== INITIAL LOAD ====================
   useEffect(() => {
     isMountedRef.current = true;
     loadPayments();
@@ -569,7 +937,12 @@ export default function AdminPaymentsPage() {
     };
   }, [loadPayments]);
 
-  const handleRefresh = () => loadPayments(true);
+  // ==================== HANDLERS ====================
+  const handleRefresh = () => {
+    globalCache = null;
+    globalCacheTimestamp = 0;
+    loadPayments(true);
+  };
 
   const handleConfirmPayment = async (paymentId: string) => {
     if (!confirm("Confirm this payment?")) return;
@@ -577,6 +950,8 @@ export default function AdminPaymentsPage() {
     try {
       await confirmPayment(paymentId);
       toast.success("Payment confirmed!");
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
@@ -593,6 +968,8 @@ export default function AdminPaymentsPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
@@ -616,6 +993,8 @@ export default function AdminPaymentsPage() {
     try {
       await deletePayment(paymentId);
       toast.success(`Payment ${referenceNumber} deleted successfully`);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
@@ -634,8 +1013,26 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  const getSortedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
-    return [...groups].sort((a, b) => {
+  // ==================== MEMOIZED DATA ====================
+  const filteredGroups = useMemo(() => {
+    if (!search.trim()) return paymentGroups;
+    const searchLower = search.toLowerCase();
+    return paymentGroups.filter((group) => {
+      const info = group.customerInfo;
+      return (
+        info.name.toLowerCase().includes(searchLower) ||
+        info.email.toLowerCase().includes(searchLower) ||
+        info.applicationId.toLowerCase().includes(searchLower) ||
+        info.phone.toLowerCase().includes(searchLower) ||
+        group.payments.some((p) =>
+          p.referenceNumber?.toLowerCase().includes(searchLower),
+        )
+      );
+    });
+  }, [paymentGroups, search]);
+
+  const sortedGroups = useMemo(() => {
+    return [...filteredGroups].sort((a, b) => {
       let aVal: any, bVal: any;
       switch (sortField) {
         case "customerInfo":
@@ -662,43 +1059,18 @@ export default function AdminPaymentsPage() {
       if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
-  };
+  }, [filteredGroups, sortField, sortDirection]);
 
-  const getFilteredGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
-    if (!search.trim()) return groups;
-    const searchLower = search.toLowerCase();
-    return groups.filter((group) => {
-      const info = group.customerInfo;
-      return (
-        info.name.toLowerCase().includes(searchLower) ||
-        info.email.toLowerCase().includes(searchLower) ||
-        info.applicationId.toLowerCase().includes(searchLower) ||
-        info.phone.toLowerCase().includes(searchLower) ||
-        group.payments.some((p) =>
-          p.referenceNumber?.toLowerCase().includes(searchLower),
-        )
-      );
-    });
-  };
-
-  const getPaginatedGroups = (groups: PaymentGroup[]): PaymentGroup[] => {
+  const paginatedGroups = useMemo(() => {
     const startIndex = (currentTablePage - 1) * itemsPerPage;
-    return groups.slice(startIndex, startIndex + itemsPerPage);
-  };
+    return sortedGroups.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedGroups, currentTablePage, itemsPerPage]);
 
-  const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
-    if (sortField !== field)
-      return <FiChevronDown className="w-3 h-3 opacity-30" />;
-    return sortDirection === "asc" ? (
-      <FiChevronUp className="w-3 h-3" />
-    ) : (
-      <FiChevronDown className="w-3 h-3" />
-    );
-  };
+  const totalFilteredCount = filteredGroups.length;
+  const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
 
+  // ==================== EXPORT ====================
   const exportToExcel = () => {
-    const filteredGroups = getFilteredGroups(paymentGroups);
-    const sortedGroups = getSortedGroups(filteredGroups);
     const csvData = sortedGroups.map((group) => ({
       "Customer Name": group.customerInfo.name,
       "Application ID": group.customerInfo.applicationId,
@@ -738,13 +1110,19 @@ export default function AdminPaymentsPage() {
     toast.success("Export complete!");
   };
 
-  const filteredGroups = getFilteredGroups(paymentGroups);
-  const sortedGroups = getSortedGroups(filteredGroups);
-  const paginatedGroups = getPaginatedGroups(sortedGroups);
-  const totalFilteredCount = filteredGroups.length;
-  const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage);
+  // ==================== SORT ICON ====================
+  const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
+    if (sortField !== field)
+      return <FiChevronDown className="w-3 h-3 opacity-30" />;
+    return sortDirection === "asc" ? (
+      <FiChevronUp className="w-3 h-3" />
+    ) : (
+      <FiChevronDown className="w-3 h-3" />
+    );
+  };
 
-  if (loading) {
+  // ==================== LOADING STATE ====================
+  if (loading && paymentGroups.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -755,6 +1133,7 @@ export default function AdminPaymentsPage() {
     );
   }
 
+  // ==================== RENDER ====================
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-8">
@@ -852,7 +1231,7 @@ export default function AdminPaymentsPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition"
+              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition disabled:opacity-50"
             >
               <FiRefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -886,7 +1265,7 @@ export default function AdminPaymentsPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300"
+              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300 disabled:opacity-50"
             >
               <FiRefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -961,110 +1340,20 @@ export default function AdminPaymentsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {pendingPayments.map((payment, index) => {
-                    const [info, setInfo] = useState<CustomerInfo | null>(null);
-                    const [loading, setLoading] = useState(true);
-
-                    React.useEffect(() => {
-                      extractCustomerInfo(payment).then((result) => {
-                        setInfo(result);
-                        setLoading(false);
-                      });
-                    }, [payment]);
-
-                    if (loading || !info) {
-                      return (
-                        <tr key={payment._id}>
-                          <td colSpan={7} className="px-4 py-3 text-center">
-                            <span className="animate-pulse">
-                              Loading customer info...
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    const billingPeriod = payment.billingId?.billingPeriod;
-                    const isInstallation =
-                      payment.paymentType === "installation" ||
-                      payment.billingId?.isInstallationBill;
-
-                    return (
-                      <tr key={payment._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {index + 1}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {formatShortDate(payment.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 font-medium">{info.name}</td>
-                        <td className="px-4 py-3 font-mono text-sm">
-                          {info.applicationId}
-                        </td>
-                        <td className="px-4 py-3 font-semibold">
-                          {formatCurrency(payment.amount)}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {isInstallation ? (
-                            <span className="text-orange-600 font-medium">
-                              Installation Fee
-                            </span>
-                          ) : (
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-1">
-                                <FiCalendar className="w-3 h-3 text-gray-400" />
-                                <span className="text-xs font-medium">
-                                  {formatBillingPeriod(billingPeriod)}
-                                </span>
-                              </div>
-                              {payment.billingId?.dueDate && (
-                                <span className="text-xs text-gray-500">
-                                  Due:{" "}
-                                  {formatDateFixed(payment.billingId.dueDate)}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2 flex-wrap">
-                            <button
-                              onClick={() => handleConfirmPayment(payment._id)}
-                              disabled={confirming}
-                              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              onClick={() => handleRejectPayment(payment._id)}
-                              disabled={rejecting}
-                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              onClick={() => setSelectedPayment(payment)}
-                              className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition"
-                            >
-                              View
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleDeletePayment(
-                                  payment._id,
-                                  payment.referenceNumber,
-                                )
-                              }
-                              disabled={deleting}
-                              className="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 transition flex items-center gap-1"
-                            >
-                              <FiTrash2 className="w-3 h-3" /> Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {pendingPayments.map((payment, index) => (
+                    <PendingPaymentRow
+                      key={payment._id}
+                      payment={payment}
+                      index={index}
+                      onConfirm={handleConfirmPayment}
+                      onReject={handleRejectPayment}
+                      onView={setSelectedPayment}
+                      onDelete={handleDeletePayment}
+                      confirming={confirming}
+                      rejecting={rejecting}
+                      deleting={deleting}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1165,236 +1454,22 @@ export default function AdminPaymentsPage() {
               ) : (
                 paginatedGroups.map((group, index) => {
                   const isExpanded = expandedCustomer === group.customerId;
-                  const hasMultiple = group.paymentCount > 1;
                   const rowNumber =
                     (currentTablePage - 1) * itemsPerPage + index + 1;
                   return (
-                    <Fragment key={group.customerId}>
-                      <tr
-                        className={`hover:bg-gray-50 ${group.hasPendingPayments ? "bg-yellow-50/30" : ""}`}
-                      >
-                        <td className="px-4 py-4 text-sm text-gray-500">
-                          {rowNumber}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            {hasMultiple && (
-                              <button
-                                onClick={() =>
-                                  setExpandedCustomer(
-                                    isExpanded ? null : group.customerId,
-                                  )
-                                }
-                                className="text-blue-600 hover:text-blue-800"
-                              >
-                                {isExpanded ? (
-                                  <FiChevronsUp className="w-4 h-4" />
-                                ) : (
-                                  <FiChevronsDown className="w-4 h-4" />
-                                )}
-                              </button>
-                            )}
-                            <span className="font-semibold">
-                              {group.customerInfo.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 font-mono text-sm">
-                          {group.customerInfo.applicationId}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-1 text-sm">
-                            <FiMail className="w-3 h-3 text-gray-400" />{" "}
-                            {group.customerInfo.email}
-                          </div>
-                          {group.customerInfo.phone !== "—" && (
-                            <div className="flex items-center gap-1 text-xs text-gray-400">
-                              <FiPhone className="w-3 h-3" />{" "}
-                              {group.customerInfo.phone}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                            {group.paymentCount}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="font-bold text-green-600">
-                            {formatCurrency(group.totalPaidAmount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          {group.totalPendingAmount > 0 ? (
-                            <span className="text-yellow-600 font-medium">
-                              {formatCurrency(group.totalPendingAmount)}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-4 py-4 text-sm">
-                          {formatShortDate(group.lastPaymentDate)}
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <button
-                            onClick={() =>
-                              setSelectedPayment(group.payments[0])
-                            }
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <FiEye className="w-5 h-5" />
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && hasMultiple && (
-                        <tr className="bg-gray-50">
-                          <td colSpan={9} className="px-4 py-4 pl-12">
-                            <div className="border-l-4 border-blue-400 pl-4">
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                                Payment History
-                              </p>
-                              <div className="space-y-3">
-                                {group.payments.map((p, idx) => {
-                                  const billingPeriod =
-                                    p.billingId?.billingPeriod;
-                                  const isInstallation =
-                                    p.paymentType === "installation" ||
-                                    p.billingId?.isInstallationBill;
-                                  return (
-                                    <div
-                                      key={p._id}
-                                      className="border border-gray-200 rounded-lg p-3 bg-white"
-                                    >
-                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            #{idx + 1} - Date
-                                          </p>
-                                          <p className="font-medium">
-                                            {formatShortDate(p.createdAt)}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            Reference
-                                          </p>
-                                          <p className="font-mono text-xs break-all">
-                                            {p.referenceNumber}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            Type
-                                          </p>
-                                          <span
-                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getPaymentTypeColor(p.paymentType)}`}
-                                          >
-                                            {p.paymentType === "installation"
-                                              ? "Installation Fee"
-                                              : p.paymentType === "subscription"
-                                                ? "Monthly Subscription"
-                                                : p.paymentType}
-                                          </span>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            Amount
-                                          </p>
-                                          <p className="font-bold text-green-600">
-                                            {formatCurrency(p.amount)}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs text-gray-400">
-                                            Status
-                                          </p>
-                                          <span
-                                            className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
-                                          >
-                                            {p.status === "completed"
-                                              ? "Paid"
-                                              : p.status}
-                                          </span>
-                                        </div>
-                                        {!isInstallation &&
-                                          p.billingId?.invoiceNumber && (
-                                            <div>
-                                              <p className="text-xs text-gray-400">
-                                                Invoice
-                                              </p>
-                                              <p className="font-mono text-xs">
-                                                {p.billingId.invoiceNumber}
-                                              </p>
-                                            </div>
-                                          )}
-                                        {!isInstallation && billingPeriod && (
-                                          <>
-                                            <div className="md:col-span-2">
-                                              <p className="text-xs text-gray-400 flex items-center gap-1">
-                                                <FiCalendar className="w-3 h-3" />{" "}
-                                                Billing Period
-                                              </p>
-                                              <p className="text-sm font-mono bg-gray-50 p-1 rounded">
-                                                {formatBillingPeriod(
-                                                  billingPeriod,
-                                                )}
-                                              </p>
-                                            </div>
-                                            {p.billingId?.isProRated && (
-                                              <div>
-                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                                  Pro-rated Bill
-                                                </span>
-                                              </div>
-                                            )}
-                                          </>
-                                        )}
-                                        {!isInstallation &&
-                                          p.billingId?.dueDate && (
-                                            <div>
-                                              <p className="text-xs text-gray-400">
-                                                Due Date
-                                              </p>
-                                              <p className="text-sm font-medium text-red-600">
-                                                {formatDateFixed(
-                                                  p.billingId.dueDate,
-                                                )}
-                                              </p>
-                                            </div>
-                                          )}
-                                      </div>
-                                      <div className="mt-3 flex justify-end gap-2">
-                                        <button
-                                          onClick={() => setSelectedPayment(p)}
-                                          className="text-blue-600 text-xs hover:underline flex items-center gap-1"
-                                        >
-                                          <FiEye className="w-3 h-3" /> View
-                                          Full Details
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleDeletePayment(
-                                              p._id,
-                                              p.referenceNumber,
-                                            )
-                                          }
-                                          disabled={deleting}
-                                          className="text-red-600 text-xs hover:underline flex items-center gap-1"
-                                        >
-                                          <FiTrash2 className="w-3 h-3" />{" "}
-                                          Delete
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
+                    <CustomerSummaryRow
+                      key={group.customerId}
+                      group={group}
+                      index={index}
+                      rowNumber={rowNumber}
+                      isExpanded={isExpanded}
+                      onToggleExpand={(id) =>
+                        setExpandedCustomer(isExpanded ? null : id)
+                      }
+                      onView={setSelectedPayment}
+                      onDelete={handleDeletePayment}
+                      deleting={deleting}
+                    />
                   );
                 })
               )}
@@ -1426,7 +1501,7 @@ export default function AdminPaymentsPage() {
                 Previous
               </button>
               <span className="px-3 py-1 text-sm">
-                Page {currentTablePage} of {totalPagesCount || 1}
+                Page {currentTablePage} of {totalPagesCount}
               </span>
               <button
                 onClick={() =>
@@ -1468,112 +1543,6 @@ export default function AdminPaymentsPage() {
               <CustomerDetails payment={selectedPayment} />
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// CUSTOMER DETAILS COMPONENT (for modal)
-// ============================================================
-function CustomerDetails({ payment }: { payment: Payment }) {
-  const [info, setInfo] = useState<CustomerInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    extractCustomerInfo(payment).then((result) => {
-      setInfo(result);
-      setLoading(false);
-    });
-  }, [payment]);
-
-  if (loading || !info) {
-    return (
-      <div className="animate-pulse text-center py-4">
-        Loading customer info...
-      </div>
-    );
-  }
-
-  const isInstallation =
-    payment.paymentType === "installation" ||
-    payment.billingId?.isInstallationBill;
-  const billingPeriod = payment.billingId?.billingPeriod;
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs text-gray-500">Customer</p>
-        <p className="font-semibold text-lg">{info.name}</p>
-        <p className="text-sm text-gray-600">{info.email}</p>
-        <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-xs text-gray-500">Amount</p>
-          <p className="text-2xl font-bold text-green-600">
-            {formatCurrency(payment.amount)}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500">Status</p>
-          <span
-            className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(payment.status)}`}
-          >
-            {payment.status === "completed" ? "Paid" : payment.status}
-          </span>
-        </div>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500">Reference Number</p>
-        <p className="font-mono text-sm break-all">{payment.referenceNumber}</p>
-      </div>
-      {!isInstallation && payment.billingId?.invoiceNumber && (
-        <div>
-          <p className="text-xs text-gray-500">Invoice Number</p>
-          <p className="font-mono text-sm">{payment.billingId.invoiceNumber}</p>
-        </div>
-      )}
-      {!isInstallation && billingPeriod && (
-        <div className="bg-blue-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-500 flex items-center gap-1">
-            <FiCalendar className="w-3 h-3" /> Billing Period
-          </p>
-          <p className="text-base font-bold text-blue-800">
-            {formatBillingPeriod(billingPeriod)}
-          </p>
-          {payment.billingId?.isProRated && (
-            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
-              Pro-rated Bill
-            </span>
-          )}
-        </div>
-      )}
-      {!isInstallation && payment.billingId?.dueDate && (
-        <div>
-          <p className="text-xs text-gray-500">Due Date</p>
-          <p className="text-sm font-medium text-red-600">
-            {formatDateFixed(payment.billingId.dueDate)}
-          </p>
-        </div>
-      )}
-      <div>
-        <p className="text-xs text-gray-500">Payment Date</p>
-        <p className="text-sm">{formatShortDate(payment.createdAt)}</p>
-      </div>
-      {payment.paidAt && (
-        <div>
-          <p className="text-xs text-gray-500">Paid At</p>
-          <p className="text-sm">{formatShortDate(payment.paidAt)}</p>
-        </div>
-      )}
-      {payment.paymentDetails?.notes && (
-        <div>
-          <p className="text-xs text-gray-500">Notes</p>
-          <p className="text-sm text-gray-600">
-            {payment.paymentDetails.notes}
-          </p>
         </div>
       )}
     </div>

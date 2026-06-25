@@ -18,6 +18,7 @@ export interface ApplicationData {
   email: string;
   phoneNumber: string;
   buildingId: string;
+  tower: string;
   floor: string;
   unitNumber: string;
   notes?: string;
@@ -90,6 +91,7 @@ export const submitApplication = async (data: ApplicationData) => {
   formData.append("email", data.email);
   formData.append("phoneNumber", data.phoneNumber);
   formData.append("buildingId", data.buildingId);
+  formData.append("tower", data.tower);
   formData.append("floor", data.floor);
   formData.append("unitNumber", data.unitNumber);
   if (data.notes) {

@@ -5,6 +5,7 @@ export interface AddressData {
   street: string;
   landmark?: string;
   buildingName?: string;
+  tower?: string;
   floor?: string;
   unitNumber?: string;
   houseNo?: string;
@@ -24,6 +25,7 @@ export interface UserProfile {
   city: string;
   barangay: string;
   zipCode: string;
+  tower: string;
   address: AddressData;
   idType: string;
   idNumber: string;

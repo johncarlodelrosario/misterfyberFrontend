@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
   getAllBillingCycles,
   getAllBills,
@@ -72,6 +78,7 @@ import {
 import toast from "react-hot-toast";
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
 
+// ==================== TYPES ====================
 interface CustomerItem {
   _id: string;
   firstName: string;
@@ -118,34 +125,25 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// Helper to format date as MM/DD/YYYY (no timezone shift)
+// ==================== GLOBAL CACHE ====================
+let globalCache: any = null;
+let globalCacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  const year = date.getUTCFullYear();
-  return `${month}/${day}/${year}`;
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
 }
 
-// Helper to format billing period correctly using ACTUAL dates
 function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
   if (!startDateStr || !endDateStr) return "-";
-
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
-
-  const startMonth = start.getUTCMonth() + 1;
-  const startDay = start.getUTCDate();
-  const startYear = start.getUTCFullYear();
-  const endMonth = end.getUTCMonth() + 1;
-  const endDay = end.getUTCDate();
-  const endYear = end.getUTCFullYear();
-
-  return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
+  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
 }
 
-// Helper to get building display name
 function getBuildingDisplay(customer: CustomerItem): string {
   if (customer.building) {
     if (
@@ -161,7 +159,346 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
+// ==================== MEMOIZED ROW COMPONENT ====================
+const CustomerRow = React.memo(
+  ({
+    customer,
+    index,
+    onAction,
+  }: {
+    customer: CustomerItem;
+    index: number;
+    onAction: (action: string, customer: CustomerItem, data?: any) => void;
+  }) => {
+    const hasUnpaidBills =
+      customer.unpaidBills && customer.unpaidBills.length > 0;
+    const hasBillingCycle = !!customer.billingCycle;
+    const isActive = customer.billingCycle?.status === "active";
+    const isPaused = customer.billingCycle?.status === "paused";
+    const isPendingActivation =
+      customer.billingCycle?.status === "pending_activation";
+    const hasUnpaidInstallationFee =
+      customer.type === "application" &&
+      (customer.installationFee ?? 0) > 0 &&
+      !customer.installationFeePaid;
+
+    const getStatusBadge = () => {
+      if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
+      if (customer.type === "application") {
+        if (
+          customer.billingCycle?.status === "pending_activation" &&
+          hasUnpaidBills
+        )
+          return "bg-purple-100 text-purple-800";
+        if (
+          customer.billingCycle?.status === "pending_activation" &&
+          !hasUnpaidBills
+        )
+          return "bg-green-100 text-green-800";
+        if (customer.billingCycle?.status === "active")
+          return "bg-green-100 text-green-800";
+        if (customer.billingCycle?.status === "paused")
+          return "bg-yellow-100 text-yellow-800";
+        if (customer.status === "billing_started")
+          return "bg-indigo-100 text-indigo-800";
+        return "bg-blue-100 text-blue-800";
+      }
+      if (customer.billingCycle?.status === "paused")
+        return "bg-yellow-100 text-yellow-800";
+      if (customer.status === "active") return "bg-green-100 text-green-800";
+      if (customer.status === "suspended") return "bg-red-100 text-red-800";
+      if (customer.status === "pending_activation")
+        return "bg-purple-100 text-purple-800";
+      return "bg-gray-100 text-gray-800";
+    };
+
+    const getStatusText = () => {
+      if (hasUnpaidInstallationFee) return "Installation Fee Due";
+      if (customer.type === "application") {
+        if (
+          customer.billingCycle?.status === "pending_activation" &&
+          hasUnpaidBills
+        )
+          return "Awaiting Payment";
+        if (
+          customer.billingCycle?.status === "pending_activation" &&
+          !hasUnpaidBills
+        )
+          return "Active";
+        if (customer.billingCycle?.status === "active") return "Active";
+        if (customer.billingCycle?.status === "paused") return "Paused";
+        if (customer.status === "billing_started") return "Billing Started";
+        return "Approved";
+      }
+      if (customer.billingCycle?.status === "paused") return "Paused";
+      if (customer.status === "active") return "Active";
+      if (customer.status === "suspended") return "Suspended";
+      if (customer.status === "pending_activation") return "Pending Activation";
+      return customer.status || "Inactive";
+    };
+
+    const getBalanceColor = (balance: number) => {
+      if (balance === 0) return "text-green-600";
+      if (balance > 1000) return "text-red-600 font-bold";
+      return "text-orange-600";
+    };
+
+    return (
+      <tr
+        className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+      >
+        <td className="px-3 py-2 border-r border-gray-200 text-center bg-white sticky left-0 z-10">
+          <span className="text-sm font-medium text-gray-500">{index + 1}</span>
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          <div className="flex items-center gap-2">
+            {customer.type === "application" ? (
+              <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
+            ) : (
+              <FiUser className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+            )}
+            <div>
+              <p className="text-sm font-medium text-gray-900">
+                {customer.firstName} {customer.lastName}
+              </p>
+              <p className="text-xs text-gray-500">{customer.email}</p>
+              {customer.applicationId && (
+                <p className="text-[10px] text-gray-400 font-mono break-all">
+                  {customer.applicationId}
+                </p>
+              )}
+            </div>
+          </div>
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          <p className="text-sm font-medium text-gray-900">
+            {customer.planName}
+          </p>
+          <p className="text-xs text-gray-500">
+            ₱{customer.planPrice.toLocaleString()}/mo
+          </p>
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          <p
+            className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
+          >
+            ₱{customer.currentBalance.toLocaleString()}
+          </p>
+          {customer.unpaidBills.length > 0 && (
+            <p className="text-[10px] text-red-500">
+              {customer.unpaidBills.length} unpaid
+            </p>
+          )}
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          <span
+            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge()}`}
+          >
+            {getStatusText()}
+          </span>
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          {customer.type === "application" &&
+          (customer.installationFee ?? 0) > 0 ? (
+            <div>
+              <p className="text-sm font-medium">
+                ₱{(customer.installationFee ?? 0).toLocaleString()}
+              </p>
+              <p
+                className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
+              >
+                {customer.installationFeePaid ? "Paid" : "Unpaid"}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">—</p>
+          )}
+        </td>
+        <td className="px-3 py-2 border-r border-gray-200">
+          <div className="flex items-center gap-1">
+            <FiHome className="w-3 h-3 text-gray-400" />
+            <span className="text-xs text-gray-600">
+              {getBuildingDisplay(customer)}
+            </span>
+            {customer.unitNumber && (
+              <span className="text-xs text-gray-400">
+                (Unit {customer.unitNumber})
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex gap-1">
+            <button
+              onClick={() => onAction("view", customer)}
+              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+              title="View Details"
+            >
+              <FiEye className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onAction("email", customer)}
+              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+              title="Send Email"
+            >
+              <FiMail className="w-3.5 h-3.5" />
+            </button>
+            {customer.type === "application" && hasBillingCycle && (
+              <button
+                onClick={() => onAction("recover", customer)}
+                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                title="Recover Missing Bills"
+              >
+                <FiCalendar className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {customer.type === "application" && (
+              <>
+                {!hasBillingCycle && (
+                  <button
+                    onClick={() => onAction("start", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Start Billing"
+                  >
+                    <FiPlay className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {isActive && (
+                  <button
+                    onClick={() => onAction("pause", customer)}
+                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                    title="Pause Billing"
+                  >
+                    <FiPause className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {isPaused && (
+                  <button
+                    onClick={() => onAction("resume", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Resume Billing"
+                  >
+                    <FiPlay className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {(isActive || isPendingActivation) && (
+                  <button
+                    onClick={() => onAction("disconnect", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Disconnect"
+                  >
+                    <FiWifiOff className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.status === "suspended" && (
+                  <button
+                    onClick={() => onAction("reconnect", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Reconnect"
+                  >
+                    <FiWifi className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {hasBillingCycle && (
+                  <button
+                    onClick={() => onAction("stop", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Cancel Subscription"
+                  >
+                    <FiX className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {hasBillingCycle && (
+                  <button
+                    onClick={() => onAction("delete", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Delete Billing Cycle"
+                  >
+                    <FiTrash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+            {customer.type === "user" && (
+              <>
+                {(!customer.billingCycle ||
+                  customer.billingCycle?.status === "cancelled") && (
+                  <button
+                    onClick={() => onAction("start", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Start Billing"
+                  >
+                    <FiPlay className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.billingCycle?.status === "active" && (
+                  <button
+                    onClick={() => onAction("pause", customer)}
+                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                    title="Pause Billing"
+                  >
+                    <FiPause className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.billingCycle?.status === "paused" && (
+                  <button
+                    onClick={() => onAction("resume", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Resume Billing"
+                  >
+                    <FiPlay className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.billingCycle?.status === "active" && (
+                  <button
+                    onClick={() => onAction("stop", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Cancel Subscription"
+                  >
+                    <FiX className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.status === "active" && (
+                  <button
+                    onClick={() => onAction("disconnect", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Disconnect"
+                  >
+                    <FiWifiOff className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.status === "suspended" && (
+                  <button
+                    onClick={() => onAction("reconnect", customer)}
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                    title="Reconnect"
+                  >
+                    <FiWifi className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {customer.billingCycle && (
+                  <button
+                    onClick={() => onAction("delete", customer)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Delete Billing Cycle"
+                  >
+                    <FiTrash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  },
+);
+
+CustomerRow.displayName = "CustomerRow";
+
+// ==================== MAIN PAGE COMPONENT ====================
 export default function AdminBillingPage() {
+  // ==================== STATE ====================
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [billingCycles, setBillingCycles] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
@@ -210,6 +547,14 @@ export default function AdminBillingPage() {
   const [showBillingReportsModal, setShowBillingReportsModal] = useState(false);
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+  });
 
   // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
@@ -290,53 +635,66 @@ export default function AdminBillingPage() {
     installationFeesPaidCount: 0,
   });
 
-  // Horizontal scroll state - buttons always shown
+  // Horizontal scroll state
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const isMountedRef = useRef(true);
-  const loadedRef = useRef(false);
+  const initialLoadDone = useRef(false);
 
-  // Check scroll position to enable/disable buttons
-  const checkScrollPosition = useCallback(() => {
-    if (tableContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } =
-        tableContainerRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
-    }
-  }, []);
+  // ==================== MEMOIZED FILTERS ====================
+  const filteredCustomers = useMemo(() => {
+    return customers.filter((customer) => {
+      const matchesSearch =
+        customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (customer.applicationId &&
+          customer.applicationId
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()));
 
-  // Scroll handlers
-  const scrollLeft = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
-    }
-  };
+      const matchesBuilding =
+        buildingFilter === "all" ||
+        (customer.building && customer.building._id === buildingFilter) ||
+        (customer.building &&
+          customer.building.buildingName
+            ?.toLowerCase()
+            .includes(buildingFilter.toLowerCase()));
 
-  const scrollRight = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
-    }
-  };
+      if (!matchesSearch || !matchesBuilding) return false;
 
-  // Sorting function
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+      if (statusFilter === "all") return true;
+      if (statusFilter === "has_balance") return customer.currentBalance > 0;
+      if (statusFilter === "overdue") return customer.overdueBills.length > 0;
+      if (statusFilter === "active") return customer.status === "active";
+      if (statusFilter === "suspended") return customer.status === "suspended";
+      if (statusFilter === "paused")
+        return customer.billingCycle?.status === "paused";
+      if (statusFilter === "pending_activation") {
+        const hasUnpaid =
+          customer.unpaidBills && customer.unpaidBills.length > 0;
+        return (
+          customer.billingCycle?.status === "pending_activation" && hasUnpaid
+        );
+      }
+      if (statusFilter === "applications")
+        return customer.type === "application";
+      if (statusFilter === "installation_fee_due") {
+        return (
+          customer.type === "application" &&
+          (customer.installationFee ?? 0) > 0 &&
+          !customer.installationFeePaid
+        );
+      }
+      return true;
+    });
+  }, [customers, searchTerm, statusFilter, buildingFilter]);
 
-  // Get sorted customers
-  const getSortedCustomers = (
-    customersToSort: CustomerItem[],
-  ): CustomerItem[] => {
-    const sorted = [...customersToSort];
-
+  const sortedAndFilteredCustomers = useMemo(() => {
+    const sorted = [...filteredCustomers];
     sorted.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -355,6 +713,17 @@ export default function AdminBillingPage() {
           bValue = b.currentBalance;
           break;
         case "status":
+          const getStatusText = (c: CustomerItem) => {
+            if (
+              c.type === "application" &&
+              (c.installationFee ?? 0) > 0 &&
+              !c.installationFeePaid
+            )
+              return "Installation Fee Due";
+            if (c.type === "application")
+              return c.billingCycle?.status || "Approved";
+            return c.status || "Inactive";
+          };
           aValue = getStatusText(a);
           bValue = getStatusText(b);
           break;
@@ -371,10 +740,58 @@ export default function AdminBillingPage() {
       if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
-
     return sorted;
+  }, [filteredCustomers, sortField, sortDirection]);
+
+  // ==================== PAGINATED DATA ====================
+  const paginatedCustomers = useMemo(() => {
+    const start = (pagination.page - 1) * pagination.limit;
+    const end = start + pagination.limit;
+    return sortedAndFilteredCustomers.slice(start, end);
+  }, [sortedAndFilteredCustomers, pagination.page, pagination.limit]);
+
+  // Update pagination total when filtered data changes
+  useEffect(() => {
+    setPagination((prev) => ({
+      ...prev,
+      total: sortedAndFilteredCustomers.length,
+      totalPages: Math.ceil(sortedAndFilteredCustomers.length / prev.limit),
+    }));
+  }, [sortedAndFilteredCustomers]);
+
+  // ==================== CHECK SCROLL POSITION ====================
+  const checkScrollPosition = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        tableContainerRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
+    }
+  }, []);
+
+  const scrollLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+    }
   };
 
+  const scrollRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+    }
+  };
+
+  // ==================== HANDLE SORT ====================
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // ==================== LOAD PLANS & BUILDINGS ====================
   const loadPlans = async () => {
     try {
       const response = await fetch("/api/plans");
@@ -431,12 +848,15 @@ export default function AdminBillingPage() {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
     }
   };
 
+  // ==================== HANDLE BACKDATED BILLING ====================
   const handleBackdatedBilling = async () => {
     if (!backdatedForm.applicationId) {
       toast.error("Please select a customer");
@@ -478,7 +898,8 @@ export default function AdminBillingPage() {
           includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
-        loadedRef.current = false;
+        globalCache = null;
+        globalCacheTimestamp = 0;
         loadData(true);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
@@ -494,6 +915,7 @@ export default function AdminBillingPage() {
     }
   };
 
+  // ==================== HANDLE RECOVER MISSING BILLS ====================
   const handleRecoverMissingBills = async (customer: CustomerItem) => {
     if (!customer.applicationId && customer.type !== "application") {
       toast.error("Only application customers can recover missing bills");
@@ -515,7 +937,8 @@ export default function AdminBillingPage() {
 
       if (result.success) {
         toast.success(result.message);
-        loadedRef.current = false;
+        globalCache = null;
+        globalCacheTimestamp = 0;
         loadData(true);
       } else {
         toast.error(result.message || "Failed to recover missing bills");
@@ -528,6 +951,7 @@ export default function AdminBillingPage() {
     }
   };
 
+  // ==================== HANDLE DELETE BILLING CYCLE ====================
   const handleDeleteBillingCycle = async (customer: CustomerItem) => {
     if (!customer.billingCycle?._id) {
       toast.error("No billing cycle found to delete");
@@ -552,7 +976,8 @@ export default function AdminBillingPage() {
         toast.success(
           `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
         );
-        loadedRef.current = false;
+        globalCache = null;
+        globalCacheTimestamp = 0;
         loadData(true);
       } else {
         toast.error(result.message || "Failed to delete billing cycle");
@@ -565,6 +990,7 @@ export default function AdminBillingPage() {
     }
   };
 
+  // ==================== HANDLE EMAIL ====================
   const handleSendManualEmail = async () => {
     if (!emailCustomer) return;
     if (!emailSubject.trim()) {
@@ -646,6 +1072,7 @@ export default function AdminBillingPage() {
     setShowEmailModal(true);
   };
 
+  // ==================== HANDLE BILLING ACTIONS ====================
   const handlePauseBillingForApplication = async (customer: CustomerItem) => {
     const reason = prompt("Enter reason for pausing:");
     if (reason === null) return;
@@ -658,7 +1085,8 @@ export default function AdminBillingPage() {
       toast.success(
         `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -676,7 +1104,8 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -699,7 +1128,8 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to disconnect");
@@ -719,7 +1149,8 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reconnect");
@@ -742,7 +1173,8 @@ export default function AdminBillingPage() {
       toast.success(
         `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -763,7 +1195,8 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
       );
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       console.error("Mark installation bill as paid error:", error);
@@ -774,262 +1207,599 @@ export default function AdminBillingPage() {
     }
   };
 
-  const loadData = useCallback(async (forceRefresh = false) => {
-    if (!isMountedRef.current) return;
-    if (loadedRef.current && !forceRefresh) return;
-
-    if (forceRefresh) {
-      setRefreshing(true);
-      clearBillingCache();
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      console.log("🔄 Loading billing data...");
-
-      const [
-        cyclesResult,
-        billsResult,
-        usersResult,
-        applicationsResult,
-        pendingPaymentsResult,
-        customersWithoutAccountsResult,
-        pendingInstallationBillsResult,
-      ] = await Promise.all([
-        getAllBillingCycles({ limit: 100, forceRefresh }),
-        getAllBills({ limit: 100, forceRefresh }),
-        getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
-        getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
-          data: [],
-        })),
-        getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-        getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-        getPendingInstallationBills().catch(() => ({ data: [] })),
-      ]);
-
+  // ==================== LOAD DATA ====================
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
 
-      const cyclesData = cyclesResult?.data || [];
-      const billsList = billsResult?.data || [];
-      const usersList = usersResult?.data || [];
-      const applicationsList = applicationsResult?.data || [];
-      const pendingPaymentsList = pendingPaymentsResult?.data || [];
-      const customersWithoutAccountsData =
-        customersWithoutAccountsResult?.data || [];
-      const pendingInstallationBillsData =
-        pendingInstallationBillsResult?.data || [];
+      // Check global cache first
+      const now = Date.now();
+      if (!forceRefresh && globalCache) {
+        // Check if cache is still valid (within TTL)
+        if (now - globalCacheTimestamp < CACHE_TTL) {
+          const cached = globalCache;
+          setCustomers(cached.customers);
+          setBillingCycles(cached.billingCycles);
+          setBills(cached.bills);
+          setPendingPayments(cached.pendingPayments);
+          setStats(cached.stats);
+          setPendingProRated(cached.pendingProRated || []);
+          setPendingActivations(cached.pendingActivations || []);
+          setPendingInstallationBills(cached.pendingInstallationBills || []);
+          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
+          setLoading(false);
+          setRefreshing(false);
+          initialLoadDone.current = true;
+          console.log("✅ Using global cached billing data");
+          return;
+        } else {
+          // Cache expired, clear it
+          globalCache = null;
+        }
+      }
 
-      setBillingCycles(cyclesData);
-      setBills(billsList);
-      setPendingPayments(pendingPaymentsList);
-      setCustomersWithoutAccounts(customersWithoutAccountsData);
-      setPendingInstallationBills(pendingInstallationBillsData);
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
+      }
 
-      const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-        const userBills = billsList.filter(
-          (bill: any) =>
-            bill.userId?._id === user._id &&
-            bill.status !== "paid" &&
-            !bill.isInstallationBill,
-        );
-        const totalBalance = userBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
-        const overdueBills = userBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
-        const userCycle = cyclesData.find(
-          (cycle: any) =>
-            cycle.userId?._id === user._id || cycle.userId === user._id,
-        );
+      try {
+        console.log("🔄 Loading billing data...");
 
-        return {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          username: user.username,
-          phoneNumber: user.phoneNumber,
-          status: user.status,
-          type: "user" as const,
-          planName: user.planId?.name || "No Plan",
-          planPrice: user.planId?.price || 0,
-          currentBalance: totalBalance,
-          unpaidBills: userBills,
-          overdueBills: overdueBills,
-          billingCycle: userCycle || null,
-          installationFee: 0,
-          installationFeePaid: true,
-          building: user.building,
-          unitNumber: user.unitNumber,
-          floor: user.floor,
-        };
-      });
+        const [
+          cyclesResult,
+          billsResult,
+          usersResult,
+          applicationsResult,
+          pendingPaymentsResult,
+          customersWithoutAccountsResult,
+          pendingInstallationBillsResult,
+        ] = await Promise.all([
+          getAllBillingCycles({
+            limit: pagination.limit,
+            page: pagination.page,
+            forceRefresh,
+          }),
+          getAllBills({
+            limit: pagination.limit,
+            page: pagination.page,
+            forceRefresh,
+          }),
+          getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
+          getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+          getPendingInstallationBills().catch(() => ({ data: [] })),
+        ]);
 
-      const applicationCustomers: CustomerItem[] = applicationsList
-        .filter(
-          (app: any) =>
-            app.status === "approved" || app.billingStarted === true,
-        )
-        .map((app: any) => {
-          const appBills = billsList.filter(
+        if (!isMountedRef.current) return;
+
+        const cyclesData = cyclesResult?.data || [];
+        const billsList = billsResult?.data || [];
+        const usersList = usersResult?.data || [];
+        const applicationsList = applicationsResult?.data || [];
+        const pendingPaymentsList = pendingPaymentsResult?.data || [];
+        const customersWithoutAccountsData =
+          customersWithoutAccountsResult?.data || [];
+        const pendingInstallationBillsData =
+          pendingInstallationBillsResult?.data || [];
+
+        setBillingCycles(cyclesData);
+        setBills(billsList);
+        setPendingPayments(pendingPaymentsList);
+        setCustomersWithoutAccounts(customersWithoutAccountsData);
+        setPendingInstallationBills(pendingInstallationBillsData);
+
+        // Build customers
+        const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+          const userBills = billsList.filter(
             (bill: any) =>
-              bill.applicationId === app.applicationId &&
+              bill.userId?._id === user._id &&
               bill.status !== "paid" &&
               !bill.isInstallationBill,
           );
-          const totalBalance = appBills.reduce(
+          const totalBalance = userBills.reduce(
             (sum: number, bill: any) => sum + (bill.total || 0),
             0,
           );
-          const overdueBills = appBills.filter(
+          const overdueBills = userBills.filter(
             (bill: any) =>
               bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
           );
-          const appCycle = cyclesData.find(
-            (cycle: any) => cycle.applicationId === app.applicationId,
+          const userCycle = cyclesData.find(
+            (cycle: any) =>
+              cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
-          let buildingObj = null;
-          if (
-            app.buildingId &&
-            typeof app.buildingId === "object" &&
-            app.buildingId.buildingName
-          ) {
-            buildingObj = app.buildingId;
-          } else if (app.buildingName) {
-            buildingObj = { buildingName: app.buildingName };
-          }
-
           return {
-            _id: app._id,
-            firstName: app.firstName,
-            lastName: app.lastName,
-            email: app.email,
-            phoneNumber: app.phoneNumber,
-            status: app.billingStarted ? "billing_started" : "approved",
-            type: "application" as const,
-            planName: app.planId?.name || "No Plan",
-            planPrice: app.planId?.price || 0,
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            username: user.username,
+            phoneNumber: user.phoneNumber,
+            status: user.status,
+            type: "user" as const,
+            planName: user.planId?.name || "No Plan",
+            planPrice: user.planId?.price || 0,
             currentBalance: totalBalance,
-            unpaidBills: appBills,
+            unpaidBills: userBills,
             overdueBills: overdueBills,
-            billingCycle: appCycle || null,
-            applicationId: app.applicationId,
-            installationFee: app.installationFee || 0,
-            installationFeePaid: app.installationFeePaid || false,
-            building: buildingObj,
-            unitNumber: app.unitNumber,
-            floor: app.floor,
+            billingCycle: userCycle || null,
+            installationFee: 0,
+            installationFeePaid: true,
+            building: user.building,
+            unitNumber: user.unitNumber,
+            floor: user.floor,
           };
         });
 
-      const allCustomers = [...userCustomers, ...applicationCustomers];
-      allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+        const applicationCustomers: CustomerItem[] = applicationsList
+          .filter(
+            (app: any) =>
+              app.status === "approved" || app.billingStarted === true,
+          )
+          .map((app: any) => {
+            const appBills = billsList.filter(
+              (bill: any) =>
+                bill.applicationId === app.applicationId &&
+                bill.status !== "paid" &&
+                !bill.isInstallationBill,
+            );
+            const totalBalance = appBills.reduce(
+              (sum: number, bill: any) => sum + (bill.total || 0),
+              0,
+            );
+            const overdueBills = appBills.filter(
+              (bill: any) =>
+                bill.status === "overdue" ||
+                new Date(bill.dueDate) < new Date(),
+            );
+            const appCycle = cyclesData.find(
+              (cycle: any) => cycle.applicationId === app.applicationId,
+            );
 
-      setCustomers(allCustomers);
+            let buildingObj = null;
+            if (
+              app.buildingId &&
+              typeof app.buildingId === "object" &&
+              app.buildingId.buildingName
+            ) {
+              buildingObj = app.buildingId;
+            } else if (app.buildingName) {
+              buildingObj = { buildingName: app.buildingName };
+            }
 
-      const totalBalance = allCustomers.reduce(
-        (sum, c) => sum + c.currentBalance,
-        0,
-      );
-      const customersWithBalance = allCustomers.filter(
-        (c) => c.currentBalance > 0,
-      ).length;
-      const overdueCustomers = allCustomers.filter(
-        (c) => c.overdueBills.length > 0,
-      ).length;
-      const activeCycles = cyclesData.filter(
-        (c: any) => c.status === "active",
-      ).length;
-      const pausedCycles = cyclesData.filter(
-        (c: any) => c.status === "paused",
-      ).length;
-      const applicationsWithoutBilling = applicationsList.filter(
-        (app: any) => app.status === "approved" && !app.billingStarted,
-      ).length;
+            return {
+              _id: app._id,
+              firstName: app.firstName,
+              lastName: app.lastName,
+              email: app.email,
+              phoneNumber: app.phoneNumber,
+              status: app.billingStarted ? "billing_started" : "approved",
+              type: "application" as const,
+              planName: app.planId?.name || "No Plan",
+              planPrice: app.planId?.price || 0,
+              currentBalance: totalBalance,
+              unpaidBills: appBills,
+              overdueBills: overdueBills,
+              billingCycle: appCycle || null,
+              applicationId: app.applicationId,
+              installationFee: app.installationFee || 0,
+              installationFeePaid: app.installationFeePaid || false,
+              building: buildingObj,
+              unitNumber: app.unitNumber,
+              floor: app.floor,
+            };
+          });
 
-      const totalInstallationFeesDue = allCustomers
-        .filter(
-          (c) =>
-            c.type === "application" &&
-            !c.installationFeePaid &&
-            (c.installationFee || 0) > 0,
-        )
-        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-      const installationFeesPaidCount = allCustomers.filter(
-        (c) => c.type === "application" && c.installationFeePaid,
-      ).length;
+        const allCustomers = [...userCustomers, ...applicationCustomers];
+        allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
 
-      const [proRatedResult, activationsResult] = await Promise.all([
-        getPendingProRatedBills(),
-        getPendingActivations(),
-      ]);
+        setCustomers(allCustomers);
 
-      setPendingProRated(proRatedResult?.data || []);
-      setPendingActivations(activationsResult?.data || []);
+        const totalBalance = allCustomers.reduce(
+          (sum, c) => sum + c.currentBalance,
+          0,
+        );
+        const customersWithBalance = allCustomers.filter(
+          (c) => c.currentBalance > 0,
+        ).length;
+        const overdueCustomers = allCustomers.filter(
+          (c) => c.overdueBills.length > 0,
+        ).length;
+        const activeCycles = cyclesData.filter(
+          (c: any) => c.status === "active",
+        ).length;
+        const pausedCycles = cyclesData.filter(
+          (c: any) => c.status === "paused",
+        ).length;
+        const applicationsWithoutBilling = applicationsList.filter(
+          (app: any) => app.status === "approved" && !app.billingStarted,
+        ).length;
 
-      const newStats = {
-        totalCustomers: allCustomers.length,
-        totalBalance: totalBalance,
-        customersWithBalanceCount: customersWithBalance,
-        overdueCustomersCount: overdueCustomers,
-        activeCyclesCount: activeCycles,
-        pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: proRatedResult?.data?.length || 0,
-        pendingActivationsCount: activationsResult?.data?.length || 0,
-        pendingPaymentsCount: pendingPaymentsList.length,
-        pendingInstallationBillsCount: pendingInstallationBillsData.length,
-        applicationsWithoutBilling: applicationsWithoutBilling,
-        totalInstallationFeesDue: totalInstallationFeesDue,
-        installationFeesPaidCount: installationFeesPaidCount,
-      };
+        const totalInstallationFeesDue = allCustomers
+          .filter(
+            (c) =>
+              c.type === "application" &&
+              !c.installationFeePaid &&
+              (c.installationFee || 0) > 0,
+          )
+          .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+        const installationFeesPaidCount = allCustomers.filter(
+          (c) => c.type === "application" && c.installationFeePaid,
+        ).length;
 
-      setStats(newStats);
-      loadedRef.current = true;
-      console.log(`✅ Loaded ${allCustomers.length} customers`);
-    } catch (error) {
-      console.error("Failed to load billing data:", error);
-      if (isMountedRef.current) {
-        toast.error("Failed to load billing data");
+        const [proRatedResult, activationsResult] = await Promise.all([
+          getPendingProRatedBills(),
+          getPendingActivations(),
+        ]);
+
+        const pendingProRatedData = proRatedResult?.data || [];
+        const pendingActivationsData = activationsResult?.data || [];
+
+        setPendingProRated(pendingProRatedData);
+        setPendingActivations(pendingActivationsData);
+
+        const newStats = {
+          totalCustomers: allCustomers.length,
+          totalBalance: totalBalance,
+          customersWithBalanceCount: customersWithBalance,
+          overdueCustomersCount: overdueCustomers,
+          activeCyclesCount: activeCycles,
+          pausedCyclesCount: pausedCycles,
+          pendingProRatedCount: pendingProRatedData.length,
+          pendingActivationsCount: pendingActivationsData.length,
+          pendingPaymentsCount: pendingPaymentsList.length,
+          pendingInstallationBillsCount: pendingInstallationBillsData.length,
+          applicationsWithoutBilling: applicationsWithoutBilling,
+          totalInstallationFeesDue: totalInstallationFeesDue,
+          installationFeesPaidCount: installationFeesPaidCount,
+        };
+
+        setStats(newStats);
+
+        // Save to global cache
+        globalCache = {
+          customers: allCustomers,
+          billingCycles: cyclesData,
+          bills: billsList,
+          pendingPayments: pendingPaymentsList,
+          stats: newStats,
+          pendingProRated: pendingProRatedData,
+          pendingActivations: pendingActivationsData,
+          pendingInstallationBills: pendingInstallationBillsData,
+          customersWithoutAccounts: customersWithoutAccountsData,
+        };
+        globalCacheTimestamp = now;
+
+        initialLoadDone.current = true;
+        console.log(
+          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
+        );
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
+    },
+    [pagination.page, pagination.limit],
+  );
+
+  // ==================== HANDLE PAGE CHANGE ====================
+  const handlePageChange = (newPage: number) => {
+    setPagination((prev) => ({ ...prev, page: newPage }));
+    // Scroll to top of table
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = 0;
     }
-  }, []);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    loadData();
-    loadBillingFlowSettings();
-    loadPlans();
-    loadBuildings();
-
-    const handleResize = () => {
-      checkScrollPosition();
-    };
-    window.addEventListener("resize", handleResize);
-    return () => {
-      isMountedRef.current = false;
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [loadData, checkScrollPosition]);
-
-  useEffect(() => {
-    setTimeout(checkScrollPosition, 100);
-  }, [customers, checkScrollPosition]);
-
-  const handleRefresh = () => {
-    loadedRef.current = false;
-    loadData(true);
   };
 
+  // ==================== HANDLE ACTION ====================
+  const handleAction = (action: string, customer: CustomerItem, data?: any) => {
+    switch (action) {
+      case "view":
+        setSelectedCustomer(customer);
+        setShowCustomerDetailModal(true);
+        break;
+      case "email":
+        openEmailModal(customer, "custom");
+        break;
+      case "recover":
+        handleRecoverMissingBills(customer);
+        break;
+      case "start":
+        setSelectedApplicationId(customer.applicationId || customer._id);
+        setSelectedCustomerName(`${customer.firstName} ${customer.lastName}`);
+        setSelectedCustomerEmail(customer.email);
+        setIncludeInstallationFee(true);
+        setShowStartModal(true);
+        break;
+      case "pause":
+        if (customer.type === "application") {
+          handlePauseBillingForApplication(customer);
+        } else {
+          setSelectedUserId(customer._id);
+          setShowPauseModal(true);
+        }
+        break;
+      case "resume":
+        if (customer.type === "application") {
+          handleResumeBillingForApplication(customer);
+        } else {
+          handleResumeBilling(customer._id, customer.firstName);
+        }
+        break;
+      case "disconnect":
+        if (customer.type === "application") {
+          handleDisconnectApplication(customer);
+        } else {
+          handleDisconnect(customer);
+        }
+        break;
+      case "reconnect":
+        if (customer.type === "application") {
+          handleReconnectApplication(customer);
+        } else {
+          handleReconnect(customer);
+        }
+        break;
+      case "stop":
+        if (customer.type === "application") {
+          handleStopBillingForApplication(customer);
+        } else {
+          handleStopBilling(customer._id, customer.firstName);
+        }
+        break;
+      case "delete":
+        setCustomerToDelete(customer);
+        setShowDeleteConfirmModal(true);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // ==================== HANDLE RESUME BILLING ====================
+  const handleResumeBilling = async (userId: string, customerName: string) => {
+    if (!confirm(`Resume billing for ${customerName}?`)) return;
+    try {
+      await resumeBilling({ userId });
+      toast.success(`✅ Billing resumed for ${customerName}!`);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to resume billing");
+    }
+  };
+
+  const handleStopBilling = async (userId: string, customerName: string) => {
+    if (
+      !confirm(
+        `Stop billing for ${customerName}? This will cancel the subscription.`,
+      )
+    )
+      return;
+    try {
+      await stopBilling({ userId, reason: "Admin action" });
+      toast.success(`⛔ Billing stopped for ${customerName}.`);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to stop billing");
+    }
+  };
+
+  const handleDisconnect = async (customer: CustomerItem) => {
+    const reason = prompt(
+      "Enter reason for disconnection (e.g., non-payment, violation):",
+    );
+    if (reason === null) return;
+
+    if (
+      !confirm(
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?\n\nReason: ${reason}\n\nThis will disable their internet access immediately.`,
+      )
+    )
+      return;
+
+    try {
+      await disconnectClient({ userId: customer._id, reason });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
+      );
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      console.error("Disconnect error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to disconnect client",
+      );
+    }
+  };
+
+  const handleReconnect = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
+      )
+    )
+      return;
+
+    try {
+      await reconnectClient({ userId: customer._id });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
+      );
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      console.error("Reconnect error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to reconnect client",
+      );
+    }
+  };
+
+  // ==================== HANDLE CONFIRM PAYMENT ====================
+  const handleConfirmPayment = async (paymentId: string) => {
+    if (!confirm("Confirm this payment? This will mark the bill as paid."))
+      return;
+    try {
+      await confirmPayment(paymentId);
+      toast.success("Payment confirmed! User notified.");
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to confirm payment");
+    }
+  };
+
+  const handleRejectPayment = async (paymentId: string) => {
+    const reason = prompt("Enter reason for rejection:");
+    if (reason === null) return;
+    try {
+      await rejectPayment(paymentId, reason);
+      toast.success("Payment rejected");
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to reject payment");
+    }
+  };
+
+  const handleMarkBillAsPaid = async (bill: any, customer: CustomerItem) => {
+    if (!confirm(`Mark invoice ${bill.invoiceNumber} as paid?`)) return;
+    try {
+      await markBillAsPaid(bill._id, {
+        referenceNumber: `ADMIN-${Date.now()}`,
+        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+      });
+      toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      console.error("Mark bill as paid error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to mark bill as paid",
+      );
+    }
+  };
+
+  // ==================== HANDLE START BILLING ====================
+  const handleStartBillingForApplication = async () => {
+    if (!selectedApplicationId) {
+      toast.error("No application selected");
+      return;
+    }
+
+    try {
+      toast.loading("Starting billing...", { id: "start-billing-app" });
+      const result = await startBillingForApplication(selectedApplicationId, {
+        installationDate: startDate || undefined,
+        notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
+      });
+      toast.dismiss("start-billing-app");
+
+      if (result.success) {
+        const feeMsg = includeInstallationFee
+          ? ` Includes installation fee of ₱${billingFlowSettings.installationFee.toLocaleString()}.`
+          : "";
+        toast.success(
+          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}.${feeMsg}`,
+        );
+        setShowStartModal(false);
+        setSelectedApplicationId("");
+        setSelectedCustomerName("");
+        setSelectedCustomerEmail("");
+        setStartDate("");
+        setCustomAmount("");
+        setBillingNotes("");
+        setIncludeInstallationFee(true);
+        globalCache = null;
+        globalCacheTimestamp = 0;
+        loadData(true);
+      } else {
+        toast.error(result.message || "Failed to start billing");
+      }
+    } catch (error: any) {
+      toast.dismiss("start-billing-app");
+      console.error("Error:", error);
+      toast.error(error.response?.data?.message || "Failed to start billing");
+    }
+  };
+
+  const handleStartBillingForUser = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+    try {
+      await startBilling({
+        userId: selectedUserId,
+        startDate: startDate || undefined,
+        customAmount: customAmount ? parseFloat(customAmount) : undefined,
+        notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
+      });
+      toast.success(`✅ Billing started! Invoice sent to customer`);
+      setShowStartModal(false);
+      setSelectedUserId("");
+      setStartDate("");
+      setCustomAmount("");
+      setBillingNotes("");
+      setIncludeInstallationFee(true);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to start billing");
+    }
+  };
+
+  const handlePauseBilling = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+    try {
+      await pauseBilling({
+        userId: selectedUserId,
+        reason: pauseReason || "Admin initiated pause",
+        pauseUntilDate: pauseUntilDate || undefined,
+      });
+      toast.success("⏸️ Billing paused successfully!");
+      setShowPauseModal(false);
+      setSelectedUserId("");
+      setPauseReason("");
+      setPauseUntilDate("");
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to pause billing");
+    }
+  };
+
+  // ==================== HANDLE MANUAL CUSTOMER ====================
   const handleManualCustomerSubmit = async () => {
     if (
       !manualCustomerForm.firstName ||
@@ -1070,371 +1840,57 @@ export default function AdminBillingPage() {
         notes: "",
         includeInstallationFee: true,
       });
-      loadedRef.current = false;
+      globalCache = null;
+      globalCacheTimestamp = 0;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create customer");
     }
   };
 
-  const handleStartBillingForApplication = async () => {
-    if (!selectedApplicationId) {
-      toast.error("No application selected");
-      return;
-    }
+  // ==================== USE EFFECTS ====================
+  useEffect(() => {
+    isMountedRef.current = true;
+    loadData();
+    loadBillingFlowSettings();
+    loadPlans();
+    loadBuildings();
 
-    try {
-      toast.loading("Starting billing...", { id: "start-billing-app" });
-      const result = await startBillingForApplication(selectedApplicationId, {
-        installationDate: startDate || undefined,
-        notes: billingNotes,
-        includeInstallationFee: includeInstallationFee,
-      });
-      toast.dismiss("start-billing-app");
+    const handleResize = () => {
+      checkScrollPosition();
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => {
+      isMountedRef.current = false;
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [loadData, checkScrollPosition]);
 
-      if (result.success) {
-        const feeMsg = includeInstallationFee
-          ? ` Includes installation fee of ₱${billingFlowSettings.installationFee.toLocaleString()}.`
-          : "";
-        toast.success(
-          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}.${feeMsg}`,
-        );
-        setShowStartModal(false);
-        setSelectedApplicationId("");
-        setSelectedCustomerName("");
-        setSelectedCustomerEmail("");
-        setStartDate("");
-        setCustomAmount("");
-        setBillingNotes("");
-        setIncludeInstallationFee(true);
-        loadedRef.current = false;
-        loadData(true);
-      } else {
-        toast.error(result.message || "Failed to start billing");
-      }
-    } catch (error: any) {
-      toast.dismiss("start-billing-app");
-      console.error("Error:", error);
-      toast.error(error.response?.data?.message || "Failed to start billing");
-    }
+  useEffect(() => {
+    setTimeout(checkScrollPosition, 100);
+  }, [customers, checkScrollPosition]);
+
+  // ==================== HANDLE REFRESH ====================
+  const handleRefresh = () => {
+    globalCache = null;
+    globalCacheTimestamp = 0;
+    loadData(true);
   };
 
-  const handleConfirmPayment = async (paymentId: string) => {
-    if (!confirm("Confirm this payment? This will mark the bill as paid."))
-      return;
-    try {
-      await confirmPayment(paymentId);
-      toast.success("Payment confirmed! User notified.");
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to confirm payment");
-    }
-  };
-
-  const handleRejectPayment = async (paymentId: string) => {
-    const reason = prompt("Enter reason for rejection:");
-    if (reason === null) return;
-    try {
-      await rejectPayment(paymentId, reason);
-      toast.success("Payment rejected");
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to reject payment");
-    }
-  };
-
-  const handleMarkBillAsPaid = async (bill: any, customer: CustomerItem) => {
-    if (!confirm(`Mark invoice ${bill.invoiceNumber} as paid?`)) return;
-    try {
-      await markBillAsPaid(bill._id, {
-        referenceNumber: `ADMIN-${Date.now()}`,
-        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
-      });
-      toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      console.error("Mark bill as paid error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to mark bill as paid",
-      );
-    }
-  };
-
-  const handleStartBillingForUser = async () => {
-    if (!selectedUserId) {
-      toast.error("Please select a user");
-      return;
-    }
-    try {
-      await startBilling({
-        userId: selectedUserId,
-        startDate: startDate || undefined,
-        customAmount: customAmount ? parseFloat(customAmount) : undefined,
-        notes: billingNotes,
-        includeInstallationFee: includeInstallationFee,
-      });
-      toast.success(`✅ Billing started! Invoice sent to customer`);
-      setShowStartModal(false);
-      setSelectedUserId("");
-      setStartDate("");
-      setCustomAmount("");
-      setBillingNotes("");
-      setIncludeInstallationFee(true);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to start billing");
-    }
-  };
-
-  const handlePauseBilling = async () => {
-    if (!selectedUserId) {
-      toast.error("Please select a user");
-      return;
-    }
-    try {
-      await pauseBilling({
-        userId: selectedUserId,
-        reason: pauseReason || "Admin initiated pause",
-        pauseUntilDate: pauseUntilDate || undefined,
-      });
-      toast.success("⏸️ Billing paused successfully!");
-      setShowPauseModal(false);
-      setSelectedUserId("");
-      setPauseReason("");
-      setPauseUntilDate("");
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to pause billing");
-    }
-  };
-
-  const handleResumeBilling = async (userId: string, customerName: string) => {
-    if (!confirm(`Resume billing for ${customerName}?`)) return;
-    try {
-      await resumeBilling({ userId });
-      toast.success(`✅ Billing resumed for ${customerName}!`);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to resume billing");
-    }
-  };
-
-  const handleStopBilling = async (userId: string, customerName: string) => {
-    if (
-      !confirm(
-        `Stop billing for ${customerName}? This will cancel the subscription.`,
-      )
-    )
-      return;
-    try {
-      await stopBilling({ userId, reason: "Admin action" });
-      toast.success(`⛔ Billing stopped for ${customerName}.`);
-      loadedRef.current = false;
-      loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to stop billing");
-    }
-  };
-
-  const handleDisconnect = async (customer: CustomerItem) => {
-    const reason = prompt(
-      "Enter reason for disconnection (e.g., non-payment, violation):",
+  // ==================== SORT ICON ====================
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field)
+      return <FiArrowUp className="w-3 h-3 opacity-30" />;
+    return sortDirection === "asc" ? (
+      <FiArrowUp className="w-3 h-3" />
+    ) : (
+      <FiArrowDown className="w-3 h-3" />
     );
-    if (reason === null) return;
-
-    if (
-      !confirm(
-        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?\n\nReason: ${reason}\n\nThis will disable their internet access immediately.`,
-      )
-    )
-      return;
-
-    try {
-      if (customer.type === "user") {
-        await disconnectClient({ userId: customer._id, reason });
-        toast.success(
-          `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
-        );
-        loadedRef.current = false;
-        loadData(true);
-      } else {
-        await handleDisconnectApplication(customer);
-      }
-    } catch (error: any) {
-      console.error("Disconnect error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to disconnect client",
-      );
-    }
   };
 
-  const handleReconnect = async (customer: CustomerItem) => {
-    if (
-      !confirm(
-        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
-      )
-    )
-      return;
-
-    try {
-      if (customer.type === "user") {
-        await reconnectClient({ userId: customer._id });
-        toast.success(
-          `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
-        );
-        loadedRef.current = false;
-        loadData(true);
-      } else {
-        await handleReconnectApplication(customer);
-      }
-    } catch (error: any) {
-      console.error("Reconnect error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to reconnect client",
-      );
-    }
-  };
-
-  const getStatusBadge = (customer: CustomerItem) => {
-    const hasUnpaidBills =
-      customer.unpaidBills && customer.unpaidBills.length > 0;
-    const hasUnpaidInstallationFee =
-      customer.type === "application" &&
-      (customer.installationFee ?? 0) > 0 &&
-      !customer.installationFeePaid;
-
-    if (hasUnpaidInstallationFee) {
-      return "bg-amber-100 text-amber-800";
-    }
-
-    if (customer.type === "application") {
-      if (
-        customer.billingCycle?.status === "pending_activation" &&
-        hasUnpaidBills
-      ) {
-        return "bg-purple-100 text-purple-800";
-      }
-      if (
-        customer.billingCycle?.status === "pending_activation" &&
-        !hasUnpaidBills
-      ) {
-        return "bg-green-100 text-green-800";
-      }
-      if (customer.billingCycle?.status === "active") {
-        return "bg-green-100 text-green-800";
-      }
-      if (customer.billingCycle?.status === "paused") {
-        return "bg-yellow-100 text-yellow-800";
-      }
-      if (customer.status === "billing_started")
-        return "bg-indigo-100 text-indigo-800";
-      return "bg-blue-100 text-blue-800";
-    }
-    if (customer.billingCycle?.status === "paused")
-      return "bg-yellow-100 text-yellow-800";
-    if (customer.status === "active") return "bg-green-100 text-green-800";
-    if (customer.status === "suspended") return "bg-red-100 text-red-800";
-    if (customer.status === "pending_activation")
-      return "bg-purple-100 text-purple-800";
-    return "bg-gray-100 text-gray-800";
-  };
-
-  const getStatusText = (customer: CustomerItem) => {
-    const hasUnpaidBills =
-      customer.unpaidBills && customer.unpaidBills.length > 0;
-    const hasUnpaidInstallationFee =
-      customer.type === "application" &&
-      (customer.installationFee ?? 0) > 0 &&
-      !customer.installationFeePaid;
-
-    if (hasUnpaidInstallationFee) {
-      return "Installation Fee Due";
-    }
-
-    if (customer.type === "application") {
-      if (
-        customer.billingCycle?.status === "pending_activation" &&
-        hasUnpaidBills
-      ) {
-        return "Awaiting Payment";
-      }
-      if (
-        customer.billingCycle?.status === "pending_activation" &&
-        !hasUnpaidBills
-      ) {
-        return "Active";
-      }
-      if (customer.billingCycle?.status === "active") {
-        return "Active";
-      }
-      if (customer.billingCycle?.status === "paused") {
-        return "Paused";
-      }
-      if (customer.status === "billing_started") return "Billing Started";
-      return "Approved";
-    }
-    if (customer.billingCycle?.status === "paused") return "Paused";
-    if (customer.status === "active") return "Active";
-    if (customer.status === "suspended") return "Suspended";
-    if (customer.status === "pending_activation") return "Pending Activation";
-    return customer.status || "Inactive";
-  };
-
-  const getBalanceColor = (balance: number) => {
-    if (balance === 0) return "text-green-600";
-    if (balance > 1000) return "text-red-600 font-bold";
-    return "text-orange-600";
-  };
-
-  const filteredCustomers = customers.filter((customer) => {
-    const matchesSearch =
-      customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (customer.applicationId &&
-        customer.applicationId
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()));
-
-    const matchesBuilding =
-      buildingFilter === "all" ||
-      (customer.building && customer.building._id === buildingFilter) ||
-      (customer.building &&
-        customer.building.buildingName
-          ?.toLowerCase()
-          .includes(buildingFilter.toLowerCase()));
-
-    if (!matchesSearch || !matchesBuilding) return false;
-
-    if (statusFilter === "all") return true;
-    if (statusFilter === "has_balance") return customer.currentBalance > 0;
-    if (statusFilter === "overdue") return customer.overdueBills.length > 0;
-    if (statusFilter === "active") return customer.status === "active";
-    if (statusFilter === "suspended") return customer.status === "suspended";
-    if (statusFilter === "paused")
-      return customer.billingCycle?.status === "paused";
-    if (statusFilter === "pending_activation") {
-      const hasUnpaid = customer.unpaidBills && customer.unpaidBills.length > 0;
-      return (
-        customer.billingCycle?.status === "pending_activation" && hasUnpaid
-      );
-    }
-    if (statusFilter === "applications") return customer.type === "application";
-    if (statusFilter === "installation_fee_due")
-      return (
-        customer.type === "application" &&
-        (customer.installationFee ?? 0) > 0 &&
-        !customer.installationFeePaid
-      );
-    return true;
-  });
-
-  const sortedAndFilteredCustomers = getSortedCustomers(filteredCustomers);
-
+  // ==================== COMPACT STATS ====================
   const totalPendingCount =
     pendingProRated.length +
     pendingActivations.length +
@@ -1519,16 +1975,7 @@ export default function AdminBillingPage() {
     },
   ];
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field)
-      return <FiArrowUp className="w-3 h-3 opacity-30" />;
-    return sortDirection === "asc" ? (
-      <FiArrowUp className="w-3 h-3" />
-    ) : (
-      <FiArrowDown className="w-3 h-3" />
-    );
-  };
-
+  // ==================== LOADING STATE ====================
   if (loading && customers.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1540,8 +1987,10 @@ export default function AdminBillingPage() {
     );
   }
 
+  // ==================== RENDER ====================
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen ml-0 md:ml-0">
+      {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
@@ -1614,6 +2063,7 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
         {compactStatsCards.map((stat, idx) => (
           <div
@@ -1637,6 +2087,7 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
+      {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
@@ -1679,17 +2130,13 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* Table with horizontal scroll buttons - FIXED AT PAGE CENTER, HIDDEN WHEN NOT IN TABLE SECTION */}
+      {/* Table */}
       <div className="relative" id="table-section">
-        {/* Scrollable table container with always-visible scrollbar */}
         <div
           ref={tableContainerRef}
           onScroll={checkScrollPosition}
           className="overflow-x-auto scrollbar-always-visible"
-          style={{
-            scrollbarWidth: "thin",
-            msOverflowStyle: "auto",
-          }}
+          style={{ scrollbarWidth: "thin", msOverflowStyle: "auto" }}
         >
           <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1100px]">
             <table className="min-w-full border-collapse">
@@ -1701,8 +2148,7 @@ export default function AdminBillingPage() {
                     onClick={() => handleSort("name")}
                   >
                     <div className="flex items-center gap-1">
-                      Customer
-                      <SortIcon field="name" />
+                      Customer <SortIcon field="name" />
                     </div>
                   </th>
                   <th
@@ -1710,8 +2156,7 @@ export default function AdminBillingPage() {
                     onClick={() => handleSort("plan")}
                   >
                     <div className="flex items-center gap-1">
-                      Plan
-                      <SortIcon field="plan" />
+                      Plan <SortIcon field="plan" />
                     </div>
                   </th>
                   <th
@@ -1719,8 +2164,7 @@ export default function AdminBillingPage() {
                     onClick={() => handleSort("balance")}
                   >
                     <div className="flex items-center gap-1">
-                      Balance
-                      <SortIcon field="balance" />
+                      Balance <SortIcon field="balance" />
                     </div>
                   </th>
                   <th
@@ -1728,8 +2172,7 @@ export default function AdminBillingPage() {
                     onClick={() => handleSort("status")}
                   >
                     <div className="flex items-center gap-1">
-                      Status
-                      <SortIcon field="status" />
+                      Status <SortIcon field="status" />
                     </div>
                   </th>
                   <th
@@ -1737,14 +2180,12 @@ export default function AdminBillingPage() {
                     onClick={() => handleSort("installationFee")}
                   >
                     <div className="flex items-center gap-1">
-                      Install Fee
-                      <SortIcon field="installationFee" />
+                      Install Fee <SortIcon field="installationFee" />
                     </div>
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
                     <div className="flex items-center gap-1">
-                      <FiHome className="w-3 h-3" />
-                      Building
+                      <FiHome className="w-3 h-3" /> Building
                     </div>
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -1753,7 +2194,7 @@ export default function AdminBillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {sortedAndFilteredCustomers.length === 0 ? (
+                {paginatedCustomers.length === 0 ? (
                   <tr>
                     <td
                       colSpan={8}
@@ -1763,372 +2204,77 @@ export default function AdminBillingPage() {
                     </td>
                   </tr>
                 ) : (
-                  sortedAndFilteredCustomers.map((customer, idx) => {
-                    const hasUnpaidBills =
-                      customer.unpaidBills && customer.unpaidBills.length > 0;
-                    const hasBillingCycle = !!customer.billingCycle;
-                    const isActive = customer.billingCycle?.status === "active";
-                    const isPaused = customer.billingCycle?.status === "paused";
-                    const isPendingActivation =
-                      customer.billingCycle?.status === "pending_activation";
-                    const hasUnpaidInstallationFee =
-                      customer.type === "application" &&
-                      (customer.installationFee ?? 0) > 0 &&
-                      !customer.installationFeePaid;
-
-                    return (
-                      <tr
-                        key={`${customer.type}-${customer._id}`}
-                        className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
-                      >
-                        <td className="px-3 py-2 border-r border-gray-200 text-center bg-white sticky left-0 z-10">
-                          <span className="text-sm font-medium text-gray-500">
-                            {idx + 1}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          <div className="flex items-center gap-2">
-                            {customer.type === "application" ? (
-                              <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
-                            ) : (
-                              <FiUser className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                            )}
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {customer.firstName} {customer.lastName}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {customer.email}
-                              </p>
-                              {customer.applicationId && (
-                                <p className="text-[10px] text-gray-400 font-mono break-all">
-                                  {customer.applicationId}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          <p className="text-sm font-medium text-gray-900">
-                            {customer.planName}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            ₱{customer.planPrice.toLocaleString()}/mo
-                          </p>
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          <p
-                            className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
-                          >
-                            ₱{customer.currentBalance.toLocaleString()}
-                          </p>
-                          {customer.unpaidBills.length > 0 && (
-                            <p className="text-[10px] text-red-500">
-                              {customer.unpaidBills.length} unpaid
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          <span
-                            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(customer)}`}
-                          >
-                            {getStatusText(customer)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          {customer.type === "application" &&
-                          (customer.installationFee ?? 0) > 0 ? (
-                            <div>
-                              <p className="text-sm font-medium">
-                                ₱
-                                {(
-                                  customer.installationFee ?? 0
-                                ).toLocaleString()}
-                              </p>
-                              <p
-                                className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
-                              >
-                                {customer.installationFeePaid
-                                  ? "Paid"
-                                  : "Unpaid"}
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-gray-400">—</p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-200">
-                          <div className="flex items-center gap-1">
-                            <FiHome className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-600">
-                              {getBuildingDisplay(customer)}
-                            </span>
-                            {customer.unitNumber && (
-                              <span className="text-xs text-gray-400">
-                                (Unit {customer.unitNumber})
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => {
-                                setSelectedCustomer(customer);
-                                setShowCustomerDetailModal(true);
-                              }}
-                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                              title="View Details"
-                            >
-                              <FiEye className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => openEmailModal(customer, "custom")}
-                              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
-                              title="Send Email"
-                            >
-                              <FiMail className="w-3.5 h-3.5" />
-                            </button>
-                            {customer.type === "application" &&
-                              hasBillingCycle && (
-                                <button
-                                  onClick={() =>
-                                    handleRecoverMissingBills(customer)
-                                  }
-                                  className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
-                                  title="Recover Missing Bills"
-                                >
-                                  <FiCalendar className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            {customer.type === "application" && (
-                              <>
-                                {!hasBillingCycle && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedApplicationId(
-                                        customer.applicationId || customer._id,
-                                      );
-                                      setSelectedCustomerName(
-                                        `${customer.firstName} ${customer.lastName}`,
-                                      );
-                                      setSelectedCustomerEmail(customer.email);
-                                      setIncludeInstallationFee(true);
-                                      setShowStartModal(true);
-                                    }}
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Start Billing"
-                                  >
-                                    <FiPlay className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {isActive && (
-                                  <button
-                                    onClick={() =>
-                                      handlePauseBillingForApplication(customer)
-                                    }
-                                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                                    title="Pause Billing"
-                                  >
-                                    <FiPause className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {isPaused && (
-                                  <button
-                                    onClick={() =>
-                                      handleResumeBillingForApplication(
-                                        customer,
-                                      )
-                                    }
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Resume Billing"
-                                  >
-                                    <FiPlay className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {(isActive || isPendingActivation) && (
-                                  <button
-                                    onClick={() =>
-                                      handleDisconnectApplication(customer)
-                                    }
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Disconnect"
-                                  >
-                                    <FiWifiOff className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.status === "suspended" && (
-                                  <button
-                                    onClick={() =>
-                                      handleReconnectApplication(customer)
-                                    }
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Reconnect"
-                                  >
-                                    <FiWifi className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {hasBillingCycle && (
-                                  <button
-                                    onClick={() =>
-                                      handleStopBillingForApplication(customer)
-                                    }
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Cancel Subscription"
-                                  >
-                                    <FiX className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {hasBillingCycle && (
-                                  <button
-                                    onClick={() => {
-                                      setCustomerToDelete(customer);
-                                      setShowDeleteConfirmModal(true);
-                                    }}
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Delete Billing Cycle"
-                                  >
-                                    <FiTrash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </>
-                            )}
-                            {customer.type === "user" && (
-                              <>
-                                {(!customer.billingCycle ||
-                                  customer.billingCycle?.status ===
-                                    "cancelled") && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedUserId(customer._id);
-                                      setSelectedCustomerName(
-                                        `${customer.firstName} ${customer.lastName}`,
-                                      );
-                                      setSelectedCustomerEmail(customer.email);
-                                      setIncludeInstallationFee(true);
-                                      setShowStartModal(true);
-                                    }}
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Start Billing"
-                                  >
-                                    <FiPlay className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.billingCycle?.status === "active" && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedUserId(customer._id);
-                                      setShowPauseModal(true);
-                                    }}
-                                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                                    title="Pause Billing"
-                                  >
-                                    <FiPause className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.billingCycle?.status === "paused" && (
-                                  <button
-                                    onClick={() =>
-                                      handleResumeBilling(
-                                        customer._id,
-                                        customer.firstName,
-                                      )
-                                    }
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Resume Billing"
-                                  >
-                                    <FiPlay className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.billingCycle?.status === "active" && (
-                                  <button
-                                    onClick={() =>
-                                      handleStopBilling(
-                                        customer._id,
-                                        customer.firstName,
-                                      )
-                                    }
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Cancel Subscription"
-                                  >
-                                    <FiX className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.status === "active" && (
-                                  <button
-                                    onClick={() => handleDisconnect(customer)}
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Disconnect"
-                                  >
-                                    <FiWifiOff className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.status === "suspended" && (
-                                  <button
-                                    onClick={() => handleReconnect(customer)}
-                                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Reconnect"
-                                  >
-                                    <FiWifi className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {customer.billingCycle && (
-                                  <button
-                                    onClick={() => {
-                                      setCustomerToDelete(customer);
-                                      setShowDeleteConfirmModal(true);
-                                    }}
-                                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                    title="Delete Billing Cycle"
-                                  >
-                                    <FiTrash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  paginatedCustomers.map((customer, idx) => (
+                    <CustomerRow
+                      key={`${customer.type}-${customer._id}`}
+                      customer={customer}
+                      index={(pagination.page - 1) * pagination.limit + idx}
+                      onAction={handleAction}
+                    />
+                  ))
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Left scroll button - fixed at page center left, hidden when not in table section */}
-        <button
-          onClick={scrollLeft}
-          disabled={!canScrollLeft}
-          className={`fixed left-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
-            canScrollLeft
-              ? "hover:bg-gray-100 cursor-pointer opacity-100"
-              : "opacity-0 pointer-events-none"
-          }`}
-          title="Scroll left"
-        >
-          <FiChevronLeft className="w-6 h-6 text-gray-700" />
-        </button>
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="flex justify-between items-center mt-4 px-4 py-2 bg-white rounded-lg border border-gray-200">
+            <div className="text-sm text-gray-600">
+              Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+              {Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
+              of {pagination.total} customers
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded-lg">
+                {pagination.page} / {pagination.totalPages}
+              </span>
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages}
+                className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
-        {/* Right scroll button - fixed at page center right, hidden when not in table section */}
-        <button
-          onClick={scrollRight}
-          disabled={!canScrollRight}
-          className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
-            canScrollRight
-              ? "hover:bg-gray-100 cursor-pointer opacity-100"
-              : "opacity-0 pointer-events-none"
-          }`}
-          title="Scroll right"
-        >
-          <FiChevronRight className="w-6 h-6 text-gray-700" />
-        </button>
+        {/* Scroll buttons - hidden on mobile, positioned outside sidebar */}
+        {!isMobile && (
+          <>
+            <button
+              onClick={scrollLeft}
+              disabled={!canScrollLeft}
+              className={`fixed left-[80px] top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollLeft ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
+              title="Scroll left"
+            >
+              <FiChevronLeft className="w-6 h-6 text-gray-700" />
+            </button>
+            <button
+              onClick={scrollRight}
+              disabled={!canScrollRight}
+              className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollRight ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
+              title="Scroll right"
+            >
+              <FiChevronRight className="w-6 h-6 text-gray-700" />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
-        Showing {sortedAndFilteredCustomers.length} of {customers.length}{" "}
-        customers ({customers.filter((c) => c.type === "user").length} users,{" "}
+        Showing {paginatedCustomers.length} of{" "}
+        {sortedAndFilteredCustomers.length} customers (
+        {customers.filter((c) => c.type === "user").length} users,{" "}
         {customers.filter((c) => c.type === "application").length} applications)
         - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
@@ -2140,7 +2286,7 @@ export default function AdminBillingPage() {
         )}
       </div>
 
-      {/* Add global styles for always-visible scrollbar */}
+      {/* Global Styles */}
       <style jsx global>{`
         .scrollbar-always-visible {
           scrollbar-width: thin;
@@ -2162,6 +2308,7 @@ export default function AdminBillingPage() {
         }
       `}</style>
 
+      {/* ==================== MODALS ==================== */}
       {/* Billing Reports Modal */}
       <BillingReportsWithDownload
         isOpen={showBillingReportsModal}
@@ -2839,7 +2986,13 @@ export default function AdminBillingPage() {
                 <div>
                   <p className="text-gray-500">Balance</p>
                   <p
-                    className={getBalanceColor(selectedCustomer.currentBalance)}
+                    className={
+                      selectedCustomer.currentBalance > 1000
+                        ? "text-red-600 font-bold"
+                        : selectedCustomer.currentBalance > 0
+                          ? "text-orange-600"
+                          : "text-green-600"
+                    }
                   >
                     ₱{selectedCustomer.currentBalance.toLocaleString()}
                   </p>

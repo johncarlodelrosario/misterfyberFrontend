@@ -76,13 +76,15 @@ export interface GetAllPaymentsResponse {
   };
 }
 
+// ==================== LRU CACHE ====================
 const PAYMENT_CACHE_KEYS = {
   PAYMENTS_DATA: "misterfyber_payments_data",
   PENDING_PAYMENTS: "misterfyber_pending_payments",
   ADMIN_ALL_PAYMENTS: "misterfyber_admin_all_payments",
 };
 
-const PAYMENT_CACHE_DURATION = 5 * 60 * 1000;
+const PAYMENT_CACHE_DURATION = 3 * 60 * 1000; // Reduced to 3 minutes
+const MAX_CACHE_ITEMS = 15;
 
 function getCachedPayments<T>(key: string): T | null {
   try {
@@ -91,6 +93,15 @@ function getCachedPayments<T>(key: string): T | null {
     const item = JSON.parse(cached);
     if (Date.now() - item.timestamp > PAYMENT_CACHE_DURATION) {
       localStorage.removeItem(key);
+      // Update cache keys
+      try {
+        const storedKeys = localStorage.getItem("payment_cache_keys");
+        if (storedKeys) {
+          const keys = JSON.parse(storedKeys);
+          const filtered = keys.filter((k: string) => k !== key);
+          localStorage.setItem("payment_cache_keys", JSON.stringify(filtered));
+        }
+      } catch (e) {}
       return null;
     }
     return item.data;
@@ -101,6 +112,22 @@ function getCachedPayments<T>(key: string): T | null {
 
 function setCachedPayments<T>(key: string, data: T): void {
   try {
+    // LRU: Remove oldest if cache is full
+    try {
+      const storedKeys = localStorage.getItem("payment_cache_keys");
+      let cacheKeys = storedKeys ? JSON.parse(storedKeys) : [];
+
+      if (cacheKeys.length >= MAX_CACHE_ITEMS && !cacheKeys.includes(key)) {
+        const oldestKey = cacheKeys.shift();
+        if (oldestKey) localStorage.removeItem(oldestKey);
+      }
+
+      if (!cacheKeys.includes(key)) {
+        cacheKeys.push(key);
+        localStorage.setItem("payment_cache_keys", JSON.stringify(cacheKeys));
+      }
+    } catch (e) {}
+
     localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
   } catch (error) {
     console.error("Failed to cache payments data:", error);
@@ -111,8 +138,12 @@ export function clearPaymentsCache(): void {
   Object.values(PAYMENT_CACHE_KEYS).forEach((key) =>
     localStorage.removeItem(key),
   );
+  try {
+    localStorage.removeItem("payment_cache_keys");
+  } catch (e) {}
 }
 
+// ==================== API FUNCTIONS ====================
 export const createPayment = async (
   data: CreatePaymentData,
 ): Promise<PaymentResponse> => {
@@ -143,13 +174,19 @@ export const getPayments = async (params?: {
   forceRefresh?: boolean;
 }): Promise<any> => {
   try {
+    const cacheKey = `${PAYMENT_CACHE_KEYS.PAYMENTS_DATA}_${params?.page || 1}_${params?.limit || 20}`;
     if (!params?.forceRefresh) {
-      const cached = getCachedPayments(PAYMENT_CACHE_KEYS.PAYMENTS_DATA);
+      const cached = getCachedPayments(cacheKey);
       if (cached) return cached;
     }
-    const response = await api.get("/payments", { params });
+    const response = await api.get("/payments", {
+      params: {
+        ...params,
+        limit: params?.limit || 20,
+      },
+    });
     const result = response.data;
-    setCachedPayments(PAYMENT_CACHE_KEYS.PAYMENTS_DATA, result);
+    setCachedPayments(cacheKey, result);
     return result;
   } catch (error) {
     console.error("Error fetching payments:", error);
@@ -237,10 +274,10 @@ export const getAllPayments = async (
   params?: GetAllPaymentsParams,
 ): Promise<GetAllPaymentsResponse> => {
   try {
+    const cacheKey = `${PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS}_${params?.page || 1}_${params?.limit || 20}_${params?.status || "all"}_${params?.paymentType || "all"}`;
+
     if (!params?.forceRefresh) {
-      const cached = getCachedPayments<GetAllPaymentsResponse>(
-        PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS,
-      );
+      const cached = getCachedPayments<GetAllPaymentsResponse>(cacheKey);
       if (cached) return cached;
     }
 
@@ -276,7 +313,7 @@ export const getAllPayments = async (
       },
     };
 
-    setCachedPayments(PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS, safeResult);
+    setCachedPayments(cacheKey, safeResult);
     return safeResult;
   } catch (error) {
     console.error("Error fetching all payments:", error);
@@ -302,7 +339,6 @@ export const getAllPayments = async (
   }
 };
 
-// DELETE PAYMENT
 export const deletePayment = async (paymentId: string): Promise<any> => {
   try {
     const response = await api.delete(`/payments/${paymentId}`);

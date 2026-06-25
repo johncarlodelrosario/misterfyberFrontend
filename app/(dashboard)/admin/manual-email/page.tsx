@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import emailService, {
   Customer,
@@ -9,12 +9,16 @@ import emailService, {
   EmailSentRecord,
 } from "@/services/emailService";
 import toast from "react-hot-toast";
-import LocationEmailSettings from "@/components/admin/LocationEmailSettings";
+
+// ==================== GLOBAL CACHE ====================
+let globalCache: any = null;
+let globalCacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    "single" | "bulk" | "templates" | "sent" | "location"
+    "single" | "bulk" | "templates" | "sent"
   >("single");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -67,14 +71,27 @@ export default function ManualEmailPage() {
   const [reminderMessage, setReminderMessage] = useState("");
   const [includeDueDateReminder, setIncludeDueDateReminder] = useState(true);
 
-  // Load customers and templates on mount
-  useEffect(() => {
-    loadCustomers();
-    loadTemplates();
-    loadSentRecords();
-  }, []);
+  const isMountedRef = useRef(true);
+  const initialLoadDone = useRef(false);
 
-  const loadCustomers = async (search?: string) => {
+  // ==================== LOAD FUNCTIONS WITH CACHING ====================
+  const loadCustomers = useCallback(async (search?: string) => {
+    if (!isMountedRef.current) return;
+
+    // Check global cache
+    const now = Date.now();
+    if (
+      globalCache &&
+      globalCache.customers &&
+      now - globalCacheTimestamp < CACHE_TTL
+    ) {
+      setCustomers(globalCache.customers);
+      setError(null);
+      setLoading(false);
+      console.log("✅ Using cached customers");
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -93,6 +110,11 @@ export default function ManualEmailPage() {
       }
 
       setCustomers(data || []);
+
+      // Save to global cache
+      if (!globalCache) globalCache = {};
+      globalCache.customers = data || [];
+      globalCacheTimestamp = now;
     } catch (error: any) {
       console.error("Failed to load customers:", error);
       const errorMsg =
@@ -102,27 +124,67 @@ export default function ManualEmailPage() {
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    // Check global cache
+    const now = Date.now();
+    if (
+      globalCache &&
+      globalCache.templates &&
+      now - globalCacheTimestamp < CACHE_TTL
+    ) {
+      setTemplates(globalCache.templates);
+      console.log("✅ Using cached templates");
+      return;
+    }
+
     try {
       const data = await emailService.getTemplates();
       setTemplates(data);
+
+      // Save to global cache
+      if (!globalCache) globalCache = {};
+      globalCache.templates = data;
+      globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load templates:", error);
     }
-  };
+  }, []);
 
-  const loadSentRecords = async () => {
+  const loadSentRecords = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    // Check global cache
+    const now = Date.now();
+    if (
+      globalCache &&
+      globalCache.sentRecords &&
+      now - globalCacheTimestamp < CACHE_TTL
+    ) {
+      setSentRecords(globalCache.sentRecords);
+      console.log("✅ Using cached sent records");
+      return;
+    }
+
     try {
       const data = await emailService.getSentRecords();
       setSentRecords(data);
+
+      // Save to global cache
+      if (!globalCache) globalCache = {};
+      globalCache.sentRecords = data;
+      globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load sent records:", error);
     }
-  };
+  }, []);
 
   const loadCustomerBills = async (applicationId: string) => {
     try {
@@ -134,6 +196,24 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ==================== INITIAL LOAD ====================
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    // Load all data with caching
+    const loadAllData = async () => {
+      await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
+      initialLoadDone.current = true;
+    };
+
+    loadAllData();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [loadCustomers, loadTemplates, loadSentRecords]);
+
+  // ==================== HANDLERS ====================
   const handleCustomerSelect = async (customer: Customer | null) => {
     setSelectedCustomer(customer);
     if (customer) {
@@ -208,6 +288,10 @@ export default function ManualEmailPage() {
       toast.success(
         `Email sent successfully to ${selectedCustomer.firstName} ${selectedCustomer.lastName}`,
       );
+
+      // Clear cache and reload sent records
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send email:", error);
@@ -239,6 +323,10 @@ export default function ManualEmailPage() {
         sendCopyToAdmin,
       });
       toast.success(result.message);
+
+      // Clear cache and reload sent records
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send bulk emails:", error);
@@ -260,6 +348,10 @@ export default function ManualEmailPage() {
       toast.success(result.message);
       setShowReminderDialog(false);
       setReminderMessage("");
+
+      // Clear cache and reload sent records
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadSentRecords();
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
@@ -286,6 +378,10 @@ export default function ManualEmailPage() {
         category: "general",
         includeBillingDefault: false,
       });
+
+      // Clear cache and reload templates
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to save template:", error);
@@ -328,6 +424,10 @@ export default function ManualEmailPage() {
         category: "general",
         includeBillingDefault: false,
       });
+
+      // Clear cache and reload templates
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to update template:", error);
@@ -340,6 +440,10 @@ export default function ManualEmailPage() {
       try {
         await emailService.deleteTemplate(templateId);
         toast.success("Template deleted successfully");
+
+        // Clear cache and reload templates
+        globalCache = null;
+        globalCacheTimestamp = 0;
         await loadTemplates();
       } catch (error) {
         console.error("Failed to delete template:", error);
@@ -353,6 +457,10 @@ export default function ManualEmailPage() {
       try {
         await emailService.deleteSentRecord(recordId);
         toast.success("Record deleted successfully");
+
+        // Clear cache and reload sent records
+        globalCache = null;
+        globalCacheTimestamp = 0;
         await loadSentRecords();
       } catch (error) {
         console.error("Failed to delete record:", error);
@@ -361,6 +469,14 @@ export default function ManualEmailPage() {
     }
   };
 
+  const handleRefresh = async () => {
+    globalCache = null;
+    globalCacheTimestamp = 0;
+    await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
+    toast.success("All data refreshed!");
+  };
+
+  // ==================== FILTERS ====================
   const filteredCustomers = customers.filter(
     (c) =>
       c.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -387,34 +503,42 @@ export default function ManualEmailPage() {
     });
   };
 
+  // ==================== RENDER ====================
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            📧 Manual Email Management
-          </h1>
-          <p className="text-gray-500 mt-1">
-            Send custom emails to customers with or without billing information
-            attached
-          </p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              📧 Manual Email Management
+            </h1>
+            <p className="text-gray-500 mt-1">
+              Send custom emails to customers with or without billing
+              information attached
+            </p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
+          >
+            🔄 Refresh All
+          </button>
         </div>
 
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <nav className="flex space-x-8 overflow-x-auto">
+          <nav className="flex space-x-8">
             {[
               { id: "single", name: "Single Email", icon: "✉️" },
               { id: "bulk", name: "Bulk Email", icon: "👥" },
               { id: "templates", name: "Templates", icon: "📄" },
               { id: "sent", name: "Sent Records", icon: "📨" },
-              { id: "location", name: "Location Settings", icon: "📍" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === tab.id
                     ? "border-blue-500 text-blue-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -446,14 +570,14 @@ export default function ManualEmailPage() {
               />
 
               {/* Loading State */}
-              {loading && (
+              {loading && customers.length === 0 && (
                 <div className="flex justify-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
 
               {/* Error State */}
-              {error && !loading && (
+              {error && !loading && customers.length === 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                   <p className="text-red-600 text-sm">{error}</p>
                   <button
@@ -713,13 +837,13 @@ export default function ManualEmailPage() {
                 </button>
               </div>
 
-              {loading && (
+              {loading && customers.length === 0 && (
                 <div className="flex justify-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
 
-              {error && !loading && (
+              {error && !loading && customers.length === 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                   <p className="text-red-600 text-sm">{error}</p>
                 </div>
@@ -1006,14 +1130,18 @@ export default function ManualEmailPage() {
                   📨 Sent Email Records
                 </h2>
                 <button
-                  onClick={loadSentRecords}
+                  onClick={async () => {
+                    globalCache = null;
+                    globalCacheTimestamp = 0;
+                    await loadSentRecords();
+                  }}
                   className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   🔄 Refresh
                 </button>
               </div>
 
-              {loading && (
+              {loading && sentRecords.length === 0 && (
                 <div className="flex justify-center py-12">
                   <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
@@ -1117,13 +1245,6 @@ export default function ManualEmailPage() {
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* Location Settings Tab */}
-        {activeTab === "location" && (
-          <div className="flex justify-center">
-            <LocationEmailSettings />
           </div>
         )}
       </div>

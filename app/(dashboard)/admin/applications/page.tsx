@@ -37,6 +37,7 @@ import {
   FiSave,
   FiChevronLeft,
   FiChevronRight,
+  FiHome,
 } from "react-icons/fi";
 
 const STORAGE_KEYS = {
@@ -65,6 +66,7 @@ interface StoredApplicationsData {
 interface FilterState {
   searchTerm: string;
   statusFilter: string;
+  buildingFilter: string;
 }
 
 const persistentStorage = {
@@ -160,12 +162,16 @@ export default function ApplicationsPage() {
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
   const [filter, setFilter] = useState<FilterState>(() => {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
-    return savedFilter || { searchTerm: "", statusFilter: "all" };
+    return (
+      savedFilter || { searchTerm: "", statusFilter: "all", buildingFilter: "" }
+    );
   });
   const [editingMacAddress, setEditingMacAddress] = useState<string | null>(
     null,
   );
   const [tempMacAddress, setTempMacAddress] = useState("");
+  const [editingTower, setEditingTower] = useState<string | null>(null);
+  const [tempTower, setTempTower] = useState("");
 
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
@@ -185,7 +191,6 @@ export default function ApplicationsPage() {
   // State to track if table is fully visible
   const [showLeftButton, setShowLeftButton] = useState(false);
   const [showRightButton, setShowRightButton] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
@@ -193,6 +198,7 @@ export default function ApplicationsPage() {
     email: "",
     phoneNumber: "",
     buildingId: "",
+    tower: "",
     floor: "",
     unitNumber: "",
     notes: "",
@@ -209,37 +215,6 @@ export default function ApplicationsPage() {
 
   // Table scroll controls - using ref for the table container
   const tableContainerRef = useRef<HTMLDivElement>(null);
-
-  // Check if sidebar is open
-  useEffect(() => {
-    const checkSidebar = () => {
-      const sidebar = document.querySelector("aside");
-      if (sidebar) {
-        const isOpen =
-          !sidebar.classList.contains("hidden") &&
-          sidebar.classList.contains("translate-x-0");
-        setSidebarOpen(isOpen);
-      }
-    };
-
-    checkSidebar();
-    window.addEventListener("resize", checkSidebar);
-
-    // Observe sidebar changes
-    const observer = new MutationObserver(checkSidebar);
-    const sidebar = document.querySelector("aside");
-    if (sidebar) {
-      observer.observe(sidebar, {
-        attributes: true,
-        attributeFilter: ["class"],
-      });
-    }
-
-    return () => {
-      window.removeEventListener("resize", checkSidebar);
-      observer.disconnect();
-    };
-  }, []);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -287,7 +262,7 @@ export default function ApplicationsPage() {
   // Reset to page 1 when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter.searchTerm, filter.statusFilter]);
+  }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
 
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
@@ -766,6 +741,42 @@ export default function ApplicationsPage() {
     }
   };
 
+  const handleUpdateTower = async (applicationId: string, tower: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `${PRODUCTION_URL}/api/applications/${applicationId}/tower`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({ tower }),
+        },
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setApplications((prev) =>
+          prev.map((app) =>
+            app._id === applicationId
+              ? { ...app, tower: result.data?.tower || tower }
+              : app,
+          ),
+        );
+        toast.success("Tower updated successfully");
+      } else {
+        toast.error("Failed to update tower");
+      }
+    } catch (error) {
+      toast.error("Error updating tower");
+    } finally {
+      setEditingTower(null);
+      setTempTower("");
+    }
+  };
+
   const getImageUrl = useCallback(
     (imagePath: string) => {
       if (!imagePath) return null;
@@ -785,6 +796,19 @@ export default function ApplicationsPage() {
     [PRODUCTION_URL],
   );
 
+  // Get unique buildings for filter
+  const uniqueBuildings = useMemo(() => {
+    const buildingSet = new Set<string>();
+    applications.forEach((app: any) => {
+      if (app.buildingId?.buildingName) {
+        buildingSet.add(app.buildingId.buildingName);
+      } else if (app.buildingName) {
+        buildingSet.add(app.buildingName);
+      }
+    });
+    return Array.from(buildingSet).sort();
+  }, [applications]);
+
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
     return applications.filter((app: any) => {
@@ -798,15 +822,32 @@ export default function ApplicationsPage() {
           .includes(filter.searchTerm.toLowerCase()) ||
         app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
         app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
+        (app.tower &&
+          app.tower.toLowerCase().includes(filter.searchTerm.toLowerCase())) ||
         (app.macAddress &&
           app.macAddress
             .toLowerCase()
             .includes(filter.searchTerm.toLowerCase()));
+
       const matchesStatus =
         filter.statusFilter === "all" || app.status === filter.statusFilter;
-      return matchesSearch && matchesStatus;
+
+      const buildingName =
+        app.buildingId?.buildingName || app.buildingName || "";
+      const matchesBuilding =
+        !filter.buildingFilter ||
+        buildingName
+          .toLowerCase()
+          .includes(filter.buildingFilter.toLowerCase());
+
+      return matchesSearch && matchesStatus && matchesBuilding;
     });
-  }, [applications, filter.searchTerm, filter.statusFilter]);
+  }, [
+    applications,
+    filter.searchTerm,
+    filter.statusFilter,
+    filter.buildingFilter,
+  ]);
 
   // Pagination calculations
   const totalPages = useMemo(() => {
@@ -869,6 +910,7 @@ export default function ApplicationsPage() {
       email: "",
       phoneNumber: "",
       buildingId: "",
+      tower: "",
       floor: "",
       unitNumber: "",
       notes: "",
@@ -889,6 +931,7 @@ export default function ApplicationsPage() {
       !customerForm.email ||
       !customerForm.phoneNumber ||
       !customerForm.buildingId ||
+      !customerForm.tower ||
       !customerForm.planId ||
       !customerForm.idType ||
       !customerForm.idNumber
@@ -948,6 +991,7 @@ export default function ApplicationsPage() {
       "email",
       "phoneNumber",
       "buildingName",
+      "tower",
       "floor",
       "unitNumber",
       "planName",
@@ -963,6 +1007,7 @@ export default function ApplicationsPage() {
       "john.doe@example.com",
       "09123456789",
       "Tower 1",
+      "A",
       "5th Floor",
       "Unit 501",
       "Fiber 100 Mbps",
@@ -1072,6 +1117,7 @@ export default function ApplicationsPage() {
               email: row.email,
               phoneNumber: row.phoneNumber,
               buildingId: buildingId,
+              tower: row.tower || "",
               floor: row.floor || "",
               unitNumber: row.unitNumber || "",
               notes: row.notes || "",
@@ -1299,7 +1345,7 @@ export default function ApplicationsPage() {
             <FiSearch className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
             <input
               type="text"
-              placeholder="Search by ID, name, email, or MAC..."
+              placeholder="Search by ID, name, email, tower, or MAC..."
               value={filter.searchTerm}
               onChange={(e) =>
                 setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
@@ -1319,20 +1365,34 @@ export default function ApplicationsPage() {
             <option value="approved">Approved ({stats.approved})</option>
             <option value="rejected">Rejected ({stats.rejected})</option>
           </select>
+          <select
+            value={filter.buildingFilter}
+            onChange={(e) =>
+              setFilter((prev) => ({ ...prev, buildingFilter: e.target.value }))
+            }
+            className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 min-w-[120px]"
+          >
+            <option value="">All Buildings</option>
+            {uniqueBuildings.map((building) => (
+              <option key={building} value={building}>
+                {building}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* Table with scroll buttons */}
       <div className="relative">
-        {/* Left Scroll Button - Only show when table is not fully visible */}
+        {/* Left Scroll Button - Only show on desktop (non-mobile) and when needed, positioned outside sidebar */}
         {showLeftButton && (
           <button
             onClick={scrollTableLeft}
-            className="fixed top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
+            className="hidden sm:flex fixed top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
             aria-label="Scroll table left"
             style={{
               boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
-              left: sidebarOpen ? "265px" : "12px",
+              left: "12px",
             }}
           >
             <FiChevronLeft className="w-4 h-4" />
@@ -1378,7 +1438,7 @@ export default function ApplicationsPage() {
               background: #a8a8a8;
             }
           `}</style>
-          <table className="min-w-[950px] w-full border-collapse">
+          <table className="min-w-[1050px] w-full border-collapse">
             <thead>
               <tr className="bg-[#f0f0f0] border-b border-gray-300">
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300 w-[50px]">
@@ -1392,6 +1452,12 @@ export default function ApplicationsPage() {
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
                   Email
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
+                  Building
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
+                  Address
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
                   Plan
@@ -1414,7 +1480,7 @@ export default function ApplicationsPage() {
               {currentApplications.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={11}
                     className="px-4 py-8 text-center text-gray-500 text-sm"
                   >
                     {applications.length === 0
@@ -1426,6 +1492,10 @@ export default function ApplicationsPage() {
                 currentApplications.map((app: any, idx: number) => {
                   const globalIndex =
                     (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  const buildingName =
+                    app.buildingId?.buildingName || app.buildingName || "N/A";
+                  const buildingAddress =
+                    app.buildingId?.address || app.buildingAddress || "";
                   return (
                     <tr
                       key={app._id}
@@ -1442,6 +1512,12 @@ export default function ApplicationsPage() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
                         {app.email}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
+                        {buildingName}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100 max-w-[150px] truncate">
+                        {buildingAddress || "—"}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
                         {app.planId?.name || "N/A"}
@@ -1624,6 +1700,53 @@ export default function ApplicationsPage() {
                         selectedApp.buildingName ||
                         "Not specified"}
                     </span>
+                  </div>
+
+                  <div>
+                    <span className="text-gray-500">Tower:</span>{" "}
+                    {editingTower === selectedApp._id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={tempTower}
+                          onChange={(e) => setTempTower(e.target.value)}
+                          className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 rounded"
+                          placeholder="Tower"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() =>
+                            handleUpdateTower(selectedApp._id, tempTower)
+                          }
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          <FiSave className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingTower(null);
+                            setTempTower("");
+                          }}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <FiX className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="font-medium">
+                        {selectedApp.tower || "Not provided"}
+                        <button
+                          onClick={() => {
+                            setEditingTower(selectedApp._id);
+                            setTempTower(selectedApp.tower || "");
+                          }}
+                          className="ml-1.5 text-gray-400 hover:text-blue-600"
+                          title="Edit Tower"
+                        >
+                          <FiEdit2 className="w-3 h-3 inline" />
+                        </button>
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-gray-500">Floor:</span>{" "}
@@ -1840,6 +1963,11 @@ export default function ApplicationsPage() {
                   {selectedAppForBilling.planId?.name || "N/A"} - ₱
                   {selectedAppForBilling.planId?.price || 0}/month
                 </p>
+                {selectedAppForBilling.tower && (
+                  <p className="text-xs text-blue-800">
+                    <strong>Tower:</strong> {selectedAppForBilling.tower}
+                  </p>
+                )}
                 {selectedAppForBilling.macAddress && (
                   <p className="text-xs text-blue-800 font-mono">
                     <strong>MAC:</strong> {selectedAppForBilling.macAddress}
@@ -2020,7 +2148,7 @@ export default function ApplicationsPage() {
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Building & Unit
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-0.5">
                       Building *
@@ -2043,6 +2171,24 @@ export default function ApplicationsPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                      Tower *
+                    </label>
+                    <input
+                      type="text"
+                      value={customerForm.tower}
+                      onChange={(e) =>
+                        setCustomerForm({
+                          ...customerForm,
+                          tower: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., A"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-0.5">

@@ -6,22 +6,46 @@ const pendingRequests = new Map();
 const responseCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-// Safe storage wrapper
+// LRU Cache for localStorage
+const MAX_CACHE_ITEMS = 20;
+let cacheKeys: string[] = [];
+
+// Safe storage wrapper with LRU
 const safeStorage = {
   setItem: (key: string, value: string): boolean => {
     try {
       const sizeInMB = new Blob([value]).size / (1024 * 1024);
-      if (sizeInMB > 4) {
+      if (sizeInMB > 2) {
         console.warn(
           `Data too large (${sizeInMB.toFixed(2)}MB) for localStorage`,
         );
         return false;
       }
+
+      // LRU: Remove oldest if cache is full
+      try {
+        const storedKeys = localStorage.getItem("cache_keys");
+        cacheKeys = storedKeys ? JSON.parse(storedKeys) : [];
+
+        if (cacheKeys.length >= MAX_CACHE_ITEMS && !cacheKeys.includes(key)) {
+          const oldestKey = cacheKeys.shift();
+          if (oldestKey) localStorage.removeItem(oldestKey);
+        }
+
+        if (!cacheKeys.includes(key)) {
+          cacheKeys.push(key);
+          localStorage.setItem("cache_keys", JSON.stringify(cacheKeys));
+        }
+      } catch (e) {
+        // Ignore cache key errors
+      }
+
       localStorage.setItem(key, value);
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
         console.error("Storage quota exceeded, clearing old cache...");
+        // Clear all caches except current
         const keysToRemove = ["applications_cache", "old_applications_cache"];
         keysToRemove.forEach((k) => {
           if (k !== key) {
@@ -50,14 +74,24 @@ const safeStorage = {
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
+      // Also remove from cache keys
+      try {
+        const storedKeys = localStorage.getItem("cache_keys");
+        if (storedKeys) {
+          const keys = JSON.parse(storedKeys);
+          const filtered = keys.filter((k: string) => k !== key);
+          localStorage.setItem("cache_keys", JSON.stringify(filtered));
+        }
+      } catch (e) {}
     } catch (e) {}
   },
 };
 
-// Health check cache
+// Health check cache with non-blocking
 let isBackendHealthy: boolean | null = null;
 let lastHealthCheck = 0;
 const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+let healthCheckPromise: Promise<boolean> | null = null;
 
 const checkBackendHealth = async (): Promise<boolean> => {
   const now = Date.now();
@@ -68,40 +102,49 @@ const checkBackendHealth = async (): Promise<boolean> => {
     return isBackendHealthy;
   }
 
-  // Check both production and local backends
-  const healthUrls = [
-    "http://localhost:5000/health",
-    "https://misterfyberbackend.onrender.com/health",
-  ];
-
-  for (const url of healthUrls) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(url, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        isBackendHealthy = true;
-        lastHealthCheck = now;
-        return true;
-      }
-    } catch (error) {
-      console.log(`Health check failed for ${url}:`, error);
-    }
+  // If health check is already in progress, return cached value
+  if (healthCheckPromise) {
+    return healthCheckPromise;
   }
 
-  isBackendHealthy = false;
-  lastHealthCheck = now;
-  return false;
+  healthCheckPromise = (async () => {
+    const healthUrls = [
+      "http://localhost:5000/health",
+      "https://misterfyberbackend.onrender.com/health",
+    ];
+
+    for (const url of healthUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          isBackendHealthy = true;
+          lastHealthCheck = now;
+          healthCheckPromise = null;
+          return true;
+        }
+      } catch (error) {
+        // Silent fail
+      }
+    }
+
+    isBackendHealthy = false;
+    lastHealthCheck = now;
+    healthCheckPromise = null;
+    return false;
+  })();
+
+  return healthCheckPromise;
 };
 
-// Determine API URL based on environment (with localhost support)
+// Determine API URL based on environment
 const getApiUrl = () => {
-  // Check if we're in development mode (localhost)
   const isDevelopment =
     process.env.NODE_ENV === "development" ||
     (typeof window !== "undefined" &&
@@ -109,27 +152,21 @@ const getApiUrl = () => {
         window.location.hostname === "127.0.0.1"));
 
   if (isDevelopment) {
-    // Use localhost API for development
-    console.log("🔧 Development mode - using localhost API");
     return "http://localhost:5000/api";
   }
 
-  // On Vercel, use the rewrite path to avoid CORS
   if (
     typeof window !== "undefined" &&
     window.location.hostname.includes("vercel.app")
   ) {
-    return "/api"; // Use Vercel rewrite
+    return "/api";
   }
 
-  // Production mode
   return (
     process.env.NEXT_PUBLIC_API_URL ||
     "https://misterfyberbackend.onrender.com/api"
   );
 };
-
-console.log(`📡 API Base URL: ${getApiUrl()}`);
 
 const api = axios.create({
   baseURL: getApiUrl(),
@@ -138,10 +175,10 @@ const api = axios.create({
     Accept: "application/json",
   },
   withCredentials: false,
-  timeout: 30000, // Reduced from 60s to 30s for better performance
+  timeout: 15000, // Reduced from 30s to 15s
 });
 
-// Request interceptor with health check and deduplication
+// Request interceptor with non-blocking health check
 api.interceptors.request.use(async (config) => {
   const token =
     typeof window !== "undefined" ? safeStorage.getItem("token") : null;
@@ -149,37 +186,41 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // REMOVE cache-control header completely to avoid CORS issues
   delete config.headers["cache-control"];
   delete config.headers["Cache-Control"];
 
-  // Check health before making request (only for GET requests to applications)
+  // Non-blocking health check - don't await, use with timeout
   if (config.url?.includes("/applications") && config.method === "get") {
-    const isHealthy = await checkBackendHealth();
-    if (!isHealthy) {
-      console.log("Backend not healthy, checking cache...");
-      const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
-      if (responseCache.has(requestKey)) {
-        const cached = responseCache.get(requestKey);
-        if (Date.now() - cached.timestamp < CACHE_DURATION) {
-          console.log("Using cached data while backend wakes up");
-          return Promise.reject({ __cached: true, data: cached.data });
+    try {
+      const isHealthy = await Promise.race([
+        checkBackendHealth(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 100)),
+      ]);
+
+      if (!isHealthy) {
+        const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
+        if (responseCache.has(requestKey)) {
+          const cached = responseCache.get(requestKey);
+          if (Date.now() - cached.timestamp < CACHE_DURATION) {
+            console.log("Using cached data while backend wakes up");
+            return Promise.reject({ __cached: true, data: cached.data });
+          }
         }
       }
+    } catch (e) {
+      // Silent fail - proceed with request
     }
   }
 
   const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}-${JSON.stringify(config.data)}`;
 
   if (pendingRequests.has(requestKey)) {
-    console.log(`🔄 Deduplicating request: ${requestKey}`);
     return pendingRequests.get(requestKey);
   }
 
   if (config.method === "get" && responseCache.has(requestKey)) {
     const cached = responseCache.get(requestKey);
     if (Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log(`📦 Cache hit: ${requestKey}`);
       return Promise.reject({ __cached: true, data: cached.data });
     } else {
       responseCache.delete(requestKey);
@@ -189,7 +230,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Response interceptor with enhanced retry logic
+// Response interceptor with optimized retry
 api.interceptors.response.use(
   (response) => {
     if (response.config.method === "get") {
@@ -209,25 +250,19 @@ api.interceptors.response.use(
 
     const config = error.config;
 
-    // Handle network errors with exponential backoff retry
+    // Handle network errors with exponential backoff
     if (
       error.code === "ERR_NETWORK_IO_SUSPENDED" ||
       error.message?.includes("Network Error") ||
       error.code === "ECONNABORTED" ||
       error.message?.includes("timeout")
     ) {
-      console.warn(
-        `Network error detected, retry count: ${config?.__retryCount || 0}`,
-      );
-
-      if (!config || config.__retryCount >= 3) {
-        // Reduced from 5 to 3
+      if (!config || config.__retryCount >= 2) {
+        // Reduced from 3 to 2
         if (config?.url?.includes("/applications")) {
-          console.log("Max retries reached, checking cache fallback...");
           const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
           if (responseCache.has(requestKey)) {
             const cached = responseCache.get(requestKey);
-            console.log("Using cached data as fallback");
             return Promise.resolve(cached.data);
           }
         }
@@ -237,9 +272,8 @@ api.interceptors.response.use(
       config.__retryCount = config.__retryCount || 0;
       config.__retryCount += 1;
 
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = Math.min(Math.pow(2, config.__retryCount) * 1000, 8000);
-      console.log(`Retrying in ${delay}ms (attempt ${config.__retryCount}/3)`);
+      // Faster backoff: 500ms, 1000ms
+      const delay = config.__retryCount * 500;
 
       await new Promise((resolve) => setTimeout(resolve, delay));
       return api(config);
