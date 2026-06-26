@@ -46,6 +46,12 @@ export default function ManualEmailPage() {
   >("unpaid");
   const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
 
+  // Sender type state
+  const [useAdminSender, setUseAdminSender] = useState(false);
+  const [senderOptions, setSenderOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
@@ -74,11 +80,37 @@ export default function ManualEmailPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
 
+  // ==================== HELPER FUNCTIONS ====================
+  const getLocationFromBuildingName = (buildingName?: string): string => {
+    if (!buildingName) return "other";
+    const name = buildingName.toLowerCase().trim();
+    if (name.includes("breeze")) return "breeze";
+    if (name.includes("sil") || name.includes("silk")) return "sil";
+    return "other";
+  };
+
+  const getCollectionEmailForLocation = (location: string): string => {
+    if (location === "breeze") {
+      return (
+        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_BREEZE ||
+        "collection.breeze@misterfyber.com"
+      );
+    } else if (location === "sil") {
+      return (
+        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_SIL ||
+        "collection.silk@misterfyber.com"
+      );
+    }
+    return (
+      process.env.NEXT_PUBLIC_COLLECTION_EMAIL_DEFAULT ||
+      "admin@misterfyber.com"
+    );
+  };
+
   // ==================== LOAD FUNCTIONS WITH CACHING ====================
   const loadCustomers = useCallback(async (search?: string) => {
     if (!isMountedRef.current) return;
 
-    // Check global cache
     const now = Date.now();
     if (
       globalCache &&
@@ -111,7 +143,6 @@ export default function ManualEmailPage() {
 
       setCustomers(data || []);
 
-      // Save to global cache
       if (!globalCache) globalCache = {};
       globalCache.customers = data || [];
       globalCacheTimestamp = now;
@@ -133,7 +164,6 @@ export default function ManualEmailPage() {
   const loadTemplates = useCallback(async () => {
     if (!isMountedRef.current) return;
 
-    // Check global cache
     const now = Date.now();
     if (
       globalCache &&
@@ -149,7 +179,6 @@ export default function ManualEmailPage() {
       const data = await emailService.getTemplates();
       setTemplates(data);
 
-      // Save to global cache
       if (!globalCache) globalCache = {};
       globalCache.templates = data;
       globalCacheTimestamp = now;
@@ -161,7 +190,6 @@ export default function ManualEmailPage() {
   const loadSentRecords = useCallback(async () => {
     if (!isMountedRef.current) return;
 
-    // Check global cache
     const now = Date.now();
     if (
       globalCache &&
@@ -177,7 +205,6 @@ export default function ManualEmailPage() {
       const data = await emailService.getSentRecords();
       setSentRecords(data);
 
-      // Save to global cache
       if (!globalCache) globalCache = {};
       globalCache.sentRecords = data;
       globalCacheTimestamp = now;
@@ -200,7 +227,6 @@ export default function ManualEmailPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Load all data with caching
     const loadAllData = async () => {
       await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
       initialLoadDone.current = true;
@@ -212,6 +238,33 @@ export default function ManualEmailPage() {
       isMountedRef.current = false;
     };
   }, [loadCustomers, loadTemplates, loadSentRecords]);
+
+  // ==================== UPDATE SENDER OPTIONS ====================
+  useEffect(() => {
+    if (selectedCustomer) {
+      const location = getLocationFromBuildingName(
+        selectedCustomer.buildingName,
+      );
+      const collectionEmail = getCollectionEmailForLocation(location);
+
+      const options = [
+        { value: "admin", label: "Admin (admin@misterfyber.com)" },
+      ];
+
+      if (location !== "other") {
+        options.push({
+          value: "collection",
+          label: `${location.charAt(0).toUpperCase() + location.slice(1)} Collection (${collectionEmail})`,
+        });
+      }
+
+      setSenderOptions(options);
+    } else {
+      setSenderOptions([
+        { value: "admin", label: "Admin (admin@misterfyber.com)" },
+      ]);
+    }
+  }, [selectedCustomer]);
 
   // ==================== HANDLERS ====================
   const handleCustomerSelect = async (customer: Customer | null) => {
@@ -248,6 +301,7 @@ export default function ManualEmailPage() {
         includeBilling,
         applicationId: selectedCustomer.applicationId,
         billId: includeBilling ? selectedBillId : undefined,
+        useAdminSender: useAdminSender,
       });
       setPreviewHtml(preview.html);
       setPreviewOpen(true);
@@ -284,12 +338,12 @@ export default function ManualEmailPage() {
         includeBilling,
         billId: includeBilling ? selectedBillId : undefined,
         sendCopyToAdmin,
+        useAdminSender: useAdminSender,
       });
       toast.success(
         `Email sent successfully to ${selectedCustomer.firstName} ${selectedCustomer.lastName}`,
       );
 
-      // Clear cache and reload sent records
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadSentRecords();
@@ -321,10 +375,10 @@ export default function ManualEmailPage() {
         includeBilling,
         billType: bulkBillType,
         sendCopyToAdmin,
+        useAdminSender: useAdminSender,
       });
       toast.success(result.message);
 
-      // Clear cache and reload sent records
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadSentRecords();
@@ -344,12 +398,12 @@ export default function ManualEmailPage() {
       const result = await emailService.sendReminderToUnpaid(
         reminderMessage,
         includeDueDateReminder,
+        useAdminSender,
       );
       toast.success(result.message);
       setShowReminderDialog(false);
       setReminderMessage("");
 
-      // Clear cache and reload sent records
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadSentRecords();
@@ -379,7 +433,6 @@ export default function ManualEmailPage() {
         includeBillingDefault: false,
       });
 
-      // Clear cache and reload templates
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadTemplates();
@@ -425,7 +478,6 @@ export default function ManualEmailPage() {
         includeBillingDefault: false,
       });
 
-      // Clear cache and reload templates
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadTemplates();
@@ -441,7 +493,6 @@ export default function ManualEmailPage() {
         await emailService.deleteTemplate(templateId);
         toast.success("Template deleted successfully");
 
-        // Clear cache and reload templates
         globalCache = null;
         globalCacheTimestamp = 0;
         await loadTemplates();
@@ -458,7 +509,6 @@ export default function ManualEmailPage() {
         await emailService.deleteSentRecord(recordId);
         toast.success("Record deleted successfully");
 
-        // Clear cache and reload sent records
         globalCache = null;
         globalCacheTimestamp = 0;
         await loadSentRecords();
@@ -560,7 +610,6 @@ export default function ManualEmailPage() {
                 Select Customer
               </h2>
 
-              {/* Search */}
               <input
                 type="text"
                 placeholder="Search by name, email, or application ID..."
@@ -569,14 +618,12 @@ export default function ManualEmailPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
 
-              {/* Loading State */}
               {loading && customers.length === 0 && (
                 <div className="flex justify-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
 
-              {/* Error State */}
               {error && !loading && customers.length === 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                   <p className="text-red-600 text-sm">{error}</p>
@@ -589,7 +636,6 @@ export default function ManualEmailPage() {
                 </div>
               )}
 
-              {/* Customer List */}
               {!loading && !error && (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {filteredCustomers.length === 0 ? (
@@ -623,6 +669,11 @@ export default function ManualEmailPage() {
                             <p className="text-xs text-gray-400 mt-1">
                               ID: {customer.applicationId}
                             </p>
+                            {customer.buildingName && (
+                              <p className="text-xs text-gray-400">
+                                Building: {customer.buildingName}
+                              </p>
+                            )}
                           </div>
                           {customer.hasUnpaidBills && (
                             <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
@@ -636,7 +687,6 @@ export default function ManualEmailPage() {
                 </div>
               )}
 
-              {/* Selected Customer Info */}
               {selectedCustomer && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm font-medium text-gray-700">
@@ -653,6 +703,11 @@ export default function ManualEmailPage() {
                   <p className="text-sm text-gray-600">
                     Phone: {selectedCustomer.phoneNumber || "N/A"}
                   </p>
+                  {selectedCustomer.buildingName && (
+                    <p className="text-sm text-gray-600">
+                      Building: {selectedCustomer.buildingName}
+                    </p>
+                  )}
                   {selectedCustomer.hasUnpaidBills && (
                     <span className="inline-flex items-center mt-2 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
                       ⚠️ Has Unpaid Bills
@@ -668,7 +723,6 @@ export default function ManualEmailPage() {
                 Compose Email
               </h2>
 
-              {/* Templates Dropdown */}
               {templates.length > 0 && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -689,7 +743,58 @@ export default function ManualEmailPage() {
                 </div>
               )}
 
-              {/* Subject */}
+              {/* Sender Type Selector */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📧 Send From
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(false)}
+                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                      !useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Collection</span>
+                    <span className="text-xs text-gray-500">
+                      {selectedCustomer
+                        ? getLocationFromBuildingName(
+                            selectedCustomer.buildingName,
+                          ) === "breeze"
+                          ? "collection.breeze@misterfyber.com"
+                          : getLocationFromBuildingName(
+                                selectedCustomer.buildingName,
+                              ) === "sil"
+                            ? "collection.silk@misterfyber.com"
+                            : "No location"
+                        : "Select customer first"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(true)}
+                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                      useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Admin</span>
+                    <span className="text-xs text-gray-500">
+                      admin@misterfyber.com
+                    </span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  {useAdminSender
+                    ? "📌 Email will be sent from the main admin email"
+                    : "📌 Email will be sent from the location-specific collection email"}
+                </p>
+              </div>
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Subject
@@ -703,7 +808,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Message */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message
@@ -717,7 +821,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Include Billing Checkbox */}
               <label className="flex items-center mb-4">
                 <input
                   type="checkbox"
@@ -730,7 +833,6 @@ export default function ManualEmailPage() {
                 </span>
               </label>
 
-              {/* Bill Selection */}
               {includeBilling && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -761,7 +863,6 @@ export default function ManualEmailPage() {
                 </div>
               )}
 
-              {/* Send Copy to Admin */}
               <label className="flex items-center mb-6">
                 <input
                   type="checkbox"
@@ -774,7 +875,6 @@ export default function ManualEmailPage() {
                 </span>
               </label>
 
-              {/* Buttons */}
               <div className="flex gap-3">
                 <button
                   onClick={handlePreview}
@@ -811,7 +911,6 @@ export default function ManualEmailPage() {
         {/* Bulk Email Tab */}
         {activeTab === "bulk" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column - Customer Selection */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Select Customers
@@ -949,11 +1048,52 @@ export default function ManualEmailPage() {
               </button>
             </div>
 
-            {/* Right Column - Compose Bulk Email */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Compose Bulk Email
               </h2>
+
+              {/* Sender Type Selector for Bulk */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📧 Send From
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(false)}
+                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                      !useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Collection</span>
+                    <span className="text-xs text-gray-500">
+                      Location-specific
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(true)}
+                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                      useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Admin</span>
+                    <span className="text-xs text-gray-500">
+                      admin@misterfyber.com
+                    </span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  {useAdminSender
+                    ? "📌 All customers will receive from the main admin email"
+                    : "📌 Each customer will receive from their location-specific collection email"}
+                </p>
+              </div>
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1173,6 +1313,9 @@ export default function ManualEmailPage() {
                           Type
                         </th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Sender
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1214,6 +1357,19 @@ export default function ManualEmailPage() {
                               }`}
                             >
                               {record.isBulk ? "Bulk" : "Single"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                record.senderType === "admin"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {record.senderType === "admin"
+                                ? "Admin"
+                                : "Collection"}
                             </span>
                           </td>
                           <td className="py-3 px-4">
@@ -1459,6 +1615,44 @@ export default function ManualEmailPage() {
                 This will send payment reminders to all customers with unpaid
                 bills.
               </p>
+
+              {/* Sender type for reminder */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📧 Send From
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(false)}
+                    className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
+                      !useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Collection</span>
+                    <span className="text-xs text-gray-500">
+                      Location-specific
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseAdminSender(true)}
+                    className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
+                      useAdminSender
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700"
+                    }`}
+                  >
+                    <span className="block font-medium">Admin</span>
+                    <span className="text-xs text-gray-500">
+                      admin@misterfyber.com
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <textarea
                 rows={3}
                 placeholder="Custom Message (Optional)"

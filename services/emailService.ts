@@ -1,3 +1,4 @@
+// frontend/services/emailService.ts
 import api from "./api";
 
 export interface Customer {
@@ -12,6 +13,8 @@ export interface Customer {
   hasUnpaidBills: boolean;
   lastBillAmount: number;
   lastBillStatus: string | null;
+  buildingName?: string;
+  buildingId?: string;
 }
 
 export interface Bill {
@@ -53,6 +56,7 @@ export interface EmailSentRecord {
   includeBilling: boolean;
   billType?: string;
   error?: string;
+  senderType?: "admin" | "collection";
 }
 
 export interface SendEmailParams {
@@ -64,6 +68,7 @@ export interface SendEmailParams {
   sendCopyToAdmin?: boolean;
   attachments?: any[];
   priority?: "low" | "normal" | "high";
+  useAdminSender?: boolean;
 }
 
 export interface BulkEmailParams {
@@ -73,6 +78,7 @@ export interface BulkEmailParams {
   includeBilling: boolean;
   billType?: "unpaid" | "latest" | "installation";
   sendCopyToAdmin?: boolean;
+  useAdminSender?: boolean;
 }
 
 class EmailService {
@@ -141,11 +147,13 @@ class EmailService {
   async sendReminderToUnpaid(
     customMessage?: string,
     includeDueDateReminder?: boolean,
+    useAdminSender?: boolean,
   ): Promise<any> {
     try {
       const response = await api.post(`${this.baseUrl}/send-reminder-unpaid`, {
         customMessage,
         includeDueDateReminder: includeDueDateReminder !== false,
+        useAdminSender: useAdminSender || false,
       });
       return response.data;
     } catch (error) {
@@ -212,9 +220,13 @@ class EmailService {
     includeBilling: boolean;
     applicationId?: string;
     billId?: string;
+    useAdminSender?: boolean;
   }): Promise<{ html: string; subject: string; message: string }> {
     try {
-      const response = await api.post(`${this.baseUrl}/preview`, params);
+      const response = await api.post(`${this.baseUrl}/preview`, {
+        ...params,
+        useAdminSender: params.useAdminSender || false,
+      });
       return response.data.data;
     } catch (error) {
       console.error("Failed to preview email:", error);
