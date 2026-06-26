@@ -15,6 +15,7 @@ export interface Customer {
   lastBillStatus: string | null;
   buildingName?: string;
   buildingId?: string;
+  location?: string;
 }
 
 export interface Bill {
@@ -57,6 +58,8 @@ export interface EmailSentRecord {
   billType?: string;
   error?: string;
   senderType?: "admin" | "collection";
+  location?: string;
+  collectionEmail?: string;
 }
 
 export interface SendEmailParams {
@@ -221,7 +224,13 @@ class EmailService {
     applicationId?: string;
     billId?: string;
     useAdminSender?: boolean;
-  }): Promise<{ html: string; subject: string; message: string }> {
+  }): Promise<{
+    html: string;
+    subject: string;
+    message: string;
+    location: string;
+    senderInfo: string;
+  }> {
     try {
       const response = await api.post(`${this.baseUrl}/preview`, {
         ...params,

@@ -48,13 +48,16 @@ export default function ManualEmailPage() {
 
   // Sender type state
   const [useAdminSender, setUseAdminSender] = useState(false);
-  const [senderOptions, setSenderOptions] = useState<
-    { value: string; label: string }[]
-  >([]);
+
+  // Location state - FIXED: Get location from selected customer
+  const [customerLocation, setCustomerLocation] = useState<string>("");
+  const [collectionEmail, setCollectionEmail] = useState<string>("");
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [previewLocation, setPreviewLocation] = useState("");
+  const [previewSenderInfo, setPreviewSenderInfo] = useState("");
 
   // Template dialog
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
@@ -82,10 +85,21 @@ export default function ManualEmailPage() {
 
   // ==================== HELPER FUNCTIONS ====================
   const getLocationFromBuildingName = (buildingName?: string): string => {
-    if (!buildingName) return "other";
+    if (!buildingName) {
+      console.log("⚠️ No building name provided");
+      return "other";
+    }
     const name = buildingName.toLowerCase().trim();
-    if (name.includes("breeze")) return "breeze";
-    if (name.includes("sil") || name.includes("silk")) return "sil";
+    console.log(`🔍 Checking location for building: "${name}"`);
+    if (name.includes("breeze")) {
+      console.log("✅ Location detected: BREEZE");
+      return "breeze";
+    }
+    if (name.includes("sil") || name.includes("silk")) {
+      console.log("✅ Location detected: SIL");
+      return "sil";
+    }
+    console.log("⚠️ Location not recognized, defaulting to: OTHER");
     return "other";
   };
 
@@ -106,6 +120,39 @@ export default function ManualEmailPage() {
       "admin@misterfyber.com"
     );
   };
+
+  const getLocationDisplay = (location: string): string => {
+    if (location === "breeze") return "🌊 Breeze";
+    if (location === "sil") return "🏢 SIL";
+    return "📍 Other";
+  };
+
+  const getLocationBadgeColor = (location: string): string => {
+    if (location === "breeze")
+      return "bg-blue-100 text-blue-800 border-blue-300";
+    if (location === "sil")
+      return "bg-purple-100 text-purple-800 border-purple-300";
+    return "bg-gray-100 text-gray-800 border-gray-300";
+  };
+
+  // ==================== UPDATE LOCATION WHEN CUSTOMER SELECTED ====================
+  useEffect(() => {
+    if (selectedCustomer) {
+      const location = getLocationFromBuildingName(
+        selectedCustomer.buildingName,
+      );
+      const email = getCollectionEmailForLocation(location);
+      setCustomerLocation(location);
+      setCollectionEmail(email);
+      console.log(
+        `📍 Customer location: ${location}, Collection email: ${email}`,
+      );
+      console.log(`🏢 Building name: ${selectedCustomer.buildingName}`);
+    } else {
+      setCustomerLocation("");
+      setCollectionEmail("");
+    }
+  }, [selectedCustomer]);
 
   // ==================== LOAD FUNCTIONS WITH CACHING ====================
   const loadCustomers = useCallback(async (search?: string) => {
@@ -134,6 +181,7 @@ export default function ManualEmailPage() {
 
       if (data && data.length > 0) {
         console.log("First customer:", data[0]);
+        console.log("Building name:", data[0].buildingName);
       } else {
         console.warn("No customers returned from API");
         setError(
@@ -239,33 +287,6 @@ export default function ManualEmailPage() {
     };
   }, [loadCustomers, loadTemplates, loadSentRecords]);
 
-  // ==================== UPDATE SENDER OPTIONS ====================
-  useEffect(() => {
-    if (selectedCustomer) {
-      const location = getLocationFromBuildingName(
-        selectedCustomer.buildingName,
-      );
-      const collectionEmail = getCollectionEmailForLocation(location);
-
-      const options = [
-        { value: "admin", label: "Admin (admin@misterfyber.com)" },
-      ];
-
-      if (location !== "other") {
-        options.push({
-          value: "collection",
-          label: `${location.charAt(0).toUpperCase() + location.slice(1)} Collection (${collectionEmail})`,
-        });
-      }
-
-      setSenderOptions(options);
-    } else {
-      setSenderOptions([
-        { value: "admin", label: "Admin (admin@misterfyber.com)" },
-      ]);
-    }
-  }, [selectedCustomer]);
-
   // ==================== HANDLERS ====================
   const handleCustomerSelect = async (customer: Customer | null) => {
     setSelectedCustomer(customer);
@@ -304,6 +325,8 @@ export default function ManualEmailPage() {
         useAdminSender: useAdminSender,
       });
       setPreviewHtml(preview.html);
+      setPreviewLocation(preview.location || "unknown");
+      setPreviewSenderInfo(preview.senderInfo || "");
       setPreviewOpen(true);
     } catch (error) {
       console.error("Failed to generate preview:", error);
@@ -331,7 +354,7 @@ export default function ManualEmailPage() {
 
     try {
       setLoading(true);
-      await emailService.sendEmail({
+      const result = await emailService.sendEmail({
         applicationId: selectedCustomer.applicationId,
         subject,
         message,
@@ -340,8 +363,13 @@ export default function ManualEmailPage() {
         sendCopyToAdmin,
         useAdminSender: useAdminSender,
       });
+
+      const senderDisplay = useAdminSender ? "Admin" : "Collection";
+      const locationDisplay = customerLocation
+        ? customerLocation.toUpperCase()
+        : "Unknown";
       toast.success(
-        `Email sent successfully to ${selectedCustomer.firstName} ${selectedCustomer.lastName}`,
+        `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
       globalCache = null;
@@ -377,7 +405,11 @@ export default function ManualEmailPage() {
         sendCopyToAdmin,
         useAdminSender: useAdminSender,
       });
-      toast.success(result.message);
+
+      const senderDisplay = useAdminSender ? "Admin" : "Collection";
+      toast.success(
+        `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
+      );
 
       globalCache = null;
       globalCacheTimestamp = 0;
@@ -400,7 +432,12 @@ export default function ManualEmailPage() {
         includeDueDateReminder,
         useAdminSender,
       );
-      toast.success(result.message);
+
+      const senderDisplay = useAdminSender ? "Admin" : "Collection";
+      toast.success(
+        `✅ Reminders sent via ${senderDisplay} - ${result.message}`,
+      );
+
       setShowReminderDialog(false);
       setReminderMessage("");
 
@@ -564,8 +601,8 @@ export default function ManualEmailPage() {
               📧 Manual Email Management
             </h1>
             <p className="text-gray-500 mt-1">
-              Send custom emails to customers with or without billing
-              information attached
+              Send custom emails to customers based on their building location
+              (Breeze or SIL)
             </p>
           </div>
           <button
@@ -647,42 +684,59 @@ export default function ManualEmailPage() {
                       </p>
                     </div>
                   ) : (
-                    filteredCustomers.map((customer) => (
-                      <button
-                        key={customer._id}
-                        onClick={() => handleCustomerSelect(customer)}
-                        className={`w-full text-left p-4 rounded-lg border transition-all ${
-                          selectedCustomer?.applicationId ===
-                          customer.applicationId
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium text-gray-900">
-                              {customer.firstName} {customer.lastName}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {customer.email}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              ID: {customer.applicationId}
-                            </p>
-                            {customer.buildingName && (
-                              <p className="text-xs text-gray-400">
-                                Building: {customer.buildingName}
+                    filteredCustomers.map((customer) => {
+                      const location = getLocationFromBuildingName(
+                        customer.buildingName,
+                      );
+                      const locationDisplay = getLocationDisplay(location);
+                      const badgeColor = getLocationBadgeColor(location);
+
+                      return (
+                        <button
+                          key={customer._id}
+                          onClick={() => handleCustomerSelect(customer)}
+                          className={`w-full text-left p-4 rounded-lg border transition-all ${
+                            selectedCustomer?.applicationId ===
+                            customer.applicationId
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {customer.firstName} {customer.lastName}
                               </p>
-                            )}
+                              <p className="text-sm text-gray-500">
+                                {customer.email}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                ID: {customer.applicationId}
+                              </p>
+                              {customer.buildingName && (
+                                <p className="text-xs text-gray-400">
+                                  🏢 {customer.buildingName}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              {location !== "other" && (
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                                >
+                                  {locationDisplay}
+                                </span>
+                              )}
+                              {customer.hasUnpaidBills && (
+                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                  ⚠️ Unpaid
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          {customer.hasUnpaidBills && (
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                              Unpaid
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    ))
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -705,8 +759,20 @@ export default function ManualEmailPage() {
                   </p>
                   {selectedCustomer.buildingName && (
                     <p className="text-sm text-gray-600">
-                      Building: {selectedCustomer.buildingName}
+                      🏢 Building: {selectedCustomer.buildingName}
                     </p>
+                  )}
+                  {customerLocation && customerLocation !== "other" && (
+                    <div className="mt-2">
+                      <span
+                        className={`px-3 py-1 text-sm font-medium rounded-full border ${getLocationBadgeColor(customerLocation)}`}
+                      >
+                        📍 {getLocationDisplay(customerLocation)}
+                      </span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        Collection: {collectionEmail}
+                      </span>
+                    </div>
                   )}
                   {selectedCustomer.hasUnpaidBills && (
                     <span className="inline-flex items-center mt-2 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
@@ -722,6 +788,24 @@ export default function ManualEmailPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Compose Email
               </h2>
+
+              {/* Location Display */}
+              {selectedCustomer &&
+                customerLocation &&
+                customerLocation !== "other" && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>📍 Location Detected:</strong>{" "}
+                      {getLocationDisplay(customerLocation)}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Collection Email: {collectionEmail}
+                    </p>
+                    <p className="text-xs text-blue-600">
+                      Building: {selectedCustomer.buildingName}
+                    </p>
+                  </div>
+                )}
 
               {templates.length > 0 && (
                 <div className="mb-4">
@@ -759,18 +843,12 @@ export default function ManualEmailPage() {
                     }`}
                   >
                     <span className="block font-medium">Collection</span>
-                    <span className="text-xs text-gray-500">
-                      {selectedCustomer
-                        ? getLocationFromBuildingName(
-                            selectedCustomer.buildingName,
-                          ) === "breeze"
-                          ? "collection.breeze@misterfyber.com"
-                          : getLocationFromBuildingName(
-                                selectedCustomer.buildingName,
-                              ) === "sil"
-                            ? "collection.silk@misterfyber.com"
-                            : "No location"
-                        : "Select customer first"}
+                    <span className="text-xs text-gray-500 truncate">
+                      {selectedCustomer &&
+                      customerLocation &&
+                      customerLocation !== "other"
+                        ? collectionEmail
+                        : "No location detected"}
                     </span>
                   </button>
                   <button
@@ -791,7 +869,9 @@ export default function ManualEmailPage() {
                 <p className="text-xs text-gray-400 mt-2">
                   {useAdminSender
                     ? "📌 Email will be sent from the main admin email"
-                    : "📌 Email will be sent from the location-specific collection email"}
+                    : customerLocation && customerLocation !== "other"
+                      ? `📌 Email will be sent from ${customerLocation.toUpperCase()} collection email: ${collectionEmail}`
+                      : "📌 No location detected. Please select a customer with a building."}
                 </p>
               </div>
 
@@ -908,7 +988,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Bulk Email Tab */}
+        {/* Bulk Email Tab - Similar structure with location display */}
         {activeTab === "bulk" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -959,68 +1039,91 @@ export default function ManualEmailPage() {
                       </p>
                     </div>
                   ) : (
-                    displayCustomers.map((customer) => (
-                      <label
-                        key={customer._id}
-                        className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
-                          selectedCustomers.some(
-                            (c) => c.applicationId === customer.applicationId,
-                          )
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          checked={selectedCustomers.some(
-                            (c) => c.applicationId === customer.applicationId,
-                          )}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedCustomers([
-                                ...selectedCustomers,
-                                customer,
-                              ]);
-                            } else {
-                              setSelectedCustomers(
-                                selectedCustomers.filter(
-                                  (c) =>
-                                    c.applicationId !== customer.applicationId,
-                                ),
-                              );
-                            }
-                          }}
-                        />
-                        <div className="ml-3 flex-1">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-gray-900">
-                                {customer.firstName} {customer.lastName}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {customer.email}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                ID: {customer.applicationId}
-                              </p>
+                    displayCustomers.map((customer) => {
+                      const location = getLocationFromBuildingName(
+                        customer.buildingName,
+                      );
+                      const locationDisplay = getLocationDisplay(location);
+                      const badgeColor = getLocationBadgeColor(location);
+
+                      return (
+                        <label
+                          key={customer._id}
+                          className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                            selectedCustomers.some(
+                              (c) => c.applicationId === customer.applicationId,
+                            )
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            checked={selectedCustomers.some(
+                              (c) => c.applicationId === customer.applicationId,
+                            )}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedCustomers([
+                                  ...selectedCustomers,
+                                  customer,
+                                ]);
+                              } else {
+                                setSelectedCustomers(
+                                  selectedCustomers.filter(
+                                    (c) =>
+                                      c.applicationId !==
+                                      customer.applicationId,
+                                  ),
+                                );
+                              }
+                            }}
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {customer.firstName} {customer.lastName}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {customer.email}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  ID: {customer.applicationId}
+                                </p>
+                                {customer.buildingName && (
+                                  <p className="text-xs text-gray-400">
+                                    🏢 {customer.buildingName}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                {location !== "other" && (
+                                  <span
+                                    className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                                  >
+                                    {locationDisplay}
+                                  </span>
+                                )}
+                                {customer.hasUnpaidBills && (
+                                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                    ⚠️ Unpaid
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            {customer.hasUnpaidBills && (
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                                ⚠️ Unpaid
-                              </span>
+                            {customer.lastBillAmount > 0 && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Last Bill: ₱
+                                {customer.lastBillAmount.toLocaleString()} -{" "}
+                                {customer.lastBillStatus || "N/A"}
+                              </p>
                             )}
                           </div>
-                          {customer.lastBillAmount > 0 && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Last Bill: ₱
-                              {customer.lastBillAmount.toLocaleString()} -{" "}
-                              {customer.lastBillStatus || "N/A"}
-                            </p>
-                          )}
-                        </div>
-                      </label>
-                    ))
+                        </label>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1037,6 +1140,15 @@ export default function ManualEmailPage() {
                       unpaid)
                     </span>
                   )}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {
+                    selectedCustomers.filter(
+                      (c) =>
+                        getLocationFromBuildingName(c.buildingName) !== "other",
+                    ).length
+                  }{" "}
+                  customers with location detected
                 </p>
               </div>
 
@@ -1187,7 +1299,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Templates Tab */}
+        {/* Templates Tab - Same as before */}
         {activeTab === "templates" && (
           <div>
             <div className="mb-6">
@@ -1261,7 +1373,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Sent Records Tab */}
+        {/* Sent Records Tab - Updated with location column */}
         {activeTab === "sent" && (
           <div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -1313,6 +1425,9 @@ export default function ManualEmailPage() {
                           Type
                         </th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Location
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Sender
                         </th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1324,78 +1439,104 @@ export default function ManualEmailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {sentRecords.map((record) => (
-                        <tr
-                          key={record.id}
-                          className="hover:bg-gray-50 transition-colors"
-                        >
-                          <td className="py-3 px-4 text-sm text-gray-600">
-                            {formatDate(record.sentAt)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {record.customerName}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {record.customerEmail}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                ID: {record.applicationId}
-                              </p>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
-                            {record.subject}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                record.isBulk
-                                  ? "bg-purple-100 text-purple-700"
-                                  : "bg-blue-100 text-blue-700"
-                              }`}
-                            >
-                              {record.isBulk ? "Bulk" : "Single"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                record.senderType === "admin"
-                                  ? "bg-orange-100 text-orange-700"
-                                  : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {record.senderType === "admin"
-                                ? "Admin"
-                                : "Collection"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                record.status === "sent"
-                                  ? "bg-green-100 text-green-700"
-                                  : record.status === "failed"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                              }`}
-                            >
-                              {record.status}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => handleDeleteSentRecord(record.id)}
-                              className="text-red-500 hover:text-red-700 transition-colors text-sm"
-                              title="Delete record"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {sentRecords.map((record) => {
+                        const locationDisplay =
+                          record.location && record.location !== "unknown"
+                            ? getLocationDisplay(record.location)
+                            : "📍 Unknown";
+                        const badgeColor =
+                          record.location && record.location !== "unknown"
+                            ? getLocationBadgeColor(record.location)
+                            : "bg-gray-100 text-gray-800 border-gray-300";
+
+                        return (
+                          <tr
+                            key={record.id}
+                            className="hover:bg-gray-50 transition-colors"
+                          >
+                            <td className="py-3 px-4 text-sm text-gray-600">
+                              {formatDate(record.sentAt)}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {record.customerName}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {record.customerEmail}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  ID: {record.applicationId}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
+                              {record.subject}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.isBulk
+                                    ? "bg-purple-100 text-purple-700"
+                                    : "bg-blue-100 text-blue-700"
+                                }`}
+                              >
+                                {record.isBulk ? "Bulk" : "Single"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                              >
+                                {locationDisplay}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.senderType === "admin"
+                                    ? "bg-orange-100 text-orange-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                {record.senderType === "admin"
+                                  ? "Admin"
+                                  : "Collection"}
+                              </span>
+                              {record.collectionEmail &&
+                                record.senderType !== "admin" && (
+                                  <p className="text-xs text-gray-400 mt-1 truncate max-w-[100px]">
+                                    {record.collectionEmail}
+                                  </p>
+                                )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.status === "sent"
+                                    ? "bg-green-100 text-green-700"
+                                    : record.status === "failed"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
+                              >
+                                {record.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                onClick={() =>
+                                  handleDeleteSentRecord(record.id)
+                                }
+                                className="text-red-500 hover:text-red-700 transition-colors text-sm"
+                                title="Delete record"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1418,7 +1559,15 @@ export default function ManualEmailPage() {
                 ✕
               </button>
             </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(80vh-120px)]">
+            {previewLocation && previewLocation !== "unknown" && (
+              <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <p className="text-sm text-blue-700">
+                  📍 Location: {getLocationDisplay(previewLocation)}
+                </p>
+                <p className="text-xs text-blue-600">{previewSenderInfo}</p>
+              </div>
+            )}
+            <div className="p-4 overflow-y-auto max-h-[calc(80vh-160px)]">
               <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
             <div className="p-4 border-t">
@@ -1433,7 +1582,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Save Template Dialog */}
+      {/* Save Template Dialog - Same as before */}
       {showTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
@@ -1512,7 +1661,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Edit Template Dialog */}
+      {/* Edit Template Dialog - Same as before */}
       {showEditTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
