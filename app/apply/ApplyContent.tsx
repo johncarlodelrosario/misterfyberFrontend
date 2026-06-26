@@ -16,6 +16,8 @@ import {
   FiClipboard,
   FiCheckSquare,
   FiSquare,
+  FiHome,
+  FiLayers,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import Header from "@/components/layout/Header";
@@ -50,6 +52,7 @@ export default function ApplyContent() {
     lastName: "",
     email: "",
     phoneNumber: "",
+    tower: "", // Added tower field
     floor: "",
     unitNumber: "",
     notes: "",
@@ -168,6 +171,12 @@ export default function ApplyContent() {
       return;
     }
 
+    // Validate tower field (required by backend)
+    if (!formData.tower || formData.tower.trim() === "") {
+      toast.error("Please enter the tower name/number");
+      return;
+    }
+
     if (
       !formData.firstName ||
       !formData.lastName ||
@@ -198,6 +207,7 @@ export default function ApplyContent() {
       submitFormData.append("phoneNumber", formData.phoneNumber);
       submitFormData.append("planId", selectedPlan);
       submitFormData.append("buildingId", selectedBuilding);
+      submitFormData.append("tower", formData.tower); // Added tower field
       submitFormData.append("floor", formData.floor);
       submitFormData.append("unitNumber", formData.unitNumber);
       if (formData.notes) {
@@ -315,6 +325,7 @@ export default function ApplyContent() {
                     lastName: "",
                     email: "",
                     phoneNumber: "",
+                    tower: "",
                     floor: "",
                     unitNumber: "",
                     notes: "",
@@ -462,6 +473,23 @@ export default function ApplyContent() {
                         </div>
                       )}
                       <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tower *
+                          </label>
+                          <input
+                            type="text"
+                            name="tower"
+                            value={formData.tower}
+                            onChange={handleInputChange}
+                            placeholder="e.g., Tower A, B, 1, 2"
+                            required
+                            className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm sm:text-base placeholder-gray-400"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enter the tower name or number
+                          </p>
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             Floor
@@ -766,7 +794,13 @@ export default function ApplyContent() {
                         You can change the plan anytime before submitting
                       </p>
                     </div>
-                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200"></div>
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                        <FiLayers className="text-blue-500" />
+                        <strong>Tower required:</strong> Please enter the tower
+                        name/number
+                      </p>
+                    </div>
                   </motion.div>
                 </div>
               </div>
