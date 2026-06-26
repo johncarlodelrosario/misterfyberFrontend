@@ -102,25 +102,25 @@ class EmailService {
 
       const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
       const response = await api.get(url);
-      return response.data.data;
+      return response.data.data || [];
     } catch (error) {
       console.error("Failed to fetch customers:", error);
-      throw error;
+      return [];
     }
   }
 
   // Get bills for a specific customer
   async getCustomerBills(
     applicationId: string,
-  ): Promise<{ customer: Customer; bills: Bill[] }> {
+  ): Promise<{ customer: Customer | null; bills: Bill[] }> {
     try {
       const response = await api.get(
         `${this.baseUrl}/customers/${applicationId}/bills`,
       );
-      return response.data.data;
+      return response.data.data || { customer: null, bills: [] };
     } catch (error) {
       console.error("Failed to fetch customer bills:", error);
-      throw error;
+      return { customer: null, bills: [] };
     }
   }
 
@@ -199,10 +199,10 @@ class EmailService {
   async getTemplates(): Promise<EmailTemplate[]> {
     try {
       const response = await api.get(`${this.baseUrl}/templates`);
-      return response.data.data;
+      return response.data.data || [];
     } catch (error) {
       console.error("Failed to fetch templates:", error);
-      throw error;
+      return [];
     }
   }
 
@@ -259,10 +259,10 @@ class EmailService {
 
       const url = `${this.baseUrl}/sent-records${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
       const response = await api.get(url);
-      return response.data.data;
+      return response.data.data || [];
     } catch (error) {
       console.error("Failed to fetch sent records:", error);
-      throw error;
+      return [];
     }
   }
 

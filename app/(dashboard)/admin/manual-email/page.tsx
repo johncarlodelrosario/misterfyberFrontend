@@ -1,3 +1,4 @@
+// frontend/app/manual-email/page.tsx
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -49,7 +50,7 @@ export default function ManualEmailPage() {
   // Sender type state
   const [useAdminSender, setUseAdminSender] = useState(false);
 
-  // Location state - FIXED: Get location from selected customer
+  // Location state
   const [customerLocation, setCustomerLocation] = useState<string>("");
   const [collectionEmail, setCollectionEmail] = useState<string>("");
 
@@ -86,20 +87,15 @@ export default function ManualEmailPage() {
   // ==================== HELPER FUNCTIONS ====================
   const getLocationFromBuildingName = (buildingName?: string): string => {
     if (!buildingName) {
-      console.log("⚠️ No building name provided");
       return "other";
     }
     const name = buildingName.toLowerCase().trim();
-    console.log(`🔍 Checking location for building: "${name}"`);
     if (name.includes("breeze")) {
-      console.log("✅ Location detected: BREEZE");
       return "breeze";
     }
     if (name.includes("sil") || name.includes("silk")) {
-      console.log("✅ Location detected: SIL");
       return "sil";
     }
-    console.log("⚠️ Location not recognized, defaulting to: OTHER");
     return "other";
   };
 
@@ -144,10 +140,6 @@ export default function ManualEmailPage() {
       const email = getCollectionEmailForLocation(location);
       setCustomerLocation(location);
       setCollectionEmail(email);
-      console.log(
-        `📍 Customer location: ${location}, Collection email: ${email}`,
-      );
-      console.log(`🏢 Building name: ${selectedCustomer.buildingName}`);
     } else {
       setCustomerLocation("");
       setCollectionEmail("");
@@ -167,32 +159,24 @@ export default function ManualEmailPage() {
       setCustomers(globalCache.customers);
       setError(null);
       setLoading(false);
-      console.log("✅ Using cached customers");
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      console.log("Loading customers with search:", search);
       const data = await emailService.getCustomers({ search });
-      console.log("Customers loaded:", data);
-      console.log("Number of customers:", data?.length || 0);
 
-      if (data && data.length > 0) {
-        console.log("First customer:", data[0]);
-        console.log("Building name:", data[0].buildingName);
-      } else {
-        console.warn("No customers returned from API");
-        setError(
-          "No customers found. Please check if there are approved applications.",
-        );
-      }
+      // Ensure each customer has buildingName property
+      const processedData = (data || []).map((customer) => ({
+        ...customer,
+        buildingName: customer.buildingName || "",
+      }));
 
-      setCustomers(data || []);
+      setCustomers(processedData);
 
       if (!globalCache) globalCache = {};
-      globalCache.customers = data || [];
+      globalCache.customers = processedData;
       globalCacheTimestamp = now;
     } catch (error: any) {
       console.error("Failed to load customers:", error);
@@ -219,19 +203,19 @@ export default function ManualEmailPage() {
       now - globalCacheTimestamp < CACHE_TTL
     ) {
       setTemplates(globalCache.templates);
-      console.log("✅ Using cached templates");
       return;
     }
 
     try {
       const data = await emailService.getTemplates();
-      setTemplates(data);
+      setTemplates(data || []);
 
       if (!globalCache) globalCache = {};
-      globalCache.templates = data;
+      globalCache.templates = data || [];
       globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load templates:", error);
+      setTemplates([]);
     }
   }, []);
 
@@ -245,29 +229,30 @@ export default function ManualEmailPage() {
       now - globalCacheTimestamp < CACHE_TTL
     ) {
       setSentRecords(globalCache.sentRecords);
-      console.log("✅ Using cached sent records");
       return;
     }
 
     try {
       const data = await emailService.getSentRecords();
-      setSentRecords(data);
+      setSentRecords(data || []);
 
       if (!globalCache) globalCache = {};
-      globalCache.sentRecords = data;
+      globalCache.sentRecords = data || [];
       globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load sent records:", error);
+      setSentRecords([]);
     }
   }, []);
 
   const loadCustomerBills = async (applicationId: string) => {
     try {
       const data = await emailService.getCustomerBills(applicationId);
-      setCustomerBills(data.bills);
+      setCustomerBills(data?.bills || []);
     } catch (error) {
       console.error("Failed to load customer bills:", error);
       toast.error("Failed to load customer bills");
+      setCustomerBills([]);
     }
   };
 
@@ -302,9 +287,9 @@ export default function ManualEmailPage() {
     setSelectedTemplateId(templateId);
     const template = templates.find((t) => t.id === templateId);
     if (template) {
-      setSubject(template.subject);
-      setMessage(template.message);
-      setIncludeBilling(template.includeBillingDefault);
+      setSubject(template.subject || "");
+      setMessage(template.message || "");
+      setIncludeBilling(template.includeBillingDefault || false);
     }
   };
 
@@ -324,7 +309,7 @@ export default function ManualEmailPage() {
         billId: includeBilling ? selectedBillId : undefined,
         useAdminSender: useAdminSender,
       });
-      setPreviewHtml(preview.html);
+      setPreviewHtml(preview.html || "");
       setPreviewLocation(preview.location || "unknown");
       setPreviewSenderInfo(preview.senderInfo || "");
       setPreviewOpen(true);
@@ -375,6 +360,12 @@ export default function ManualEmailPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadSentRecords();
+
+      // Clear form
+      setSubject("");
+      setMessage("");
+      setIncludeBilling(false);
+      setSelectedBillId("");
     } catch (error: any) {
       console.error("Failed to send email:", error);
       toast.error(error.response?.data?.message || "Failed to send email");
@@ -414,6 +405,11 @@ export default function ManualEmailPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       await loadSentRecords();
+
+      // Clear selections
+      setSelectedCustomers([]);
+      setSubject("");
+      setMessage("");
     } catch (error: any) {
       console.error("Failed to send bulk emails:", error);
       toast.error(
@@ -482,11 +478,11 @@ export default function ManualEmailPage() {
   const handleEditTemplate = (template: EmailTemplate) => {
     setEditingTemplate(template);
     setNewTemplate({
-      name: template.name,
-      subject: template.subject,
-      message: template.message,
-      category: template.category,
-      includeBillingDefault: template.includeBillingDefault,
+      name: template.name || "",
+      subject: template.subject || "",
+      message: template.message || "",
+      category: template.category || "general",
+      includeBillingDefault: template.includeBillingDefault || false,
     });
     setShowEditTemplateDialog(true);
   };
@@ -566,10 +562,10 @@ export default function ManualEmailPage() {
   // ==================== FILTERS ====================
   const filteredCustomers = customers.filter(
     (c) =>
-      c.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.applicationId?.toLowerCase().includes(searchTerm.toLowerCase()),
+      (c.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (c.lastName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (c.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (c.applicationId?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
   );
 
   const filteredUnpaidCustomers = filteredCustomers.filter(
@@ -675,7 +671,7 @@ export default function ManualEmailPage() {
 
               {!loading && !error && (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {filteredCustomers.length === 0 ? (
+                  {displayCustomers.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <p>No customers found</p>
                       <p className="text-xs mt-1">
@@ -684,7 +680,7 @@ export default function ManualEmailPage() {
                       </p>
                     </div>
                   ) : (
-                    filteredCustomers.map((customer) => {
+                    displayCustomers.map((customer) => {
                       const location = getLocationFromBuildingName(
                         customer.buildingName,
                       );
@@ -693,7 +689,7 @@ export default function ManualEmailPage() {
 
                       return (
                         <button
-                          key={customer._id}
+                          key={customer._id || customer.applicationId}
                           onClick={() => handleCustomerSelect(customer)}
                           className={`w-full text-left p-4 rounded-lg border transition-all ${
                             selectedCustomer?.applicationId ===
@@ -705,13 +701,14 @@ export default function ManualEmailPage() {
                           <div className="flex justify-between items-start">
                             <div>
                               <p className="font-medium text-gray-900">
-                                {customer.firstName} {customer.lastName}
+                                {customer.firstName || ""}{" "}
+                                {customer.lastName || ""}
                               </p>
                               <p className="text-sm text-gray-500">
-                                {customer.email}
+                                {customer.email || "No email"}
                               </p>
                               <p className="text-xs text-gray-400 mt-1">
-                                ID: {customer.applicationId}
+                                ID: {customer.applicationId || "N/A"}
                               </p>
                               {customer.buildingName && (
                                 <p className="text-xs text-gray-400">
@@ -748,11 +745,12 @@ export default function ManualEmailPage() {
                   </p>
                   <p className="text-sm text-gray-900 mt-1">
                     <strong>
-                      {selectedCustomer.firstName} {selectedCustomer.lastName}
+                      {selectedCustomer.firstName || ""}{" "}
+                      {selectedCustomer.lastName || ""}
                     </strong>
                   </p>
                   <p className="text-sm text-gray-600">
-                    {selectedCustomer.email}
+                    {selectedCustomer.email || "No email"}
                   </p>
                   <p className="text-sm text-gray-600">
                     Phone: {selectedCustomer.phoneNumber || "N/A"}
@@ -802,7 +800,7 @@ export default function ManualEmailPage() {
                       Collection Email: {collectionEmail}
                     </p>
                     <p className="text-xs text-blue-600">
-                      Building: {selectedCustomer.buildingName}
+                      Building: {selectedCustomer.buildingName || "N/A"}
                     </p>
                   </div>
                 )}
@@ -820,7 +818,8 @@ export default function ManualEmailPage() {
                     <option value="">None</option>
                     {templates.map((template) => (
                       <option key={template.id} value={template.id}>
-                        {template.name} ({template.category})
+                        {template.name || "Unnamed"} (
+                        {template.category || "general"})
                       </option>
                     ))}
                   </select>
@@ -927,8 +926,9 @@ export default function ManualEmailPage() {
                       <option value="">Select a bill...</option>
                       {customerBills.map((bill) => (
                         <option key={bill._id} value={bill._id}>
-                          {bill.invoiceNumber} - ₱{bill.total.toLocaleString()}{" "}
-                          - {bill.status}
+                          {bill.invoiceNumber || "N/A"} - ₱
+                          {(bill.total || 0).toLocaleString()} -{" "}
+                          {bill.status || "N/A"}
                           {bill.isInstallationBill && " (Installation Fee)"}
                           {bill.isProRated && " (Pro-rated)"}
                         </option>
@@ -988,7 +988,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Bulk Email Tab - Similar structure with location display */}
+        {/* Bulk Email Tab */}
         {activeTab === "bulk" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -1048,7 +1048,7 @@ export default function ManualEmailPage() {
 
                       return (
                         <label
-                          key={customer._id}
+                          key={customer._id || customer.applicationId}
                           className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
                             selectedCustomers.some(
                               (c) => c.applicationId === customer.applicationId,
@@ -1084,13 +1084,14 @@ export default function ManualEmailPage() {
                             <div className="flex justify-between items-start">
                               <div>
                                 <p className="font-medium text-gray-900">
-                                  {customer.firstName} {customer.lastName}
+                                  {customer.firstName || ""}{" "}
+                                  {customer.lastName || ""}
                                 </p>
                                 <p className="text-sm text-gray-500">
-                                  {customer.email}
+                                  {customer.email || "No email"}
                                 </p>
                                 <p className="text-xs text-gray-400">
-                                  ID: {customer.applicationId}
+                                  ID: {customer.applicationId || "N/A"}
                                 </p>
                                 {customer.buildingName && (
                                   <p className="text-xs text-gray-400">
@@ -1116,8 +1117,10 @@ export default function ManualEmailPage() {
                             {customer.lastBillAmount > 0 && (
                               <p className="text-xs text-gray-500 mt-1">
                                 Last Bill: ₱
-                                {customer.lastBillAmount.toLocaleString()} -{" "}
-                                {customer.lastBillStatus || "N/A"}
+                                {(
+                                  customer.lastBillAmount || 0
+                                ).toLocaleString()}{" "}
+                                - {customer.lastBillStatus || "N/A"}
                               </p>
                             )}
                           </div>
@@ -1299,7 +1302,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Templates Tab - Same as before */}
+        {/* Templates Tab */}
         {activeTab === "templates" && (
           <div>
             <div className="mb-6">
@@ -1319,7 +1322,7 @@ export default function ManualEmailPage() {
                 >
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="font-semibold text-gray-900">
-                      {template.name}
+                      {template.name || "Unnamed"}
                     </h3>
                     <div className="flex gap-1">
                       <button
@@ -1339,19 +1342,21 @@ export default function ManualEmailPage() {
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
-                    Category: {template.category}
+                    Category: {template.category || "general"}
                   </p>
                   <p className="text-sm font-medium text-gray-700 mb-2">
-                    Subject: {template.subject}
+                    Subject: {template.subject || ""}
                   </p>
                   <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                    {template.message.substring(0, 150)}...
+                    {(template.message || "").substring(0, 150)}...
                   </p>
                   <button
                     onClick={() => {
-                      setSubject(template.subject);
-                      setMessage(template.message);
-                      setIncludeBilling(template.includeBillingDefault);
+                      setSubject(template.subject || "");
+                      setMessage(template.message || "");
+                      setIncludeBilling(
+                        template.includeBillingDefault || false,
+                      );
                       setActiveTab("single");
                     }}
                     className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
@@ -1373,7 +1378,7 @@ export default function ManualEmailPage() {
           </div>
         )}
 
-        {/* Sent Records Tab - Updated with location column */}
+        {/* Sent Records Tab */}
         {activeTab === "sent" && (
           <div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -1460,18 +1465,18 @@ export default function ManualEmailPage() {
                             <td className="py-3 px-4">
                               <div>
                                 <p className="text-sm font-medium text-gray-900">
-                                  {record.customerName}
+                                  {record.customerName || "N/A"}
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                  {record.customerEmail}
+                                  {record.customerEmail || "N/A"}
                                 </p>
                                 <p className="text-xs text-gray-400">
-                                  ID: {record.applicationId}
+                                  ID: {record.applicationId || "N/A"}
                                 </p>
                               </div>
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
-                              {record.subject}
+                              {record.subject || ""}
                             </td>
                             <td className="py-3 px-4">
                               <span
@@ -1520,7 +1525,7 @@ export default function ManualEmailPage() {
                                       : "bg-yellow-100 text-yellow-700"
                                 }`}
                               >
-                                {record.status}
+                                {record.status || "unknown"}
                               </span>
                             </td>
                             <td className="py-3 px-4">
@@ -1582,7 +1587,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Save Template Dialog - Same as before */}
+      {/* Save Template Dialog */}
       {showTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
@@ -1661,7 +1666,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Edit Template Dialog - Same as before */}
+      {/* Edit Template Dialog */}
       {showEditTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">

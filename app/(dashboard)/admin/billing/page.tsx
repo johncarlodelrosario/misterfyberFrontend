@@ -128,7 +128,7 @@ type SortDirection = "asc" | "desc";
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes - increased for better persistence
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -643,6 +643,8 @@ export default function AdminBillingPage() {
 
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
+  const dataLoadedRef = useRef(false);
+  const isLoadingRef = useRef(false);
 
   // ==================== MEMOIZED FILTERS ====================
   const filteredCustomers = useMemo(() => {
@@ -1210,12 +1212,23 @@ export default function AdminBillingPage() {
   // ==================== LOAD DATA ====================
   const loadData = useCallback(
     async (forceRefresh = false) => {
-      if (!isMountedRef.current) return;
+      // Prevent multiple simultaneous loads
+      if (isLoadingRef.current) {
+        console.log("⏳ Load already in progress, skipping...");
+        return;
+      }
+
+      // If data is already loaded and not forcing refresh, use cached data
+      if (dataLoadedRef.current && !forceRefresh) {
+        console.log("📦 Data already loaded, using existing state");
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       // Check global cache first
       const now = Date.now();
-      if (!forceRefresh && globalCache) {
-        // Check if cache is still valid (within TTL)
+      if (!forceRefresh && globalCache && dataLoadedRef.current) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
           const cached = globalCache;
           setCustomers(cached.customers);
@@ -1229,18 +1242,31 @@ export default function AdminBillingPage() {
           setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
           setLoading(false);
           setRefreshing(false);
-          initialLoadDone.current = true;
+          dataLoadedRef.current = true;
           console.log("✅ Using global cached billing data");
           return;
         } else {
           // Cache expired, clear it
           globalCache = null;
+          dataLoadedRef.current = false;
         }
       }
+
+      // If we have customers already and not forcing refresh, don't reload
+      if (customers.length > 0 && !forceRefresh && dataLoadedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      isLoadingRef.current = true;
 
       if (forceRefresh) {
         setRefreshing(true);
         clearBillingCache();
+        globalCache = null;
+        globalCacheTimestamp = 0;
+        dataLoadedRef.current = false;
       } else {
         setLoading(true);
       }
@@ -1276,7 +1302,10 @@ export default function AdminBillingPage() {
           getPendingInstallationBills().catch(() => ({ data: [] })),
         ]);
 
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current) {
+          isLoadingRef.current = false;
+          return;
+        }
 
         const cyclesData = cyclesResult?.data || [];
         const billsList = billsResult?.data || [];
@@ -1476,8 +1505,8 @@ export default function AdminBillingPage() {
           customersWithoutAccounts: customersWithoutAccountsData,
         };
         globalCacheTimestamp = now;
+        dataLoadedRef.current = true;
 
-        initialLoadDone.current = true;
         console.log(
           `✅ Loaded ${allCustomers.length} customers (cached globally)`,
         );
@@ -1491,9 +1520,11 @@ export default function AdminBillingPage() {
           setLoading(false);
           setRefreshing(false);
         }
+        isLoadingRef.current = false;
+        initialLoadDone.current = true;
       }
     },
-    [pagination.page, pagination.limit],
+    [pagination.page, pagination.limit, customers.length],
   );
 
   // ==================== HANDLE PAGE CHANGE ====================
@@ -1578,6 +1609,7 @@ export default function AdminBillingPage() {
       toast.success(`✅ Billing resumed for ${customerName}!`);
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -1596,6 +1628,7 @@ export default function AdminBillingPage() {
       toast.success(`⛔ Billing stopped for ${customerName}.`);
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -1622,6 +1655,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       console.error("Disconnect error:", error);
@@ -1646,6 +1680,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       console.error("Reconnect error:", error);
@@ -1664,6 +1699,7 @@ export default function AdminBillingPage() {
       toast.success("Payment confirmed! User notified.");
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -1678,6 +1714,7 @@ export default function AdminBillingPage() {
       toast.success("Payment rejected");
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
@@ -1694,6 +1731,7 @@ export default function AdminBillingPage() {
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       console.error("Mark bill as paid error:", error);
@@ -1736,6 +1774,7 @@ export default function AdminBillingPage() {
         setIncludeInstallationFee(true);
         globalCache = null;
         globalCacheTimestamp = 0;
+        dataLoadedRef.current = false;
         loadData(true);
       } else {
         toast.error(result.message || "Failed to start billing");
@@ -1769,6 +1808,7 @@ export default function AdminBillingPage() {
       setIncludeInstallationFee(true);
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
@@ -1793,6 +1833,7 @@ export default function AdminBillingPage() {
       setPauseUntilDate("");
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -1842,6 +1883,7 @@ export default function AdminBillingPage() {
       });
       globalCache = null;
       globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create customer");
@@ -1851,7 +1893,15 @@ export default function AdminBillingPage() {
   // ==================== USE EFFECTS ====================
   useEffect(() => {
     isMountedRef.current = true;
-    loadData();
+
+    // Only load data if not already loaded
+    if (!dataLoadedRef.current && customers.length === 0) {
+      loadData();
+    } else if (dataLoadedRef.current && customers.length > 0) {
+      setLoading(false);
+      console.log("📦 Data already loaded from previous session");
+    }
+
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
@@ -1862,12 +1912,16 @@ export default function AdminBillingPage() {
     };
     window.addEventListener("resize", handleResize);
     handleResize();
+
+    // Cleanup
     return () => {
       isMountedRef.current = false;
       window.removeEventListener("resize", handleResize);
     };
-  }, [loadData, checkScrollPosition]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Update scroll position when customers change
   useEffect(() => {
     setTimeout(checkScrollPosition, 100);
   }, [customers, checkScrollPosition]);
@@ -1876,6 +1930,7 @@ export default function AdminBillingPage() {
   const handleRefresh = () => {
     globalCache = null;
     globalCacheTimestamp = 0;
+    dataLoadedRef.current = false;
     loadData(true);
   };
 
@@ -2248,7 +2303,7 @@ export default function AdminBillingPage() {
           </div>
         )}
 
-        {/* Scroll buttons - hidden on mobile, positioned outside sidebar */}
+        {/* Scroll buttons - hidden on mobile */}
         {!isMobile && (
           <>
             <button
