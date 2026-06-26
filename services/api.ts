@@ -93,6 +93,46 @@ let lastHealthCheck = 0;
 const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 let healthCheckPromise: Promise<boolean> | null = null;
 
+// ==================== FIXED: Get backend URL ====================
+const getBackendUrl = (): string => {
+  // Check if we're in a browser environment
+  if (typeof window === "undefined") {
+    return (
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://misterfyberbackend.onrender.com"
+    );
+  }
+
+  // Production: Use the deployed backend URL
+  if (process.env.NODE_ENV === "production") {
+    // If we're on vercel.app, use proxy
+    if (window.location.hostname.includes("vercel.app")) {
+      return "";
+    }
+    // Otherwise use the render URL
+    return "https://misterfyberbackend.onrender.com";
+  }
+
+  // Development: Use localhost
+  return "http://localhost:5000";
+};
+
+// ==================== FIXED: Health check URLs ====================
+const getHealthUrls = (): string[] => {
+  const baseUrl = getBackendUrl();
+
+  if (process.env.NODE_ENV === "production") {
+    // In production, only use the deployed URL
+    return [
+      "https://misterfyberbackend.onrender.com/health",
+      "https://misterfyberbackend.onrender.com/api/health",
+    ];
+  }
+
+  // In development, use localhost
+  return ["http://localhost:5000/health", "http://localhost:5000/api/health"];
+};
+
 const checkBackendHealth = async (): Promise<boolean> => {
   const now = Date.now();
   if (
@@ -108,10 +148,7 @@ const checkBackendHealth = async (): Promise<boolean> => {
   }
 
   healthCheckPromise = (async () => {
-    const healthUrls = [
-      "http://localhost:5000/health",
-      "https://misterfyberbackend.onrender.com/health",
-    ];
+    const healthUrls = getHealthUrls();
 
     for (const url of healthUrls) {
       try {
@@ -120,6 +157,10 @@ const checkBackendHealth = async (): Promise<boolean> => {
 
         const response = await fetch(url, {
           signal: controller.signal,
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
         });
         clearTimeout(timeoutId);
 
@@ -130,7 +171,8 @@ const checkBackendHealth = async (): Promise<boolean> => {
           return true;
         }
       } catch (error) {
-        // Silent fail
+        // Silent fail - try next URL
+        console.debug(`Health check failed for ${url}:`, error);
       }
     }
 
@@ -143,31 +185,40 @@ const checkBackendHealth = async (): Promise<boolean> => {
   return healthCheckPromise;
 };
 
-// Determine API URL based on environment
-const getApiUrl = () => {
+// ==================== FIXED: Determine API URL ====================
+const getApiUrl = (): string => {
+  // Server-side rendering
+  if (typeof window === "undefined") {
+    return (
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://misterfyberbackend.onrender.com/api"
+    );
+  }
+
+  // Development environment
   const isDevelopment =
     process.env.NODE_ENV === "development" ||
-    (typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1"));
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
 
   if (isDevelopment) {
     return "http://localhost:5000/api";
   }
 
+  // Production: Check if we're on Vercel
   if (
-    typeof window !== "undefined" &&
-    window.location.hostname.includes("vercel.app")
+    window.location.hostname.includes("vercel.app") ||
+    window.location.hostname.includes("misterfyber.com")
   ) {
+    // Use proxy to avoid CORS
     return "/api";
   }
 
-  return (
-    process.env.NEXT_PUBLIC_API_URL ||
-    "https://misterfyberbackend.onrender.com/api"
-  );
+  // Default: Use Render backend
+  return "https://misterfyberbackend.onrender.com/api";
 };
 
+// ==================== FIXED: CORS-friendly axios instance ====================
 const api = axios.create({
   baseURL: getApiUrl(),
   headers: {
@@ -175,7 +226,7 @@ const api = axios.create({
     Accept: "application/json",
   },
   withCredentials: false,
-  timeout: 15000, // Reduced from 30s to 15s
+  timeout: 15000,
 });
 
 // Request interceptor with non-blocking health check
@@ -258,7 +309,6 @@ api.interceptors.response.use(
       error.message?.includes("timeout")
     ) {
       if (!config || config.__retryCount >= 2) {
-        // Reduced from 3 to 2
         if (config?.url?.includes("/applications")) {
           const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params)}`;
           if (responseCache.has(requestKey)) {
@@ -272,11 +322,16 @@ api.interceptors.response.use(
       config.__retryCount = config.__retryCount || 0;
       config.__retryCount += 1;
 
-      // Faster backoff: 500ms, 1000ms
       const delay = config.__retryCount * 500;
 
       await new Promise((resolve) => setTimeout(resolve, delay));
       return api(config);
+    }
+
+    // Handle CORS errors with better messaging
+    if (error.message?.includes("CORS") || error.message?.includes("blocked")) {
+      console.error("CORS Error: Please check backend CORS configuration");
+      toast.error("Network error. Please refresh and try again.");
     }
 
     if (error.response?.status === 401) {
@@ -290,6 +345,17 @@ api.interceptors.response.use(
           window.location.href = "/login";
         }
       }
+    }
+
+    // Log detailed errors in development
+    if (process.env.NODE_ENV === "development") {
+      console.error("API Error:", {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
     }
 
     return Promise.reject(error);
