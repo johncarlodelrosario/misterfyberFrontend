@@ -164,13 +164,6 @@ function getBuildingId(customer: CustomerItem): string | null {
     if (typeof customer.building === "object" && customer.building._id) {
       return customer.building._id;
     }
-    // If building is an object but without _id, try to find by name
-    if (
-      typeof customer.building === "object" &&
-      customer.building.buildingName
-    ) {
-      return customer.building.buildingName;
-    }
   }
   return null;
 }
@@ -674,35 +667,22 @@ export default function AdminBillingPage() {
             .toLowerCase()
             .includes(searchTerm.toLowerCase()));
 
-      // FIXED: Building filter - properly check if building matches
+      // FIXED: Simple building filter - compare building ID directly
       let matchesBuilding = true;
       if (buildingFilter !== "all") {
         const customerBuildingId = getBuildingId(customer);
-        // Check if the customer's building ID or name matches the filter
-        if (customerBuildingId) {
-          // Try to find the building in buildingsList to get its ID
-          const building = buildingsList.find(
-            (b) =>
-              b._id === buildingFilter ||
-              b.buildingName === buildingFilter ||
-              b.buildingName === customerBuildingId ||
-              b._id === customerBuildingId,
+        // Direct comparison - if customer has building ID that matches selected building
+        matchesBuilding = customerBuildingId === buildingFilter;
+
+        // If customer doesn't have building ID, try comparing building name
+        if (!matchesBuilding && customer.building?.buildingName) {
+          const selectedBuilding = buildingsList.find(
+            (b) => b._id === buildingFilter,
           );
-          if (building) {
-            // Check if customer belongs to this building
-            const customerBuildingName = getBuildingDisplay(customer);
+          if (selectedBuilding) {
             matchesBuilding =
-              building._id === customerBuildingId ||
-              building.buildingName === customerBuildingName ||
-              building._id === getBuildingId(customer);
-          } else {
-            // Direct comparison as fallback
-            matchesBuilding =
-              customerBuildingId === buildingFilter ||
-              getBuildingDisplay(customer) === buildingFilter;
+              customer.building.buildingName === selectedBuilding.buildingName;
           }
-        } else {
-          matchesBuilding = false;
         }
       }
 
