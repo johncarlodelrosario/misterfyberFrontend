@@ -72,6 +72,7 @@ interface Building {
   _id: string;
   name: string;
   address: string;
+  buildingName?: string;
 }
 
 // ==================== BUILDING CACHE ====================
@@ -125,8 +126,13 @@ async function fetchBuildings(): Promise<Building[]> {
     const response = await api.get("/buildings");
     if (response.data?.success && response.data?.data) {
       const buildings = response.data.data;
-      buildings.forEach((b: Building) => {
-        buildingCache.set(b._id, { name: b.name, address: b.address });
+      buildings.forEach((b: any) => {
+        // Handle both field names: 'name' or 'buildingName'
+        const buildingName = b.name || b.buildingName || "Unnamed Building";
+        buildingCache.set(b._id, {
+          name: buildingName,
+          address: b.address || b.streetAddress || "",
+        });
       });
       return buildings;
     }
@@ -202,32 +208,75 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
 
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
+  // Get building name - check multiple possible sources
   let buildingId = payment.buildingId;
   let buildingName = "";
 
-  if (buildingId && buildingCache.has(buildingId)) {
-    const building = buildingCache.get(buildingId)!;
-    buildingName = building.name;
-  } else if (buildingId) {
-    try {
-      const response = await api.get(`/buildings/${buildingId}`);
-      if (response.data?.success && response.data?.data) {
-        const b = response.data.data;
-        buildingCache.set(buildingId, { name: b.name, address: b.address });
-        buildingName = b.name;
+  // Try to get building name from cache or API
+  if (buildingId) {
+    if (buildingCache.has(buildingId)) {
+      const building = buildingCache.get(buildingId)!;
+      buildingName = building.name;
+    } else {
+      try {
+        const response = await api.get(`/buildings/${buildingId}`);
+        if (response.data?.success && response.data?.data) {
+          const b = response.data.data;
+          const name = b.name || b.buildingName || "Unnamed Building";
+          buildingCache.set(buildingId, {
+            name,
+            address: b.address || b.streetAddress || "",
+          });
+          buildingName = name;
+        }
+      } catch (e) {
+        // Ignore
       }
-    } catch (e) {}
+    }
+  }
+
+  // Also check if building info is nested in userId or other fields
+  if (!buildingName) {
+    // Check if userId has building info
+    if (payment.userId && typeof payment.userId === "object") {
+      const user = payment.userId as any;
+      if (user.buildingId) {
+        const userBuildingId = user.buildingId;
+        // Try to get building name - check that it's a string
+        if (
+          typeof userBuildingId === "string" &&
+          buildingCache.has(userBuildingId)
+        ) {
+          buildingName = buildingCache.get(userBuildingId)!.name;
+          if (!buildingId) {
+            buildingId = userBuildingId;
+          }
+        }
+      }
+    }
   }
 
   if (appId && isAppIdPattern) {
     const customerData = await fetchCustomerName(appId);
+    // Use building info from customer data if available
+    const finalBuildingId = customerData.buildingId || buildingId;
+    let finalBuildingName = buildingName;
+
+    if (
+      finalBuildingId &&
+      typeof finalBuildingId === "string" &&
+      buildingCache.has(finalBuildingId)
+    ) {
+      finalBuildingName = buildingCache.get(finalBuildingId)!.name;
+    }
+
     return {
       name: customerData.name,
       email: customerData.email,
       phone: customerData.phone,
       applicationId: appId,
-      buildingId: customerData.buildingId || buildingId,
-      buildingName: buildingName,
+      buildingId: finalBuildingId,
+      buildingName: finalBuildingName,
     };
   }
 
@@ -254,13 +303,24 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     if (fullName.length > 1) {
       const isAppId = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppId) {
+        // Check if user has building info
+        let userBuildingId = user.buildingId || buildingId;
+        let userBuildingName = buildingName;
+        if (
+          userBuildingId &&
+          typeof userBuildingId === "string" &&
+          buildingCache.has(userBuildingId)
+        ) {
+          userBuildingName = buildingCache.get(userBuildingId)!.name;
+        }
+
         return {
           name: fullName,
           email: user.email || payment.customerEmail || "—",
           phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
           applicationId: appId || "—",
-          buildingId: buildingId,
-          buildingName: buildingName,
+          buildingId: userBuildingId,
+          buildingName: userBuildingName,
         };
       }
     }
@@ -269,13 +329,22 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
   if (appId && appId.length > 0) {
     const customerData = await fetchCustomerName(appId);
     if (customerData.name !== appId) {
+      const finalBuildingId = customerData.buildingId || buildingId;
+      let finalBuildingName = buildingName;
+      if (
+        finalBuildingId &&
+        typeof finalBuildingId === "string" &&
+        buildingCache.has(finalBuildingId)
+      ) {
+        finalBuildingName = buildingCache.get(finalBuildingId)!.name;
+      }
       return {
         name: customerData.name,
         email: customerData.email,
         phone: customerData.phone,
         applicationId: appId,
-        buildingId: customerData.buildingId || buildingId,
-        buildingName: buildingName,
+        buildingId: finalBuildingId,
+        buildingName: finalBuildingName,
       };
     }
     return {
@@ -877,6 +946,12 @@ export default function AdminPaymentsPage() {
     useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
+
+  // Date range filters for PDF
+  const [dateRangeStart, setDateRangeStart] = useState<string>("");
+  const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
+  const [showDateFilter, setShowDateFilter] = useState(false);
+
   const [stats, setStats] = useState({
     totalAmount: 0,
     totalCount: 0,
@@ -935,13 +1010,22 @@ export default function AdminPaymentsPage() {
       }
 
       try {
-        const allPaymentsResult = await getAllPayments({
+        // Build params with date range if provided
+        const params: any = {
           page: currentPage,
           limit: 100,
           status: statusFilter || undefined,
           buildingId: buildingFilter || undefined,
           forceRefresh,
-        });
+        };
+
+        // Add date range if both are set
+        if (dateRangeStart && dateRangeEnd) {
+          params.startDate = dateRangeStart;
+          params.endDate = dateRangeEnd;
+        }
+
+        const allPaymentsResult = await getAllPayments(params);
 
         if (!isMountedRef.current) return;
 
@@ -1006,7 +1090,15 @@ export default function AdminPaymentsPage() {
         }
       }
     },
-    [currentPage, statusFilter, paymentTypeFilter, buildingFilter, stats],
+    [
+      currentPage,
+      statusFilter,
+      paymentTypeFilter,
+      buildingFilter,
+      stats,
+      dateRangeStart,
+      dateRangeEnd,
+    ],
   );
 
   // ==================== INITIAL LOAD ====================
@@ -1096,14 +1188,17 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT TO CSV ====================
   const exportToExcel = () => {
+    // Get filtered data based on current filters
+    const exportData = sortedGroups;
+
     // Calculate totals for the report
     let grandTotalPaid = 0;
     let grandTotalPending = 0;
     let grandTotalOverall = 0;
-    let totalCustomers = sortedGroups.length;
+    let totalCustomers = exportData.length;
     let totalTransactions = 0;
 
-    const csvData = sortedGroups.map((group) => {
+    const csvData = exportData.map((group) => {
       grandTotalPaid += group.totalPaidAmount;
       grandTotalPending += group.totalPendingAmount;
       grandTotalOverall += group.totalAmount;
@@ -1134,6 +1229,12 @@ export default function AdminPaymentsPage() {
       `Grand Total Paid: ${formatCurrency(grandTotalPaid)}`,
       `Grand Total Pending: ${formatCurrency(grandTotalPending)}`,
       `Grand Total Overall: ${formatCurrency(grandTotalOverall)}`,
+      "",
+      `=== FILTERS APPLIED ===`,
+      `Building: ${buildingFilter ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter : "All"}`,
+      `Date Range: ${dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to ${dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}`,
+      `Status: ${statusFilter || "All"}`,
+      `Payment Type: ${paymentTypeFilter || "All"}`,
     ];
 
     const headers = Object.keys(csvData[0] || {});
@@ -1155,7 +1256,11 @@ export default function AdminPaymentsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `payments_export_${new Date().toISOString().split("T")[0]}.csv`;
+    const dateStr = new Date().toISOString().split("T")[0];
+    const buildingName = buildingFilter
+      ? buildings.find((b) => b._id === buildingFilter)?.name || "all"
+      : "all";
+    a.download = `payments_export_${dateStr}_${buildingName}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1165,14 +1270,17 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
+    // Get filtered data
+    const exportData = sortedGroups;
+
     // Calculate totals for the report
     let grandTotalPaid = 0;
     let grandTotalPending = 0;
     let grandTotalOverall = 0;
-    let totalCustomers = sortedGroups.length;
+    let totalCustomers = exportData.length;
     let totalTransactions = 0;
 
-    sortedGroups.forEach((group) => {
+    exportData.forEach((group) => {
       grandTotalPaid += group.totalPaidAmount;
       grandTotalPending += group.totalPendingAmount;
       grandTotalOverall += group.totalAmount;
@@ -1189,8 +1297,18 @@ export default function AdminPaymentsPage() {
       minute: "2-digit",
     });
 
+    // Get building name for filter display
+    const buildingName = buildingFilter
+      ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter
+      : "All Buildings";
+
+    const dateRangeStr =
+      dateRangeStart && dateRangeEnd
+        ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
+        : "All Dates";
+
     let tableRows = "";
-    sortedGroups.forEach((group, index) => {
+    exportData.forEach((group, index) => {
       tableRows += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
@@ -1218,6 +1336,23 @@ export default function AdminPaymentsPage() {
           .header { text-align: center; margin-bottom: 20px; }
           .header h1 { color: #1e3a8a; margin: 0; }
           .header p { color: #6b7280; margin: 5px 0; }
+          .header .filters { 
+            background: #f3f4f6; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-top: 10px;
+            font-size: 13px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+          }
+          .header .filters span { 
+            background: white; 
+            padding: 3px 10px; 
+            border-radius: 15px;
+            border: 1px solid #d1d5db;
+          }
           .summary { 
             background: #eff6ff; 
             border: 1px solid #bfdbfe; 
@@ -1239,7 +1374,7 @@ export default function AdminPaymentsPage() {
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            font-size: 12px;
+            font-size: 11px;
             margin-top: 10px;
           }
           th { 
@@ -1275,9 +1410,13 @@ export default function AdminPaymentsPage() {
         <div class="header">
           <h1>📊 Payment Report</h1>
           <p>Generated on: ${dateStr}</p>
-          <p style="font-size: 14px; color: #6b7280;">
-            Filters: ${statusFilter ? `Status: ${statusFilter} | ` : ""}${paymentTypeFilter ? `Type: ${paymentTypeFilter} | ` : ""}${buildingFilter ? `Building: ${buildings.find((b) => b._id === buildingFilter)?.name || "Selected"} | ` : ""}${search ? `Search: "${search}"` : "All"}
-          </p>
+          <div class="filters">
+            <span>🏢 Building: ${buildingName}</span>
+            <span>📅 Date Range: ${dateRangeStr}</span>
+            <span>📌 Status: ${statusFilter || "All"}</span>
+            <span>📋 Type: ${paymentTypeFilter || "All"}</span>
+            <span>🔍 Search: ${search || "None"}</span>
+          </div>
         </div>
 
         <div class="summary">
@@ -1304,7 +1443,10 @@ export default function AdminPaymentsPage() {
             </tr>
           </thead>
           <tbody>
-            ${tableRows}
+            ${tableRows || `<tr><td colspan="10" style="text-align: center; padding: 20px;">No data available for the selected filters</td></tr>`}
+            ${
+              exportData.length > 0
+                ? `
             <tr class="grand-total-row">
               <td colspan="5" style="text-align: right; font-size: 14px; font-weight: bold;">GRAND TOTALS</td>
               <td style="text-align: center; font-size: 14px; font-weight: bold;">${totalTransactions}</td>
@@ -1312,7 +1454,9 @@ export default function AdminPaymentsPage() {
               <td style="text-align: right; font-size: 14px; font-weight: bold; color: #ca8a04;">${formatCurrency(grandTotalPending)}</td>
               <td style="text-align: right; font-size: 14px; font-weight: bold; color: #1e40af;">${formatCurrency(grandTotalOverall)}</td>
               <td style="text-align: center;">—</td>
-            </tr>
+            </tr>`
+                : ""
+            }
           </tbody>
         </table>
 
@@ -1328,7 +1472,6 @@ export default function AdminPaymentsPage() {
         </div>
 
         <script>
-          // Auto-print after a short delay
           setTimeout(() => {
             window.print();
           }, 500);
@@ -1342,7 +1485,6 @@ export default function AdminPaymentsPage() {
     if (printWindow) {
       printWindow.document.write(htmlContent);
       printWindow.document.close();
-      // Focus the window
       printWindow.focus();
       toast.success(
         "PDF report generated! Use the print dialog to save as PDF.",
@@ -1371,18 +1513,35 @@ export default function AdminPaymentsPage() {
           );
       }
 
-      // Building filter
+      // Building filter - handle both field name formats
       let matchesBuilding = true;
       if (buildingFilter) {
+        // Check if group's buildingId matches the filter
         matchesBuilding = info.buildingId === buildingFilter;
 
+        // If not, check if buildingName matches the selected building's name
         if (!matchesBuilding && info.buildingName) {
           const selectedBuilding = buildings.find(
             (b) => b._id === buildingFilter,
           );
           if (selectedBuilding) {
-            matchesBuilding = info.buildingName === selectedBuilding.name;
+            const selectedName =
+              selectedBuilding.name || selectedBuilding.buildingName || "";
+            matchesBuilding = info.buildingName === selectedName;
           }
+        }
+
+        // Also check payments for building info
+        if (!matchesBuilding) {
+          matchesBuilding = group.payments.some((p) => {
+            if (p.buildingId === buildingFilter) return true;
+            // Check if payment has building info in userId
+            if (p.userId && typeof p.userId === "object") {
+              const user = p.userId as any;
+              if (user.buildingId === buildingFilter) return true;
+            }
+            return false;
+          });
         }
       }
 
@@ -1638,6 +1797,16 @@ export default function AdminPaymentsPage() {
               <FiFilter /> Filters
             </button>
             <button
+              onClick={() => setShowDateFilter(!showDateFilter)}
+              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
+                showDateFilter
+                  ? "bg-blue-100 border-blue-300 text-blue-700"
+                  : "bg-gray-100 border-gray-300"
+              }`}
+            >
+              <FiCalendar /> Date Range
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300 disabled:opacity-50"
@@ -1648,6 +1817,7 @@ export default function AdminPaymentsPage() {
               Refresh
             </button>
           </div>
+
           {showFilters && (
             <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4">
               <select
@@ -1686,10 +1856,52 @@ export default function AdminPaymentsPage() {
                 <option value="">All Buildings</option>
                 {buildings.map((building) => (
                   <option key={building._id} value={building._id}>
-                    {building.name}
+                    {building.name ||
+                      building.buildingName ||
+                      "Unnamed Building"}
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {showDateFilter && (
+            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center">
+              <label className="text-sm font-medium text-gray-700">
+                Date Range:
+              </label>
+              <input
+                type="date"
+                value={dateRangeStart}
+                onChange={(e) => setDateRangeStart(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                max={dateRangeEnd || undefined}
+              />
+              <span className="text-gray-500">to</span>
+              <input
+                type="date"
+                value={dateRangeEnd}
+                onChange={(e) => setDateRangeEnd(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                min={dateRangeStart || undefined}
+                max={new Date().toISOString().split("T")[0]}
+              />
+              <button
+                onClick={() => {
+                  setDateRangeStart("");
+                  setDateRangeEnd("");
+                  setShowDateFilter(false);
+                }}
+                className="px-3 py-2 text-red-600 hover:text-red-800 text-sm"
+              >
+                Clear Dates
+              </button>
+              <button
+                onClick={() => loadPayments(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              >
+                Apply Date Filter
+              </button>
             </div>
           )}
         </div>
@@ -1765,8 +1977,15 @@ export default function AdminPaymentsPage() {
               Showing {paginatedGroups.length} of {sortedGroups.length}{" "}
               customers
             </p>
+            {(dateRangeStart || dateRangeEnd) && (
+              <p className="text-xs text-blue-600 mt-1">
+                📅 Filtered by:{" "}
+                {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
+                {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
+              </p>
+            )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <select
               value={itemsPerPage}
               onChange={(e) => {
@@ -1851,6 +2070,11 @@ export default function AdminPaymentsPage() {
                   >
                     <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     <p>No payment records found</p>
+                    {(dateRangeStart || dateRangeEnd) && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Try adjusting your date range filters
+                      </p>
+                    )}
                   </td>
                 </tr>
               ) : (
