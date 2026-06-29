@@ -124,21 +124,59 @@ function formatCurrency(amount: number): string {
 async function fetchBuildings(): Promise<Building[]> {
   try {
     const response = await api.get("/buildings");
+    // Handle different response formats
+    let buildings = [];
     if (response.data?.success && response.data?.data) {
-      const buildings = response.data.data;
-      buildings.forEach((b: any) => {
-        const buildingName = b.name || b.buildingName || "Unnamed Building";
-        buildingCache.set(b._id, {
-          name: buildingName,
-          address: b.address || b.streetAddress || "",
-        });
-      });
-      return buildings;
+      buildings = response.data.data;
+    } else if (Array.isArray(response.data)) {
+      buildings = response.data;
+    } else if (response.data?.data && Array.isArray(response.data.data)) {
+      buildings = response.data.data;
     }
-    return [];
+
+    buildings.forEach((b: any) => {
+      const buildingName = b.name || b.buildingName || "Unnamed Building";
+      buildingCache.set(b._id, {
+        name: buildingName,
+        address: b.address || b.streetAddress || "",
+      });
+    });
+    return buildings;
   } catch (error) {
     console.error("Error fetching buildings:", error);
     return [];
+  }
+}
+
+// ==================== FETCH BUILDING NAME BY ID ====================
+async function fetchBuildingName(buildingId: string): Promise<string> {
+  if (!buildingId) return "";
+
+  if (buildingCache.has(buildingId)) {
+    return buildingCache.get(buildingId)!.name;
+  }
+
+  try {
+    const response = await api.get(`/buildings/${buildingId}`);
+    let building = null;
+    if (response.data?.success && response.data?.data) {
+      building = response.data.data;
+    } else if (response.data) {
+      building = response.data;
+    }
+
+    if (building) {
+      const name = building.name || building.buildingName || "Unnamed Building";
+      buildingCache.set(buildingId, {
+        name: name,
+        address: building.address || building.streetAddress || "",
+      });
+      return name;
+    }
+    return "";
+  } catch (error) {
+    console.error(`Error fetching building ${buildingId}:`, error);
+    return "";
   }
 }
 
@@ -206,72 +244,69 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
 
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
+  // Get building ID from multiple sources
   let buildingId = payment.buildingId;
   let buildingName = "";
 
+  // Try to get building ID from user object
+  if (!buildingId && payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId as any;
+    if (user.buildingId) {
+      buildingId = user.buildingId;
+    }
+  }
+
+  // Try to get building ID from billingId
+  if (
+    !buildingId &&
+    payment.billingId &&
+    typeof payment.billingId === "object"
+  ) {
+    const billing = payment.billingId as any;
+    if (billing.buildingId) {
+      buildingId = billing.buildingId;
+    }
+    if (billing.applicationId && !appId) {
+      appId = billing.applicationId;
+    }
+  }
+
+  // Try to get building ID from application data
+  if (!buildingId && appId && isAppIdPattern) {
+    const customerData = await fetchCustomerName(appId);
+    if (customerData.buildingId) {
+      buildingId = customerData.buildingId;
+    }
+  }
+
+  // Fetch building name if we have a building ID
   if (buildingId) {
-    if (buildingCache.has(buildingId)) {
-      const building = buildingCache.get(buildingId)!;
-      buildingName = building.name;
-    } else {
-      try {
-        const response = await api.get(`/buildings/${buildingId}`);
-        if (response.data?.success && response.data?.data) {
-          const b = response.data.data;
-          const name = b.name || b.buildingName || "Unnamed Building";
-          buildingCache.set(buildingId, {
-            name,
-            address: b.address || b.streetAddress || "",
-          });
-          buildingName = name;
-        }
-      } catch (e) {
-        // Ignore
-      }
+    buildingName = await fetchBuildingName(buildingId);
+  }
+
+  // If we still don't have a building name, try to get it from the cache via application
+  if (!buildingName && appId && isAppIdPattern) {
+    const customerData = await fetchCustomerName(appId);
+    if (customerData.buildingId) {
+      buildingId = customerData.buildingId;
+      buildingName = await fetchBuildingName(buildingId);
     }
   }
 
-  if (!buildingName) {
-    if (payment.userId && typeof payment.userId === "object") {
-      const user = payment.userId as any;
-      if (user.buildingId) {
-        const userBuildingId = user.buildingId;
-        if (
-          typeof userBuildingId === "string" &&
-          buildingCache.has(userBuildingId)
-        ) {
-          buildingName = buildingCache.get(userBuildingId)!.name;
-          if (!buildingId) {
-            buildingId = userBuildingId;
-          }
-        }
-      }
-    }
-  }
-
+  // Get customer name
   if (appId && isAppIdPattern) {
     const customerData = await fetchCustomerName(appId);
-    const finalBuildingId = customerData.buildingId || buildingId;
-    let finalBuildingName = buildingName;
-
-    if (
-      finalBuildingId &&
-      typeof finalBuildingId === "string" &&
-      buildingCache.has(finalBuildingId)
-    ) {
-      finalBuildingName = buildingCache.get(finalBuildingId)!.name;
-    }
-
     return {
       name: customerData.name,
       email: customerData.email,
       phone: customerData.phone,
       applicationId: appId,
-      buildingId: finalBuildingId,
-      buildingName: finalBuildingName,
+      buildingId: buildingId,
+      buildingName: buildingName,
     };
   }
 
+  // Fallback: use payment customer info
   if (payment.customerName && payment.customerName.trim() !== "") {
     const name = payment.customerName.trim();
     const isAppId = /^[A-Z]{3}\d+/.test(name);
@@ -287,6 +322,7 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     }
   }
 
+  // Fallback: use user object
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
     const firstName = user.firstName || "";
@@ -295,16 +331,12 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     if (fullName.length > 1) {
       const isAppId = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppId) {
+        // Try to get building name from user's buildingId
         let userBuildingId = user.buildingId || buildingId;
         let userBuildingName = buildingName;
-        if (
-          userBuildingId &&
-          typeof userBuildingId === "string" &&
-          buildingCache.has(userBuildingId)
-        ) {
-          userBuildingName = buildingCache.get(userBuildingId)!.name;
+        if (userBuildingId) {
+          userBuildingName = await fetchBuildingName(userBuildingId);
         }
-
         return {
           name: fullName,
           email: user.email || payment.customerEmail || "—",
@@ -317,17 +349,14 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     }
   }
 
+  // Final fallback
   if (appId && appId.length > 0) {
     const customerData = await fetchCustomerName(appId);
     if (customerData.name !== appId) {
-      const finalBuildingId = customerData.buildingId || buildingId;
+      let finalBuildingId = customerData.buildingId || buildingId;
       let finalBuildingName = buildingName;
-      if (
-        finalBuildingId &&
-        typeof finalBuildingId === "string" &&
-        buildingCache.has(finalBuildingId)
-      ) {
-        finalBuildingName = buildingCache.get(finalBuildingId)!.name;
+      if (finalBuildingId) {
+        finalBuildingName = await fetchBuildingName(finalBuildingId);
       }
       return {
         name: customerData.name,
@@ -633,7 +662,9 @@ const PendingPaymentRow = React.memo(
         </td>
         <td className="px-4 py-3 font-medium">{info.name}</td>
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
-        <td className="px-4 py-3 text-sm">{info.buildingName || "—"}</td>
+        <td className="px-4 py-3 text-sm font-medium text-blue-600">
+          {info.buildingName || "—"}
+        </td>
         <td className="px-4 py-3 font-semibold">
           {formatCurrency(payment.amount)}
         </td>
@@ -718,6 +749,8 @@ const CustomerSummaryRow = React.memo(
     deleting: boolean;
   }) => {
     const hasMultiple = group.paymentCount > 1;
+    // Ensure building name is displayed properly
+    const buildingDisplay = group.customerInfo.buildingName || "—";
 
     return (
       <Fragment>
@@ -756,8 +789,11 @@ const CustomerSummaryRow = React.memo(
               </div>
             )}
           </td>
-          <td className="px-4 py-4 text-sm">
-            {group.customerInfo.buildingName || "—"}
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-1 text-sm font-medium text-blue-600">
+              <FiHome className="w-3 h-3 text-blue-400" />
+              {buildingDisplay}
+            </div>
           </td>
           <td className="px-4 py-4 text-center">
             <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
@@ -886,6 +922,14 @@ const CustomerSummaryRow = React.memo(
                               </p>
                             </div>
                           )}
+                          {/* Show building name in expanded view */}
+                          <div className="md:col-span-3">
+                            <p className="text-xs text-gray-400">Building</p>
+                            <p className="text-sm font-medium text-blue-600 flex items-center gap-1">
+                              <FiHome className="w-3 h-3" />
+                              {group.customerInfo.buildingName || "—"}
+                            </p>
+                          </div>
                         </div>
                         <div className="mt-3 flex justify-end gap-2">
                           <button
