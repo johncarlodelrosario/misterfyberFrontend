@@ -128,7 +128,7 @@ type SortDirection = "asc" | "desc";
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes - increased for better persistence
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -157,15 +157,6 @@ function getBuildingDisplay(customer: CustomerItem): string {
     }
   }
   return "-";
-}
-
-function getBuildingId(customer: CustomerItem): string | null {
-  if (customer.building) {
-    if (typeof customer.building === "object" && customer.building._id) {
-      return customer.building._id;
-    }
-  }
-  return null;
 }
 
 // ==================== MEMOIZED ROW COMPONENT ====================
@@ -667,23 +658,13 @@ export default function AdminBillingPage() {
             .toLowerCase()
             .includes(searchTerm.toLowerCase()));
 
-      // FIXED: Simple building filter - compare building ID directly
+      // FIXED: SIMPLE BUILDING FILTER - DIRECT COMPARISON
       let matchesBuilding = true;
       if (buildingFilter !== "all") {
-        const customerBuildingId = getBuildingId(customer);
-        // Direct comparison - if customer has building ID that matches selected building
+        // Get the customer's building ID directly from the building object
+        const customerBuildingId = customer.building?._id || null;
+        // Direct comparison - if customer's building ID matches the selected building ID
         matchesBuilding = customerBuildingId === buildingFilter;
-
-        // If customer doesn't have building ID, try comparing building name
-        if (!matchesBuilding && customer.building?.buildingName) {
-          const selectedBuilding = buildingsList.find(
-            (b) => b._id === buildingFilter,
-          );
-          if (selectedBuilding) {
-            matchesBuilding =
-              customer.building.buildingName === selectedBuilding.buildingName;
-          }
-        }
       }
 
       if (!matchesSearch || !matchesBuilding) return false;
@@ -713,7 +694,7 @@ export default function AdminBillingPage() {
       }
       return true;
     });
-  }, [customers, searchTerm, statusFilter, buildingFilter, buildingsList]);
+  }, [customers, searchTerm, statusFilter, buildingFilter]);
 
   const sortedAndFilteredCustomers = useMemo(() => {
     const sorted = [...filteredCustomers];
@@ -1232,13 +1213,11 @@ export default function AdminBillingPage() {
   // ==================== LOAD DATA ====================
   const loadData = useCallback(
     async (forceRefresh = false) => {
-      // Prevent multiple simultaneous loads
       if (isLoadingRef.current) {
         console.log("⏳ Load already in progress, skipping...");
         return;
       }
 
-      // If data is already loaded and not forcing refresh, use cached data
       if (dataLoadedRef.current && !forceRefresh) {
         console.log("📦 Data already loaded, using existing state");
         setLoading(false);
@@ -1246,7 +1225,6 @@ export default function AdminBillingPage() {
         return;
       }
 
-      // Check global cache first
       const now = Date.now();
       if (!forceRefresh && globalCache && dataLoadedRef.current) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
@@ -1266,13 +1244,11 @@ export default function AdminBillingPage() {
           console.log("✅ Using global cached billing data");
           return;
         } else {
-          // Cache expired, clear it
           globalCache = null;
           dataLoadedRef.current = false;
         }
       }
 
-      // If we have customers already and not forcing refresh, don't reload
       if (customers.length > 0 && !forceRefresh && dataLoadedRef.current) {
         setLoading(false);
         setRefreshing(false);
@@ -1364,14 +1340,12 @@ export default function AdminBillingPage() {
               cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
-          // Get building with _id
           let buildingObj = user.building || null;
           if (
             buildingObj &&
             typeof buildingObj === "object" &&
             !buildingObj._id
           ) {
-            // If building doesn't have _id, try to find it from buildings list
             const foundBuilding = buildingsList.find(
               (b) => b.buildingName === buildingObj.buildingName,
             );
@@ -1428,13 +1402,11 @@ export default function AdminBillingPage() {
               (cycle: any) => cycle.applicationId === app.applicationId,
             );
 
-            // FIXED: Properly get building with _id
             let buildingObj = null;
             if (app.buildingId) {
               if (typeof app.buildingId === "object" && app.buildingId._id) {
                 buildingObj = app.buildingId;
               } else if (typeof app.buildingId === "string") {
-                // Find building from buildingsList
                 const foundBuilding = buildingsList.find(
                   (b) =>
                     b._id === app.buildingId ||
@@ -1445,7 +1417,6 @@ export default function AdminBillingPage() {
                 }
               }
             }
-            // If still no building, try app.buildingName
             if (!buildingObj && app.buildingName) {
               const foundBuilding = buildingsList.find(
                 (b) => b.buildingName === app.buildingName,
@@ -1546,7 +1517,6 @@ export default function AdminBillingPage() {
 
         setStats(newStats);
 
-        // Save to global cache
         globalCache = {
           customers: allCustomers,
           billingCycles: cyclesData,
@@ -1584,7 +1554,6 @@ export default function AdminBillingPage() {
   // ==================== HANDLE PAGE CHANGE ====================
   const handlePageChange = (newPage: number) => {
     setPagination((prev) => ({ ...prev, page: newPage }));
-    // Scroll to top of table
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollTop = 0;
     }
@@ -1948,7 +1917,6 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Only load data if not already loaded
     if (!dataLoadedRef.current && customers.length === 0) {
       loadData();
     } else if (dataLoadedRef.current && customers.length > 0) {
@@ -1967,7 +1935,6 @@ export default function AdminBillingPage() {
     window.addEventListener("resize", handleResize);
     handleResize();
 
-    // Cleanup
     return () => {
       isMountedRef.current = false;
       window.removeEventListener("resize", handleResize);
@@ -1975,7 +1942,6 @@ export default function AdminBillingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update scroll position when customers change
   useEffect(() => {
     setTimeout(checkScrollPosition, 100);
   }, [customers, checkScrollPosition]);
