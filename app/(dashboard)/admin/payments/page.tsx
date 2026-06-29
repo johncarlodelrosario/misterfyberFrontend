@@ -53,7 +53,6 @@ interface CustomerInfo {
   applicationId: string;
   buildingId?: string;
   buildingName?: string;
-  buildingAddress?: string;
 }
 
 interface PaymentGroup {
@@ -72,14 +71,18 @@ interface PaymentGroup {
 interface Building {
   _id: string;
   name: string;
-  buildingName?: string;
   address: string;
-  streetAddress?: string;
+  buildingName?: string;
 }
 
 // ==================== BUILDING CACHE ====================
 const buildingCache = new Map<string, { name: string; address: string }>();
-const applicationCache = new Map<string, any>();
+
+// ==================== CUSTOMER NAME CACHE ====================
+const customerNameCache = new Map<
+  string,
+  { name: string; email: string; phone: string; buildingId?: string }
+>();
 
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
@@ -121,91 +124,70 @@ function formatCurrency(amount: number): string {
 async function fetchBuildings(): Promise<Building[]> {
   try {
     const response = await api.get("/buildings");
-    let buildings = [];
     if (response.data?.success && response.data?.data) {
-      buildings = response.data.data;
-    } else if (Array.isArray(response.data)) {
-      buildings = response.data;
-    } else if (response.data?.data && Array.isArray(response.data.data)) {
-      buildings = response.data.data;
-    }
-
-    buildings.forEach((b: any) => {
-      const buildingName = b.name || b.buildingName || "Unnamed Building";
-      const address = b.address || b.streetAddress || "";
-      buildingCache.set(b._id, {
-        name: buildingName,
-        address: address,
+      const buildings = response.data.data;
+      buildings.forEach((b: any) => {
+        // Handle both field names: 'name' or 'buildingName'
+        const buildingName = b.name || b.buildingName || "Unnamed Building";
+        buildingCache.set(b._id, {
+          name: buildingName,
+          address: b.address || b.streetAddress || "",
+        });
       });
-    });
-    return buildings;
+      return buildings;
+    }
+    return [];
   } catch (error) {
     console.error("Error fetching buildings:", error);
     return [];
   }
 }
 
-// ==================== FETCH APPLICATION BY ID ====================
-async function fetchApplication(applicationId: string): Promise<any> {
-  if (!applicationId) return null;
+// ==================== FETCH CUSTOMER NAME ====================
+async function fetchCustomerName(applicationId: string): Promise<{
+  name: string;
+  email: string;
+  phone: string;
+  buildingId?: string;
+}> {
+  if (!applicationId || applicationId === "—" || applicationId === "") {
+    return { name: "Unknown Customer", email: "—", phone: "—" };
+  }
 
-  // Check cache first
-  if (applicationCache.has(applicationId)) {
-    return applicationCache.get(applicationId);
+  if (customerNameCache.has(applicationId)) {
+    return customerNameCache.get(applicationId)!;
   }
 
   try {
     const response = await api.get(`/applications/status/${applicationId}`);
     if (response.data?.success && response.data?.data) {
-      const appData = response.data.data;
-      applicationCache.set(applicationId, appData);
-      return appData;
+      const app = response.data.data;
+      const firstName = app.firstName || "";
+      const lastName = app.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      const finalName = fullName || app.applicationId || applicationId;
+
+      const customerInfo = {
+        name: finalName,
+        email: app.email || "—",
+        phone: app.phoneNumber || "—",
+        buildingId: app.buildingId,
+      };
+      customerNameCache.set(applicationId, customerInfo);
+      return customerInfo;
     }
-    return null;
+    return { name: applicationId, email: "—", phone: "—" };
   } catch (error) {
-    console.error(`Error fetching application ${applicationId}:`, error);
-    return null;
+    console.error(`Error fetching customer for ${applicationId}:`, error);
+    return { name: applicationId, email: "—", phone: "—" };
   }
-}
-
-// ==================== FETCH BUILDING NAME BY ID ====================
-function getBuildingNameFromCache(buildingId: string): string {
-  if (!buildingId) return "";
-  if (buildingCache.has(buildingId)) {
-    return buildingCache.get(buildingId)!.name;
-  }
-  return "";
-}
-
-function getBuildingAddressFromCache(buildingId: string): string {
-  if (!buildingId) return "";
-  if (buildingCache.has(buildingId)) {
-    return buildingCache.get(buildingId)!.address;
-  }
-  return "";
 }
 
 // ==================== EXTRACT CUSTOMER INFO ====================
-function extractCustomerInfo(payment: Payment): CustomerInfo {
+async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
   let appId = "";
-  let customerName = "";
-  let customerEmail = "";
-  let customerPhone = "";
-  let buildingId = "";
-  let buildingName = "";
-  let buildingAddress = "";
 
-  console.log("🔍 Extracting customer info from payment:", {
-    id: payment._id,
-    hasUserId: !!payment.userId,
-    hasBillingId: !!payment.billingId,
-    hasApplicationId: !!payment.applicationId,
-    customerName: payment.customerName,
-  });
-
-  // ============================================
-  // 1. GET APPLICATION ID
-  // ============================================
+  // Safely extract applicationId with proper type checking
   if (payment.applicationId) {
     if (typeof payment.applicationId === "string") {
       appId = payment.applicationId;
@@ -217,28 +199,6 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
       if (appObj.applicationId && typeof appObj.applicationId === "string") {
         appId = appObj.applicationId;
       }
-      // Try to get building info from application object
-      if (appObj.buildingId) {
-        buildingId = appObj.buildingId;
-      }
-      if (appObj.buildingName) {
-        buildingName = appObj.buildingName;
-      }
-      // Get customer info from application
-      if (!customerName) {
-        const firstName = appObj.firstName || "";
-        const lastName = appObj.lastName || "";
-        const fullName = `${firstName} ${lastName}`.trim();
-        if (fullName.length > 1) {
-          customerName = fullName;
-        }
-      }
-      if (!customerEmail && appObj.email) {
-        customerEmail = appObj.email;
-      }
-      if (!customerPhone && appObj.phoneNumber) {
-        customerPhone = appObj.phoneNumber;
-      }
     }
   }
 
@@ -246,166 +206,185 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // ============================================
-  // 2. GET FROM USER (if populated)
-  // ============================================
-  if (payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId as any;
-    console.log("👤 User data:", {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      buildingId: user.buildingId,
-      buildingName: user.buildingName,
-    });
+  const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
-    // Get name
-    if (!customerName) {
-      const firstName = user.firstName || "";
-      const lastName = user.lastName || "";
-      const fullName = `${firstName} ${lastName}`.trim();
-      if (fullName.length > 1) {
-        customerName = fullName;
+  // Get building name - check multiple possible sources
+  let buildingId = payment.buildingId;
+  let buildingName = "";
+
+  // Try to get building name from cache or API
+  if (buildingId) {
+    if (buildingCache.has(buildingId)) {
+      const building = buildingCache.get(buildingId)!;
+      buildingName = building.name;
+    } else {
+      try {
+        const response = await api.get(`/buildings/${buildingId}`);
+        if (response.data?.success && response.data?.data) {
+          const b = response.data.data;
+          const name = b.name || b.buildingName || "Unnamed Building";
+          buildingCache.set(buildingId, {
+            name,
+            address: b.address || b.streetAddress || "",
+          });
+          buildingName = name;
+        }
+      } catch (e) {
+        // Ignore
       }
     }
+  }
 
-    // Get email
-    if (!customerEmail && user.email) {
-      customerEmail = user.email;
-    }
-
-    // Get phone
-    if (!customerPhone && (user.phoneNumber || user.phone)) {
-      customerPhone = user.phoneNumber || user.phone;
-    }
-
-    // Get building ID from user
-    if (user.buildingId && !buildingId) {
-      buildingId = user.buildingId;
-    }
-
-    // Get building name from user
-    if (user.buildingName && !buildingName) {
-      buildingName = user.buildingName;
+  // Also check if building info is nested in userId or other fields
+  if (!buildingName) {
+    // Check if userId has building info
+    if (payment.userId && typeof payment.userId === "object") {
+      const user = payment.userId as any;
+      if (user.buildingId) {
+        const userBuildingId = user.buildingId;
+        // Try to get building name - check that it's a string
+        if (
+          typeof userBuildingId === "string" &&
+          buildingCache.has(userBuildingId)
+        ) {
+          buildingName = buildingCache.get(userBuildingId)!.name;
+          if (!buildingId) {
+            buildingId = userBuildingId;
+          }
+        }
+      }
     }
   }
 
-  // ============================================
-  // 3. GET FROM BILLING (if populated)
-  // ============================================
-  if (payment.billingId && typeof payment.billingId === "object") {
-    const billing = payment.billingId as any;
-    console.log("📄 Billing data:", {
-      buildingId: billing.buildingId,
-      buildingName: billing.buildingName,
-      applicationId: billing.applicationId,
-    });
+  if (appId && isAppIdPattern) {
+    const customerData = await fetchCustomerName(appId);
+    // Use building info from customer data if available
+    const finalBuildingId = customerData.buildingId || buildingId;
+    let finalBuildingName = buildingName;
 
-    if (billing.buildingId && !buildingId) {
-      buildingId = billing.buildingId;
+    if (
+      finalBuildingId &&
+      typeof finalBuildingId === "string" &&
+      buildingCache.has(finalBuildingId)
+    ) {
+      finalBuildingName = buildingCache.get(finalBuildingId)!.name;
     }
-    if (billing.buildingName && !buildingName) {
-      buildingName = billing.buildingName;
-    }
-    if (billing.applicationId && !appId) {
-      appId = billing.applicationId;
-    }
-    if (!customerName && billing.customerName) {
-      customerName = billing.customerName;
-    }
+
+    return {
+      name: customerData.name,
+      email: customerData.email,
+      phone: customerData.phone,
+      applicationId: appId,
+      buildingId: finalBuildingId,
+      buildingName: finalBuildingName,
+    };
   }
 
-  // ============================================
-  // 4. TRY PAYMENT DIRECT FIELDS
-  // ============================================
-  if (
-    payment.customerName &&
-    payment.customerName.trim() !== "" &&
-    !customerName
-  ) {
-    customerName = payment.customerName.trim();
-  }
-
-  if (payment.customerEmail && !customerEmail) {
-    customerEmail = payment.customerEmail;
-  }
-
-  if (payment.customerPhone && !customerPhone) {
-    customerPhone = payment.customerPhone;
-  }
-
-  // ============================================
-  // 5. GET BUILDING NAME FROM CACHE
-  // ============================================
-  if (buildingId) {
-    const cachedName = getBuildingNameFromCache(buildingId);
-    if (cachedName) {
-      buildingName = cachedName;
-    }
-    const cachedAddress = getBuildingAddressFromCache(buildingId);
-    if (cachedAddress) {
-      buildingAddress = cachedAddress;
+  if (payment.customerName && payment.customerName.trim() !== "") {
+    const name = payment.customerName.trim();
+    const isAppId = /^[A-Z]{3}\d+/.test(name);
+    if (!isAppId) {
+      return {
+        name: name,
+        email: payment.customerEmail || "—",
+        phone: payment.customerPhone || "—",
+        applicationId: appId || "—",
+        buildingId: buildingId,
+        buildingName: buildingName,
+      };
     }
   }
 
-  // ============================================
-  // 6. TRY PAYMENT DETAILS
-  // ============================================
-  if (!customerName && payment.paymentDetails?.gatewayResponse?.customerName) {
-    customerName = payment.paymentDetails.gatewayResponse.customerName;
-  }
+  if (payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId as any;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName.length > 1) {
+      const isAppId = /^[A-Z]{3}\d+/.test(fullName);
+      if (!isAppId) {
+        // Check if user has building info
+        let userBuildingId = user.buildingId || buildingId;
+        let userBuildingName = buildingName;
+        if (
+          userBuildingId &&
+          typeof userBuildingId === "string" &&
+          buildingCache.has(userBuildingId)
+        ) {
+          userBuildingName = buildingCache.get(userBuildingId)!.name;
+        }
 
-  // ============================================
-  // 7. FALLBACKS
-  // ============================================
-  // If still no name, use application ID or unknown
-  if (!customerName) {
-    if (appId && appId.length > 0) {
-      customerName = appId;
-    } else {
-      customerName = "Unknown Customer";
+        return {
+          name: fullName,
+          email: user.email || payment.customerEmail || "—",
+          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
+          applicationId: appId || "—",
+          buildingId: userBuildingId,
+          buildingName: userBuildingName,
+        };
+      }
     }
   }
 
-  // If building name is still empty, try to get from cache using buildingId
-  if (!buildingName && buildingId) {
-    const cachedName = getBuildingNameFromCache(buildingId);
-    if (cachedName) {
-      buildingName = cachedName;
+  if (appId && appId.length > 0) {
+    const customerData = await fetchCustomerName(appId);
+    if (customerData.name !== appId) {
+      const finalBuildingId = customerData.buildingId || buildingId;
+      let finalBuildingName = buildingName;
+      if (
+        finalBuildingId &&
+        typeof finalBuildingId === "string" &&
+        buildingCache.has(finalBuildingId)
+      ) {
+        finalBuildingName = buildingCache.get(finalBuildingId)!.name;
+      }
+      return {
+        name: customerData.name,
+        email: customerData.email,
+        phone: customerData.phone,
+        applicationId: appId,
+        buildingId: finalBuildingId,
+        buildingName: finalBuildingName,
+      };
     }
+    return {
+      name: appId,
+      email: payment.customerEmail || "—",
+      phone: payment.customerPhone || "—",
+      applicationId: appId,
+      buildingId: buildingId,
+      buildingName: buildingName,
+    };
   }
-
-  console.log(`📊 Extracted customer info:`, {
-    name: customerName,
-    email: customerEmail,
-    phone: customerPhone,
-    appId: appId,
-    buildingId: buildingId,
-    buildingName: buildingName,
-    buildingAddress: buildingAddress,
-  });
 
   return {
-    name: customerName,
-    email: customerEmail || "—",
-    phone: customerPhone || "—",
+    name: "Unknown Customer",
+    email: payment.customerEmail || "—",
+    phone: payment.customerPhone || "—",
     applicationId: appId || "—",
-    buildingId: buildingId || "",
-    buildingName: buildingName || "—",
-    buildingAddress: buildingAddress || "",
+    buildingId: buildingId,
+    buildingName: buildingName,
   };
 }
 
 // ==================== GROUP PAYMENTS ====================
-function groupPayments(payments: Payment[]): PaymentGroup[] {
+async function groupPaymentsAsync(
+  payments: Payment[],
+): Promise<PaymentGroup[]> {
   const groups = new Map<string, PaymentGroup>();
 
-  for (const payment of payments) {
-    const customerInfo = extractCustomerInfo(payment);
+  const paymentPromises = payments.map(async (payment) => {
+    const customerInfo = await extractCustomerInfo(payment);
+    return { payment, customerInfo };
+  });
 
+  const results = await Promise.all(paymentPromises);
+
+  for (const { payment, customerInfo } of results) {
     let customerId = customerInfo.applicationId;
     if (
       customerId === "—" ||
+      customerId === "Loading..." ||
       customerId === "" ||
       customerId === "Unknown Customer"
     ) {
@@ -484,7 +463,29 @@ function getPaymentTypeColor(type: string): string {
 
 // ==================== MEMOIZED CUSTOMER DETAILS ====================
 const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
-  const info = useMemo(() => extractCustomerInfo(payment), [payment]);
+  const [info, setInfo] = useState<CustomerInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    extractCustomerInfo(payment).then((result) => {
+      if (mounted) {
+        setInfo(result);
+        setLoading(false);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [payment]);
+
+  if (loading || !info) {
+    return (
+      <div className="animate-pulse text-center py-4">
+        Loading customer info...
+      </div>
+    );
+  }
 
   const isInstallation =
     payment.paymentType === "installation" ||
@@ -498,13 +499,10 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
         <p className="font-semibold text-lg">{info.name}</p>
         <p className="text-sm text-gray-600">{info.email}</p>
         <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
-        {info.buildingName && info.buildingName !== "—" && (
-          <div className="mt-1 flex items-center gap-1 text-sm text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full w-fit">
+        {info.buildingName && (
+          <p className="text-sm text-blue-600 flex items-center gap-1">
             <FiHome className="w-3 h-3" /> {info.buildingName}
-          </div>
-        )}
-        {info.buildingAddress && (
-          <p className="text-xs text-gray-400 mt-0.5">{info.buildingAddress}</p>
+          </p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -605,15 +603,36 @@ const PendingPaymentRow = React.memo(
     rejecting: boolean;
     deleting: boolean;
   }) => {
-    const info = useMemo(() => extractCustomerInfo(payment), [payment]);
+    const [info, setInfo] = useState<CustomerInfo | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      let mounted = true;
+      extractCustomerInfo(payment).then((result) => {
+        if (mounted) {
+          setInfo(result);
+          setLoading(false);
+        }
+      });
+      return () => {
+        mounted = false;
+      };
+    }, [payment]);
+
+    if (loading || !info) {
+      return (
+        <tr>
+          <td colSpan={8} className="px-4 py-3 text-center">
+            <span className="animate-pulse">Loading customer info...</span>
+          </td>
+        </tr>
+      );
+    }
 
     const billingPeriod = (payment.billingId as any)?.billingPeriod;
     const isInstallation =
       payment.paymentType === "installation" ||
       (payment.billingId as any)?.isInstallationBill;
-
-    const buildingDisplay =
-      info.buildingName && info.buildingName !== "—" ? info.buildingName : "—";
 
     return (
       <tr className="hover:bg-gray-50">
@@ -623,12 +642,7 @@ const PendingPaymentRow = React.memo(
         </td>
         <td className="px-4 py-3 font-medium">{info.name}</td>
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
-        <td className="px-4 py-3 text-sm font-medium text-blue-600">
-          <div className="flex items-center gap-1">
-            <FiHome className="w-3 h-3 text-blue-400" />
-            {buildingDisplay}
-          </div>
-        </td>
+        <td className="px-4 py-3 text-sm">{info.buildingName || "—"}</td>
         <td className="px-4 py-3 font-semibold">
           {formatCurrency(payment.amount)}
         </td>
@@ -713,10 +727,6 @@ const CustomerSummaryRow = React.memo(
     deleting: boolean;
   }) => {
     const hasMultiple = group.paymentCount > 1;
-    const buildingDisplay =
-      group.customerInfo.buildingName && group.customerInfo.buildingName !== "—"
-        ? group.customerInfo.buildingName
-        : "—";
 
     return (
       <Fragment>
@@ -755,11 +765,8 @@ const CustomerSummaryRow = React.memo(
               </div>
             )}
           </td>
-          <td className="px-4 py-4">
-            <div className="flex items-center gap-1 text-sm font-medium text-blue-600">
-              <FiHome className="w-3 h-3 text-blue-400" />
-              {buildingDisplay}
-            </div>
+          <td className="px-4 py-4 text-sm">
+            {group.customerInfo.buildingName || "—"}
           </td>
           <td className="px-4 py-4 text-center">
             <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
@@ -805,11 +812,6 @@ const CustomerSummaryRow = React.memo(
                     const isInstallation =
                       p.paymentType === "installation" ||
                       (p.billingId as any)?.isInstallationBill;
-                    const info = extractCustomerInfo(p);
-                    const buildingDisplay =
-                      info.buildingName && info.buildingName !== "—"
-                        ? info.buildingName
-                        : "—";
                     return (
                       <div
                         key={p._id}
@@ -893,13 +895,6 @@ const CustomerSummaryRow = React.memo(
                               </p>
                             </div>
                           )}
-                          <div className="md:col-span-3">
-                            <p className="text-xs text-gray-400">Building</p>
-                            <p className="text-sm font-medium text-blue-600 flex items-center gap-1">
-                              <FiHome className="w-3 h-3" />
-                              {buildingDisplay}
-                            </p>
-                          </div>
                         </div>
                         <div className="mt-3 flex justify-end gap-2">
                           <button
@@ -952,12 +947,10 @@ export default function AdminPaymentsPage() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
 
+  // Date range filters for PDF
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
   const [showDateFilter, setShowDateFilter] = useState(false);
-
-  const [exportBuildingFilter, setExportBuildingFilter] = useState<string>("");
-  const [showExportFilters, setShowExportFilters] = useState(false);
 
   const [stats, setStats] = useState({
     totalAmount: 0,
@@ -982,7 +975,6 @@ export default function AdminPaymentsPage() {
     fetchBuildings().then((data) => {
       if (isMountedRef.current) {
         setBuildings(data);
-        console.log(`🏢 Loaded ${data.length} buildings into cache`);
       }
     });
   }, []);
@@ -992,6 +984,7 @@ export default function AdminPaymentsPage() {
     async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
 
+      // Check global cache first
       const now = Date.now();
       if (!forceRefresh && globalCache) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
@@ -1011,11 +1004,13 @@ export default function AdminPaymentsPage() {
 
       if (forceRefresh) {
         setRefreshing(true);
+        customerNameCache.clear();
       } else {
         setLoading(true);
       }
 
       try {
+        // Build params with date range if provided
         const params: any = {
           page: currentPage,
           limit: 100,
@@ -1024,6 +1019,7 @@ export default function AdminPaymentsPage() {
           forceRefresh,
         };
 
+        // Add date range if both are set
         if (dateRangeStart && dateRangeEnd) {
           params.startDate = dateRangeStart;
           params.endDate = dateRangeEnd;
@@ -1040,20 +1036,7 @@ export default function AdminPaymentsPage() {
           );
         }
 
-        // Log sample payment to debug building data
-        if (paymentsList.length > 0) {
-          console.log("📊 Sample payment for building extraction:", {
-            paymentId: paymentsList[0]._id,
-            hasBuildingId: !!paymentsList[0].buildingId,
-            buildingId: paymentsList[0].buildingId,
-            userId: paymentsList[0].userId,
-            billingId: paymentsList[0].billingId,
-            customerName: paymentsList[0].customerName,
-            applicationId: paymentsList[0].applicationId,
-          });
-        }
-
-        const grouped = groupPayments(paymentsList);
+        const grouped = await groupPaymentsAsync(paymentsList);
         setPaymentGroups(grouped);
 
         const pendingResult = await getPendingPayments(forceRefresh).catch(
@@ -1203,92 +1186,12 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  // ==================== GET EXPORT DATA ====================
-  const getExportData = useCallback(() => {
-    let data = [...paymentGroups];
-
-    if (exportBuildingFilter) {
-      data = data.filter((group) => {
-        const info = group.customerInfo;
-        if (info.buildingId === exportBuildingFilter) return true;
-        if (info.buildingName) {
-          const selectedBuilding = buildings.find(
-            (b) => b._id === exportBuildingFilter,
-          );
-          if (selectedBuilding) {
-            const selectedName =
-              selectedBuilding.name || selectedBuilding.buildingName || "";
-            if (info.buildingName === selectedName) return true;
-          }
-        }
-        return group.payments.some((p) => {
-          if (p.buildingId === exportBuildingFilter) return true;
-          if (p.userId && typeof p.userId === "object") {
-            const user = p.userId as any;
-            if (user.buildingId === exportBuildingFilter) return true;
-          }
-          return false;
-        });
-      });
-    }
-
-    if (dateRangeStart && dateRangeEnd) {
-      const startDate = new Date(dateRangeStart);
-      const endDate = new Date(dateRangeEnd);
-      endDate.setHours(23, 59, 59, 999);
-
-      data = data.filter((group) => {
-        return group.payments.some((p) => {
-          const paymentDate = new Date(p.createdAt);
-          return paymentDate >= startDate && paymentDate <= endDate;
-        });
-      });
-    }
-
-    if (search.trim()) {
-      const searchLower = search.toLowerCase();
-      data = data.filter((group) => {
-        const info = group.customerInfo;
-        return (
-          info.name.toLowerCase().includes(searchLower) ||
-          info.email.toLowerCase().includes(searchLower) ||
-          info.applicationId.toLowerCase().includes(searchLower) ||
-          info.phone.toLowerCase().includes(searchLower) ||
-          group.payments.some((p) =>
-            p.referenceNumber?.toLowerCase().includes(searchLower),
-          )
-        );
-      });
-    }
-
-    if (statusFilter) {
-      data = data.filter((group) =>
-        group.payments.some((p) => p.status === statusFilter),
-      );
-    }
-
-    if (paymentTypeFilter) {
-      data = data.filter((group) =>
-        group.payments.some((p) => p.paymentType === paymentTypeFilter),
-      );
-    }
-
-    return data;
-  }, [
-    paymentGroups,
-    exportBuildingFilter,
-    buildings,
-    dateRangeStart,
-    dateRangeEnd,
-    search,
-    statusFilter,
-    paymentTypeFilter,
-  ]);
-
   // ==================== EXPORT TO CSV ====================
   const exportToExcel = () => {
-    const exportData = getExportData();
+    // Get filtered data based on current filters
+    const exportData = sortedGroups;
 
+    // Calculate totals for the report
     let grandTotalPaid = 0;
     let grandTotalPending = 0;
     let grandTotalOverall = 0;
@@ -1317,11 +1220,7 @@ export default function AdminPaymentsPage() {
       };
     });
 
-    const exportBuildingName = exportBuildingFilter
-      ? buildings.find((b) => b._id === exportBuildingFilter)?.name ||
-        exportBuildingFilter
-      : "All Buildings";
-
+    // Add summary rows
     const summaryRows = [
       "",
       "=== SUMMARY ===",
@@ -1331,12 +1230,11 @@ export default function AdminPaymentsPage() {
       `Grand Total Pending: ${formatCurrency(grandTotalPending)}`,
       `Grand Total Overall: ${formatCurrency(grandTotalOverall)}`,
       "",
-      `=== EXPORT FILTERS APPLIED ===`,
-      `Building: ${exportBuildingName}`,
+      `=== FILTERS APPLIED ===`,
+      `Building: ${buildingFilter ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter : "All"}`,
       `Date Range: ${dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to ${dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}`,
       `Status: ${statusFilter || "All"}`,
       `Payment Type: ${paymentTypeFilter || "All"}`,
-      `Search: ${search || "None"}`,
     ];
 
     const headers = Object.keys(csvData[0] || {});
@@ -1359,21 +1257,23 @@ export default function AdminPaymentsPage() {
     const a = document.createElement("a");
     a.href = url;
     const dateStr = new Date().toISOString().split("T")[0];
-    const buildingName = exportBuildingFilter
-      ? buildings.find((b) => b._id === exportBuildingFilter)?.name || "all"
+    const buildingName = buildingFilter
+      ? buildings.find((b) => b._id === buildingFilter)?.name || "all"
       : "all";
     a.download = `payments_export_${dateStr}_${buildingName}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success("CSV export complete!");
+    toast.success("Export complete!");
   };
 
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
-    const exportData = getExportData();
+    // Get filtered data
+    const exportData = sortedGroups;
 
+    // Calculate totals for the report
     let grandTotalPaid = 0;
     let grandTotalPending = 0;
     let grandTotalOverall = 0;
@@ -1387,6 +1287,7 @@ export default function AdminPaymentsPage() {
       totalTransactions += group.paymentCount;
     });
 
+    // Build HTML for PDF
     const now = new Date();
     const dateStr = now.toLocaleDateString("en-PH", {
       year: "numeric",
@@ -1396,9 +1297,9 @@ export default function AdminPaymentsPage() {
       minute: "2-digit",
     });
 
-    const exportBuildingName = exportBuildingFilter
-      ? buildings.find((b) => b._id === exportBuildingFilter)?.name ||
-        exportBuildingFilter
+    // Get building name for filter display
+    const buildingName = buildingFilter
+      ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter
       : "All Buildings";
 
     const dateRangeStr =
@@ -1408,14 +1309,13 @@ export default function AdminPaymentsPage() {
 
     let tableRows = "";
     exportData.forEach((group, index) => {
-      const buildingDisplay = group.customerInfo.buildingName || "—";
       tableRows += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.name}</td>
           <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace;">${group.customerInfo.applicationId}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.email}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${buildingDisplay}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.buildingName || "—"}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${group.paymentCount}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(group.totalPaidAmount)}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${group.totalPendingAmount > 0 ? formatCurrency(group.totalPendingAmount) : "—"}</td>
@@ -1511,7 +1411,7 @@ export default function AdminPaymentsPage() {
           <h1>📊 Payment Report</h1>
           <p>Generated on: ${dateStr}</p>
           <div class="filters">
-            <span>🏢 Building: ${exportBuildingName}</span>
+            <span>🏢 Building: ${buildingName}</span>
             <span>📅 Date Range: ${dateRangeStr}</span>
             <span>📌 Status: ${statusFilter || "All"}</span>
             <span>📋 Type: ${paymentTypeFilter || "All"}</span>
@@ -1580,6 +1480,7 @@ export default function AdminPaymentsPage() {
       </html>
     `;
 
+    // Create a new window for printing
     const printWindow = window.open("", "_blank", "width=1200,height=800");
     if (printWindow) {
       printWindow.document.write(htmlContent);
@@ -1598,6 +1499,7 @@ export default function AdminPaymentsPage() {
     return paymentGroups.filter((group) => {
       const info = group.customerInfo;
 
+      // Search filter
       let matchesSearch = true;
       if (search.trim()) {
         const searchLower = search.toLowerCase();
@@ -1611,10 +1513,13 @@ export default function AdminPaymentsPage() {
           );
       }
 
+      // Building filter - handle both field name formats
       let matchesBuilding = true;
       if (buildingFilter) {
+        // Check if group's buildingId matches the filter
         matchesBuilding = info.buildingId === buildingFilter;
 
+        // If not, check if buildingName matches the selected building's name
         if (!matchesBuilding && info.buildingName) {
           const selectedBuilding = buildings.find(
             (b) => b._id === buildingFilter,
@@ -1626,9 +1531,11 @@ export default function AdminPaymentsPage() {
           }
         }
 
+        // Also check payments for building info
         if (!matchesBuilding) {
           matchesBuilding = group.payments.some((p) => {
             if (p.buildingId === buildingFilter) return true;
+            // Check if payment has building info in userId
             if (p.userId && typeof p.userId === "object") {
               const user = p.userId as any;
               if (user.buildingId === buildingFilter) return true;
@@ -1680,6 +1587,7 @@ export default function AdminPaymentsPage() {
   const totalFilteredCount = filteredGroups.length;
   const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
 
+  // Calculate grand totals for display
   const grandTotals = useMemo(() => {
     let totalPaid = 0;
     let totalPending = 0;
@@ -1899,16 +1807,6 @@ export default function AdminPaymentsPage() {
               <FiCalendar /> Date Range
             </button>
             <button
-              onClick={() => setShowExportFilters(!showExportFilters)}
-              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
-                showExportFilters
-                  ? "bg-green-100 border-green-300 text-green-700"
-                  : "bg-gray-100 border-gray-300"
-              }`}
-            >
-              <FiDownload /> Export Filters
-            </button>
-            <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300 disabled:opacity-50"
@@ -2006,42 +1904,6 @@ export default function AdminPaymentsPage() {
               </button>
             </div>
           )}
-
-          {showExportFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center">
-              <label className="text-sm font-medium text-gray-700">
-                Export Building:
-              </label>
-              <select
-                value={exportBuildingFilter}
-                onChange={(e) => setExportBuildingFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 min-w-[200px]"
-              >
-                <option value="">All Buildings</option>
-                {buildings.map((building) => (
-                  <option key={building._id} value={building._id}>
-                    {building.name ||
-                      building.buildingName ||
-                      "Unnamed Building"}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  setExportBuildingFilter("");
-                  setDateRangeStart("");
-                  setDateRangeEnd("");
-                  setShowExportFilters(false);
-                }}
-                className="px-3 py-2 text-red-600 hover:text-red-800 text-sm"
-              >
-                Clear Export Filters
-              </button>
-              <span className="text-xs text-gray-500 ml-2">
-                These filters only apply to CSV/PDF exports
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -2120,13 +1982,6 @@ export default function AdminPaymentsPage() {
                 📅 Filtered by:{" "}
                 {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
                 {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
-              </p>
-            )}
-            {exportBuildingFilter && (
-              <p className="text-xs text-green-600 mt-1">
-                🏢 Export Building:{" "}
-                {buildings.find((b) => b._id === exportBuildingFilter)?.name ||
-                  "All"}
               </p>
             )}
           </div>
