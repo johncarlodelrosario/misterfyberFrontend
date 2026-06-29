@@ -136,9 +136,7 @@ async function fetchBuildings(): Promise<Building[]> {
 }
 
 // ==================== FETCH CUSTOMER NAME ====================
-async function fetchCustomerName(
-  applicationId: string,
-): Promise<{
+async function fetchCustomerName(applicationId: string): Promise<{
   name: string;
   email: string;
   phone: string;
@@ -1138,29 +1136,40 @@ export default function AdminPaymentsPage() {
 
   // ==================== MEMOIZED DATA ====================
   const filteredGroups = useMemo(() => {
-    if (!search.trim() && !buildingFilter) return paymentGroups;
-    const searchLower = search.toLowerCase();
     return paymentGroups.filter((group) => {
       const info = group.customerInfo;
-      const matchesSearch =
-        !search.trim() ||
-        info.name.toLowerCase().includes(searchLower) ||
-        info.email.toLowerCase().includes(searchLower) ||
-        info.applicationId.toLowerCase().includes(searchLower) ||
-        info.phone.toLowerCase().includes(searchLower) ||
-        group.payments.some((p) =>
-          p.referenceNumber?.toLowerCase().includes(searchLower),
-        );
-      const matchesBuilding =
-        !buildingFilter ||
-        info.buildingId === buildingFilter ||
-        info.buildingName
-          ?.toLowerCase()
-          .includes(
-            buildings
-              .find((b) => b._id === buildingFilter)
-              ?.name.toLowerCase() || "",
+
+      // Search filter
+      let matchesSearch = true;
+      if (search.trim()) {
+        const searchLower = search.toLowerCase();
+        matchesSearch =
+          info.name.toLowerCase().includes(searchLower) ||
+          info.email.toLowerCase().includes(searchLower) ||
+          info.applicationId.toLowerCase().includes(searchLower) ||
+          info.phone.toLowerCase().includes(searchLower) ||
+          group.payments.some((p) =>
+            p.referenceNumber?.toLowerCase().includes(searchLower),
           );
+      }
+
+      // Building filter - FIXED: Simple direct match
+      let matchesBuilding = true;
+      if (buildingFilter) {
+        // Direct match by buildingId
+        matchesBuilding = info.buildingId === buildingFilter;
+
+        // If no buildingId, check if buildingName matches the selected building name
+        if (!matchesBuilding && info.buildingName) {
+          const selectedBuilding = buildings.find(
+            (b) => b._id === buildingFilter,
+          );
+          if (selectedBuilding) {
+            matchesBuilding = info.buildingName === selectedBuilding.name;
+          }
+        }
+      }
+
       return matchesSearch && matchesBuilding;
     });
   }, [paymentGroups, search, buildingFilter, buildings]);

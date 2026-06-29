@@ -1352,6 +1352,22 @@ export default function AdminBillingPage() {
               cycle.userId?._id === user._id || cycle.userId === user._id,
           );
 
+          // Get building with _id
+          let buildingObj = user.building || null;
+          if (
+            buildingObj &&
+            typeof buildingObj === "object" &&
+            !buildingObj._id
+          ) {
+            // If building doesn't have _id, try to find it from buildings list
+            const foundBuilding = buildingsList.find(
+              (b) => b.buildingName === buildingObj.buildingName,
+            );
+            if (foundBuilding) {
+              buildingObj = foundBuilding;
+            }
+          }
+
           return {
             _id: user._id,
             firstName: user.firstName,
@@ -1369,7 +1385,7 @@ export default function AdminBillingPage() {
             billingCycle: userCycle || null,
             installationFee: 0,
             installationFeePaid: true,
-            building: user.building,
+            building: buildingObj,
             unitNumber: user.unitNumber,
             floor: user.floor,
           };
@@ -1400,15 +1416,33 @@ export default function AdminBillingPage() {
               (cycle: any) => cycle.applicationId === app.applicationId,
             );
 
+            // FIXED: Properly get building with _id
             let buildingObj = null;
-            if (
-              app.buildingId &&
-              typeof app.buildingId === "object" &&
-              app.buildingId.buildingName
-            ) {
-              buildingObj = app.buildingId;
-            } else if (app.buildingName) {
-              buildingObj = { buildingName: app.buildingName };
+            if (app.buildingId) {
+              if (typeof app.buildingId === "object" && app.buildingId._id) {
+                buildingObj = app.buildingId;
+              } else if (typeof app.buildingId === "string") {
+                // Find building from buildingsList
+                const foundBuilding = buildingsList.find(
+                  (b) =>
+                    b._id === app.buildingId ||
+                    b.buildingName === app.buildingId,
+                );
+                if (foundBuilding) {
+                  buildingObj = foundBuilding;
+                }
+              }
+            }
+            // If still no building, try app.buildingName
+            if (!buildingObj && app.buildingName) {
+              const foundBuilding = buildingsList.find(
+                (b) => b.buildingName === app.buildingName,
+              );
+              if (foundBuilding) {
+                buildingObj = foundBuilding;
+              } else {
+                buildingObj = { buildingName: app.buildingName };
+              }
             }
 
             return {
@@ -1532,7 +1566,7 @@ export default function AdminBillingPage() {
         initialLoadDone.current = true;
       }
     },
-    [pagination.page, pagination.limit, customers.length],
+    [pagination.page, pagination.limit, customers.length, buildingsList],
   );
 
   // ==================== HANDLE PAGE CHANGE ====================
