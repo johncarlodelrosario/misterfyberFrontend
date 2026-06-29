@@ -164,6 +164,13 @@ function getBuildingId(customer: CustomerItem): string | null {
     if (typeof customer.building === "object" && customer.building._id) {
       return customer.building._id;
     }
+    // If building is an object but without _id, try to find by name
+    if (
+      typeof customer.building === "object" &&
+      customer.building.buildingName
+    ) {
+      return customer.building.buildingName;
+    }
   }
   return null;
 }
@@ -337,7 +344,7 @@ const CustomerRow = React.memo(
           </div>
         </td>
         <td className="px-3 py-2">
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => onAction("view", customer)}
               className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
@@ -667,11 +674,36 @@ export default function AdminBillingPage() {
             .toLowerCase()
             .includes(searchTerm.toLowerCase()));
 
-      // FIXED: Building filter - properly check if building ID matches
+      // FIXED: Building filter - properly check if building matches
       let matchesBuilding = true;
       if (buildingFilter !== "all") {
         const customerBuildingId = getBuildingId(customer);
-        matchesBuilding = customerBuildingId === buildingFilter;
+        // Check if the customer's building ID or name matches the filter
+        if (customerBuildingId) {
+          // Try to find the building in buildingsList to get its ID
+          const building = buildingsList.find(
+            (b) =>
+              b._id === buildingFilter ||
+              b.buildingName === buildingFilter ||
+              b.buildingName === customerBuildingId ||
+              b._id === customerBuildingId,
+          );
+          if (building) {
+            // Check if customer belongs to this building
+            const customerBuildingName = getBuildingDisplay(customer);
+            matchesBuilding =
+              building._id === customerBuildingId ||
+              building.buildingName === customerBuildingName ||
+              building._id === getBuildingId(customer);
+          } else {
+            // Direct comparison as fallback
+            matchesBuilding =
+              customerBuildingId === buildingFilter ||
+              getBuildingDisplay(customer) === buildingFilter;
+          }
+        } else {
+          matchesBuilding = false;
+        }
       }
 
       if (!matchesSearch || !matchesBuilding) return false;
@@ -701,7 +733,7 @@ export default function AdminBillingPage() {
       }
       return true;
     });
-  }, [customers, searchTerm, statusFilter, buildingFilter]);
+  }, [customers, searchTerm, statusFilter, buildingFilter, buildingsList]);
 
   const sortedAndFilteredCustomers = useMemo(() => {
     const sorted = [...filteredCustomers];
