@@ -38,6 +38,7 @@ import {
   FiTrash2,
   FiHome,
   FiBarChart2,
+  FiPrinter,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -1093,7 +1094,7 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  // ==================== EXPORT ====================
+  // ==================== EXPORT TO CSV ====================
   const exportToExcel = () => {
     // Calculate totals for the report
     let grandTotalPaid = 0;
@@ -1160,6 +1161,195 @@ export default function AdminPaymentsPage() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("Export complete!");
+  };
+
+  // ==================== EXPORT TO PDF ====================
+  const exportToPDF = () => {
+    // Calculate totals for the report
+    let grandTotalPaid = 0;
+    let grandTotalPending = 0;
+    let grandTotalOverall = 0;
+    let totalCustomers = sortedGroups.length;
+    let totalTransactions = 0;
+
+    sortedGroups.forEach((group) => {
+      grandTotalPaid += group.totalPaidAmount;
+      grandTotalPending += group.totalPendingAmount;
+      grandTotalOverall += group.totalAmount;
+      totalTransactions += group.paymentCount;
+    });
+
+    // Build HTML for PDF
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    let tableRows = "";
+    sortedGroups.forEach((group, index) => {
+      tableRows += `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.name}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace;">${group.customerInfo.applicationId}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.email}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.buildingName || "—"}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${group.paymentCount}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(group.totalPaidAmount)}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${group.totalPendingAmount > 0 ? formatCurrency(group.totalPendingAmount) : "—"}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${formatCurrency(group.totalAmount)}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${formatShortDate(group.lastPaymentDate)}</td>
+        </tr>
+      `;
+    });
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Payment Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .header { text-align: center; margin-bottom: 20px; }
+          .header h1 { color: #1e3a8a; margin: 0; }
+          .header p { color: #6b7280; margin: 5px 0; }
+          .summary { 
+            background: #eff6ff; 
+            border: 1px solid #bfdbfe; 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+          }
+          .summary-item { 
+            padding: 5px 10px; 
+            font-size: 14px; 
+          }
+          .summary-item strong { color: #1e40af; }
+          .summary-item .paid { color: #16a34a; font-weight: bold; }
+          .summary-item .pending { color: #ca8a04; font-weight: bold; }
+          .summary-item .grand { color: #1e40af; font-weight: bold; font-size: 16px; }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 12px;
+            margin-top: 10px;
+          }
+          th { 
+            background: #f3f4f6; 
+            padding: 10px 8px; 
+            border: 1px solid #ddd; 
+            text-align: left;
+            font-weight: bold;
+            color: #374151;
+          }
+          td { padding: 8px; border: 1px solid #ddd; }
+          .footer { 
+            text-align: center; 
+            margin-top: 20px; 
+            font-size: 12px; 
+            color: #6b7280;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+          }
+          .grand-total-row {
+            background: #f0fdf4;
+            font-weight: bold;
+          }
+          .grand-total-row td {
+            border-top: 2px solid #16a34a;
+          }
+          @media print {
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 Payment Report</h1>
+          <p>Generated on: ${dateStr}</p>
+          <p style="font-size: 14px; color: #6b7280;">
+            Filters: ${statusFilter ? `Status: ${statusFilter} | ` : ""}${paymentTypeFilter ? `Type: ${paymentTypeFilter} | ` : ""}${buildingFilter ? `Building: ${buildings.find((b) => b._id === buildingFilter)?.name || "Selected"} | ` : ""}${search ? `Search: "${search}"` : "All"}
+          </p>
+        </div>
+
+        <div class="summary">
+          <span class="summary-item"><strong>Total Customers:</strong> ${totalCustomers}</span>
+          <span class="summary-item"><strong>Total Transactions:</strong> ${totalTransactions}</span>
+          <span class="summary-item"><span class="paid">Total Paid:</span> ${formatCurrency(grandTotalPaid)}</span>
+          <span class="summary-item"><span class="pending">Total Pending:</span> ${formatCurrency(grandTotalPending)}</span>
+          <span class="summary-item"><span class="grand">🎯 Grand Total:</span> ${formatCurrency(grandTotalOverall)}</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align: center;">#</th>
+              <th>Customer Name</th>
+              <th>Application ID</th>
+              <th>Email</th>
+              <th>Building</th>
+              <th style="text-align: center;">Payments</th>
+              <th style="text-align: right;">Total Paid</th>
+              <th style="text-align: right;">Pending</th>
+              <th style="text-align: right;">Total Amount</th>
+              <th style="text-align: center;">Last Payment</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+            <tr class="grand-total-row">
+              <td colspan="5" style="text-align: right; font-size: 14px; font-weight: bold;">GRAND TOTALS</td>
+              <td style="text-align: center; font-size: 14px; font-weight: bold;">${totalTransactions}</td>
+              <td style="text-align: right; font-size: 14px; font-weight: bold; color: #16a34a;">${formatCurrency(grandTotalPaid)}</td>
+              <td style="text-align: right; font-size: 14px; font-weight: bold; color: #ca8a04;">${formatCurrency(grandTotalPending)}</td>
+              <td style="text-align: right; font-size: 14px; font-weight: bold; color: #1e40af;">${formatCurrency(grandTotalOverall)}</td>
+              <td style="text-align: center;">—</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <p>This report was generated automatically. All amounts are in Philippine Pesos (₱).</p>
+          <p>© ${now.getFullYear()} Misterfyber - Payment Management System</p>
+        </div>
+
+        <div class="no-print" style="text-align: center; margin-top: 20px;">
+          <button onclick="window.print()" style="padding: 10px 30px; background: #1e3a8a; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer;">
+            🖨️ Print / Save as PDF
+          </button>
+        </div>
+
+        <script>
+          // Auto-print after a short delay
+          setTimeout(() => {
+            window.print();
+          }, 500);
+        </script>
+      </body>
+      </html>
+    `;
+
+    // Create a new window for printing
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+    if (printWindow) {
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      // Focus the window
+      printWindow.focus();
+      toast.success(
+        "PDF report generated! Use the print dialog to save as PDF.",
+      );
+    } else {
+      toast.error("Please allow popups to generate PDF report.");
+    }
   };
 
   // ==================== MEMOIZED DATA ====================
@@ -1594,7 +1784,13 @@ export default function AdminPaymentsPage() {
               onClick={exportToExcel}
               className="px-3 py-1 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
             >
-              <FiDownload /> Export
+              <FiDownload /> CSV
+            </button>
+            <button
+              onClick={exportToPDF}
+              className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"
+            >
+              <FiPrinter /> PDF
             </button>
           </div>
         </div>
