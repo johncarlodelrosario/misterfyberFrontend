@@ -1188,7 +1188,7 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
-    // Get filtered data
+    // Get filtered data based on current filters
     const exportData = sortedGroups;
 
     if (exportData.length === 0) {
