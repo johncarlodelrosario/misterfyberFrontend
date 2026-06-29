@@ -1,4 +1,4 @@
-// frontend/services/api.ts - ULTRA FAST VERSION
+// frontend/services/api.ts - COMPLETE FIXED VERSION
 import axios from "axios";
 import toast from "react-hot-toast";
 
@@ -60,43 +60,26 @@ const safeStorage = {
 };
 
 // ==================== BACKEND URL ====================
-const getBackendUrl = (): string => {
-  if (typeof window === "undefined") {
-    return (
-      process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend.onrender.com"
-    );
-  }
-  if (process.env.NODE_ENV === "production") {
-    if (window.location.hostname.includes("vercel.app")) return "";
-    return "https://misterfyberbackend.onrender.com";
-  }
-  return "http://localhost:5000";
-};
-
 const getApiUrl = (): string => {
+  // Server-side rendering
   if (typeof window === "undefined") {
-    return (
-      process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend.onrender.com/api"
-    );
+    return process.env.NEXT_PUBLIC_API_URL || "/api";
   }
 
-  const isDev =
-    process.env.NODE_ENV === "development" ||
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1";
-
-  if (isDev) return "http://localhost:5000/api";
-
-  if (
+  // Use relative /api in production (handled by next.config.js rewrites)
+  // This is the KEY FIX - use relative path so rewrites work
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
     window.location.hostname.includes("vercel.app") ||
-    window.location.hostname.includes("misterfyber.com")
-  ) {
+    window.location.hostname.includes("misterfyber.com");
+
+  if (isProduction) {
+    // Use relative path - next.config.js rewrites will proxy to backend
     return "/api";
   }
 
-  return "https://misterfyberbackend.onrender.com/api";
+  // Development - use localhost
+  return "http://localhost:5000/api";
 };
 
 // ==================== AXIOS INSTANCE ====================
@@ -106,53 +89,53 @@ const api = axios.create({
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  withCredentials: false,
-  timeout: 10000, // Reduced timeout for faster fail
+  withCredentials: true, // Important for cookies
+  timeout: 30000, // Increased timeout for production
 });
 
 // ==================== REQUEST INTERCEPTOR ====================
-api.interceptors.request.use(async (config) => {
-  // Add token
-  const token =
-    typeof window !== "undefined" ? safeStorage.getItem("token") : null;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
-  // Remove cache headers
-  delete config.headers["cache-control"];
-  delete config.headers["Cache-Control"];
-
-  // Generate request key for deduplication
-  const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params || {})}-${JSON.stringify(config.data || {})}`;
-
-  // Check if request is already in flight
-  if (pendingRequests.has(requestKey)) {
-    return pendingRequests.get(requestKey);
-  }
-
-  // Check memory cache for GET requests
-  if (config.method === "get") {
-    const cached = memoryCache.get(requestKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      // Return cached data with special flag
-      return Promise.reject({ __cached: true, data: cached.data });
+api.interceptors.request.use(
+  async (config) => {
+    // Add token
+    const token =
+      typeof window !== "undefined" ? safeStorage.getItem("token") : null;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-  }
 
-  // Store the request promise for deduplication
-  const requestPromise = new Promise((resolve, reject) => {
-    // We'll resolve/reject in the interceptor
-    // This is handled by the actual request
-  });
+    // Remove cache headers
+    delete config.headers["cache-control"];
+    delete config.headers["Cache-Control"];
 
-  // Store the request key in config for response interceptor
-  (config as any).__requestKey = requestKey;
-  (config as any).__isGetRequest = config.method === "get";
-  (config as any).__cacheKey = requestKey;
+    // Generate request key for deduplication
+    const requestKey = `${config.method}-${config.url}-${JSON.stringify(
+      config.params || {},
+    )}-${JSON.stringify(config.data || {})}`;
 
-  return config;
-});
+    // Check if request is already in flight
+    if (pendingRequests.has(requestKey)) {
+      return pendingRequests.get(requestKey);
+    }
+
+    // Check memory cache for GET requests
+    if (config.method === "get") {
+      const cached = memoryCache.get(requestKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return Promise.reject({ __cached: true, data: cached.data });
+      }
+    }
+
+    // Store the request key in config for response interceptor
+    (config as any).__requestKey = requestKey;
+    (config as any).__isGetRequest = config.method === "get";
+    (config as any).__cacheKey = requestKey;
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  },
+);
 
 // ==================== RESPONSE INTERCEPTOR ====================
 api.interceptors.response.use(
@@ -208,7 +191,7 @@ api.interceptors.response.use(
       config.__retryCount = config.__retryCount || 0;
       if (config.__retryCount < 2) {
         config.__retryCount += 1;
-        const delay = config.__retryCount * 300; // Faster backoff
+        const delay = config.__retryCount * 300;
 
         await new Promise((resolve) => setTimeout(resolve, delay));
         return api(config);
