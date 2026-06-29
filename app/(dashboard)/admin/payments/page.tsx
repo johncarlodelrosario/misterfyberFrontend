@@ -37,6 +37,7 @@ import {
   FiCalendar,
   FiTrash2,
   FiHome,
+  FiBarChart2,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -1094,19 +1095,45 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT ====================
   const exportToExcel = () => {
-    const csvData = sortedGroups.map((group) => ({
-      "Customer Name": group.customerInfo.name,
-      "Application ID": group.customerInfo.applicationId,
-      Email: group.customerInfo.email,
-      Phone: group.customerInfo.phone,
-      Building: group.customerInfo.buildingName || "—",
-      "Total Paid": group.totalPaidAmount,
-      "Total Pending": group.totalPendingAmount,
-      "Payment Count": group.paymentCount,
-      "Last Payment Date": formatShortDate(group.lastPaymentDate),
-      "First Payment Date": formatShortDate(group.firstPaymentDate),
-      Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
-    }));
+    // Calculate totals for the report
+    let grandTotalPaid = 0;
+    let grandTotalPending = 0;
+    let grandTotalOverall = 0;
+    let totalCustomers = sortedGroups.length;
+    let totalTransactions = 0;
+
+    const csvData = sortedGroups.map((group) => {
+      grandTotalPaid += group.totalPaidAmount;
+      grandTotalPending += group.totalPendingAmount;
+      grandTotalOverall += group.totalAmount;
+      totalTransactions += group.paymentCount;
+
+      return {
+        "Customer Name": group.customerInfo.name,
+        "Application ID": group.customerInfo.applicationId,
+        Email: group.customerInfo.email,
+        Phone: group.customerInfo.phone,
+        Building: group.customerInfo.buildingName || "—",
+        "Total Paid": group.totalPaidAmount,
+        "Total Pending": group.totalPendingAmount,
+        "Total Amount": group.totalAmount,
+        "Payment Count": group.paymentCount,
+        "Last Payment Date": formatShortDate(group.lastPaymentDate),
+        "First Payment Date": formatShortDate(group.firstPaymentDate),
+        Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
+      };
+    });
+
+    // Add summary rows
+    const summaryRows = [
+      "",
+      "=== SUMMARY ===",
+      `Total Customers: ${totalCustomers}`,
+      `Total Transactions: ${totalTransactions}`,
+      `Grand Total Paid: ${formatCurrency(grandTotalPaid)}`,
+      `Grand Total Pending: ${formatCurrency(grandTotalPending)}`,
+      `Grand Total Overall: ${formatCurrency(grandTotalOverall)}`,
+    ];
 
     const headers = Object.keys(csvData[0] || {});
     const csvRows = [
@@ -1120,6 +1147,7 @@ export default function AdminPaymentsPage() {
           })
           .join(","),
       ),
+      ...summaryRows.map((row) => `"${row}"`),
     ];
 
     const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
@@ -1153,13 +1181,11 @@ export default function AdminPaymentsPage() {
           );
       }
 
-      // Building filter - FIXED: Simple direct match
+      // Building filter
       let matchesBuilding = true;
       if (buildingFilter) {
-        // Direct match by buildingId
         matchesBuilding = info.buildingId === buildingFilter;
 
-        // If no buildingId, check if buildingName matches the selected building name
         if (!matchesBuilding && info.buildingName) {
           const selectedBuilding = buildings.find(
             (b) => b._id === buildingFilter,
@@ -1211,6 +1237,29 @@ export default function AdminPaymentsPage() {
 
   const totalFilteredCount = filteredGroups.length;
   const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
+
+  // Calculate grand totals for display
+  const grandTotals = useMemo(() => {
+    let totalPaid = 0;
+    let totalPending = 0;
+    let totalOverall = 0;
+    let totalTransactions = 0;
+
+    filteredGroups.forEach((group) => {
+      totalPaid += group.totalPaidAmount;
+      totalPending += group.totalPendingAmount;
+      totalOverall += group.totalAmount;
+      totalTransactions += group.paymentCount;
+    });
+
+    return {
+      totalPaid,
+      totalPending,
+      totalOverall,
+      totalTransactions,
+      totalCustomers: filteredGroups.length,
+    };
+  }, [filteredGroups]);
 
   // ==================== SORT ICON ====================
   const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
@@ -1312,6 +1361,40 @@ export default function AdminPaymentsPage() {
           </p>
         </div>
       </div>
+
+      {/* Grand Total Summary Bar */}
+      {filteredGroups.length > 0 && (
+        <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <FiBarChart2 className="w-6 h-6 text-blue-600" />
+            <div className="flex-1">
+              <p className="font-semibold text-blue-800">Report Summary</p>
+              <div className="flex flex-wrap gap-4 mt-1">
+                <span className="text-sm text-gray-600">
+                  <span className="font-medium">Customers:</span>{" "}
+                  {grandTotals.totalCustomers}
+                </span>
+                <span className="text-sm text-gray-600">
+                  <span className="font-medium">Transactions:</span>{" "}
+                  {grandTotals.totalTransactions}
+                </span>
+                <span className="text-sm text-green-600">
+                  <span className="font-medium">Total Paid:</span>{" "}
+                  {formatCurrency(grandTotals.totalPaid)}
+                </span>
+                <span className="text-sm text-yellow-600">
+                  <span className="font-medium">Total Pending:</span>{" "}
+                  {formatCurrency(grandTotals.totalPending)}
+                </span>
+                <span className="text-sm text-blue-600 font-bold">
+                  <span className="font-medium">Grand Total:</span>{" "}
+                  {formatCurrency(grandTotals.totalOverall)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pending Alert */}
       {pendingPayments.length > 0 && (
