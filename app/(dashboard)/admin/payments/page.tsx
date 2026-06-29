@@ -1186,92 +1186,15 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  // ==================== EXPORT TO CSV ====================
-  const exportToExcel = () => {
-    // Get filtered data based on current filters
-    const exportData = sortedGroups;
-
-    // Calculate totals for the report
-    let grandTotalPaid = 0;
-    let grandTotalPending = 0;
-    let grandTotalOverall = 0;
-    let totalCustomers = exportData.length;
-    let totalTransactions = 0;
-
-    const csvData = exportData.map((group) => {
-      grandTotalPaid += group.totalPaidAmount;
-      grandTotalPending += group.totalPendingAmount;
-      grandTotalOverall += group.totalAmount;
-      totalTransactions += group.paymentCount;
-
-      return {
-        "Customer Name": group.customerInfo.name,
-        "Application ID": group.customerInfo.applicationId,
-        Email: group.customerInfo.email,
-        Phone: group.customerInfo.phone,
-        Building: group.customerInfo.buildingName || "—",
-        "Total Paid": group.totalPaidAmount,
-        "Total Pending": group.totalPendingAmount,
-        "Total Amount": group.totalAmount,
-        "Payment Count": group.paymentCount,
-        "Last Payment Date": formatShortDate(group.lastPaymentDate),
-        "First Payment Date": formatShortDate(group.firstPaymentDate),
-        Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
-      };
-    });
-
-    // Add summary rows
-    const summaryRows = [
-      "",
-      "=== SUMMARY ===",
-      `Total Customers: ${totalCustomers}`,
-      `Total Transactions: ${totalTransactions}`,
-      `Grand Total Paid: ${formatCurrency(grandTotalPaid)}`,
-      `Grand Total Pending: ${formatCurrency(grandTotalPending)}`,
-      `Grand Total Overall: ${formatCurrency(grandTotalOverall)}`,
-      "",
-      `=== FILTERS APPLIED ===`,
-      `Building: ${buildingFilter ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter : "All"}`,
-      `Date Range: ${dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to ${dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}`,
-      `Status: ${statusFilter || "All"}`,
-      `Payment Type: ${paymentTypeFilter || "All"}`,
-    ];
-
-    const headers = Object.keys(csvData[0] || {});
-    const csvRows = [
-      headers.join(","),
-      ...csvData.map((row) =>
-        headers
-          .map((header) => {
-            const value = row[header as keyof typeof row];
-            if (typeof value === "number") return value.toString();
-            return `"${String(value).replace(/"/g, '""')}"`;
-          })
-          .join(","),
-      ),
-      ...summaryRows.map((row) => `"${row}"`),
-    ];
-
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const dateStr = new Date().toISOString().split("T")[0];
-    const buildingName = buildingFilter
-      ? buildings.find((b) => b._id === buildingFilter)?.name || "all"
-      : "all";
-    a.download = `payments_export_${dateStr}_${buildingName}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Export complete!");
-  };
-
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
     // Get filtered data
     const exportData = sortedGroups;
+
+    if (exportData.length === 0) {
+      toast.error("No data to export. Please adjust your filters.");
+      return;
+    }
 
     // Calculate totals for the report
     let grandTotalPaid = 0;
@@ -1306,6 +1229,10 @@ export default function AdminPaymentsPage() {
       dateRangeStart && dateRangeEnd
         ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
         : "All Dates";
+
+    const statusStr = statusFilter || "All";
+    const typeStr = paymentTypeFilter || "All";
+    const searchStr = search || "None";
 
     let tableRows = "";
     exportData.forEach((group, index) => {
@@ -1413,9 +1340,9 @@ export default function AdminPaymentsPage() {
           <div class="filters">
             <span>🏢 Building: ${buildingName}</span>
             <span>📅 Date Range: ${dateRangeStr}</span>
-            <span>📌 Status: ${statusFilter || "All"}</span>
-            <span>📋 Type: ${paymentTypeFilter || "All"}</span>
-            <span>🔍 Search: ${search || "None"}</span>
+            <span>📌 Status: ${statusStr}</span>
+            <span>📋 Type: ${typeStr}</span>
+            <span>🔍 Search: ${searchStr}</span>
           </div>
         </div>
 
@@ -1443,10 +1370,7 @@ export default function AdminPaymentsPage() {
             </tr>
           </thead>
           <tbody>
-            ${tableRows || `<tr><td colspan="10" style="text-align: center; padding: 20px;">No data available for the selected filters</td></tr>`}
-            ${
-              exportData.length > 0
-                ? `
+            ${tableRows}
             <tr class="grand-total-row">
               <td colspan="5" style="text-align: right; font-size: 14px; font-weight: bold;">GRAND TOTALS</td>
               <td style="text-align: center; font-size: 14px; font-weight: bold;">${totalTransactions}</td>
@@ -1454,9 +1378,7 @@ export default function AdminPaymentsPage() {
               <td style="text-align: right; font-size: 14px; font-weight: bold; color: #ca8a04;">${formatCurrency(grandTotalPending)}</td>
               <td style="text-align: right; font-size: 14px; font-weight: bold; color: #1e40af;">${formatCurrency(grandTotalOverall)}</td>
               <td style="text-align: center;">—</td>
-            </tr>`
-                : ""
-            }
+            </tr>
           </tbody>
         </table>
 
@@ -1984,6 +1906,13 @@ export default function AdminPaymentsPage() {
                 {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
               </p>
             )}
+            {buildingFilter && (
+              <p className="text-xs text-blue-600 mt-1">
+                🏢 Building:{" "}
+                {buildings.find((b) => b._id === buildingFilter)?.name ||
+                  buildingFilter}
+              </p>
+            )}
           </div>
           <div className="flex gap-2 flex-wrap">
             <select
@@ -2000,16 +1929,10 @@ export default function AdminPaymentsPage() {
               <option value={100}>100 per page</option>
             </select>
             <button
-              onClick={exportToExcel}
-              className="px-3 py-1 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
-            >
-              <FiDownload /> CSV
-            </button>
-            <button
               onClick={exportToPDF}
               className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"
             >
-              <FiPrinter /> PDF
+              <FiPrinter /> PDF Report
             </button>
           </div>
         </div>
