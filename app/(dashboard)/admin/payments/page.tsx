@@ -79,6 +79,7 @@ interface Building {
 
 // ==================== BUILDING CACHE ====================
 const buildingCache = new Map<string, { name: string; address: string }>();
+const applicationCache = new Map<string, any>();
 
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
@@ -144,6 +145,29 @@ async function fetchBuildings(): Promise<Building[]> {
   }
 }
 
+// ==================== FETCH APPLICATION BY ID ====================
+async function fetchApplication(applicationId: string): Promise<any> {
+  if (!applicationId) return null;
+
+  // Check cache first
+  if (applicationCache.has(applicationId)) {
+    return applicationCache.get(applicationId);
+  }
+
+  try {
+    const response = await api.get(`/applications/status/${applicationId}`);
+    if (response.data?.success && response.data?.data) {
+      const appData = response.data.data;
+      applicationCache.set(applicationId, appData);
+      return appData;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error fetching application ${applicationId}:`, error);
+    return null;
+  }
+}
+
 // ==================== FETCH BUILDING NAME BY ID ====================
 function getBuildingNameFromCache(buildingId: string): string {
   if (!buildingId) return "";
@@ -171,6 +195,14 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
   let buildingName = "";
   let buildingAddress = "";
 
+  console.log("🔍 Extracting customer info from payment:", {
+    id: payment._id,
+    hasUserId: !!payment.userId,
+    hasBillingId: !!payment.billingId,
+    hasApplicationId: !!payment.applicationId,
+    customerName: payment.customerName,
+  });
+
   // ============================================
   // 1. GET APPLICATION ID
   // ============================================
@@ -185,6 +217,28 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
       if (appObj.applicationId && typeof appObj.applicationId === "string") {
         appId = appObj.applicationId;
       }
+      // Try to get building info from application object
+      if (appObj.buildingId) {
+        buildingId = appObj.buildingId;
+      }
+      if (appObj.buildingName) {
+        buildingName = appObj.buildingName;
+      }
+      // Get customer info from application
+      if (!customerName) {
+        const firstName = appObj.firstName || "";
+        const lastName = appObj.lastName || "";
+        const fullName = `${firstName} ${lastName}`.trim();
+        if (fullName.length > 1) {
+          customerName = fullName;
+        }
+      }
+      if (!customerEmail && appObj.email) {
+        customerEmail = appObj.email;
+      }
+      if (!customerPhone && appObj.phoneNumber) {
+        customerPhone = appObj.phoneNumber;
+      }
     }
   }
 
@@ -193,105 +247,96 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
   }
 
   // ============================================
-  // 2. GET CUSTOMER NAME
+  // 2. GET FROM USER (if populated)
   // ============================================
-  // Try from payment direct fields
-  if (payment.customerName && payment.customerName.trim() !== "") {
-    customerName = payment.customerName.trim();
-  }
-
-  // Try from userId
-  if (!customerName && payment.userId && typeof payment.userId === "object") {
+  if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
-    const firstName = user.firstName || "";
-    const lastName = user.lastName || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-    if (fullName.length > 1) {
-      customerName = fullName;
+    console.log("👤 User data:", {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      buildingId: user.buildingId,
+      buildingName: user.buildingName,
+    });
+
+    // Get name
+    if (!customerName) {
+      const firstName = user.firstName || "";
+      const lastName = user.lastName || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName.length > 1) {
+        customerName = fullName;
+      }
     }
+
+    // Get email
     if (!customerEmail && user.email) {
       customerEmail = user.email;
     }
+
+    // Get phone
     if (!customerPhone && (user.phoneNumber || user.phone)) {
       customerPhone = user.phoneNumber || user.phone;
     }
-    // Try to get building ID from user
-    if (user.buildingId) {
+
+    // Get building ID from user
+    if (user.buildingId && !buildingId) {
       buildingId = user.buildingId;
+    }
+
+    // Get building name from user
+    if (user.buildingName && !buildingName) {
+      buildingName = user.buildingName;
     }
   }
 
-  // Try from billingId
-  if (
-    payment.billingId &&
-    typeof payment.billingId === "object" &&
-    !buildingId
-  ) {
+  // ============================================
+  // 3. GET FROM BILLING (if populated)
+  // ============================================
+  if (payment.billingId && typeof payment.billingId === "object") {
     const billing = payment.billingId as any;
-    if (billing.buildingId) {
+    console.log("📄 Billing data:", {
+      buildingId: billing.buildingId,
+      buildingName: billing.buildingName,
+      applicationId: billing.applicationId,
+    });
+
+    if (billing.buildingId && !buildingId) {
       buildingId = billing.buildingId;
+    }
+    if (billing.buildingName && !buildingName) {
+      buildingName = billing.buildingName;
     }
     if (billing.applicationId && !appId) {
       appId = billing.applicationId;
     }
-    // Try to get customer name from billing
     if (!customerName && billing.customerName) {
       customerName = billing.customerName;
     }
   }
 
-  // Try from paymentDetails
-  if (!customerName && payment.paymentDetails?.gatewayResponse?.customerName) {
-    customerName = payment.paymentDetails.gatewayResponse.customerName;
-  }
-
   // ============================================
-  // 3. GET BUILDING ID - CRITICAL FIX
+  // 4. TRY PAYMENT DIRECT FIELDS
   // ============================================
-  // Check if payment has buildingId directly
-  if (payment.buildingId) {
-    buildingId = payment.buildingId;
-  }
-
-  // Check if buildingId is inside billingId
   if (
-    !buildingId &&
-    payment.billingId &&
-    typeof payment.billingId === "object"
+    payment.customerName &&
+    payment.customerName.trim() !== "" &&
+    !customerName
   ) {
-    const billing = payment.billingId as any;
-    if (billing.buildingId) {
-      buildingId = billing.buildingId;
-    }
+    customerName = payment.customerName.trim();
   }
 
-  // Check if buildingId is in userId
-  if (!buildingId && payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId as any;
-    if (user.buildingId) {
-      buildingId = user.buildingId;
-    }
+  if (payment.customerEmail && !customerEmail) {
+    customerEmail = payment.customerEmail;
   }
 
-  // Check if buildingId is in application object
-  if (
-    !buildingId &&
-    payment.applicationId &&
-    typeof payment.applicationId === "object"
-  ) {
-    const app = payment.applicationId as any;
-    if (app.buildingId) {
-      buildingId = app.buildingId;
-    }
-    if (app.buildingName && !buildingName) {
-      buildingName = app.buildingName;
-    }
+  if (payment.customerPhone && !customerPhone) {
+    customerPhone = payment.customerPhone;
   }
 
   // ============================================
-  // 4. GET BUILDING NAME
+  // 5. GET BUILDING NAME FROM CACHE
   // ============================================
-  // Try from cache first
   if (buildingId) {
     const cachedName = getBuildingNameFromCache(buildingId);
     if (cachedName) {
@@ -303,63 +348,30 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
-  // Try from billingId
-  if (
-    !buildingName &&
-    payment.billingId &&
-    typeof payment.billingId === "object"
-  ) {
-    const billing = payment.billingId as any;
-    if (billing.buildingName) {
-      buildingName = billing.buildingName;
-    }
-  }
-
-  // Try from userId
-  if (!buildingName && payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId as any;
-    if (user.buildingName) {
-      buildingName = user.buildingName;
-    }
-  }
-
-  // Try from application object (again, more thoroughly)
-  if (
-    !buildingName &&
-    payment.applicationId &&
-    typeof payment.applicationId === "object"
-  ) {
-    const app = payment.applicationId as any;
-    if (app.buildingName) {
-      buildingName = app.buildingName;
-    }
-    // Also try to get building name from buildingId via cache if we have it
-    if (!buildingName && app.buildingId) {
-      const cachedName = getBuildingNameFromCache(app.buildingId);
-      if (cachedName) {
-        buildingName = cachedName;
-        buildingId = app.buildingId;
-      }
-    }
+  // ============================================
+  // 6. TRY PAYMENT DETAILS
+  // ============================================
+  if (!customerName && payment.paymentDetails?.gatewayResponse?.customerName) {
+    customerName = payment.paymentDetails.gatewayResponse.customerName;
   }
 
   // ============================================
-  // 5. GET EMAIL AND PHONE
+  // 7. FALLBACKS
   // ============================================
-  if (!customerEmail && payment.customerEmail) {
-    customerEmail = payment.customerEmail;
-  }
-
-  if (!customerPhone && payment.customerPhone) {
-    customerPhone = payment.customerPhone;
-  }
-
   // If still no name, use application ID or unknown
   if (!customerName) {
     if (appId && appId.length > 0) {
       customerName = appId;
     } else {
       customerName = "Unknown Customer";
+    }
+  }
+
+  // If building name is still empty, try to get from cache using buildingId
+  if (!buildingName && buildingId) {
+    const cachedName = getBuildingNameFromCache(buildingId);
+    if (cachedName) {
+      buildingName = cachedName;
     }
   }
 
@@ -370,6 +382,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId: appId,
     buildingId: buildingId,
     buildingName: buildingName,
+    buildingAddress: buildingAddress,
   });
 
   return {
@@ -377,7 +390,7 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     email: customerEmail || "—",
     phone: customerPhone || "—",
     applicationId: appId || "—",
-    buildingId: buildingId,
+    buildingId: buildingId || "",
     buildingName: buildingName || "—",
     buildingAddress: buildingAddress || "",
   };
@@ -1036,6 +1049,7 @@ export default function AdminPaymentsPage() {
             userId: paymentsList[0].userId,
             billingId: paymentsList[0].billingId,
             customerName: paymentsList[0].customerName,
+            applicationId: paymentsList[0].applicationId,
           });
         }
 
