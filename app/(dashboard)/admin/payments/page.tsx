@@ -53,6 +53,7 @@ interface CustomerInfo {
   applicationId: string;
   buildingId?: string;
   buildingName?: string;
+  buildingAddress?: string;
 }
 
 interface PaymentGroup {
@@ -71,8 +72,9 @@ interface PaymentGroup {
 interface Building {
   _id: string;
   name: string;
-  address: string;
   buildingName?: string;
+  address: string;
+  streetAddress?: string;
 }
 
 // ==================== BUILDING CACHE ====================
@@ -129,9 +131,10 @@ async function fetchBuildings(): Promise<Building[]> {
 
     buildings.forEach((b: any) => {
       const buildingName = b.name || b.buildingName || "Unnamed Building";
+      const address = b.address || b.streetAddress || "";
       buildingCache.set(b._id, {
         name: buildingName,
-        address: b.address || b.streetAddress || "",
+        address: address,
       });
     });
     return buildings;
@@ -150,6 +153,14 @@ function getBuildingNameFromCache(buildingId: string): string {
   return "";
 }
 
+function getBuildingAddressFromCache(buildingId: string): string {
+  if (!buildingId) return "";
+  if (buildingCache.has(buildingId)) {
+    return buildingCache.get(buildingId)!.address;
+  }
+  return "";
+}
+
 // ==================== EXTRACT CUSTOMER INFO ====================
 function extractCustomerInfo(payment: Payment): CustomerInfo {
   let appId = "";
@@ -158,8 +169,11 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
   let customerPhone = "";
   let buildingId = "";
   let buildingName = "";
+  let buildingAddress = "";
 
-  // Try to get application ID from various sources
+  // ============================================
+  // 1. GET APPLICATION ID
+  // ============================================
   if (payment.applicationId) {
     if (typeof payment.applicationId === "string") {
       appId = payment.applicationId;
@@ -178,35 +192,68 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // Get building ID from multiple sources
+  // ============================================
+  // 2. GET CUSTOMER NAME
+  // ============================================
+  // Try from payment direct fields
+  if (payment.customerName && payment.customerName.trim() !== "") {
+    customerName = payment.customerName.trim();
+  }
+
+  // Try from userId
+  if (!customerName && payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId as any;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName.length > 1) {
+      customerName = fullName;
+    }
+    if (!customerEmail && user.email) {
+      customerEmail = user.email;
+    }
+    if (!customerPhone && (user.phoneNumber || user.phone)) {
+      customerPhone = user.phoneNumber || user.phone;
+    }
+    // Try to get building ID from user
+    if (user.buildingId) {
+      buildingId = user.buildingId;
+    }
+  }
+
+  // Try from billingId
+  if (
+    payment.billingId &&
+    typeof payment.billingId === "object" &&
+    !buildingId
+  ) {
+    const billing = payment.billingId as any;
+    if (billing.buildingId) {
+      buildingId = billing.buildingId;
+    }
+    if (billing.applicationId && !appId) {
+      appId = billing.applicationId;
+    }
+    // Try to get customer name from billing
+    if (!customerName && billing.customerName) {
+      customerName = billing.customerName;
+    }
+  }
+
+  // Try from paymentDetails
+  if (!customerName && payment.paymentDetails?.gatewayResponse?.customerName) {
+    customerName = payment.paymentDetails.gatewayResponse.customerName;
+  }
+
+  // ============================================
+  // 3. GET BUILDING ID - CRITICAL FIX
+  // ============================================
+  // Check if payment has buildingId directly
   if (payment.buildingId) {
     buildingId = payment.buildingId;
   }
 
-  // Try to get building ID from user object
-  if (!buildingId && payment.userId && typeof payment.userId === "object") {
-    const user = payment.userId as any;
-    if (user.buildingId) {
-      buildingId = user.buildingId;
-    }
-    // Also get customer name from user
-    if (!customerName) {
-      const firstName = user.firstName || "";
-      const lastName = user.lastName || "";
-      const fullName = `${firstName} ${lastName}`.trim();
-      if (fullName.length > 1) {
-        customerName = fullName;
-      }
-      if (!customerEmail && user.email) {
-        customerEmail = user.email;
-      }
-      if (!customerPhone && (user.phoneNumber || user.phone)) {
-        customerPhone = user.phoneNumber || user.phone;
-      }
-    }
-  }
-
-  // Try to get building ID from billingId
+  // Check if buildingId is inside billingId
   if (
     !buildingId &&
     payment.billingId &&
@@ -216,25 +263,89 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     if (billing.buildingId) {
       buildingId = billing.buildingId;
     }
-    if (billing.applicationId && !appId) {
-      appId = billing.applicationId;
+  }
+
+  // Check if buildingId is in userId
+  if (!buildingId && payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId as any;
+    if (user.buildingId) {
+      buildingId = user.buildingId;
     }
   }
 
-  // Get building name from cache
-  if (buildingId) {
-    buildingName = getBuildingNameFromCache(buildingId);
-  }
-
-  // If no customer name yet, use payment customer info
+  // Check if buildingId is in application object
   if (
-    !customerName &&
-    payment.customerName &&
-    payment.customerName.trim() !== ""
+    !buildingId &&
+    payment.applicationId &&
+    typeof payment.applicationId === "object"
   ) {
-    customerName = payment.customerName.trim();
+    const app = payment.applicationId as any;
+    if (app.buildingId) {
+      buildingId = app.buildingId;
+    }
+    if (app.buildingName && !buildingName) {
+      buildingName = app.buildingName;
+    }
   }
 
+  // ============================================
+  // 4. GET BUILDING NAME
+  // ============================================
+  // Try from cache first
+  if (buildingId) {
+    const cachedName = getBuildingNameFromCache(buildingId);
+    if (cachedName) {
+      buildingName = cachedName;
+    }
+    const cachedAddress = getBuildingAddressFromCache(buildingId);
+    if (cachedAddress) {
+      buildingAddress = cachedAddress;
+    }
+  }
+
+  // Try from billingId
+  if (
+    !buildingName &&
+    payment.billingId &&
+    typeof payment.billingId === "object"
+  ) {
+    const billing = payment.billingId as any;
+    if (billing.buildingName) {
+      buildingName = billing.buildingName;
+    }
+  }
+
+  // Try from userId
+  if (!buildingName && payment.userId && typeof payment.userId === "object") {
+    const user = payment.userId as any;
+    if (user.buildingName) {
+      buildingName = user.buildingName;
+    }
+  }
+
+  // Try from application object (again, more thoroughly)
+  if (
+    !buildingName &&
+    payment.applicationId &&
+    typeof payment.applicationId === "object"
+  ) {
+    const app = payment.applicationId as any;
+    if (app.buildingName) {
+      buildingName = app.buildingName;
+    }
+    // Also try to get building name from buildingId via cache if we have it
+    if (!buildingName && app.buildingId) {
+      const cachedName = getBuildingNameFromCache(app.buildingId);
+      if (cachedName) {
+        buildingName = cachedName;
+        buildingId = app.buildingId;
+      }
+    }
+  }
+
+  // ============================================
+  // 5. GET EMAIL AND PHONE
+  // ============================================
   if (!customerEmail && payment.customerEmail) {
     customerEmail = payment.customerEmail;
   }
@@ -252,13 +363,23 @@ function extractCustomerInfo(payment: Payment): CustomerInfo {
     }
   }
 
+  console.log(`📊 Extracted customer info:`, {
+    name: customerName,
+    email: customerEmail,
+    phone: customerPhone,
+    appId: appId,
+    buildingId: buildingId,
+    buildingName: buildingName,
+  });
+
   return {
     name: customerName,
     email: customerEmail || "—",
     phone: customerPhone || "—",
     applicationId: appId || "—",
     buildingId: buildingId,
-    buildingName: buildingName,
+    buildingName: buildingName || "—",
+    buildingAddress: buildingAddress || "",
   };
 }
 
@@ -364,10 +485,13 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
         <p className="font-semibold text-lg">{info.name}</p>
         <p className="text-sm text-gray-600">{info.email}</p>
         <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
-        {info.buildingName && (
-          <p className="text-sm text-blue-600 flex items-center gap-1">
+        {info.buildingName && info.buildingName !== "—" && (
+          <div className="mt-1 flex items-center gap-1 text-sm text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full w-fit">
             <FiHome className="w-3 h-3" /> {info.buildingName}
-          </p>
+          </div>
+        )}
+        {info.buildingAddress && (
+          <p className="text-xs text-gray-400 mt-0.5">{info.buildingAddress}</p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -475,6 +599,9 @@ const PendingPaymentRow = React.memo(
       payment.paymentType === "installation" ||
       (payment.billingId as any)?.isInstallationBill;
 
+    const buildingDisplay =
+      info.buildingName && info.buildingName !== "—" ? info.buildingName : "—";
+
     return (
       <tr className="hover:bg-gray-50">
         <td className="px-4 py-3 text-sm text-gray-500">{index + 1}</td>
@@ -484,7 +611,10 @@ const PendingPaymentRow = React.memo(
         <td className="px-4 py-3 font-medium">{info.name}</td>
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
         <td className="px-4 py-3 text-sm font-medium text-blue-600">
-          {info.buildingName || "—"}
+          <div className="flex items-center gap-1">
+            <FiHome className="w-3 h-3 text-blue-400" />
+            {buildingDisplay}
+          </div>
         </td>
         <td className="px-4 py-3 font-semibold">
           {formatCurrency(payment.amount)}
@@ -570,7 +700,10 @@ const CustomerSummaryRow = React.memo(
     deleting: boolean;
   }) => {
     const hasMultiple = group.paymentCount > 1;
-    const buildingDisplay = group.customerInfo.buildingName || "—";
+    const buildingDisplay =
+      group.customerInfo.buildingName && group.customerInfo.buildingName !== "—"
+        ? group.customerInfo.buildingName
+        : "—";
 
     return (
       <Fragment>
@@ -659,6 +792,11 @@ const CustomerSummaryRow = React.memo(
                     const isInstallation =
                       p.paymentType === "installation" ||
                       (p.billingId as any)?.isInstallationBill;
+                    const info = extractCustomerInfo(p);
+                    const buildingDisplay =
+                      info.buildingName && info.buildingName !== "—"
+                        ? info.buildingName
+                        : "—";
                     return (
                       <div
                         key={p._id}
@@ -746,7 +884,7 @@ const CustomerSummaryRow = React.memo(
                             <p className="text-xs text-gray-400">Building</p>
                             <p className="text-sm font-medium text-blue-600 flex items-center gap-1">
                               <FiHome className="w-3 h-3" />
-                              {group.customerInfo.buildingName || "—"}
+                              {buildingDisplay}
                             </p>
                           </div>
                         </div>
@@ -831,6 +969,7 @@ export default function AdminPaymentsPage() {
     fetchBuildings().then((data) => {
       if (isMountedRef.current) {
         setBuildings(data);
+        console.log(`🏢 Loaded ${data.length} buildings into cache`);
       }
     });
   }, []);
@@ -886,6 +1025,18 @@ export default function AdminPaymentsPage() {
           paymentsList = paymentsList.filter(
             (p: Payment) => p.paymentType === paymentTypeFilter,
           );
+        }
+
+        // Log sample payment to debug building data
+        if (paymentsList.length > 0) {
+          console.log("📊 Sample payment for building extraction:", {
+            paymentId: paymentsList[0]._id,
+            hasBuildingId: !!paymentsList[0].buildingId,
+            buildingId: paymentsList[0].buildingId,
+            userId: paymentsList[0].userId,
+            billingId: paymentsList[0].billingId,
+            customerName: paymentsList[0].customerName,
+          });
         }
 
         const grouped = groupPayments(paymentsList);
@@ -1243,13 +1394,14 @@ export default function AdminPaymentsPage() {
 
     let tableRows = "";
     exportData.forEach((group, index) => {
+      const buildingDisplay = group.customerInfo.buildingName || "—";
       tableRows += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.name}</td>
           <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace;">${group.customerInfo.applicationId}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.email}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.buildingName || "—"}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${buildingDisplay}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${group.paymentCount}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(group.totalPaidAmount)}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${group.totalPendingAmount > 0 ? formatCurrency(group.totalPendingAmount) : "—"}</td>
