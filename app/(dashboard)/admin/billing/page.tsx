@@ -159,6 +159,15 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
+function getBuildingId(customer: CustomerItem): string | null {
+  if (customer.building) {
+    if (typeof customer.building === "object" && customer.building._id) {
+      return customer.building._id;
+    }
+  }
+  return null;
+}
+
 // ==================== MEMOIZED ROW COMPONENT ====================
 const CustomerRow = React.memo(
   ({
@@ -658,13 +667,12 @@ export default function AdminBillingPage() {
             .toLowerCase()
             .includes(searchTerm.toLowerCase()));
 
-      const matchesBuilding =
-        buildingFilter === "all" ||
-        (customer.building && customer.building._id === buildingFilter) ||
-        (customer.building &&
-          customer.building.buildingName
-            ?.toLowerCase()
-            .includes(buildingFilter.toLowerCase()));
+      // FIXED: Building filter - properly check if building ID matches
+      let matchesBuilding = true;
+      if (buildingFilter !== "all") {
+        const customerBuildingId = getBuildingId(customer);
+        matchesBuilding = customerBuildingId === buildingFilter;
+      }
 
       if (!matchesSearch || !matchesBuilding) return false;
 

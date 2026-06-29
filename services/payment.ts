@@ -12,6 +12,7 @@ export interface CreatePaymentData {
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
+  buildingId?: string; // Add buildingId
 }
 
 export interface PaymentResponse {
@@ -26,6 +27,7 @@ export interface Payment {
   _id: string;
   userId: any;
   applicationId?: string;
+  buildingId?: string; // Add buildingId
   amount: number;
   paymentMethod: string;
   paymentType: string;
@@ -52,8 +54,11 @@ export interface GetAllPaymentsParams {
   limit?: number;
   status?: string;
   paymentType?: string;
+  buildingId?: string; // Add buildingId
   search?: string;
   forceRefresh?: boolean;
+  startDate?: string; // Add date range
+  endDate?: string;
 }
 
 export interface GetAllPaymentsResponse {
@@ -158,6 +163,7 @@ export const createPayment = async (
       customerName: data.customerName,
       customerEmail: data.customerEmail,
       customerPhone: data.customerPhone,
+      buildingId: data.buildingId,
     });
     clearPaymentsCache();
     return response.data;
@@ -171,6 +177,7 @@ export const getPayments = async (params?: {
   page?: number;
   limit?: number;
   status?: string;
+  buildingId?: string;
   forceRefresh?: boolean;
 }): Promise<any> => {
   try {
@@ -274,7 +281,7 @@ export const getAllPayments = async (
   params?: GetAllPaymentsParams,
 ): Promise<GetAllPaymentsResponse> => {
   try {
-    const cacheKey = `${PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS}_${params?.page || 1}_${params?.limit || 20}_${params?.status || "all"}_${params?.paymentType || "all"}`;
+    const cacheKey = `${PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS}_${params?.page || 1}_${params?.limit || 20}_${params?.status || "all"}_${params?.paymentType || "all"}_${params?.buildingId || "all"}`;
 
     if (!params?.forceRefresh) {
       const cached = getCachedPayments<GetAllPaymentsResponse>(cacheKey);
@@ -287,7 +294,10 @@ export const getAllPayments = async (
     if (params?.status) queryParams.append("status", params.status);
     if (params?.paymentType)
       queryParams.append("paymentType", params.paymentType);
+    if (params?.buildingId) queryParams.append("buildingId", params.buildingId);
     if (params?.search) queryParams.append("search", params.search);
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
 
     const url = `/payments/admin/all${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
     const response = await api.get(url);

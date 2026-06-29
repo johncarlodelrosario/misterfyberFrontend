@@ -1,3 +1,4 @@
+// frontend/src/app/admin/payments/page.tsx
 "use client";
 
 import React, {
@@ -35,6 +36,7 @@ import {
   FiChevronsUp,
   FiCalendar,
   FiTrash2,
+  FiHome,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -47,6 +49,8 @@ interface CustomerInfo {
   email: string;
   phone: string;
   applicationId: string;
+  buildingId?: string;
+  buildingName?: string;
 }
 
 interface PaymentGroup {
@@ -62,10 +66,19 @@ interface PaymentGroup {
   hasPendingPayments: boolean;
 }
 
+interface Building {
+  _id: string;
+  name: string;
+  address: string;
+}
+
+// ==================== BUILDING CACHE ====================
+const buildingCache = new Map<string, { name: string; address: string }>();
+
 // ==================== CUSTOMER NAME CACHE ====================
 const customerNameCache = new Map<
   string,
-  { name: string; email: string; phone: string }
+  { name: string; email: string; phone: string; buildingId?: string }
 >();
 
 // ==================== GLOBAL CACHE ====================
@@ -104,10 +117,33 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
+// ==================== FETCH BUILDINGS ====================
+async function fetchBuildings(): Promise<Building[]> {
+  try {
+    const response = await api.get("/buildings");
+    if (response.data?.success && response.data?.data) {
+      const buildings = response.data.data;
+      buildings.forEach((b: Building) => {
+        buildingCache.set(b._id, { name: b.name, address: b.address });
+      });
+      return buildings;
+    }
+    return [];
+  } catch (error) {
+    console.error("Error fetching buildings:", error);
+    return [];
+  }
+}
+
 // ==================== FETCH CUSTOMER NAME ====================
 async function fetchCustomerName(
   applicationId: string,
-): Promise<{ name: string; email: string; phone: string }> {
+): Promise<{
+  name: string;
+  email: string;
+  phone: string;
+  buildingId?: string;
+}> {
   if (!applicationId || applicationId === "—" || applicationId === "") {
     return { name: "Unknown Customer", email: "—", phone: "—" };
   }
@@ -129,6 +165,7 @@ async function fetchCustomerName(
         name: finalName,
         email: app.email || "—",
         phone: app.phoneNumber || "—",
+        buildingId: app.buildingId,
       };
       customerNameCache.set(applicationId, customerInfo);
       return customerInfo;
@@ -152,7 +189,6 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
       typeof payment.applicationId === "object" &&
       payment.applicationId !== null
     ) {
-      // Check if it has an applicationId property
       const appObj = payment.applicationId as any;
       if (appObj.applicationId && typeof appObj.applicationId === "string") {
         appId = appObj.applicationId;
@@ -160,12 +196,28 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     }
   }
 
-  // Also check paymentDetails for gatewayResponse
   if (!appId && payment.paymentDetails?.gatewayResponse?.applicationId) {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
+
+  let buildingId = payment.buildingId;
+  let buildingName = "";
+
+  if (buildingId && buildingCache.has(buildingId)) {
+    const building = buildingCache.get(buildingId)!;
+    buildingName = building.name;
+  } else if (buildingId) {
+    try {
+      const response = await api.get(`/buildings/${buildingId}`);
+      if (response.data?.success && response.data?.data) {
+        const b = response.data.data;
+        buildingCache.set(buildingId, { name: b.name, address: b.address });
+        buildingName = b.name;
+      }
+    } catch (e) {}
+  }
 
   if (appId && isAppIdPattern) {
     const customerData = await fetchCustomerName(appId);
@@ -174,6 +226,8 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
       email: customerData.email,
       phone: customerData.phone,
       applicationId: appId,
+      buildingId: customerData.buildingId || buildingId,
+      buildingName: buildingName,
     };
   }
 
@@ -186,11 +240,12 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
         email: payment.customerEmail || "—",
         phone: payment.customerPhone || "—",
         applicationId: appId || "—",
+        buildingId: buildingId,
+        buildingName: buildingName,
       };
     }
   }
 
-  // Check if userId contains customer information
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
     const firstName = user.firstName || "";
@@ -204,6 +259,8 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
           email: user.email || payment.customerEmail || "—",
           phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
           applicationId: appId || "—",
+          buildingId: buildingId,
+          buildingName: buildingName,
         };
       }
     }
@@ -217,6 +274,8 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
         email: customerData.email,
         phone: customerData.phone,
         applicationId: appId,
+        buildingId: customerData.buildingId || buildingId,
+        buildingName: buildingName,
       };
     }
     return {
@@ -224,6 +283,8 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
       email: payment.customerEmail || "—",
       phone: payment.customerPhone || "—",
       applicationId: appId,
+      buildingId: buildingId,
+      buildingName: buildingName,
     };
   }
 
@@ -232,6 +293,8 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     email: payment.customerEmail || "—",
     phone: payment.customerPhone || "—",
     applicationId: appId || "—",
+    buildingId: buildingId,
+    buildingName: buildingName,
   };
 }
 
@@ -367,6 +430,11 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
         <p className="font-semibold text-lg">{info.name}</p>
         <p className="text-sm text-gray-600">{info.email}</p>
         <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
+        {info.buildingName && (
+          <p className="text-sm text-blue-600 flex items-center gap-1">
+            <FiHome className="w-3 h-3" /> {info.buildingName}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -485,7 +553,7 @@ const PendingPaymentRow = React.memo(
     if (loading || !info) {
       return (
         <tr>
-          <td colSpan={7} className="px-4 py-3 text-center">
+          <td colSpan={8} className="px-4 py-3 text-center">
             <span className="animate-pulse">Loading customer info...</span>
           </td>
         </tr>
@@ -505,6 +573,7 @@ const PendingPaymentRow = React.memo(
         </td>
         <td className="px-4 py-3 font-medium">{info.name}</td>
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
+        <td className="px-4 py-3 text-sm">{info.buildingName || "—"}</td>
         <td className="px-4 py-3 font-semibold">
           {formatCurrency(payment.amount)}
         </td>
@@ -627,6 +696,9 @@ const CustomerSummaryRow = React.memo(
               </div>
             )}
           </td>
+          <td className="px-4 py-4 text-sm">
+            {group.customerInfo.buildingName || "—"}
+          </td>
           <td className="px-4 py-4 text-center">
             <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
               {group.paymentCount}
@@ -660,7 +732,7 @@ const CustomerSummaryRow = React.memo(
         </tr>
         {isExpanded && hasMultiple && (
           <tr className="bg-gray-50">
-            <td colSpan={9} className="px-4 py-4 pl-12">
+            <td colSpan={10} className="px-4 py-4 pl-12">
               <div className="border-l-4 border-blue-400 pl-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   Payment History
@@ -794,6 +866,8 @@ export default function AdminPaymentsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
+  const [buildingFilter, setBuildingFilter] = useState("");
+  const [buildings, setBuildings] = useState<Building[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -821,6 +895,15 @@ export default function AdminPaymentsPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
 
+  // Load buildings on mount
+  useEffect(() => {
+    fetchBuildings().then((data) => {
+      if (isMountedRef.current) {
+        setBuildings(data);
+      }
+    });
+  }, []);
+
   // ==================== LOAD PAYMENTS ====================
   const loadPayments = useCallback(
     async (forceRefresh = false) => {
@@ -829,7 +912,6 @@ export default function AdminPaymentsPage() {
       // Check global cache first
       const now = Date.now();
       if (!forceRefresh && globalCache) {
-        // Check if cache is still valid (within TTL)
         if (now - globalCacheTimestamp < CACHE_TTL) {
           const cached = globalCache;
           setPaymentGroups(cached.paymentGroups);
@@ -841,7 +923,6 @@ export default function AdminPaymentsPage() {
           console.log("✅ Using global cached payment data");
           return;
         } else {
-          // Cache expired, clear it
           globalCache = null;
         }
       }
@@ -858,6 +939,7 @@ export default function AdminPaymentsPage() {
           page: currentPage,
           limit: 100,
           status: statusFilter || undefined,
+          buildingId: buildingFilter || undefined,
           forceRefresh,
         });
 
@@ -903,7 +985,6 @@ export default function AdminPaymentsPage() {
           setStats(newStats);
         }
 
-        // Save to global cache
         globalCache = {
           paymentGroups: grouped,
           pendingPayments: pendingList,
@@ -925,7 +1006,7 @@ export default function AdminPaymentsPage() {
         }
       }
     },
-    [currentPage, statusFilter, paymentTypeFilter, stats],
+    [currentPage, statusFilter, paymentTypeFilter, buildingFilter, stats],
   );
 
   // ==================== INITIAL LOAD ====================
@@ -1013,23 +1094,76 @@ export default function AdminPaymentsPage() {
     }
   };
 
+  // ==================== EXPORT ====================
+  const exportToExcel = () => {
+    const csvData = sortedGroups.map((group) => ({
+      "Customer Name": group.customerInfo.name,
+      "Application ID": group.customerInfo.applicationId,
+      Email: group.customerInfo.email,
+      Phone: group.customerInfo.phone,
+      Building: group.customerInfo.buildingName || "—",
+      "Total Paid": group.totalPaidAmount,
+      "Total Pending": group.totalPendingAmount,
+      "Payment Count": group.paymentCount,
+      "Last Payment Date": formatShortDate(group.lastPaymentDate),
+      "First Payment Date": formatShortDate(group.firstPaymentDate),
+      Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
+    }));
+
+    const headers = Object.keys(csvData[0] || {});
+    const csvRows = [
+      headers.join(","),
+      ...csvData.map((row) =>
+        headers
+          .map((header) => {
+            const value = row[header as keyof typeof row];
+            if (typeof value === "number") return value.toString();
+            return `"${String(value).replace(/"/g, '""')}"`;
+          })
+          .join(","),
+      ),
+    ];
+
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payments_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Export complete!");
+  };
+
   // ==================== MEMOIZED DATA ====================
   const filteredGroups = useMemo(() => {
-    if (!search.trim()) return paymentGroups;
+    if (!search.trim() && !buildingFilter) return paymentGroups;
     const searchLower = search.toLowerCase();
     return paymentGroups.filter((group) => {
       const info = group.customerInfo;
-      return (
+      const matchesSearch =
+        !search.trim() ||
         info.name.toLowerCase().includes(searchLower) ||
         info.email.toLowerCase().includes(searchLower) ||
         info.applicationId.toLowerCase().includes(searchLower) ||
         info.phone.toLowerCase().includes(searchLower) ||
         group.payments.some((p) =>
           p.referenceNumber?.toLowerCase().includes(searchLower),
-        )
-      );
+        );
+      const matchesBuilding =
+        !buildingFilter ||
+        info.buildingId === buildingFilter ||
+        info.buildingName
+          ?.toLowerCase()
+          .includes(
+            buildings
+              .find((b) => b._id === buildingFilter)
+              ?.name.toLowerCase() || "",
+          );
+      return matchesSearch && matchesBuilding;
     });
-  }, [paymentGroups, search]);
+  }, [paymentGroups, search, buildingFilter, buildings]);
 
   const sortedGroups = useMemo(() => {
     return [...filteredGroups].sort((a, b) => {
@@ -1068,47 +1202,6 @@ export default function AdminPaymentsPage() {
 
   const totalFilteredCount = filteredGroups.length;
   const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
-
-  // ==================== EXPORT ====================
-  const exportToExcel = () => {
-    const csvData = sortedGroups.map((group) => ({
-      "Customer Name": group.customerInfo.name,
-      "Application ID": group.customerInfo.applicationId,
-      Email: group.customerInfo.email,
-      Phone: group.customerInfo.phone,
-      "Total Paid": group.totalPaidAmount,
-      "Total Pending": group.totalPendingAmount,
-      "Payment Count": group.paymentCount,
-      "Last Payment Date": formatShortDate(group.lastPaymentDate),
-      "First Payment Date": formatShortDate(group.firstPaymentDate),
-      Status: group.hasPendingPayments ? "Has Pending" : "All Completed",
-    }));
-
-    const headers = Object.keys(csvData[0] || {});
-    const csvRows = [
-      headers.join(","),
-      ...csvData.map((row) =>
-        headers
-          .map((header) => {
-            const value = row[header as keyof typeof row];
-            if (typeof value === "number") return value.toString();
-            return `"${String(value).replace(/"/g, '""')}"`;
-          })
-          .join(","),
-      ),
-    ];
-
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `payments_export_${new Date().toISOString().split("T")[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Export complete!");
-  };
 
   // ==================== SORT ICON ====================
   const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
@@ -1300,6 +1393,21 @@ export default function AdminPaymentsPage() {
                 <option value="subscription">Subscription</option>
                 <option value="installation">Installation</option>
               </select>
+              <select
+                value={buildingFilter}
+                onChange={(e) => {
+                  setBuildingFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+              >
+                <option value="">All Buildings</option>
+                {buildings.map((building) => (
+                  <option key={building._id} value={building._id}>
+                    {building.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>
@@ -1327,6 +1435,9 @@ export default function AdminPaymentsPage() {
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Application ID
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Building
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Amount
@@ -1414,6 +1525,9 @@ export default function AdminPaymentsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Email / Phone
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Building
+                </th>
                 <th
                   className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("paymentCount")}
@@ -1444,7 +1558,7 @@ export default function AdminPaymentsPage() {
               {paginatedGroups.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
