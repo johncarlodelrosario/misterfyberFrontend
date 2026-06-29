@@ -1,9 +1,11 @@
+// frontend/app/login/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { FiMail, FiLock, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiMail, FiLock, FiEye, FiEyeOff, FiAlertCircle } from "react-icons/fi";
 import Image from "next/image";
 
 export default function LoginPage() {
@@ -12,7 +14,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push("/admin");
+    }
+  }, [isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,45 +32,55 @@ export default function LoginPage() {
     try {
       console.log("Attempting login with:", { email });
       await login(email, password);
-      // Redirect happens inside login function
+      // Redirect happens inside login function or via useEffect
     } catch (error: any) {
       console.error("Login page error:", error);
-      setError(error.message || "Login failed. Please try again.");
+
+      // Provide user-friendly error messages
+      let errorMessage = error.message || "Login failed. Please try again.";
+
+      if (errorMessage.includes("405")) {
+        errorMessage =
+          "Login service is temporarily unavailable. Please contact support.";
+      } else if (errorMessage.includes("Cannot connect to server")) {
+        errorMessage =
+          "Cannot connect to server. Please check your internet connection and try again.";
+      } else if (errorMessage.includes("Invalid credentials")) {
+        errorMessage = "Invalid email or password. Please try again.";
+      }
+
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
         <div>
           <div className="text-center flex justify-center">
             <Image
               src="/Logo.png"
               alt="Logo"
-              width={300}
-              height={300}
+              width={280}
+              height={280}
               className="object-contain"
+              priority
             />
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
+          <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
+            Welcome Back
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Or{" "}
-            <Link
-              href="/register"
-              className="font-medium text-primary-600 hover:text-primary-500"
-            >
-              create a new account
-            </Link>
+            Sign in to your account to continue
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm">
-            {error}
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
+            <FiAlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -69,11 +89,11 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Email address
+                Email Address
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FiMail className="h-5 w-5 text-gray-400" />
                 </div>
@@ -85,8 +105,9 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900"
+                  className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900 transition-colors"
                   placeholder="you@example.com"
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -94,11 +115,11 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-700 mb-1"
               >
                 Password
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FiLock className="h-5 w-5 text-gray-400" />
                 </div>
@@ -110,18 +131,20 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900"
+                  className="appearance-none block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900 transition-colors"
                   placeholder="••••••••"
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  disabled={isLoading}
                 >
                   {showPassword ? (
-                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                    <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
                   ) : (
-                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                    <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" />
                   )}
                 </button>
               </div>
@@ -147,9 +170,9 @@ export default function LoginPage() {
             <div className="text-sm">
               <Link
                 href="/forgot-password"
-                className="font-medium text-primary-600 hover:text-primary-500"
+                className="font-medium text-primary-600 hover:text-primary-500 transition-colors"
               >
-                Forgot your password?
+                Forgot password?
               </Link>
             </div>
           </div>
@@ -158,7 +181,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg"
             >
               {isLoading ? (
                 <span className="flex items-center">
@@ -185,20 +208,20 @@ export default function LoginPage() {
                   Signing in...
                 </span>
               ) : (
-                "Sign in"
+                "Sign In"
               )}
             </button>
           </div>
         </form>
 
-        <div className="text-center">
+        <div className="text-center pt-4 border-t border-gray-100">
           <p className="text-sm text-gray-600">
             Don't have an account?{" "}
             <Link
               href="/register"
-              className="font-medium text-primary-600 hover:text-primary-500"
+              className="font-medium text-primary-600 hover:text-primary-500 transition-colors"
             >
-              Register here
+              Create one now
             </Link>
           </p>
         </div>

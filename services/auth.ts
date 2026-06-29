@@ -1,3 +1,4 @@
+// frontend/services/authService.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 interface LoginResponse {
@@ -63,6 +64,7 @@ export const login = async (
 ): Promise<LoginResponse> => {
   try {
     console.log("[Auth] Attempting login for:", identifier);
+    console.log("[Auth] API baseURL:", api.defaults.baseURL);
 
     // Check if identifier is email or username
     const isEmail = identifier.includes("@") && identifier.includes(".");
@@ -71,7 +73,12 @@ export const login = async (
       ? { email: identifier, password }
       : { username: identifier, password };
 
+    console.log("[Auth] Sending payload to /auth/login:", payload);
+
     const response = await api.post("/auth/login", payload);
+
+    console.log("[Auth] Login response status:", response.status);
+    console.log("[Auth] Login response data:", response.data);
 
     let token: string;
     let userData: any;
@@ -111,11 +118,23 @@ export const login = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Login error:", error.message);
+    console.error("[Auth] Login error details:", {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: error.config,
+    });
+
+    if (error.response?.status === 405) {
+      throw new Error(
+        "Login endpoint not found (405). Please check if the backend is running and the route is correct.",
+      );
+    }
 
     if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
       throw new Error(
-        "Cannot connect to server. Please check if the backend is running.",
+        "Cannot connect to server. Please check if the backend is running on http://localhost:5000",
       );
     }
 
@@ -234,7 +253,12 @@ export const checkApplicationStatus = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const url = `${process.env.NEXT_PUBLIC_API_URL || "https://misterfyberbackend.onrender.com/api"}/auth/check-application/${applicationId}`;
+    const baseURL =
+      process.env.NODE_ENV === "production"
+        ? "https://misterfyberbackend.onrender.com/api"
+        : "http://localhost:5000/api";
+
+    const url = `${baseURL}/auth/check-application/${applicationId}`;
 
     const response = await fetch(url, {
       method: "GET",

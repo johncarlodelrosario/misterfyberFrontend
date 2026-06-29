@@ -66,20 +66,13 @@ const getApiUrl = (): string => {
     return process.env.NEXT_PUBLIC_API_URL || "/api";
   }
 
-  // Use relative /api in production (handled by next.config.js rewrites)
-  // This is the KEY FIX - use relative path so rewrites work
-  const isProduction =
-    process.env.NODE_ENV === "production" ||
-    window.location.hostname.includes("vercel.app") ||
-    window.location.hostname.includes("misterfyber.com");
-
-  if (isProduction) {
-    // Use relative path - next.config.js rewrites will proxy to backend
-    return "/api";
+  // Development - use localhost with port 5000
+  if (process.env.NODE_ENV === "development") {
+    return "http://localhost:5000/api";
   }
 
-  // Development - use localhost
-  return "http://localhost:5000/api";
+  // Production - use the deployed backend URL
+  return "https://misterfyberbackend.onrender.com/api";
 };
 
 // ==================== AXIOS INSTANCE ====================
@@ -89,8 +82,8 @@ const api = axios.create({
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  withCredentials: true, // Important for cookies
-  timeout: 30000, // Increased timeout for production
+  withCredentials: true,
+  timeout: 30000,
 });
 
 // ==================== REQUEST INTERCEPTOR ====================
