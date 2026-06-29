@@ -12,7 +12,7 @@ export interface CreatePaymentData {
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
 }
 
 export interface PaymentResponse {
@@ -27,7 +27,8 @@ export interface Payment {
   _id: string;
   userId: any;
   applicationId?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
+  buildingName?: string; // <--- ITO ANG DINAGDAG
   amount: number;
   paymentMethod: string;
   paymentType: string;
@@ -54,10 +55,10 @@ export interface GetAllPaymentsParams {
   limit?: number;
   status?: string;
   paymentType?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
   search?: string;
   forceRefresh?: boolean;
-  startDate?: string; // Add date range
+  startDate?: string;
   endDate?: string;
 }
 
@@ -88,7 +89,7 @@ const PAYMENT_CACHE_KEYS = {
   ADMIN_ALL_PAYMENTS: "misterfyber_admin_all_payments",
 };
 
-const PAYMENT_CACHE_DURATION = 3 * 60 * 1000; // Reduced to 3 minutes
+const PAYMENT_CACHE_DURATION = 3 * 60 * 1000;
 const MAX_CACHE_ITEMS = 15;
 
 function getCachedPayments<T>(key: string): T | null {
@@ -98,7 +99,6 @@ function getCachedPayments<T>(key: string): T | null {
     const item = JSON.parse(cached);
     if (Date.now() - item.timestamp > PAYMENT_CACHE_DURATION) {
       localStorage.removeItem(key);
-      // Update cache keys
       try {
         const storedKeys = localStorage.getItem("payment_cache_keys");
         if (storedKeys) {
@@ -117,7 +117,6 @@ function getCachedPayments<T>(key: string): T | null {
 
 function setCachedPayments<T>(key: string, data: T): void {
   try {
-    // LRU: Remove oldest if cache is full
     try {
       const storedKeys = localStorage.getItem("payment_cache_keys");
       let cacheKeys = storedKeys ? JSON.parse(storedKeys) : [];
