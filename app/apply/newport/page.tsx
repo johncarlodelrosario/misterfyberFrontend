@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -34,7 +34,8 @@ interface Plan {
   isActive: boolean;
 }
 
-export default function ApplyContent() {
+// The component that uses useSearchParams - wrapped in Suspense
+function ApplyFormContent() {
   const searchParams = useSearchParams();
   const planIdFromUrl = searchParams.get("plan");
 
@@ -746,7 +747,7 @@ export default function ApplyContent() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-3 text-black rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 text-sm sm:text-base"
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 text-sm sm:text-base"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -854,5 +855,23 @@ export default function ApplyContent() {
         </div>
       </div>
     </>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function ApplyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-white pt-24 pb-16 flex items-center justify-center">
+          <div className="text-center">
+            <FiLoader className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading application form...</p>
+          </div>
+        </div>
+      }
+    >
+      <ApplyFormContent />
+    </Suspense>
   );
 }
