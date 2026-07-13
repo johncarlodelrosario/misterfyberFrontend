@@ -33,7 +33,11 @@ export default function PlansSection() {
       setError(null);
       const data = await getPlans();
       const activePlans = data.filter((plan: Plan) => plan.isActive !== false);
-      setPlans(activePlans.slice(0, 3));
+      // Filter out the Fiber Plan 999
+      const filteredPlans = activePlans.filter(
+        (plan: Plan) => plan.name !== "Fiber Plan 999",
+      );
+      setPlans(filteredPlans.slice(0, 3));
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");

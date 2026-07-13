@@ -150,7 +150,7 @@ export default function FeaturesSection() {
         >
           <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4 text-gray-900">
             Quality{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
+            <span className="bg-black bg-clip-text text-transparent">
               Internet Service
             </span>
           </h2>

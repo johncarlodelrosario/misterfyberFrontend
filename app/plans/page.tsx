@@ -88,61 +88,65 @@ export default function PlansSection() {
       else if (data.plans && Array.isArray(data.plans)) plansData = data.plans;
       else plansData = [];
 
-      const activePlans = plansData.filter(
-        (plan: Plan) => plan.isActive !== false,
-      );
-      setPlans(activePlans);
+      // Filter out "Fiber Plan 999" - check multiple variations
+      const filteredPlans = plansData.filter((plan: Plan) => {
+        const isActive = plan.isActive !== false;
+        const isNotFiber999 =
+          plan.name !== "Fiber Plan 999" &&
+          plan.name !== "Essential" &&
+          plan.name !== "Fiber 999" &&
+          !plan.name.includes("999") &&
+          plan.price !== 999;
+        return isActive && isNotFiber999;
+      });
+
+      console.log("Filtered plans:", filteredPlans); // For debugging
+      setPlans(filteredPlans);
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");
       setPlans([
         {
-          _id: "1",
-          name: "Essential",
-          description: "Perfect for light browsing & daily tasks",
-          price: 999,
-          speed: { download: 50, upload: 25 },
-          features: [
-            "50 Mbps Speed",
-            "Unlimited Data",
-            "Basic Security",
-            "12/7 Support",
-          ],
-          duration: 30,
-          mikrotikProfile: "basic",
-          isActive: true,
-        },
-        {
           _id: "2",
-          name: "Professional",
-          description: "Great for families & work from home",
-          price: 1499,
-          speed: { download: 150, upload: 75 },
-          features: [
-            "150 Mbps Speed",
-            "Unlimited Data",
-            "Enhanced Security",
-            "Priority Support",
-            "Free Installation",
-            "Free WiFi Router",
-          ],
+          name: "Fiber Plan 100",
+          description: "Budget-friendly plan",
+          price: 1399,
+          speed: { download: 100, upload: 100 },
+          features: ["100 Mbps Speed", "Standard WiFi Router", "Email Support"],
           duration: 30,
           mikrotikProfile: "standard",
           isActive: true,
         },
         {
           _id: "3",
-          name: "Ultimate",
-          description: "For heavy users, gamers & businesses",
-          price: 1999,
-          speed: { download: 300, upload: 150 },
+          name: "Fiber Plan 150",
+          description:
+            "Perfect for families, 150Mbps unlimited fiber connection",
+          price: 1699,
+          speed: { download: 150, upload: 150 },
           features: [
-            "300 Mbps Speed",
-            "Unlimited Data",
-            "Advanced Security",
-            "24/7 Premium Support",
-            "Free Installation",
-            "Free Mesh Router",
+            "150 Mbps Speed",
+            "Unlimited Internet",
+            "Free WiFi Router",
+            "24/7 Technical Support",
+            "No Data Cap",
+          ],
+          duration: 30,
+          mikrotikProfile: "premium",
+          isActive: true,
+        },
+        {
+          _id: "4",
+          name: "Fiber Plan 200",
+          description: "For heavy users, 200Mbps unlimited fiber",
+          price: 1899,
+          speed: { download: 200, upload: 200 },
+          features: [
+            "200 Mbps Speed",
+            "Unlimited Internet",
+            "Free Mesh WiFi",
+            "Priority Support",
+            "Static IP Included",
           ],
           duration: 30,
           mikrotikProfile: "premium",
@@ -285,7 +289,7 @@ export default function PlansSection() {
             {!loading && !error && (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {plans.map((plan, idx) => {
-                  const isPopular = plan.name === "Professional" || idx === 1;
+                  const isPopular = plan.name === "Fiber Plan 150" || idx === 1;
                   return (
                     <motion.div
                       key={plan._id}

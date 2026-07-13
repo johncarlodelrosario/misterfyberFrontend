@@ -20,8 +20,6 @@ import {
   FiLayers,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer";
 import { getActiveBuildings, Building } from "@/services/building";
 import TermsAndConditionsModal from "@/components/common/TermsAndConditionsModal";
 
@@ -94,20 +92,23 @@ export default function ApplyContent() {
       else if (data.plans && Array.isArray(data.plans)) plansData = data.plans;
       else plansData = [];
 
-      // Filter active plans and hide Fiber Plan 999
-      let activePlans = plansData.filter((plan: Plan) => {
-        // Check if plan is active
-        if (plan.isActive === false) return false;
-        // Hide Fiber Plan 999
-        if (plan.name === "Fiber Plan 999") return false;
-        if (plan.name?.toLowerCase().includes("fiber plan 999")) return false;
-        if (plan.price === 999) return false;
-        return true;
-      });
+      // Filter to only show active plans
+      let activePlans = plansData.filter(
+        (plan: Plan) => plan.isActive !== false,
+      );
+
+      // Filter to ONLY show "Fiber Plan 999"
+      activePlans = activePlans.filter(
+        (plan: Plan) => plan.name === "Fiber Plan 999",
+      );
 
       setPlans(activePlans);
-      if (activePlans.length > 0 && !planIdFromUrl) {
+
+      // Auto-select the plan if available
+      if (activePlans.length > 0) {
         setSelectedPlan(activePlans[0]._id);
+      } else {
+        toast.error("Fiber Plan 999 is currently not available");
       }
     } catch (error) {
       console.error("Failed to fetch plans:", error);
@@ -120,16 +121,37 @@ export default function ApplyContent() {
   const fetchBuildings = async () => {
     try {
       const buildingsData = await getActiveBuildings();
-      // Hide Newport Residences from buildings
-      const filteredBuildings = buildingsData.filter((building: Building) => {
-        if (building.buildingName === "Newport Residences") return false;
-        if (building.buildingName?.toLowerCase().includes("newport residences"))
-          return false;
-        if (building.buildingName?.toLowerCase().includes("newport"))
-          return false;
-        return true;
+      console.log("All buildings from database:", buildingsData);
+
+      // Try to find Newport Residences with case-insensitive matching
+      const newportBuildings = buildingsData.filter((building: Building) => {
+        const buildingName = building.buildingName?.toLowerCase() || "";
+        return (
+          buildingName.includes("newport") ||
+          buildingName === "newport residences"
+        );
       });
-      setBuildings(filteredBuildings);
+
+      console.log("Filtered Newport buildings:", newportBuildings);
+
+      setBuildings(newportBuildings);
+
+      // Auto-select Newport Residences if available
+      if (newportBuildings.length > 0) {
+        setSelectedBuilding(newportBuildings[0]._id);
+        console.log(
+          "Auto-selected building:",
+          newportBuildings[0].buildingName,
+        );
+      } else {
+        // If no Newport found, show all buildings as fallback
+        console.log("No Newport found, showing all buildings");
+        setBuildings(buildingsData);
+        if (buildingsData.length > 0) {
+          setSelectedBuilding(buildingsData[0]._id);
+        }
+        toast.error("Newport Residences not found. Please select a building.");
+      }
     } catch (error) {
       console.error("Failed to fetch buildings:", error);
       toast.error("Failed to load buildings");
@@ -289,8 +311,6 @@ export default function ApplyContent() {
 
   return (
     <>
-      <Header />
-
       {/* Terms and Conditions Modal */}
       <TermsAndConditionsModal
         isOpen={showTermsModal}
@@ -353,7 +373,7 @@ export default function ApplyContent() {
                   setAcceptedTerms(false);
                   window.scrollTo(0, 0);
                 }}
-                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-blue  text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
+                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
               >
                 Apply Again
               </button>
@@ -755,41 +775,51 @@ export default function ApplyContent() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {plans.map((plan) => (
-                          <label
-                            key={plan._id}
-                            className={`block p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition ${
-                              selectedPlan === plan._id
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-gray-200 hover:border-blue-400 bg-gray-50"
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="plan"
-                              value={plan._id}
-                              checked={selectedPlan === plan._id}
-                              onChange={() => setSelectedPlan(plan._id)}
-                              className="hidden"
-                            />
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h3 className="font-bold text-gray-900 text-sm sm:text-base">
-                                  {plan.name}
-                                </h3>
-                                <p className="text-xs text-gray-500 mt-1">
-                                  {plan.speed?.download} Mbps
-                                </p>
+                        {plans.length === 0 ? (
+                          <div className="text-center py-8">
+                            <p className="text-gray-500 text-sm">
+                              No plans available at the moment
+                            </p>
+                          </div>
+                        ) : (
+                          plans.map((plan) => (
+                            <label
+                              key={plan._id}
+                              className={`block p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition ${
+                                selectedPlan === plan._id
+                                  ? "border-blue-600 bg-blue-50"
+                                  : "border-gray-200 hover:border-blue-400 bg-gray-50"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="plan"
+                                value={plan._id}
+                                checked={selectedPlan === plan._id}
+                                onChange={() => setSelectedPlan(plan._id)}
+                                className="hidden"
+                              />
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h3 className="font-bold text-gray-900 text-sm sm:text-base">
+                                    {plan.name}
+                                  </h3>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {plan.speed?.download} Mbps
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-blue-600 text-sm sm:text-base">
+                                    ₱{plan.price.toLocaleString()}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    /month
+                                  </p>
+                                </div>
                               </div>
-                              <div className="text-right">
-                                <p className="font-bold text-blue-600 text-sm sm:text-base">
-                                  ₱{plan.price.toLocaleString()}
-                                </p>
-                                <p className="text-xs text-gray-500">/month</p>
-                              </div>
-                            </div>
-                          </label>
-                        ))}
+                            </label>
+                          ))
+                        )}
                       </div>
                     )}
                     {selectedPlanDetails && (
@@ -823,7 +853,6 @@ export default function ApplyContent() {
           )}
         </div>
       </div>
-      <Footer />
     </>
   );
 }

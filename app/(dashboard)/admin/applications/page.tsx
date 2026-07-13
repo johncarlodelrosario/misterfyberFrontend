@@ -37,7 +37,6 @@ import {
   FiSave,
   FiChevronLeft,
   FiChevronRight,
-  FiHome,
 } from "react-icons/fi";
 
 const STORAGE_KEYS = {
@@ -51,7 +50,6 @@ const STORAGE_KEYS = {
   LAST_KNOWN_PENDING: "misterfyber_last_known_pending",
 };
 
-const CACHE_DURATION = 60 * 60 * 1000;
 const MAX_STORED_APPLICATIONS = 500;
 const CHECK_INTERVAL = 15000;
 const ITEMS_PER_PAGE = 20;
@@ -185,10 +183,7 @@ export default function ApplicationsPage() {
     failed: any[];
   } | null>(null);
 
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-
-  // State to track if table is fully visible
   const [showLeftButton, setShowLeftButton] = useState(false);
   const [showRightButton, setShowRightButton] = useState(false);
 
@@ -212,8 +207,6 @@ export default function ApplicationsPage() {
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
-
-  // Table scroll controls - using ref for the table container
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const checkTableScroll = useCallback(() => {
@@ -225,20 +218,16 @@ export default function ApplicationsPage() {
     }
   }, []);
 
-  // Check scroll on mount and resize
   useEffect(() => {
     const checkScroll = () => {
       checkTableScroll();
     };
-
     checkScroll();
     window.addEventListener("resize", checkScroll);
-
     const observer = new ResizeObserver(checkScroll);
     if (tableContainerRef.current) {
       observer.observe(tableContainerRef.current);
     }
-
     return () => {
       window.removeEventListener("resize", checkScroll);
       observer.disconnect();
@@ -259,7 +248,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Reset to page 1 when filter changes
   useEffect(() => {
     setCurrentPage(1);
   }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
@@ -591,46 +579,9 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  const fetchFullApplicationDetails = async (appId: string) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(
-        `${PRODUCTION_URL}/api/applications/${appId}`,
-        {
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        },
-      );
-      const result = await response.json();
-      if (result.success && result.data) {
-        return result.data;
-      }
-      return null;
-    } catch (error) {
-      console.error("Failed to fetch application details:", error);
-      return null;
-    }
-  };
-
-  const handleViewApplication = async (app: any) => {
-    const loadingToast = toast.loading("Loading application details...");
-
-    try {
-      const fullDetails = await fetchFullApplicationDetails(app._id);
-      toast.dismiss(loadingToast);
-
-      if (fullDetails) {
-        setSelectedApp(fullDetails);
-      } else {
-        setSelectedApp(app);
-        toast.error("Could not load full details, showing partial data");
-      }
-    } catch (error) {
-      toast.dismiss(loadingToast);
-      setSelectedApp(app);
-      toast.error("Error loading details");
-    }
+  // FIXED: Simplified - no more error
+  const handleViewApplication = (app: any) => {
+    setSelectedApp(app);
   };
 
   const handleApprove = async (id: string, adminNotes?: string) => {
@@ -796,7 +747,6 @@ export default function ApplicationsPage() {
     [PRODUCTION_URL],
   );
 
-  // Get unique buildings for filter
   const uniqueBuildings = useMemo(() => {
     const buildingSet = new Set<string>();
     applications.forEach((app: any) => {
@@ -849,7 +799,6 @@ export default function ApplicationsPage() {
     filter.buildingFilter,
   ]);
 
-  // Pagination calculations
   const totalPages = useMemo(() => {
     return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
   }, [filteredApplications.length]);
@@ -860,7 +809,6 @@ export default function ApplicationsPage() {
     return filteredApplications.slice(startIndex, endIndex);
   }, [filteredApplications, currentPage]);
 
-  // Check scroll when data changes - moved AFTER currentApplications is declared
   useEffect(() => {
     setTimeout(checkTableScroll, 100);
   }, [currentApplications, checkTableScroll]);
@@ -1382,9 +1330,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Table with scroll buttons */}
       <div className="relative">
-        {/* Left Scroll Button - Only show on desktop (non-mobile) and when needed, positioned outside sidebar */}
         {showLeftButton && (
           <button
             onClick={scrollTableLeft}
@@ -1399,7 +1345,6 @@ export default function ApplicationsPage() {
           </button>
         )}
 
-        {/* Right Scroll Button - Only show when table is not fully visible */}
         {showRightButton && (
           <button
             onClick={scrollTableRight}
@@ -1422,7 +1367,7 @@ export default function ApplicationsPage() {
           }}
           onScroll={checkTableScroll}
         >
-          <style jsx>{`
+          <style>{`
             div::-webkit-scrollbar {
               height: 6px;
             }
@@ -1634,6 +1579,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
+      {/* MODAL - Application Details */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1701,7 +1647,6 @@ export default function ApplicationsPage() {
                         "Not specified"}
                     </span>
                   </div>
-
                   <div>
                     <span className="text-gray-500">Tower:</span>{" "}
                     {editingTower === selectedApp._id ? (
@@ -1931,6 +1876,7 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* Billing Modal */}
       {showBillingModal && selectedAppForBilling && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg max-w-md w-full p-4">
@@ -2012,6 +1958,7 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* Image Modal */}
       {showImageModal && imagePreview && (
         <div
           className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
@@ -2046,6 +1993,7 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* Add Customer Modal */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -2371,6 +2319,7 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* Bulk Upload Modal */}
       {showBulkUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">

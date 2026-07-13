@@ -40,8 +40,6 @@ export default function Header() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout } = useMockAuth();
@@ -85,22 +83,6 @@ export default function Header() {
     };
   }, [lastScrollY]);
 
-  // Track mouse position for interactive glass effect
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (navRef.current) {
-        const rect = navRef.current.getBoundingClientRect();
-        setMousePosition({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
-
   // Click outside handlers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -136,48 +118,21 @@ export default function Header() {
             ref={navRef}
             className="relative mx-auto max-w-6xl rounded-2xl md:rounded-full transition-all duration-500 overflow-hidden"
           >
-            {/* White glass background */}
-            <div className="absolute inset-0 bg-white/95 backdrop-blur-xl" />
-
-            {/* Clear border around the nav - darker for white bg */}
-            <div className="absolute inset-0 rounded-2xl md:rounded-full border border-gray-200 shadow-[0_0_15px_rgba(0,0,0,0.08)]" />
-
-            {/* Gradient overlay - subtle blue accent */}
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-50/30 via-transparent to-blue-50/30" />
-
-            {/* Mouse follow spotlight - subtle blue glow */}
-            <div
-              className="absolute inset-0 transition-opacity duration-150 pointer-events-none"
-              style={{
-                background: `radial-gradient(circle 400px at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.05) 0%, transparent 70%)`,
-              }}
-            />
-
-            {/* Top border highlight */}
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-300/50 to-transparent" />
-
-            {/* Bottom border */}
-            <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-300/30 to-transparent" />
-
-            {/* Left border accent */}
-            <div className="absolute left-0 top-1/4 bottom-1/4 w-px bg-gradient-to-b from-transparent via-gray-300/30 to-transparent" />
-
-            {/* Right border accent */}
-            <div className="absolute right-0 top-1/4 bottom-1/4 w-px bg-gradient-to-b from-transparent via-gray-300/30 to-transparent" />
+            {/* Solid white background */}
+            <div className="absolute inset-0 bg-white" />
 
             {/* Content */}
             <div className="relative px-3 md:px-5 py-1.5">
               <div className="flex items-center justify-between gap-3">
                 {/* Logo */}
-                <div className="flex-shrink-0 group/logo">
-                  <Link href="/" className="block relative">
-                    <div className="absolute -inset-2 bg-blue-100/60 rounded-full blur-md opacity-0 group-hover/logo:opacity-100 transition-opacity duration-300" />
+                <div className="flex-shrink-0">
+                  <Link href="/" className="block">
                     <Image
                       src="/Logo.png"
                       alt="MisterFyber Logo"
                       width={140}
                       height={50}
-                      className="object-contain w-auto h-12 md:h-14 relative"
+                      className="object-contain w-auto h-12 md:h-14"
                       priority
                     />
                   </Link>
@@ -188,30 +143,23 @@ export default function Header() {
                   {navigation.map((item) => {
                     const active = isActive(item.href);
                     const Icon = item.icon;
-                    const isHovered = hoveredItem === item.name;
 
                     return (
                       <Link
                         key={item.name}
                         href={item.href}
-                        onMouseEnter={() => setHoveredItem(item.name)}
-                        onMouseLeave={() => setHoveredItem(null)}
                         className={`
                           relative px-3 py-1.5 rounded-full text-sm font-medium
                           transition-all duration-200 flex items-center gap-2
                           ${
                             active
-                              ? "text-blue-600 bg-blue-50/80 shadow-sm border border-blue-200"
+                              ? "text-blue-600 bg-blue-50"
                               : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
                           }
                         `}
                       >
-                        {/* Hover glow effect */}
-                        {isHovered && (
-                          <div className="absolute inset-0 rounded-full bg-blue-100/40 blur-md" />
-                        )}
-                        <Icon className="w-4 h-4 relative z-10" />
-                        <span className="relative z-10">{item.name}</span>
+                        <Icon className="w-4 h-4" />
+                        <span>{item.name}</span>
                       </Link>
                     );
                   })}
@@ -221,10 +169,9 @@ export default function Header() {
                 <div className="flex items-center gap-1 md:gap-2">
                   {/* Notification */}
                   {isAuthenticated && (
-                    <button className="relative p-1.5 rounded-full text-gray-600 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200 group/bell">
-                      <div className="absolute inset-0 rounded-full bg-blue-100/40 blur-md opacity-0 group-hover/bell:opacity-100 transition-opacity duration-300" />
-                      <FiBell className="w-4 h-4 relative z-10" />
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-lg shadow-blue-500/30" />
+                    <button className="relative p-1.5 rounded-full text-gray-600 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200">
+                      <FiBell className="w-4 h-4" />
+                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
                     </button>
                   )}
 
@@ -234,18 +181,16 @@ export default function Header() {
                       <button
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                         className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full
-                          bg-gray-50 hover:bg-gray-100 transition-all duration-200 border border-gray-200
-                          hover:shadow-lg hover:shadow-gray-200/50 group/auth"
+                          bg-gray-50 hover:bg-gray-100 transition-all duration-200"
                       >
-                        <div className="absolute inset-0 rounded-full bg-blue-100/40 blur-md opacity-0 group-hover/auth:opacity-100 transition-opacity duration-300" />
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center relative z-10 shadow-md">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center">
                           <FiUser className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-xs font-medium text-gray-700 hidden md:inline relative z-10">
+                        <span className="text-xs font-medium text-gray-700 hidden md:inline">
                           Account
                         </span>
                         <FiChevronDown
-                          className={`w-3 h-3 text-gray-500 transition-transform duration-200 relative z-10 ${isDropdownOpen ? "rotate-180" : ""}`}
+                          className={`w-3 h-3 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
                         />
                       </button>
 
@@ -253,9 +198,8 @@ export default function Header() {
                       {isDropdownOpen && (
                         <div
                           className="absolute right-0 mt-2 w-52
-                            bg-white/95 backdrop-blur-xl rounded-xl shadow-xl
-                            border border-gray-200 py-1 z-30
-                            shadow-gray-200/50"
+                            bg-white rounded-xl shadow-lg
+                            border border-gray-200 py-1 z-30"
                         >
                           <div className="px-3 py-2 border-b border-gray-200">
                             <p className="text-sm font-semibold text-gray-900">
@@ -308,24 +252,18 @@ export default function Header() {
                   ) : (
                     <Link
                       href="/login"
-                      className="px-3 py-1 text-sm font-medium text-gray-700 hover:text-blue-600 rounded-full hover:bg-gray-50 transition-all duration-200 relative group/signin"
+                      className="px-3 py-1 text-sm font-medium text-gray-700 hover:text-blue-600 rounded-full hover:bg-gray-50 transition-all duration-200"
                     >
-                      <div className="absolute inset-0 rounded-full bg-blue-100/40 blur-md opacity-0 group-hover/signin:opacity-100 transition-opacity duration-300" />
-                      <span className="relative z-10">Sign In</span>
+                      Sign In
                     </Link>
                   )}
 
                   {/* Mobile Menu Button */}
                   <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="lg:hidden p-1.5 rounded-full text-gray-600 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200 relative group/menu"
+                    className="lg:hidden p-1.5 rounded-full text-gray-600 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
                   >
-                    <div className="absolute inset-0 rounded-full bg-blue-100/40 blur-md opacity-0 group-hover/menu:opacity-100 transition-opacity duration-300" />
-                    {isMenuOpen ? (
-                      <FiX size={18} className="relative z-10" />
-                    ) : (
-                      <FiMenu size={18} className="relative z-10" />
-                    )}
+                    {isMenuOpen ? <FiX size={18} /> : <FiMenu size={18} />}
                   </button>
                 </div>
               </div>
@@ -352,7 +290,7 @@ export default function Header() {
                               text-sm font-medium transition-all duration-200
                               ${
                                 isActive(item.href)
-                                  ? "bg-blue-50 text-blue-600 border border-blue-200"
+                                  ? "bg-blue-50 text-blue-600"
                                   : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
                               }
                             `}
