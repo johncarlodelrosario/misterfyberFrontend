@@ -26,9 +26,17 @@ import {
   FiHelpCircle,
   FiMail,
   FiFileText,
+  FiMail as FiEmailIcon,
+  FiCheckCircle,
+  FiAlertCircle,
+  FiLoader,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { getAllApplications } from "@/services/admin";
+import {
+  getCustomerEmailAlertsPreference,
+  toggleCustomerEmailAlerts,
+} from "@/services/admin";
 import invoiceService from "@/services/invoiceService";
 
 // ==================== PRELOAD CACHE CONFIGURATION ====================
@@ -191,6 +199,10 @@ export default function AdminLayout({
   const notificationRef = useRef<HTMLDivElement>(null);
   const preloadedRef = useRef(false);
 
+  // ==================== EMAIL ALERT TOGGLE STATE ====================
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [togglingEmail, setTogglingEmail] = useState(false);
+
   useEffect(() => {
     const savedState = localStorage.getItem(SIDEBAR_STATE_KEY);
     if (savedState !== null) {
@@ -217,6 +229,43 @@ export default function AdminLayout({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // ==================== FETCH EMAIL PREFERENCE ====================
+  const fetchEmailStatus = useCallback(async () => {
+    try {
+      const result = await getCustomerEmailAlertsPreference();
+      // Only set if value is defined (not undefined or null)
+      const value = result.data?.customerEmailAlertsEnabled;
+      if (value !== undefined && value !== null) {
+        setEmailEnabled(value);
+      }
+      // If undefined, keep the default UI state (true) but NEVER save it back
+    } catch (error) {
+      console.error("Failed to fetch email status:", error);
+    }
+  }, []);
+
+  // ==================== TOGGLE EMAIL ====================
+  const handleToggleEmail = useCallback(async () => {
+    setTogglingEmail(true);
+    try {
+      const newState = !emailEnabled;
+      const result = await toggleCustomerEmailAlerts(newState);
+      if (result.success) {
+        setEmailEnabled(newState);
+        toast.success(
+          `Customer email alerts ${newState ? "enabled" : "disabled"}`,
+        );
+      } else {
+        toast.error(result.message || "Failed to toggle email settings");
+      }
+    } catch (error) {
+      console.error("Failed to toggle email:", error);
+      toast.error("Failed to toggle email settings");
+    } finally {
+      setTogglingEmail(false);
+    }
+  }, [emailEnabled]);
 
   useEffect(() => {
     const preloadApplications = async () => {
@@ -349,6 +398,13 @@ export default function AdminLayout({
   useEffect(() => {
     generateNotifications();
   }, [generateNotifications]);
+
+  // Fetch email status on mount
+  useEffect(() => {
+    if (isAuthenticated && user?.role) {
+      fetchEmailStatus();
+    }
+  }, [isAuthenticated, user, fetchEmailStatus]);
 
   useEffect(() => {
     if (!isLoading && mounted) {
@@ -614,12 +670,51 @@ export default function AdminLayout({
             </div>
 
             <div className="flex-1 flex justify-end items-center space-x-4">
-              {/* System Status */}
+              {/* System Status & Email Toggle */}
               <div className="hidden md:flex items-center space-x-3">
+                {/* System Online Status */}
                 <div className="flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100">
                   <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></div>
                   <span className="text-sm text-gray-600 font-medium">
                     System Online
+                  </span>
+                </div>
+
+                {/* Email Alert Toggle Switch */}
+                <div className="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-sm border border-gray-100">
+                  <FiEmailIcon
+                    className={`w-4 h-4 ${emailEnabled ? "text-emerald-600" : "text-gray-400"}`}
+                  />
+                  <button
+                    onClick={handleToggleEmail}
+                    disabled={togglingEmail}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 flex-shrink-0 ${
+                      togglingEmail
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    } ${emailEnabled ? "bg-emerald-500" : "bg-gray-300"}`}
+                    title={
+                      emailEnabled
+                        ? "Customer emails: ON"
+                        : "Customer emails: OFF"
+                    }
+                  >
+                    {togglingEmail ? (
+                      <FiLoader className="w-3.5 h-3.5 text-white animate-spin mx-auto" />
+                    ) : (
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                          emailEnabled ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    )}
+                  </button>
+                  <span
+                    className={`text-xs font-medium ${
+                      emailEnabled ? "text-emerald-600" : "text-gray-500"
+                    }`}
+                  >
+                    {emailEnabled ? "ON" : "OFF"}
                   </span>
                 </div>
               </div>
