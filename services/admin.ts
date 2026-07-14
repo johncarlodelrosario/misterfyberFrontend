@@ -86,7 +86,8 @@ export const getCustomerEmailAlertsPreference = async (
       "Error fetching customer email alerts preference:",
       error.response?.data || error.message,
     );
-    return { success: true, data: { customerEmailAlertsEnabled: true } };
+    // Return the actual value or undefined - NO DEFAULT OVERRIDE
+    return { success: true, data: { customerEmailAlertsEnabled: undefined } };
   }
 };
 
@@ -292,7 +293,6 @@ export const rejectPayment = async (paymentId: string, reason: string) => {
   }
 };
 
-// DELETE PAYMENT - Admin only
 export const deletePayment = async (paymentId: string) => {
   try {
     const response = await api.delete(`/payments/${paymentId}`);

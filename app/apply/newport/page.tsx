@@ -376,7 +376,7 @@ function ApplyFormContent() {
                   setAcceptedTerms(false);
                   window.scrollTo(0, 0);
                 }}
-                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
+                className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-blue-600 text-white rounded-lg font-semibold hover:shadow-lg transition text-sm sm:text-base"
               >
                 Apply Again
               </button>

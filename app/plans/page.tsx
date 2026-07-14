@@ -242,7 +242,7 @@ export default function PlansSection() {
               className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white drop-shadow-lg mb-5"
             >
               Choose Your{" "}
-              <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm">
+              <span className="bg-gradient-to-r from-blue-400 to-blue-400 bg-clip-text text-transparent drop-shadow-sm">
                 Internet Plan
               </span>
             </motion.h1>

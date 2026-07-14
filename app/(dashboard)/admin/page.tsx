@@ -791,10 +791,18 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
+  // Inside AdminDashboardPage component - FIXED fetchEmailStatus
   const fetchEmailStatus = useCallback(async () => {
     try {
       const result = await getCustomerEmailAlertsPreference();
-      setEmailEnabled(result.data?.customerEmailAlertsEnabled ?? true);
+      // CRITICAL FIX: Only use the value from server, don't default to true
+      // If undefined, keep the current state or default to true for UI only
+      const value = result.data?.customerEmailAlertsEnabled;
+      if (value !== undefined && value !== null) {
+        setEmailEnabled(value);
+      }
+      // If undefined, we keep the initial state (true) as UI default
+      // But we NEVER save this default back to the database
     } catch (error) {
       console.error("Failed to fetch email status:", error);
     }
