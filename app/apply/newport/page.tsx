@@ -20,6 +20,7 @@ import {
   FiLayers,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
+import api from "@/services/api";
 import { getActiveBuildings, Building } from "@/services/building";
 import TermsAndConditionsModal from "@/components/common/TermsAndConditionsModal";
 
@@ -83,10 +84,8 @@ function ApplyFormContent() {
 
   const fetchPlans = async () => {
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-      const response = await fetch(`${apiUrl}/plans`);
-      const data = await response.json();
+      const response = await api.get("/plans");
+      const data = response.data;
       let plansData = [];
       if (data.data && Array.isArray(data.data)) plansData = data.data;
       else if (Array.isArray(data)) plansData = data;
@@ -259,16 +258,15 @@ function ApplyFormContent() {
       submitFormData.append("idImage", idImage);
       submitFormData.append("acceptedTerms", "true");
 
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-      const response = await fetch(`${apiUrl}/applications`, {
-        method: "POST",
-        body: submitFormData,
+      const response = await api.post("/applications", submitFormData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (response.ok) {
+      if (response.status === 200 || response.status === 201) {
         toast.success("Application submitted successfully!");
         if (data.data && data.data.applicationId) {
           toast.success(`Your Application ID: ${data.data.applicationId}`, {
@@ -279,9 +277,13 @@ function ApplyFormContent() {
       } else {
         toast.error(data.message || "Failed to submit application");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Submission error:", error);
-      toast.error("Network error. Please try again.");
+      if (error.response?.data?.message) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Network error. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
