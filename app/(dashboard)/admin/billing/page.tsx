@@ -123,7 +123,7 @@ type SortDirection = "asc" | "desc";
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -297,6 +297,7 @@ export default function AdminBillingPage() {
   const initialLoadDone = useRef(false);
   const dataLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==================== LOAD PLANS & BUILDINGS ====================
   const loadPlans = async () => {
@@ -357,7 +358,7 @@ export default function AdminBillingPage() {
       toast.success("✅ Billing flow settings saved successfully!");
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
     }
@@ -407,7 +408,7 @@ export default function AdminBillingPage() {
         setSelectedBackdatedCustomer(null);
         globalCache = null;
         globalCacheTimestamp = 0;
-        loadData(true);
+        await loadData(true);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
       }
@@ -446,7 +447,7 @@ export default function AdminBillingPage() {
         toast.success(result.message);
         globalCache = null;
         globalCacheTimestamp = 0;
-        loadData(true);
+        await loadData(true);
       } else {
         toast.error(result.message || "Failed to recover missing bills");
       }
@@ -485,7 +486,7 @@ export default function AdminBillingPage() {
         );
         globalCache = null;
         globalCacheTimestamp = 0;
-        loadData(true);
+        await loadData(true);
       } else {
         toast.error(result.message || "Failed to delete billing cycle");
       }
@@ -594,7 +595,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
     }
@@ -613,7 +614,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
     }
@@ -637,7 +638,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to disconnect");
     }
@@ -658,7 +659,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reconnect");
     }
@@ -682,7 +683,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
@@ -704,7 +705,7 @@ export default function AdminBillingPage() {
       );
       globalCache = null;
       globalCacheTimestamp = 0;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       console.error("Mark installation bill as paid error:", error);
       toast.error(
@@ -717,11 +718,13 @@ export default function AdminBillingPage() {
   // ==================== LOAD DATA ====================
   const loadData = useCallback(
     async (forceRefresh = false) => {
+      // Prevent multiple simultaneous loads
       if (isLoadingRef.current) {
         console.log("⏳ Load already in progress, skipping...");
         return;
       }
 
+      // If data is already loaded and not forcing refresh, use cached data
       if (dataLoadedRef.current && !forceRefresh) {
         console.log("📦 Data already loaded, using existing state");
         setLoading(false);
@@ -729,8 +732,9 @@ export default function AdminBillingPage() {
         return;
       }
 
+      // Check global cache
       const now = Date.now();
-      if (!forceRefresh && globalCache && dataLoadedRef.current) {
+      if (!forceRefresh && globalCache) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
           const cached = globalCache;
           setCustomers(cached.customers);
@@ -748,17 +752,20 @@ export default function AdminBillingPage() {
           console.log("✅ Using global cached billing data");
           return;
         } else {
+          // Cache expired
           globalCache = null;
           dataLoadedRef.current = false;
         }
       }
 
-      if (customers.length > 0 && !forceRefresh && dataLoadedRef.current) {
+      // If we have customers but no cache and not forcing refresh
+      if (customers.length > 0 && !forceRefresh) {
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
+      // Start loading
       isLoadingRef.current = true;
 
       if (forceRefresh) {
@@ -784,17 +791,19 @@ export default function AdminBillingPage() {
           pendingInstallationBillsResult,
         ] = await Promise.all([
           getAllBillingCycles({
-            limit: pagination.limit,
-            page: pagination.page,
+            limit: 1000, // Increased limit to get all data
+            page: 1,
             forceRefresh,
           }),
           getAllBills({
-            limit: pagination.limit,
-            page: pagination.page,
+            limit: 1000, // Increased limit to get all data
+            page: 1,
             forceRefresh,
           }),
-          getAllUsers({ limit: 100, forceRefresh }).catch(() => ({ data: [] })),
-          getAllApplications({ limit: 100, forceRefresh }).catch(() => ({
+          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
             data: [],
           })),
           getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
@@ -823,175 +832,29 @@ export default function AdminBillingPage() {
         setCustomersWithoutAccounts(customersWithoutAccountsData);
         setPendingInstallationBills(pendingInstallationBillsData);
 
-        // Build customers
-        const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-          const userBills = billsList.filter(
-            (bill: any) =>
-              bill.userId?._id === user._id &&
-              bill.status !== "paid" &&
-              !bill.isInstallationBill,
-          );
-          const totalBalance = userBills.reduce(
-            (sum: number, bill: any) => sum + (bill.total || 0),
-            0,
-          );
-          const overdueBills = userBills.filter(
-            (bill: any) =>
-              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-          );
-          const userCycle = cyclesData.find(
-            (cycle: any) =>
-              cycle.userId?._id === user._id || cycle.userId === user._id,
-          );
-
-          let buildingObj = user.building || null;
-          if (
-            buildingObj &&
-            typeof buildingObj === "object" &&
-            !buildingObj._id
-          ) {
-            const foundBuilding = buildingsList.find(
-              (b) => b.buildingName === buildingObj.buildingName,
-            );
-            if (foundBuilding) {
-              buildingObj = foundBuilding;
-            }
-          }
-
-          return {
-            _id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            username: user.username,
-            phoneNumber: user.phoneNumber,
-            status: user.status,
-            type: "user" as const,
-            planName: user.planId?.name || "No Plan",
-            planPrice: user.planId?.price || 0,
-            currentBalance: totalBalance,
-            unpaidBills: userBills,
-            overdueBills: overdueBills,
-            billingCycle: userCycle || null,
-            installationFee: 0,
-            installationFeePaid: true,
-            building: buildingObj,
-            unitNumber: user.unitNumber,
-            floor: user.floor,
-          };
-        });
-
-        const applicationCustomers: CustomerItem[] = applicationsList
-          .filter(
-            (app: any) =>
-              app.status === "approved" || app.billingStarted === true,
-          )
-          .map((app: any) => {
-            const appBills = billsList.filter(
-              (bill: any) =>
-                bill.applicationId === app.applicationId &&
-                bill.status !== "paid" &&
-                !bill.isInstallationBill,
-            );
-            const totalBalance = appBills.reduce(
-              (sum: number, bill: any) => sum + (bill.total || 0),
-              0,
-            );
-            const overdueBills = appBills.filter(
-              (bill: any) =>
-                bill.status === "overdue" ||
-                new Date(bill.dueDate) < new Date(),
-            );
-            const appCycle = cyclesData.find(
-              (cycle: any) => cycle.applicationId === app.applicationId,
-            );
-
-            let buildingObj = null;
-            if (app.buildingId) {
-              if (typeof app.buildingId === "object" && app.buildingId._id) {
-                buildingObj = app.buildingId;
-              } else if (typeof app.buildingId === "string") {
-                const foundBuilding = buildingsList.find(
-                  (b) =>
-                    b._id === app.buildingId ||
-                    b.buildingName === app.buildingId,
-                );
-                if (foundBuilding) {
-                  buildingObj = foundBuilding;
-                }
-              }
-            }
-            if (!buildingObj && app.buildingName) {
-              const foundBuilding = buildingsList.find(
-                (b) => b.buildingName === app.buildingName,
-              );
-              if (foundBuilding) {
-                buildingObj = foundBuilding;
-              } else {
-                buildingObj = { buildingName: app.buildingName };
-              }
-            }
-
-            return {
-              _id: app._id,
-              firstName: app.firstName,
-              lastName: app.lastName,
-              email: app.email,
-              phoneNumber: app.phoneNumber,
-              status: app.billingStarted ? "billing_started" : "approved",
-              type: "application" as const,
-              planName: app.planId?.name || "No Plan",
-              planPrice: app.planId?.price || 0,
-              currentBalance: totalBalance,
-              unpaidBills: appBills,
-              overdueBills: overdueBills,
-              billingCycle: appCycle || null,
-              applicationId: app.applicationId,
-              installationFee: app.installationFee || 0,
-              installationFeePaid: app.installationFeePaid || false,
-              building: buildingObj,
-              unitNumber: app.unitNumber,
-              floor: app.floor,
-            };
-          });
-
-        const allCustomers = [...userCustomers, ...applicationCustomers];
-        allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+        // Build customers - moved to a separate function for better performance
+        const allCustomers = buildCustomers(
+          usersList,
+          applicationsList,
+          billsList,
+          cyclesData,
+          buildingsList,
+        );
 
         setCustomers(allCustomers);
 
-        const totalBalance = allCustomers.reduce(
-          (sum, c) => sum + c.currentBalance,
-          0,
+        // Calculate stats
+        const newStats = calculateStats(
+          allCustomers,
+          cyclesData,
+          applicationsList,
+          pendingPaymentsList,
+          pendingInstallationBillsData,
         );
-        const customersWithBalance = allCustomers.filter(
-          (c) => c.currentBalance > 0,
-        ).length;
-        const overdueCustomers = allCustomers.filter(
-          (c) => c.overdueBills.length > 0,
-        ).length;
-        const activeCycles = cyclesData.filter(
-          (c: any) => c.status === "active",
-        ).length;
-        const pausedCycles = cyclesData.filter(
-          (c: any) => c.status === "paused",
-        ).length;
-        const applicationsWithoutBilling = applicationsList.filter(
-          (app: any) => app.status === "approved" && !app.billingStarted,
-        ).length;
 
-        const totalInstallationFeesDue = allCustomers
-          .filter(
-            (c) =>
-              c.type === "application" &&
-              !c.installationFeePaid &&
-              (c.installationFee || 0) > 0,
-          )
-          .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-        const installationFeesPaidCount = allCustomers.filter(
-          (c) => c.type === "application" && c.installationFeePaid,
-        ).length;
+        setStats(newStats);
 
+        // Get pending data
         const [proRatedResult, activationsResult] = await Promise.all([
           getPendingProRatedBills(),
           getPendingActivations(),
@@ -1003,24 +866,7 @@ export default function AdminBillingPage() {
         setPendingProRated(pendingProRatedData);
         setPendingActivations(pendingActivationsData);
 
-        const newStats = {
-          totalCustomers: allCustomers.length,
-          totalBalance: totalBalance,
-          customersWithBalanceCount: customersWithBalance,
-          overdueCustomersCount: overdueCustomers,
-          activeCyclesCount: activeCycles,
-          pausedCyclesCount: pausedCycles,
-          pendingProRatedCount: pendingProRatedData.length,
-          pendingActivationsCount: pendingActivationsData.length,
-          pendingPaymentsCount: pendingPaymentsList.length,
-          pendingInstallationBillsCount: pendingInstallationBillsData.length,
-          applicationsWithoutBilling: applicationsWithoutBilling,
-          totalInstallationFeesDue: totalInstallationFeesDue,
-          installationFeesPaidCount: installationFeesPaidCount,
-        };
-
-        setStats(newStats);
-
+        // Update cache
         globalCache = {
           customers: allCustomers,
           billingCycles: cyclesData,
@@ -1052,8 +898,202 @@ export default function AdminBillingPage() {
         initialLoadDone.current = true;
       }
     },
-    [pagination.page, pagination.limit, customers.length, buildingsList],
-  );
+    [buildingsList],
+  ); // Removed pagination dependency
+
+  // Helper function to build customers
+  const buildCustomers = (
+    usersList: any[],
+    applicationsList: any[],
+    billsList: any[],
+    cyclesData: any[],
+    buildingsList: Building[],
+  ): CustomerItem[] => {
+    const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+      const userBills = billsList.filter(
+        (bill: any) =>
+          bill.userId?._id === user._id &&
+          bill.status !== "paid" &&
+          !bill.isInstallationBill,
+      );
+      const totalBalance = userBills.reduce(
+        (sum: number, bill: any) => sum + (bill.total || 0),
+        0,
+      );
+      const overdueBills = userBills.filter(
+        (bill: any) =>
+          bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+      );
+      const userCycle = cyclesData.find(
+        (cycle: any) =>
+          cycle.userId?._id === user._id || cycle.userId === user._id,
+      );
+
+      let buildingObj = user.building || null;
+      if (buildingObj && typeof buildingObj === "object" && !buildingObj._id) {
+        const foundBuilding = buildingsList.find(
+          (b) => b.buildingName === buildingObj.buildingName,
+        );
+        if (foundBuilding) {
+          buildingObj = foundBuilding;
+        }
+      }
+
+      return {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        username: user.username,
+        phoneNumber: user.phoneNumber,
+        status: user.status,
+        type: "user" as const,
+        planName: user.planId?.name || "No Plan",
+        planPrice: user.planId?.price || 0,
+        currentBalance: totalBalance,
+        unpaidBills: userBills,
+        overdueBills: overdueBills,
+        billingCycle: userCycle || null,
+        installationFee: 0,
+        installationFeePaid: true,
+        building: buildingObj,
+        unitNumber: user.unitNumber,
+        floor: user.floor,
+      };
+    });
+
+    const applicationCustomers: CustomerItem[] = applicationsList
+      .filter(
+        (app: any) => app.status === "approved" || app.billingStarted === true,
+      )
+      .map((app: any) => {
+        const appBills = billsList.filter(
+          (bill: any) =>
+            bill.applicationId === app.applicationId &&
+            bill.status !== "paid" &&
+            !bill.isInstallationBill,
+        );
+        const totalBalance = appBills.reduce(
+          (sum: number, bill: any) => sum + (bill.total || 0),
+          0,
+        );
+        const overdueBills = appBills.filter(
+          (bill: any) =>
+            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+        );
+        const appCycle = cyclesData.find(
+          (cycle: any) => cycle.applicationId === app.applicationId,
+        );
+
+        let buildingObj = null;
+        if (app.buildingId) {
+          if (typeof app.buildingId === "object" && app.buildingId._id) {
+            buildingObj = app.buildingId;
+          } else if (typeof app.buildingId === "string") {
+            const foundBuilding = buildingsList.find(
+              (b) =>
+                b._id === app.buildingId || b.buildingName === app.buildingId,
+            );
+            if (foundBuilding) {
+              buildingObj = foundBuilding;
+            }
+          }
+        }
+        if (!buildingObj && app.buildingName) {
+          const foundBuilding = buildingsList.find(
+            (b) => b.buildingName === app.buildingName,
+          );
+          if (foundBuilding) {
+            buildingObj = foundBuilding;
+          } else {
+            buildingObj = { buildingName: app.buildingName };
+          }
+        }
+
+        return {
+          _id: app._id,
+          firstName: app.firstName,
+          lastName: app.lastName,
+          email: app.email,
+          phoneNumber: app.phoneNumber,
+          status: app.billingStarted ? "billing_started" : "approved",
+          type: "application" as const,
+          planName: app.planId?.name || "No Plan",
+          planPrice: app.planId?.price || 0,
+          currentBalance: totalBalance,
+          unpaidBills: appBills,
+          overdueBills: overdueBills,
+          billingCycle: appCycle || null,
+          applicationId: app.applicationId,
+          installationFee: app.installationFee || 0,
+          installationFeePaid: app.installationFeePaid || false,
+          building: buildingObj,
+          unitNumber: app.unitNumber,
+          floor: app.floor,
+        };
+      });
+
+    const allCustomers = [...userCustomers, ...applicationCustomers];
+    allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+    return allCustomers;
+  };
+
+  // Helper function to calculate stats
+  const calculateStats = (
+    allCustomers: CustomerItem[],
+    cyclesData: any[],
+    applicationsList: any[],
+    pendingPaymentsList: any[],
+    pendingInstallationBillsData: any[],
+  ) => {
+    const totalBalance = allCustomers.reduce(
+      (sum, c) => sum + c.currentBalance,
+      0,
+    );
+    const customersWithBalance = allCustomers.filter(
+      (c) => c.currentBalance > 0,
+    ).length;
+    const overdueCustomers = allCustomers.filter(
+      (c) => c.overdueBills.length > 0,
+    ).length;
+    const activeCycles = cyclesData.filter(
+      (c: any) => c.status === "active",
+    ).length;
+    const pausedCycles = cyclesData.filter(
+      (c: any) => c.status === "paused",
+    ).length;
+    const applicationsWithoutBilling = applicationsList.filter(
+      (app: any) => app.status === "approved" && !app.billingStarted,
+    ).length;
+
+    const totalInstallationFeesDue = allCustomers
+      .filter(
+        (c) =>
+          c.type === "application" &&
+          !c.installationFeePaid &&
+          (c.installationFee || 0) > 0,
+      )
+      .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+    const installationFeesPaidCount = allCustomers.filter(
+      (c) => c.type === "application" && c.installationFeePaid,
+    ).length;
+
+    return {
+      totalCustomers: allCustomers.length,
+      totalBalance: totalBalance,
+      customersWithBalanceCount: customersWithBalance,
+      overdueCustomersCount: overdueCustomers,
+      activeCyclesCount: activeCycles,
+      pausedCyclesCount: pausedCycles,
+      pendingProRatedCount: 0,
+      pendingActivationsCount: 0,
+      pendingPaymentsCount: pendingPaymentsList.length,
+      pendingInstallationBillsCount: pendingInstallationBillsData.length,
+      applicationsWithoutBilling: applicationsWithoutBilling,
+      totalInstallationFeesDue: totalInstallationFeesDue,
+      installationFeesPaidCount: installationFeesPaidCount,
+    };
+  };
 
   // ==================== HANDLE ACTION ====================
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
@@ -1129,7 +1169,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
     }
@@ -1148,7 +1188,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
     }
@@ -1175,7 +1215,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       console.error("Disconnect error:", error);
       toast.error(
@@ -1200,7 +1240,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       console.error("Reconnect error:", error);
       toast.error(
@@ -1219,7 +1259,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
     }
@@ -1234,7 +1274,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
     }
@@ -1251,7 +1291,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       console.error("Mark bill as paid error:", error);
       toast.error(
@@ -1294,7 +1334,7 @@ export default function AdminBillingPage() {
         globalCache = null;
         globalCacheTimestamp = 0;
         dataLoadedRef.current = false;
-        loadData(true);
+        await loadData(true);
       } else {
         toast.error(result.message || "Failed to start billing");
       }
@@ -1328,7 +1368,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
     }
@@ -1353,7 +1393,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
     }
@@ -1403,7 +1443,7 @@ export default function AdminBillingPage() {
       globalCache = null;
       globalCacheTimestamp = 0;
       dataLoadedRef.current = false;
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create customer");
     }
@@ -1413,11 +1453,13 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
+    // Only load data once on mount
     if (!dataLoadedRef.current && customers.length === 0) {
-      loadData();
-    } else if (dataLoadedRef.current && customers.length > 0) {
-      setLoading(false);
-      console.log("📦 Data already loaded from previous session");
+      // Use a slight delay to prevent multiple rapid calls
+      const timer = setTimeout(() => {
+        loadData();
+      }, 100);
+      return () => clearTimeout(timer);
     }
 
     loadBillingFlowSettings();
@@ -1426,8 +1468,11 @@ export default function AdminBillingPage() {
 
     return () => {
       isMountedRef.current = false;
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
     };
-  }, []);
+  }, []); // Empty dependency array - only run once
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
