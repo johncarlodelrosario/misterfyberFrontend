@@ -88,23 +88,31 @@ export default function PlansSection() {
       else if (data.plans && Array.isArray(data.plans)) plansData = data.plans;
       else plansData = [];
 
-      // Filter out "Fiber Plan 999" - check multiple variations
+      // Filter to show ONLY these specific plans: Fiber Plan 100, Fiber Plan 150, Fiber Plan 200
+      const allowedPlanNames = [
+        "Fiber Plan 100",
+        "Fiber Plan 150",
+        "Fiber Plan 200",
+      ];
+
       const filteredPlans = plansData.filter((plan: Plan) => {
         const isActive = plan.isActive !== false;
-        const isNotFiber999 =
-          plan.name !== "Fiber Plan 999" &&
-          plan.name !== "Essential" &&
-          plan.name !== "Fiber 999" &&
-          !plan.name.includes("999") &&
-          plan.price !== 999;
-        return isActive && isNotFiber999;
+        const isAllowed = allowedPlanNames.includes(plan.name);
+        return isActive && isAllowed;
       });
 
-      console.log("Filtered plans:", filteredPlans); // For debugging
-      setPlans(filteredPlans);
+      // Sort plans to maintain order: 100, 150, 200
+      const sortedPlans = filteredPlans.sort((a: Plan, b: Plan) => {
+        const order = ["Fiber Plan 100", "Fiber Plan 150", "Fiber Plan 200"];
+        return order.indexOf(a.name) - order.indexOf(b.name);
+      });
+
+      console.log("Filtered plans:", sortedPlans); // For debugging
+      setPlans(sortedPlans);
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");
+      // Fallback data - only showing the three allowed plans
       setPlans([
         {
           _id: "2",

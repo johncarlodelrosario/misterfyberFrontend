@@ -93,24 +93,56 @@ export default function ApplyContent() {
       else if (data.plans && Array.isArray(data.plans)) plansData = data.plans;
       else plansData = [];
 
-      // Filter active plans and hide Fiber Plan 999
-      let activePlans = plansData.filter((plan: Plan) => {
-        // Check if plan is active
-        if (plan.isActive === false) return false;
-        // Hide Fiber Plan 999
-        if (plan.name === "Fiber Plan 999") return false;
-        if (plan.name?.toLowerCase().includes("fiber plan 999")) return false;
-        if (plan.price === 999) return false;
-        return true;
+      // Filter to show ONLY these specific plans: Fiber Plan 100, Fiber Plan 150, Fiber Plan 200
+      const allowedPlanNames = [
+        "Fiber Plan 100",
+        "Fiber Plan 150",
+        "Fiber Plan 200",
+      ];
+
+      const filteredPlans = plansData.filter((plan: Plan) => {
+        const isActive = plan.isActive !== false;
+        const isAllowed = allowedPlanNames.includes(plan.name);
+        return isActive && isAllowed;
       });
 
-      setPlans(activePlans);
-      if (activePlans.length > 0 && !planIdFromUrl) {
-        setSelectedPlan(activePlans[0]._id);
+      // Sort plans to maintain order: 100, 150, 200
+      const sortedPlans = filteredPlans.sort((a: Plan, b: Plan) => {
+        const order = ["Fiber Plan 100", "Fiber Plan 150", "Fiber Plan 200"];
+        return order.indexOf(a.name) - order.indexOf(b.name);
+      });
+
+      setPlans(sortedPlans);
+      if (sortedPlans.length > 0 && !planIdFromUrl) {
+        setSelectedPlan(sortedPlans[0]._id);
       }
     } catch (error) {
       console.error("Failed to fetch plans:", error);
       toast.error("Failed to load plans");
+      // Fallback data - only showing the three allowed plans
+      setPlans([
+        {
+          _id: "2",
+          name: "Fiber Plan 100",
+          price: 1399,
+          speed: { download: 100, upload: 100 },
+          isActive: true,
+        },
+        {
+          _id: "3",
+          name: "Fiber Plan 150",
+          price: 1699,
+          speed: { download: 150, upload: 150 },
+          isActive: true,
+        },
+        {
+          _id: "4",
+          name: "Fiber Plan 200",
+          price: 1899,
+          speed: { download: 200, upload: 200 },
+          isActive: true,
+        },
+      ]);
     } finally {
       setLoadingPlans(false);
     }
@@ -119,19 +151,50 @@ export default function ApplyContent() {
   const fetchBuildings = async () => {
     try {
       const buildingsData = await getActiveBuildings();
-      // Hide Newport Residences from buildings
+
+      // Filter to show ONLY these specific buildings: Silk Residence and Fountain Breeze
+      const allowedBuildingNames = ["Silk Residence", "Fountain Breeze"];
+
       const filteredBuildings = buildingsData.filter((building: Building) => {
-        if (building.buildingName === "Newport Residences") return false;
-        if (building.buildingName?.toLowerCase().includes("newport residences"))
-          return false;
-        if (building.buildingName?.toLowerCase().includes("newport"))
-          return false;
-        return true;
+        const buildingName = building.buildingName;
+        return allowedBuildingNames.some((allowed) =>
+          buildingName?.toLowerCase().includes(allowed.toLowerCase()),
+        );
       });
+
       setBuildings(filteredBuildings);
     } catch (error) {
       console.error("Failed to fetch buildings:", error);
       toast.error("Failed to load buildings");
+      // Fallback data - only showing the two allowed buildings with all required properties
+      setBuildings([
+        {
+          _id: "1",
+          buildingName: "Silk Residence",
+          streetAddress: "Silk Residence Street",
+          barangay: "Barangay Name",
+          city: "City Name",
+          province: "Province Name",
+          zipCode: "1234",
+          region: "Region Name",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          _id: "2",
+          buildingName: "Fountain Breeze",
+          streetAddress: "Fountain Breeze Street",
+          barangay: "Barangay Name",
+          city: "City Name",
+          province: "Province Name",
+          zipCode: "5678",
+          region: "Region Name",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setLoadingBuildings(false);
     }
