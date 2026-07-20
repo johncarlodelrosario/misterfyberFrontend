@@ -33,11 +33,24 @@ export default function PlansSection() {
       setError(null);
       const data = await getPlans();
       const activePlans = data.filter((plan: Plan) => plan.isActive !== false);
-      // Filter out the Fiber Plan 999
-      const filteredPlans = activePlans.filter(
-        (plan: Plan) => plan.name !== "Fiber Plan 999",
+
+      // Filter to show only specific plans: Fiber Plan 100, Fiber Plan 150, Fiber Plan 200
+      const allowedPlanNames = [
+        "Fiber Plan 100",
+        "Fiber Plan 150",
+        "Fiber Plan 200",
+      ];
+      const filteredPlans = activePlans.filter((plan: Plan) =>
+        allowedPlanNames.includes(plan.name),
       );
-      setPlans(filteredPlans.slice(0, 3));
+
+      // Sort plans to maintain order: 100, 150, 200
+      const sortedPlans = filteredPlans.sort((a: Plan, b: Plan) => {
+        const order = ["Fiber Plan 100", "Fiber Plan 150", "Fiber Plan 200"];
+        return order.indexOf(a.name) - order.indexOf(b.name);
+      });
+
+      setPlans(sortedPlans.slice(0, 3));
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");
