@@ -1,13 +1,6 @@
-// app/admin/billing/page.tsx - ULTRA FAST VERSION (Removed Add Customer)
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllBillingCycles,
   getAllBills,
@@ -41,6 +34,7 @@ import {
 } from "@/services/payment";
 import {
   getAllUsers,
+  createManualCustomer,
   getCustomersWithoutAccounts,
   getAllApplications,
 } from "@/services/admin";
@@ -60,6 +54,7 @@ import {
   FiSearch,
   FiBell,
   FiCalendar,
+  FiUserPlus,
   FiMail,
   FiFileText,
   FiTrash2,
@@ -72,6 +67,7 @@ import {
   FiInfo,
   FiCheckCircle,
   FiPrinter,
+  FiMoreVertical,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
@@ -114,13 +110,20 @@ interface Building {
   isActive: boolean;
 }
 
+interface Plan {
+  _id: string;
+  name: string;
+  price: number;
+  speed: { download: number; upload: number };
+}
+
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -170,6 +173,7 @@ export default function AdminBillingPage() {
   const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [showManualCustomerModal, setShowManualCustomerModal] = useState(false);
   const [showBackdatedModal, setShowBackdatedModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedApplicationId, setSelectedApplicationId] = useState("");
@@ -199,6 +203,8 @@ export default function AdminBillingPage() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [billingSettings, setBillingSettingsState] = useState<any>(null);
   const [showBillingReportsModal, setShowBillingReportsModal] = useState(false);
+  const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -225,6 +231,26 @@ export default function AdminBillingPage() {
   const [selectedBackdatedCustomer, setSelectedBackdatedCustomer] =
     useState<any>(null);
 
+  const [manualCustomerForm, setManualCustomerForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phoneNumber: "",
+    buildingId: "",
+    buildingName: "",
+    floor: "",
+    unitNumber: "",
+    planId: "",
+    idType: "Valid ID",
+    idNumber: "",
+    startBillingImmediately: true,
+    installationDate: "",
+    notes: "",
+    includeInstallationFee: true,
+  });
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [loadingBuildings, setLoadingBuildings] = useState(false);
   const [customersWithoutAccounts, setCustomersWithoutAccounts] = useState<
     any[]
   >([]);
@@ -268,26 +294,37 @@ export default function AdminBillingPage() {
   });
 
   const isMountedRef = useRef(true);
+  const initialLoadDone = useRef(false);
   const dataLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ==================== LOAD BUILDINGS ====================
-  const loadBuildings = useCallback(async () => {
+  // ==================== LOAD PLANS & BUILDINGS ====================
+  const loadPlans = async () => {
+    try {
+      const response = await fetch("/api/plans");
+      const data = await response.json();
+      setPlans(data.data || []);
+    } catch (error) {
+      console.error("Failed to load plans:", error);
+    }
+  };
+
+  const loadBuildings = async () => {
+    setLoadingBuildings(true);
     try {
       const response = await fetch("/api/buildings/active");
       const data = await response.json();
-      const buildingsData = data.data || [];
-      setBuildingsList(buildingsData);
-      return buildingsData;
+      setBuildings(data.data || []);
+      setBuildingsList(data.data || []);
     } catch (error) {
       console.error("Failed to load buildings:", error);
-      return [];
+    } finally {
+      setLoadingBuildings(false);
     }
-  }, []);
+  };
 
-  // ==================== LOAD BILLING FLOW SETTINGS ====================
-  const loadBillingFlowSettings = useCallback(async () => {
+  const loadBillingFlowSettings = async () => {
     try {
       const response = await getBillingSettingsAdmin();
       const settingsData = response?.data || response;
@@ -313,9 +350,8 @@ export default function AdminBillingPage() {
     } catch (error) {
       console.error("Failed to load billing flow settings:", error);
     }
-  }, []);
+  };
 
-  // ==================== SAVE BILLING FLOW SETTINGS ====================
   const saveBillingFlowSettings = async () => {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
@@ -679,39 +715,59 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== LOAD DATA - OPTIMIZED ====================
+  // ==================== LOAD DATA ====================
   const loadData = useCallback(
     async (forceRefresh = false) => {
       // Prevent multiple simultaneous loads
       if (isLoadingRef.current) {
+        console.log("⏳ Load already in progress, skipping...");
+        return;
+      }
+
+      // If data is already loaded and not forcing refresh, use cached data
+      if (dataLoadedRef.current && !forceRefresh) {
+        console.log("📦 Data already loaded, using existing state");
+        setLoading(false);
+        setRefreshing(false);
         return;
       }
 
       // Check global cache
       const now = Date.now();
-      if (
-        !forceRefresh &&
-        globalCache &&
-        now - globalCacheTimestamp < CACHE_TTL
-      ) {
-        const cached = globalCache;
-        setCustomers(cached.customers || []);
-        setBillingCycles(cached.billingCycles || []);
-        setBills(cached.bills || []);
-        setPendingPayments(cached.pendingPayments || []);
-        setStats(cached.stats || {});
-        setPendingProRated(cached.pendingProRated || []);
-        setPendingActivations(cached.pendingActivations || []);
-        setPendingInstallationBills(cached.pendingInstallationBills || []);
-        setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
+      if (!forceRefresh && globalCache) {
+        if (now - globalCacheTimestamp < CACHE_TTL) {
+          const cached = globalCache;
+          setCustomers(cached.customers);
+          setBillingCycles(cached.billingCycles);
+          setBills(cached.bills);
+          setPendingPayments(cached.pendingPayments);
+          setStats(cached.stats);
+          setPendingProRated(cached.pendingProRated || []);
+          setPendingActivations(cached.pendingActivations || []);
+          setPendingInstallationBills(cached.pendingInstallationBills || []);
+          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
+          setLoading(false);
+          setRefreshing(false);
+          dataLoadedRef.current = true;
+          console.log("✅ Using global cached billing data");
+          return;
+        } else {
+          // Cache expired
+          globalCache = null;
+          dataLoadedRef.current = false;
+        }
+      }
+
+      // If we have customers but no cache and not forcing refresh
+      if (customers.length > 0 && !forceRefresh) {
         setLoading(false);
         setRefreshing(false);
-        dataLoadedRef.current = true;
         return;
       }
 
       // Start loading
       isLoadingRef.current = true;
+
       if (forceRefresh) {
         setRefreshing(true);
         clearBillingCache();
@@ -723,7 +779,8 @@ export default function AdminBillingPage() {
       }
 
       try {
-        // Fetch all data in parallel for maximum speed
+        console.log("🔄 Loading billing data...");
+
         const [
           cyclesResult,
           billsResult,
@@ -733,10 +790,20 @@ export default function AdminBillingPage() {
           customersWithoutAccountsResult,
           pendingInstallationBillsResult,
         ] = await Promise.all([
-          getAllBillingCycles({ limit: 500, page: 1, forceRefresh }),
-          getAllBills({ limit: 500, page: 1, forceRefresh }),
-          getAllUsers({ limit: 500, forceRefresh }).catch(() => ({ data: [] })),
-          getAllApplications({ limit: 500, forceRefresh }).catch(() => ({
+          getAllBillingCycles({
+            limit: 1000, // Increased limit to get all data
+            page: 1,
+            forceRefresh,
+          }),
+          getAllBills({
+            limit: 1000, // Increased limit to get all data
+            page: 1,
+            forceRefresh,
+          }),
+          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
             data: [],
           })),
           getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
@@ -765,7 +832,7 @@ export default function AdminBillingPage() {
         setCustomersWithoutAccounts(customersWithoutAccountsData);
         setPendingInstallationBills(pendingInstallationBillsData);
 
-        // Build customers - optimized
+        // Build customers - moved to a separate function for better performance
         const allCustomers = buildCustomers(
           usersList,
           applicationsList,
@@ -787,7 +854,7 @@ export default function AdminBillingPage() {
 
         setStats(newStats);
 
-        // Get pending data - parallel
+        // Get pending data
         const [proRatedResult, activationsResult] = await Promise.all([
           getPendingProRatedBills(),
           getPendingActivations(),
@@ -813,6 +880,10 @@ export default function AdminBillingPage() {
         };
         globalCacheTimestamp = now;
         dataLoadedRef.current = true;
+
+        console.log(
+          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
+        );
       } catch (error) {
         console.error("Failed to load billing data:", error);
         if (isMountedRef.current) {
@@ -824,12 +895,13 @@ export default function AdminBillingPage() {
           setRefreshing(false);
         }
         isLoadingRef.current = false;
+        initialLoadDone.current = true;
       }
     },
     [buildingsList],
-  );
+  ); // Removed pagination dependency
 
-  // Helper function to build customers - optimized
+  // Helper function to build customers
   const buildCustomers = (
     usersList: any[],
     applicationsList: any[],
@@ -1327,29 +1399,80 @@ export default function AdminBillingPage() {
     }
   };
 
+  // ==================== HANDLE MANUAL CUSTOMER ====================
+  const handleManualCustomerSubmit = async () => {
+    if (
+      !manualCustomerForm.firstName ||
+      !manualCustomerForm.lastName ||
+      !manualCustomerForm.email ||
+      !manualCustomerForm.phoneNumber
+    ) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    if (!manualCustomerForm.planId) {
+      toast.error("Please select a plan");
+      return;
+    }
+
+    try {
+      const result = await createManualCustomer({
+        ...manualCustomerForm,
+        startBillingImmediately: manualCustomerForm.startBillingImmediately,
+        includeInstallationFee: manualCustomerForm.includeInstallationFee,
+      });
+      toast.success(result.message || "Customer created successfully!");
+      setShowManualCustomerModal(false);
+      setManualCustomerForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        buildingId: "",
+        buildingName: "",
+        floor: "",
+        unitNumber: "",
+        planId: "",
+        idType: "Valid ID",
+        idNumber: "",
+        startBillingImmediately: true,
+        installationDate: "",
+        notes: "",
+        includeInstallationFee: true,
+      });
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to create customer");
+    }
+  };
+
   // ==================== USE EFFECTS ====================
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Load data immediately on mount - with minimal delay
-    const timer = setTimeout(() => {
-      if (!dataLoadedRef.current) {
+    // Only load data once on mount
+    if (!dataLoadedRef.current && customers.length === 0) {
+      // Use a slight delay to prevent multiple rapid calls
+      const timer = setTimeout(() => {
         loadData();
-      }
-    }, 10);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
 
-    // Load settings and buildings in background
     loadBillingFlowSettings();
+    loadPlans();
     loadBuildings();
 
     return () => {
       isMountedRef.current = false;
-      clearTimeout(timer);
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
     };
-  }, []);
+  }, []); // Empty dependency array - only run once
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
@@ -1395,6 +1518,7 @@ export default function AdminBillingPage() {
         onAction={handleAction}
         onRefresh={handleRefresh}
         onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenManualCustomer={() => setShowManualCustomerModal(true)}
         onOpenBackdated={() => setShowBackdatedModal(true)}
         onOpenExistingCustomers={() => setShowExistingCustomersModal(true)}
         onOpenPending={() => {
@@ -2620,6 +2744,210 @@ export default function AdminBillingPage() {
                 className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Customer Modal */}
+      {showManualCustomerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-bold text-gray-900">
+                Add New Customer
+              </h2>
+              <button
+                onClick={() => setShowManualCustomerModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  First Name *
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.firstName}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      firstName: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Last Name *
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.lastName}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      lastName: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={manualCustomerForm.email}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.phoneNumber}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      phoneNumber: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Plan *</label>
+                <select
+                  value={manualCustomerForm.planId}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      planId: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                >
+                  <option value="">Select plan...</option>
+                  {plans.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name} - ₱{p.price.toLocaleString()}/mo
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Building
+                </label>
+                <select
+                  value={manualCustomerForm.buildingId}
+                  onChange={(e) => {
+                    const b = buildings.find(
+                      (bld) => bld._id === e.target.value,
+                    );
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      buildingId: e.target.value,
+                      buildingName: b?.buildingName || "",
+                    });
+                  }}
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                >
+                  <option value="">Select building...</option>
+                  {buildings.map((b) => (
+                    <option key={b._id} value={b._id}>
+                      {b.buildingName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Floor</label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.floor}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      floor: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Unit Number
+                </label>
+                <input
+                  type="text"
+                  value={manualCustomerForm.unitNumber}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      unitNumber: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={manualCustomerForm.includeInstallationFee}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      includeInstallationFee: e.target.checked,
+                    })
+                  }
+                />{" "}
+                Include Installation Fee (₱
+                {billingFlowSettings.installationFee.toLocaleString()})
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={manualCustomerForm.startBillingImmediately}
+                  onChange={(e) =>
+                    setManualCustomerForm({
+                      ...manualCustomerForm,
+                      startBillingImmediately: e.target.checked,
+                    })
+                  }
+                />{" "}
+                Start Billing Immediately (ACTIVE)
+              </label>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => setShowManualCustomerModal(false)}
+                className="flex-1 px-3 py-2 border rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleManualCustomerSubmit}
+                className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+              >
+                Create Customer
               </button>
             </div>
           </div>

@@ -1,5 +1,4 @@
-// components/admin/billingTable.tsx - ULTRA FAST VERSION (Removed Add Button)
-"use client";
+// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/components/admin/billingTable.tsx
 
 import React, {
   useState,
@@ -26,6 +25,7 @@ import {
   FiBell,
   FiCalendar,
   FiInfo,
+  FiUserPlus,
   FiMail,
   FiFileText,
   FiTrash2,
@@ -38,6 +38,7 @@ import {
   FiChevronLeft,
   FiChevronRight,
 } from "react-icons/fi";
+import toast from "react-hot-toast";
 
 // ==================== TYPES ====================
 export interface CustomerItem {
@@ -127,6 +128,7 @@ interface BillingTableProps {
   onAction: (action: string, customer: CustomerItem, data?: any) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
+  onOpenManualCustomer: () => void;
   onOpenBackdated: () => void;
   onOpenExistingCustomers: () => void;
   onOpenPending: () => void;
@@ -137,6 +139,19 @@ interface BillingTableProps {
 }
 
 // ==================== HELPERS ====================
+function formatDateFixed(dateStr: string): string {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
+}
+
+function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
+  if (!startDateStr || !endDateStr) return "-";
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
+}
+
 function getBuildingDisplay(customer: CustomerItem): string {
   if (customer.building) {
     if (
@@ -175,7 +190,7 @@ const CustomerRow = React.memo(
       (customer.installationFee ?? 0) > 0 &&
       !customer.installationFeePaid;
 
-    const getStatusBadge = useCallback(() => {
+    const getStatusBadge = () => {
       if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
       if (customer.type === "application") {
         if (
@@ -203,9 +218,9 @@ const CustomerRow = React.memo(
       if (customer.status === "pending_activation")
         return "bg-purple-100 text-purple-800";
       return "bg-gray-100 text-gray-800";
-    }, [customer, hasUnpaidBills, hasUnpaidInstallationFee]);
+    };
 
-    const getStatusText = useCallback(() => {
+    const getStatusText = () => {
       if (hasUnpaidInstallationFee) return "Installation Fee Due";
       if (customer.type === "application") {
         if (
@@ -228,17 +243,17 @@ const CustomerRow = React.memo(
       if (customer.status === "suspended") return "Suspended";
       if (customer.status === "pending_activation") return "Pending Activation";
       return customer.status || "Inactive";
-    }, [customer, hasUnpaidBills, hasUnpaidInstallationFee]);
+    };
 
-    const getBalanceColor = useCallback((balance: number) => {
+    const getBalanceColor = (balance: number) => {
       if (balance === 0) return "text-green-600";
       if (balance > 1000) return "text-red-600 font-bold";
       return "text-orange-600";
-    }, []);
+    };
 
     return (
       <tr
-        className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors duration-150`}
+        className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
       >
         <td className="px-3 py-2 border-r border-gray-200 text-center bg-white sticky left-0 z-10">
           <span className="text-sm font-medium text-gray-500">{index + 1}</span>
@@ -324,14 +339,14 @@ const CustomerRow = React.memo(
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => onAction("view", customer)}
-              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors duration-150"
+              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
               title="View Details"
             >
               <FiEye className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onAction("email", customer)}
-              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors duration-150"
+              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
               title="Send Email"
             >
               <FiMail className="w-3.5 h-3.5" />
@@ -339,7 +354,7 @@ const CustomerRow = React.memo(
             {customer.type === "application" && hasBillingCycle && (
               <button
                 onClick={() => onAction("recover", customer)}
-                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors duration-150"
+                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
                 title="Recover Missing Bills"
               >
                 <FiCalendar className="w-3.5 h-3.5" />
@@ -350,7 +365,7 @@ const CustomerRow = React.memo(
                 {!hasBillingCycle && (
                   <button
                     onClick={() => onAction("start", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Start Billing"
                   >
                     <FiPlay className="w-3.5 h-3.5" />
@@ -359,7 +374,7 @@ const CustomerRow = React.memo(
                 {isActive && (
                   <button
                     onClick={() => onAction("pause", customer)}
-                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors duration-150"
+                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
                     title="Pause Billing"
                   >
                     <FiPause className="w-3.5 h-3.5" />
@@ -368,7 +383,7 @@ const CustomerRow = React.memo(
                 {isPaused && (
                   <button
                     onClick={() => onAction("resume", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Resume Billing"
                   >
                     <FiPlay className="w-3.5 h-3.5" />
@@ -377,7 +392,7 @@ const CustomerRow = React.memo(
                 {(isActive || isPendingActivation) && (
                   <button
                     onClick={() => onAction("disconnect", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Disconnect"
                   >
                     <FiWifiOff className="w-3.5 h-3.5" />
@@ -386,7 +401,7 @@ const CustomerRow = React.memo(
                 {customer.status === "suspended" && (
                   <button
                     onClick={() => onAction("reconnect", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Reconnect"
                   >
                     <FiWifi className="w-3.5 h-3.5" />
@@ -395,7 +410,7 @@ const CustomerRow = React.memo(
                 {hasBillingCycle && (
                   <button
                     onClick={() => onAction("stop", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Cancel Subscription"
                   >
                     <FiX className="w-3.5 h-3.5" />
@@ -404,7 +419,7 @@ const CustomerRow = React.memo(
                 {hasBillingCycle && (
                   <button
                     onClick={() => onAction("delete", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Delete Billing Cycle"
                   >
                     <FiTrash2 className="w-3.5 h-3.5" />
@@ -418,7 +433,7 @@ const CustomerRow = React.memo(
                   customer.billingCycle?.status === "cancelled") && (
                   <button
                     onClick={() => onAction("start", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Start Billing"
                   >
                     <FiPlay className="w-3.5 h-3.5" />
@@ -427,7 +442,7 @@ const CustomerRow = React.memo(
                 {customer.billingCycle?.status === "active" && (
                   <button
                     onClick={() => onAction("pause", customer)}
-                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors duration-150"
+                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
                     title="Pause Billing"
                   >
                     <FiPause className="w-3.5 h-3.5" />
@@ -436,7 +451,7 @@ const CustomerRow = React.memo(
                 {customer.billingCycle?.status === "paused" && (
                   <button
                     onClick={() => onAction("resume", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Resume Billing"
                   >
                     <FiPlay className="w-3.5 h-3.5" />
@@ -445,7 +460,7 @@ const CustomerRow = React.memo(
                 {customer.billingCycle?.status === "active" && (
                   <button
                     onClick={() => onAction("stop", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Cancel Subscription"
                   >
                     <FiX className="w-3.5 h-3.5" />
@@ -454,7 +469,7 @@ const CustomerRow = React.memo(
                 {customer.status === "active" && (
                   <button
                     onClick={() => onAction("disconnect", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Disconnect"
                   >
                     <FiWifiOff className="w-3.5 h-3.5" />
@@ -463,7 +478,7 @@ const CustomerRow = React.memo(
                 {customer.status === "suspended" && (
                   <button
                     onClick={() => onAction("reconnect", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors duration-150"
+                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                     title="Reconnect"
                   >
                     <FiWifi className="w-3.5 h-3.5" />
@@ -472,7 +487,7 @@ const CustomerRow = React.memo(
                 {customer.billingCycle && (
                   <button
                     onClick={() => onAction("delete", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors duration-150"
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                     title="Delete Billing Cycle"
                   >
                     <FiTrash2 className="w-3.5 h-3.5" />
@@ -514,6 +529,7 @@ export default function BillingTable({
   onAction,
   onRefresh,
   onOpenSettings,
+  onOpenManualCustomer,
   onOpenBackdated,
   onOpenExistingCustomers,
   onOpenPending,
@@ -538,28 +554,29 @@ export default function BillingTable({
     }
   }, []);
 
-  const scrollLeft = useCallback(() => {
+  const scrollLeft = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
     }
-  }, []);
+  };
 
-  const scrollRight = useCallback(() => {
+  const scrollRight = () => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
     }
-  }, []);
+  };
 
   // ==================== MEMOIZED FILTERS ====================
   const filteredCustomers = useMemo(() => {
     return customers.filter((customer) => {
-      const searchLower = searchTerm.toLowerCase();
       const matchesSearch =
-        customer.firstName?.toLowerCase().includes(searchLower) ||
-        customer.lastName?.toLowerCase().includes(searchLower) ||
-        customer.email?.toLowerCase().includes(searchLower) ||
+        customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (customer.applicationId &&
-          customer.applicationId.toLowerCase().includes(searchLower));
+          customer.applicationId
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()));
 
       let matchesBuilding = true;
       if (buildingFilter !== "all") {
@@ -569,37 +586,30 @@ export default function BillingTable({
 
       if (!matchesSearch || !matchesBuilding) return false;
 
-      switch (statusFilter) {
-        case "all":
-          return true;
-        case "has_balance":
-          return customer.currentBalance > 0;
-        case "overdue":
-          return customer.overdueBills.length > 0;
-        case "active":
-          return customer.status === "active";
-        case "suspended":
-          return customer.status === "suspended";
-        case "paused":
-          return customer.billingCycle?.status === "paused";
-        case "pending_activation": {
-          const hasUnpaid =
-            customer.unpaidBills && customer.unpaidBills.length > 0;
-          return (
-            customer.billingCycle?.status === "pending_activation" && hasUnpaid
-          );
-        }
-        case "applications":
-          return customer.type === "application";
-        case "installation_fee_due":
-          return (
-            customer.type === "application" &&
-            (customer.installationFee ?? 0) > 0 &&
-            !customer.installationFeePaid
-          );
-        default:
-          return true;
+      if (statusFilter === "all") return true;
+      if (statusFilter === "has_balance") return customer.currentBalance > 0;
+      if (statusFilter === "overdue") return customer.overdueBills.length > 0;
+      if (statusFilter === "active") return customer.status === "active";
+      if (statusFilter === "suspended") return customer.status === "suspended";
+      if (statusFilter === "paused")
+        return customer.billingCycle?.status === "paused";
+      if (statusFilter === "pending_activation") {
+        const hasUnpaid =
+          customer.unpaidBills && customer.unpaidBills.length > 0;
+        return (
+          customer.billingCycle?.status === "pending_activation" && hasUnpaid
+        );
       }
+      if (statusFilter === "applications")
+        return customer.type === "application";
+      if (statusFilter === "installation_fee_due") {
+        return (
+          customer.type === "application" &&
+          (customer.installationFee ?? 0) > 0 &&
+          !customer.installationFeePaid
+        );
+      }
+      return true;
     });
   }, [customers, searchTerm, statusFilter, buildingFilter]);
 
@@ -622,7 +632,7 @@ export default function BillingTable({
           aValue = a.currentBalance;
           bValue = b.currentBalance;
           break;
-        case "status": {
+        case "status":
           const getStatusText = (c: CustomerItem) => {
             if (
               c.type === "application" &&
@@ -637,7 +647,6 @@ export default function BillingTable({
           aValue = getStatusText(a);
           bValue = getStatusText(b);
           break;
-        }
         case "installationFee":
           aValue = a.type === "application" ? a.installationFee || 0 : -1;
           bValue = b.type === "application" ? b.installationFee || 0 : -1;
@@ -666,34 +675,27 @@ export default function BillingTable({
     setPagination((prev: any) => ({
       ...prev,
       total: sortedAndFilteredCustomers.length,
-      totalPages:
-        Math.ceil(sortedAndFilteredCustomers.length / prev.limit) || 1,
+      totalPages: Math.ceil(sortedAndFilteredCustomers.length / prev.limit),
     }));
   }, [sortedAndFilteredCustomers, setPagination]);
 
   // ==================== HANDLE SORT ====================
-  const handleSort = useCallback(
-    (field: SortField) => {
-      if (sortField === field) {
-        setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-      } else {
-        setSortField(field);
-        setSortDirection("asc");
-      }
-    },
-    [sortField, sortDirection, setSortField, setSortDirection],
-  );
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
 
   // ==================== HANDLE PAGE CHANGE ====================
-  const handlePageChange = useCallback(
-    (newPage: number) => {
-      setPagination((prev: any) => ({ ...prev, page: newPage }));
-      if (tableContainerRef.current) {
-        tableContainerRef.current.scrollTop = 0;
-      }
-    },
-    [setPagination],
-  );
+  const handlePageChange = (newPage: number) => {
+    setPagination((prev: any) => ({ ...prev, page: newPage }));
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = 0;
+    }
+  };
 
   // ==================== USE EFFECTS ====================
   useEffect(() => {
@@ -710,95 +712,83 @@ export default function BillingTable({
   }, [checkScrollPosition]);
 
   useEffect(() => {
-    const timer = setTimeout(checkScrollPosition, 50);
-    return () => clearTimeout(timer);
+    setTimeout(checkScrollPosition, 100);
   }, [customers, checkScrollPosition]);
 
   // ==================== SORT ICON ====================
-  const SortIcon = useCallback(
-    ({ field }: { field: SortField }) => {
-      if (sortField !== field)
-        return <FiArrowUp className="w-3 h-3 opacity-30" />;
-      return sortDirection === "asc" ? (
-        <FiArrowUp className="w-3 h-3" />
-      ) : (
-        <FiArrowDown className="w-3 h-3" />
-      );
-    },
-    [sortField, sortDirection],
-  );
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field)
+      return <FiArrowUp className="w-3 h-3 opacity-30" />;
+    return sortDirection === "asc" ? (
+      <FiArrowUp className="w-3 h-3" />
+    ) : (
+      <FiArrowDown className="w-3 h-3" />
+    );
+  };
 
   // ==================== COMPACT STATS ====================
-  const applicationCount = useMemo(
-    () => customers.filter((c) => c.type === "application").length,
-    [customers],
-  );
-
-  const compactStatsCards = useMemo(
-    () => [
-      {
-        label: "Total Customers",
-        value: stats.totalCustomers,
-        icon: FiUser,
-        color: "blue",
-      },
-      {
-        label: "Total Balance",
-        value: `₱${stats.totalBalance.toLocaleString()}`,
-        color: "red",
-      },
-      {
-        label: "With Balance",
-        value: stats.customersWithBalanceCount,
-        icon: FiAlertCircle,
-        color: "orange",
-      },
-      {
-        label: "Overdue",
-        value: stats.overdueCustomersCount,
-        icon: FiClock,
-        color: "red",
-      },
-      {
-        label: "Active Cycles",
-        value: stats.activeCyclesCount,
-        icon: FiActivity,
-        color: "green",
-      },
-      {
-        label: "Paused Cycles",
-        value: stats.pausedCyclesCount,
-        icon: FiPause,
-        color: "yellow",
-      },
-      {
-        label: "Pending Payments",
-        value: stats.pendingPaymentsCount,
-        icon: FiClock,
-        color: "purple",
-      },
-      {
-        label: "Applications",
-        value: applicationCount,
-        icon: FiFileText,
-        color: "indigo",
-      },
-      {
-        label: "Installation Fees Due",
-        value: `₱${stats.totalInstallationFeesDue.toLocaleString()}`,
-        sub: "Unpaid",
-        icon: FiAlertCircle,
-        color: "amber",
-      },
-      {
-        label: "Pending Install Bills",
-        value: stats.pendingInstallationBillsCount,
-        icon: FiFileText,
-        color: "amber",
-      },
-    ],
-    [stats, applicationCount],
-  );
+  const compactStatsCards = [
+    {
+      label: "Total Customers",
+      value: stats.totalCustomers,
+      icon: FiUser,
+      color: "blue",
+    },
+    {
+      label: "Total Balance",
+      value: `₱${stats.totalBalance.toLocaleString()}`,
+      color: "red",
+    },
+    {
+      label: "With Balance",
+      value: stats.customersWithBalanceCount,
+      icon: FiAlertCircle,
+      color: "orange",
+    },
+    {
+      label: "Overdue",
+      value: stats.overdueCustomersCount,
+      icon: FiClock,
+      color: "red",
+    },
+    {
+      label: "Active Cycles",
+      value: stats.activeCyclesCount,
+      icon: FiActivity,
+      color: "green",
+    },
+    {
+      label: "Paused Cycles",
+      value: stats.pausedCyclesCount,
+      icon: FiPause,
+      color: "yellow",
+    },
+    {
+      label: "Pending Payments",
+      value: stats.pendingPaymentsCount,
+      icon: FiClock,
+      color: "purple",
+    },
+    {
+      label: "Applications",
+      value: customers.filter((c) => c.type === "application").length,
+      icon: FiFileText,
+      color: "indigo",
+    },
+    {
+      label: "Installation Fees Due",
+      value: `₱${stats.totalInstallationFeesDue.toLocaleString()}`,
+      sub: "Unpaid",
+      icon: FiAlertCircle,
+      color: "amber",
+    },
+    {
+      label: "Pending Install Bills",
+      value: stats.pendingInstallationBillsCount,
+      icon: FiFileText,
+      color: "amber",
+    },
+  ];
 
   // ==================== LOADING STATE ====================
   if (loading && customers.length === 0) {
@@ -838,6 +828,12 @@ export default function BillingTable({
               className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 cursor-pointer"
             >
               <FiCalendarIcon className="w-3.5 h-3.5" /> Backdated
+            </button>
+            <button
+              onClick={onOpenManualCustomer}
+              className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <FiUserPlus className="w-3.5 h-3.5" /> Add
             </button>
             {(customersWithoutAccounts.length > 0 ||
               applicationsWithoutBillingCount > 0) && (
@@ -1070,11 +1066,7 @@ export default function BillingTable({
             <button
               onClick={scrollLeft}
               disabled={!canScrollLeft}
-              className={`fixed left-[80px] top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
-                canScrollLeft
-                  ? "hover:bg-gray-100 cursor-pointer opacity-100"
-                  : "opacity-0 pointer-events-none"
-              }`}
+              className={`fixed left-[80px] top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollLeft ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
               title="Scroll left"
             >
               <FiChevronLeft className="w-6 h-6 text-gray-700" />
@@ -1082,11 +1074,7 @@ export default function BillingTable({
             <button
               onClick={scrollRight}
               disabled={!canScrollRight}
-              className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${
-                canScrollRight
-                  ? "hover:bg-gray-100 cursor-pointer opacity-100"
-                  : "opacity-0 pointer-events-none"
-              }`}
+              className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollRight ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
               title="Scroll right"
             >
               <FiChevronRight className="w-6 h-6 text-gray-700" />
