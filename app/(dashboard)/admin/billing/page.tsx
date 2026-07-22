@@ -1,7 +1,16 @@
+// app/admin/billing/page.tsx - ULTRA FAST COMPLETE VERSION
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import {
+  loadAllBillingData,
+  clearBillingCache,
   getAllBillingCycles,
   getAllBills,
   getBillingSettings,
@@ -12,7 +21,6 @@ import {
   disconnectClient,
   reconnectClient,
   deleteBillingCycle,
-  clearBillingCache,
   markBillAsPaid,
   markInstallationBillAsPaid,
   getPendingProRatedBills,
@@ -26,6 +34,7 @@ import {
   initializeBackdatedBilling,
   recoverMissingBills,
   getUnpaidBillsReport,
+  createManualCustomer,
 } from "@/services/billing";
 import {
   getPendingPayments,
@@ -34,9 +43,8 @@ import {
 } from "@/services/payment";
 import {
   getAllUsers,
-  createManualCustomer,
-  getCustomersWithoutAccounts,
   getAllApplications,
+  getCustomersWithoutAccounts,
 } from "@/services/admin";
 import {
   FiX,
@@ -64,10 +72,6 @@ import {
   FiChevronRight,
   FiArrowUp,
   FiArrowDown,
-  FiInfo,
-  FiCheckCircle,
-  FiPrinter,
-  FiMoreVertical,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
@@ -119,11 +123,6 @@ interface Plan {
 
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
-
-// ==================== GLOBAL CACHE ====================
-let globalCache: any = null;
-let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -206,7 +205,6 @@ export default function AdminBillingPage() {
   const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
-  // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -214,7 +212,6 @@ export default function AdminBillingPage() {
     totalPages: 1,
   });
 
-  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -296,8 +293,6 @@ export default function AdminBillingPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
   const dataLoadedRef = useRef(false);
-  const isLoadingRef = useRef(false);
-  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==================== LOAD PLANS & BUILDINGS ====================
   const loadPlans = async () => {
@@ -356,11 +351,782 @@ export default function AdminBillingPage() {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
+    }
+  };
+
+  // ==================== BUILD CUSTOMERS FROM DATA ====================
+  const buildCustomers = useCallback(
+    (
+      usersList: any[],
+      applicationsList: any[],
+      billsList: any[],
+      cyclesData: any[],
+      buildingsListData: Building[],
+    ): CustomerItem[] => {
+      const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+        const userBills = billsList.filter(
+          (bill: any) =>
+            bill.userId?._id === user._id &&
+            bill.status !== "paid" &&
+            !bill.isInstallationBill,
+        );
+        const totalBalance = userBills.reduce(
+          (sum: number, bill: any) => sum + (bill.total || 0),
+          0,
+        );
+        const overdueBills = userBills.filter(
+          (bill: any) =>
+            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+        );
+        const userCycle = cyclesData.find(
+          (cycle: any) =>
+            cycle.userId?._id === user._id || cycle.userId === user._id,
+        );
+
+        let buildingObj = user.building || null;
+        if (
+          buildingObj &&
+          typeof buildingObj === "object" &&
+          !buildingObj._id
+        ) {
+          const foundBuilding = buildingsListData.find(
+            (b) => b.buildingName === buildingObj.buildingName,
+          );
+          if (foundBuilding) {
+            buildingObj = foundBuilding;
+          }
+        }
+
+        return {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          username: user.username,
+          phoneNumber: user.phoneNumber,
+          status: user.status,
+          type: "user" as const,
+          planName: user.planId?.name || "No Plan",
+          planPrice: user.planId?.price || 0,
+          currentBalance: totalBalance,
+          unpaidBills: userBills,
+          overdueBills: overdueBills,
+          billingCycle: userCycle || null,
+          installationFee: 0,
+          installationFeePaid: true,
+          building: buildingObj,
+          unitNumber: user.unitNumber,
+          floor: user.floor,
+        };
+      });
+
+      const applicationCustomers: CustomerItem[] = applicationsList
+        .filter(
+          (app: any) =>
+            app.status === "approved" || app.billingStarted === true,
+        )
+        .map((app: any) => {
+          const appBills = billsList.filter(
+            (bill: any) =>
+              bill.applicationId === app.applicationId &&
+              bill.status !== "paid" &&
+              !bill.isInstallationBill,
+          );
+          const totalBalance = appBills.reduce(
+            (sum: number, bill: any) => sum + (bill.total || 0),
+            0,
+          );
+          const overdueBills = appBills.filter(
+            (bill: any) =>
+              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+          );
+          const appCycle = cyclesData.find(
+            (cycle: any) => cycle.applicationId === app.applicationId,
+          );
+
+          let buildingObj = null;
+          if (app.buildingId) {
+            if (typeof app.buildingId === "object" && app.buildingId._id) {
+              buildingObj = app.buildingId;
+            } else if (typeof app.buildingId === "string") {
+              const foundBuilding = buildingsListData.find(
+                (b) =>
+                  b._id === app.buildingId || b.buildingName === app.buildingId,
+              );
+              if (foundBuilding) {
+                buildingObj = foundBuilding;
+              }
+            }
+          }
+          if (!buildingObj && app.buildingName) {
+            const foundBuilding = buildingsListData.find(
+              (b) => b.buildingName === app.buildingName,
+            );
+            if (foundBuilding) {
+              buildingObj = foundBuilding;
+            } else {
+              buildingObj = { buildingName: app.buildingName };
+            }
+          }
+
+          return {
+            _id: app._id,
+            firstName: app.firstName,
+            lastName: app.lastName,
+            email: app.email,
+            phoneNumber: app.phoneNumber,
+            status: app.billingStarted ? "billing_started" : "approved",
+            type: "application" as const,
+            planName: app.planId?.name || "No Plan",
+            planPrice: app.planId?.price || 0,
+            currentBalance: totalBalance,
+            unpaidBills: appBills,
+            overdueBills: overdueBills,
+            billingCycle: appCycle || null,
+            applicationId: app.applicationId,
+            installationFee: app.installationFee || 0,
+            installationFeePaid: app.installationFeePaid || false,
+            building: buildingObj,
+            unitNumber: app.unitNumber,
+            floor: app.floor,
+          };
+        });
+
+      const allCustomers = [...userCustomers, ...applicationCustomers];
+      allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+      return allCustomers;
+    },
+    [],
+  );
+
+  // ==================== CALCULATE STATS ====================
+  const calculateStats = useCallback(
+    (
+      allCustomers: CustomerItem[],
+      cyclesData: any[],
+      applicationsList: any[],
+      pendingPaymentsList: any[],
+      pendingInstallationBillsData: any[],
+    ) => {
+      const totalBalance = allCustomers.reduce(
+        (sum, c) => sum + c.currentBalance,
+        0,
+      );
+      const customersWithBalance = allCustomers.filter(
+        (c) => c.currentBalance > 0,
+      ).length;
+      const overdueCustomers = allCustomers.filter(
+        (c) => c.overdueBills.length > 0,
+      ).length;
+      const activeCycles = cyclesData.filter(
+        (c: any) => c.status === "active",
+      ).length;
+      const pausedCycles = cyclesData.filter(
+        (c: any) => c.status === "paused",
+      ).length;
+      const applicationsWithoutBilling = applicationsList.filter(
+        (app: any) => app.status === "approved" && !app.billingStarted,
+      ).length;
+
+      const totalInstallationFeesDue = allCustomers
+        .filter(
+          (c) =>
+            c.type === "application" &&
+            !c.installationFeePaid &&
+            (c.installationFee || 0) > 0,
+        )
+        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+      const installationFeesPaidCount = allCustomers.filter(
+        (c) => c.type === "application" && c.installationFeePaid,
+      ).length;
+
+      return {
+        totalCustomers: allCustomers.length,
+        totalBalance: totalBalance,
+        customersWithBalanceCount: customersWithBalance,
+        overdueCustomersCount: overdueCustomers,
+        activeCyclesCount: activeCycles,
+        pausedCyclesCount: pausedCycles,
+        pendingProRatedCount: 0,
+        pendingActivationsCount: 0,
+        pendingPaymentsCount: pendingPaymentsList.length,
+        pendingInstallationBillsCount: pendingInstallationBillsData.length,
+        applicationsWithoutBilling: applicationsWithoutBilling,
+        totalInstallationFeesDue: totalInstallationFeesDue,
+        installationFeesPaidCount: installationFeesPaidCount,
+      };
+    },
+    [],
+  );
+
+  // ==================== LOAD DATA - ULTRA FAST ====================
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
+      if (isMountedRef.current && !forceRefresh && dataLoadedRef.current) {
+        return;
+      }
+
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        console.log("🚀 Loading billing data with parallel requests...");
+        const startTime = Date.now();
+
+        // ============ PARALLEL LOAD ALL DATA ============
+        const allData = await loadAllBillingData(forceRefresh);
+
+        if (!isMountedRef.current) return;
+
+        const {
+          cycles,
+          bills,
+          users,
+          applications,
+          pendingPayments: pendingPaymentsData,
+          customersWithoutAccounts: customersWithoutAccountsData,
+          pendingInstallation: pendingInstallationData,
+          pendingProRated: pendingProRatedData,
+          pendingActivations: pendingActivationsData,
+          settings,
+        } = allData;
+
+        // Set data
+        setBillingCycles(cycles);
+        setBills(bills);
+        setPendingPayments(pendingPaymentsData);
+        setCustomersWithoutAccounts(customersWithoutAccountsData);
+        setPendingInstallationBills(pendingInstallationData);
+        setPendingProRated(pendingProRatedData);
+        setPendingActivations(pendingActivationsData);
+
+        if (settings) {
+          setBillingSettingsState(settings);
+        }
+
+        // Build customers
+        const allCustomers = buildCustomers(
+          users,
+          applications,
+          bills,
+          cycles,
+          buildingsList,
+        );
+        setCustomers(allCustomers);
+
+        // Calculate stats
+        const newStats = calculateStats(
+          allCustomers,
+          cycles,
+          applications,
+          pendingPaymentsData,
+          pendingInstallationData,
+        );
+        setStats(newStats);
+
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ Data loaded in ${elapsed}ms`);
+
+        dataLoadedRef.current = true;
+        initialLoadDone.current = true;
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [buildingsList, buildCustomers, calculateStats],
+  );
+
+  // ==================== HANDLE ACTIONS ====================
+  const handleAction = (action: string, customer: CustomerItem, data?: any) => {
+    switch (action) {
+      case "view":
+        setSelectedCustomer(customer);
+        setShowCustomerDetailModal(true);
+        break;
+      case "email":
+        openEmailModal(customer, "custom");
+        break;
+      case "recover":
+        handleRecoverMissingBills(customer);
+        break;
+      case "start":
+        setSelectedApplicationId(customer.applicationId || customer._id);
+        setSelectedCustomerName(`${customer.firstName} ${customer.lastName}`);
+        setSelectedCustomerEmail(customer.email);
+        setIncludeInstallationFee(true);
+        setShowStartModal(true);
+        break;
+      case "pause":
+        if (customer.type === "application") {
+          handlePauseBillingForApplication(customer);
+        } else {
+          setSelectedUserId(customer._id);
+          setShowPauseModal(true);
+        }
+        break;
+      case "resume":
+        if (customer.type === "application") {
+          handleResumeBillingForApplication(customer);
+        } else {
+          handleResumeBilling(customer._id, customer.firstName);
+        }
+        break;
+      case "disconnect":
+        if (customer.type === "application") {
+          handleDisconnectApplication(customer);
+        } else {
+          handleDisconnect(customer);
+        }
+        break;
+      case "reconnect":
+        if (customer.type === "application") {
+          handleReconnectApplication(customer);
+        } else {
+          handleReconnect(customer);
+        }
+        break;
+      case "stop":
+        if (customer.type === "application") {
+          handleStopBillingForApplication(customer);
+        } else {
+          handleStopBilling(customer._id, customer.firstName);
+        }
+        break;
+      case "delete":
+        setCustomerToDelete(customer);
+        setShowDeleteConfirmModal(true);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // ==================== HANDLE BILLING ACTIONS ====================
+  const handlePauseBillingForApplication = async (customer: CustomerItem) => {
+    const reason = prompt("Enter reason for pausing:");
+    if (reason === null) return;
+
+    try {
+      await pauseBilling({
+        applicationId: customer.applicationId,
+        reason: reason || "Admin initiated pause",
+      });
+      toast.success(
+        `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to pause billing");
+    }
+  };
+
+  const handleResumeBillingForApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(`Resume billing for ${customer.firstName} ${customer.lastName}?`)
+    )
+      return;
+
+    try {
+      await resumeBilling({ applicationId: customer.applicationId });
+      toast.success(
+        `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to resume billing");
+    }
+  };
+
+  const handleDisconnectApplication = async (customer: CustomerItem) => {
+    const reason = prompt("Enter reason for disconnection:");
+    if (reason === null) return;
+
+    if (
+      !confirm(
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?`,
+      )
+    )
+      return;
+
+    try {
+      await disconnectClient({ applicationId: customer.applicationId, reason });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to disconnect");
+    }
+  };
+
+  const handleReconnectApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
+      )
+    )
+      return;
+
+    try {
+      await reconnectClient({ applicationId: customer.applicationId });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to reconnect");
+    }
+  };
+
+  const handleStopBillingForApplication = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Stop billing for ${customer.firstName} ${customer.lastName}? This will cancel the subscription.`,
+      )
+    )
+      return;
+
+    try {
+      await stopBilling({
+        applicationId: customer.applicationId,
+        reason: "Admin action",
+      });
+      toast.success(
+        `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to stop billing");
+    }
+  };
+
+  const handleResumeBilling = async (userId: string, customerName: string) => {
+    if (!confirm(`Resume billing for ${customerName}?`)) return;
+    try {
+      await resumeBilling({ userId });
+      toast.success(`✅ Billing resumed for ${customerName}!`);
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to resume billing");
+    }
+  };
+
+  const handleStopBilling = async (userId: string, customerName: string) => {
+    if (
+      !confirm(
+        `Stop billing for ${customerName}? This will cancel the subscription.`,
+      )
+    )
+      return;
+    try {
+      await stopBilling({ userId, reason: "Admin action" });
+      toast.success(`⛔ Billing stopped for ${customerName}.`);
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to stop billing");
+    }
+  };
+
+  const handleDisconnect = async (customer: CustomerItem) => {
+    const reason = prompt("Enter reason for disconnection:");
+    if (reason === null) return;
+
+    if (
+      !confirm(
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?`,
+      )
+    )
+      return;
+
+    try {
+      await disconnectClient({ userId: customer._id, reason });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to disconnect client",
+      );
+    }
+  };
+
+  const handleReconnect = async (customer: CustomerItem) => {
+    if (
+      !confirm(
+        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
+      )
+    )
+      return;
+
+    try {
+      await reconnectClient({ userId: customer._id });
+      toast.success(
+        `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to reconnect client",
+      );
+    }
+  };
+
+  const handleDeleteBillingCycle = async (customer: CustomerItem) => {
+    if (!customer.billingCycle?._id) {
+      toast.error("No billing cycle found to delete");
+      return;
+    }
+
+    if (
+      !confirm(
+        `⚠️ Are you sure you want to delete the billing cycle for ${customer.firstName} ${customer.lastName}?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const result = await deleteBillingCycle({
+        billingCycleId: customer.billingCycle._id,
+        applicationId: customer.applicationId,
+      });
+
+      if (result.success) {
+        toast.success(
+          `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
+        );
+        clearBillingCache();
+        await loadData(true);
+      } else {
+        toast.error(result.message || "Failed to delete billing cycle");
+      }
+    } catch (error: any) {
+      console.error("Delete error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to delete billing cycle",
+      );
+    }
+  };
+
+  const handleRecoverMissingBills = async (customer: CustomerItem) => {
+    if (!customer.applicationId && customer.type !== "application") {
+      toast.error("Only application customers can recover missing bills");
+      return;
+    }
+
+    const startFromDate = prompt(
+      "Enter start date for recovery (YYYY-MM-DD) or leave empty to auto-detect:",
+      "",
+    );
+
+    try {
+      toast.loading("Recovering missing bills...", { id: "recover-bills" });
+      const result = await recoverMissingBills({
+        applicationId: customer.applicationId!,
+        startFromDate: startFromDate || undefined,
+      });
+      toast.dismiss("recover-bills");
+
+      if (result.success) {
+        toast.success(result.message);
+        clearBillingCache();
+        await loadData(true);
+      } else {
+        toast.error(result.message || "Failed to recover missing bills");
+      }
+    } catch (error: any) {
+      toast.dismiss("recover-bills");
+      toast.error(
+        error.response?.data?.message || "Failed to recover missing bills",
+      );
+    }
+  };
+
+  const handleMarkInstallationBillAsPaid = async (
+    bill: any,
+    customer: CustomerItem,
+  ) => {
+    if (!confirm(`Mark installation invoice ${bill.invoiceNumber} as paid?`))
+      return;
+    try {
+      await markInstallationBillAsPaid(bill._id, {
+        referenceNumber: `INST-ADMIN-${Date.now()}`,
+        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+      });
+      toast.success(
+        `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
+      );
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      console.error("Mark installation bill as paid error:", error);
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to mark installation bill as paid",
+      );
+    }
+  };
+
+  const handleMarkBillAsPaid = async (bill: any, customer: CustomerItem) => {
+    if (!confirm(`Mark invoice ${bill.invoiceNumber} as paid?`)) return;
+    try {
+      await markBillAsPaid(bill._id, {
+        referenceNumber: `ADMIN-${Date.now()}`,
+        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+      });
+      toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      console.error("Mark bill as paid error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to mark bill as paid",
+      );
+    }
+  };
+
+  const handleConfirmPayment = async (paymentId: string) => {
+    if (!confirm("Confirm this payment? This will mark the bill as paid."))
+      return;
+    try {
+      await confirmPayment(paymentId);
+      toast.success("Payment confirmed! User notified.");
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to confirm payment");
+    }
+  };
+
+  const handleRejectPayment = async (paymentId: string) => {
+    const reason = prompt("Enter reason for rejection:");
+    if (reason === null) return;
+    try {
+      await rejectPayment(paymentId, reason);
+      toast.success("Payment rejected");
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to reject payment");
+    }
+  };
+
+  // ==================== HANDLE START BILLING ====================
+  const handleStartBillingForApplication = async () => {
+    if (!selectedApplicationId) {
+      toast.error("No application selected");
+      return;
+    }
+
+    try {
+      toast.loading("Starting billing...", { id: "start-billing-app" });
+      const result = await startBillingForApplication(selectedApplicationId, {
+        installationDate: startDate || undefined,
+        notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
+      });
+      toast.dismiss("start-billing-app");
+
+      if (result.success) {
+        const feeMsg = includeInstallationFee
+          ? ` Includes installation fee of ₱${billingFlowSettings.installationFee.toLocaleString()}.`
+          : "";
+        toast.success(
+          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}.${feeMsg}`,
+        );
+        setShowStartModal(false);
+        setSelectedApplicationId("");
+        setSelectedCustomerName("");
+        setSelectedCustomerEmail("");
+        setStartDate("");
+        setCustomAmount("");
+        setBillingNotes("");
+        setIncludeInstallationFee(true);
+        clearBillingCache();
+        await loadData(true);
+      } else {
+        toast.error(result.message || "Failed to start billing");
+      }
+    } catch (error: any) {
+      toast.dismiss("start-billing-app");
+      console.error("Error:", error);
+      toast.error(error.response?.data?.message || "Failed to start billing");
+    }
+  };
+
+  const handleStartBillingForUser = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+    try {
+      await startBilling({
+        userId: selectedUserId,
+        startDate: startDate || undefined,
+        customAmount: customAmount ? parseFloat(customAmount) : undefined,
+        notes: billingNotes,
+        includeInstallationFee: includeInstallationFee,
+      });
+      toast.success(`✅ Billing started! Invoice sent to customer`);
+      setShowStartModal(false);
+      setSelectedUserId("");
+      setStartDate("");
+      setCustomAmount("");
+      setBillingNotes("");
+      setIncludeInstallationFee(true);
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to start billing");
+    }
+  };
+
+  const handlePauseBilling = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+    try {
+      await pauseBilling({
+        userId: selectedUserId,
+        reason: pauseReason || "Admin initiated pause",
+        pauseUntilDate: pauseUntilDate || undefined,
+      });
+      toast.success("⏸️ Billing paused successfully!");
+      setShowPauseModal(false);
+      setSelectedUserId("");
+      setPauseReason("");
+      setPauseUntilDate("");
+      clearBillingCache();
+      await loadData(true);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to pause billing");
     }
   };
 
@@ -406,8 +1172,7 @@ export default function AdminBillingPage() {
           includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
-        globalCache = null;
-        globalCacheTimestamp = 0;
+        clearBillingCache();
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
@@ -423,78 +1188,51 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== HANDLE RECOVER MISSING BILLS ====================
-  const handleRecoverMissingBills = async (customer: CustomerItem) => {
-    if (!customer.applicationId && customer.type !== "application") {
-      toast.error("Only application customers can recover missing bills");
-      return;
-    }
-
-    const startFromDate = prompt(
-      "Enter start date for recovery (YYYY-MM-DD) or leave empty to auto-detect:",
-      "",
-    );
-
-    try {
-      toast.loading("Recovering missing bills...", { id: "recover-bills" });
-      const result = await recoverMissingBills({
-        applicationId: customer.applicationId!,
-        startFromDate: startFromDate || undefined,
-      });
-      toast.dismiss("recover-bills");
-
-      if (result.success) {
-        toast.success(result.message);
-        globalCache = null;
-        globalCacheTimestamp = 0;
-        await loadData(true);
-      } else {
-        toast.error(result.message || "Failed to recover missing bills");
-      }
-    } catch (error: any) {
-      toast.dismiss("recover-bills");
-      toast.error(
-        error.response?.data?.message || "Failed to recover missing bills",
-      );
-    }
-  };
-
-  // ==================== HANDLE DELETE BILLING CYCLE ====================
-  const handleDeleteBillingCycle = async (customer: CustomerItem) => {
-    if (!customer.billingCycle?._id) {
-      toast.error("No billing cycle found to delete");
-      return;
-    }
-
+  // ==================== HANDLE MANUAL CUSTOMER ====================
+  const handleManualCustomerSubmit = async () => {
     if (
-      !confirm(
-        `⚠️ Are you sure you want to delete the billing cycle for ${customer.firstName} ${customer.lastName}?\n\nThis action cannot be undone and will remove all billing records for this customer.`,
-      )
+      !manualCustomerForm.firstName ||
+      !manualCustomerForm.lastName ||
+      !manualCustomerForm.email ||
+      !manualCustomerForm.phoneNumber
     ) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    if (!manualCustomerForm.planId) {
+      toast.error("Please select a plan");
       return;
     }
 
     try {
-      const result = await deleteBillingCycle({
-        billingCycleId: customer.billingCycle._id,
-        applicationId: customer.applicationId,
+      const result = await createManualCustomer({
+        ...manualCustomerForm,
+        startBillingImmediately: manualCustomerForm.startBillingImmediately,
+        includeInstallationFee: manualCustomerForm.includeInstallationFee,
       });
-
-      if (result.success) {
-        toast.success(
-          `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
-        );
-        globalCache = null;
-        globalCacheTimestamp = 0;
-        await loadData(true);
-      } else {
-        toast.error(result.message || "Failed to delete billing cycle");
-      }
+      toast.success(result.message || "Customer created successfully!");
+      setShowManualCustomerModal(false);
+      setManualCustomerForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        buildingId: "",
+        buildingName: "",
+        floor: "",
+        unitNumber: "",
+        planId: "",
+        idType: "Valid ID",
+        idNumber: "",
+        startBillingImmediately: true,
+        installationDate: "",
+        notes: "",
+        includeInstallationFee: true,
+      });
+      clearBillingCache();
+      await loadData(true);
     } catch (error: any) {
-      console.error("Delete error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to delete billing cycle",
-      );
+      toast.error(error.response?.data?.message || "Failed to create customer");
     }
   };
 
@@ -580,907 +1318,35 @@ export default function AdminBillingPage() {
     setShowEmailModal(true);
   };
 
-  // ==================== HANDLE BILLING ACTIONS ====================
-  const handlePauseBillingForApplication = async (customer: CustomerItem) => {
-    const reason = prompt("Enter reason for pausing:");
-    if (reason === null) return;
-
-    try {
-      await pauseBilling({
-        applicationId: customer.applicationId,
-        reason: reason || "Admin initiated pause",
-      });
-      toast.success(
-        `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to pause billing");
-    }
-  };
-
-  const handleResumeBillingForApplication = async (customer: CustomerItem) => {
-    if (
-      !confirm(`Resume billing for ${customer.firstName} ${customer.lastName}?`)
-    )
-      return;
-
-    try {
-      await resumeBilling({ applicationId: customer.applicationId });
-      toast.success(
-        `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to resume billing");
-    }
-  };
-
-  const handleDisconnectApplication = async (customer: CustomerItem) => {
-    const reason = prompt("Enter reason for disconnection:");
-    if (reason === null) return;
-
-    if (
-      !confirm(
-        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?`,
-      )
-    )
-      return;
-
-    try {
-      await disconnectClient({ applicationId: customer.applicationId, reason });
-      toast.success(
-        `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to disconnect");
-    }
-  };
-
-  const handleReconnectApplication = async (customer: CustomerItem) => {
-    if (
-      !confirm(
-        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
-      )
-    )
-      return;
-
-    try {
-      await reconnectClient({ applicationId: customer.applicationId });
-      toast.success(
-        `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to reconnect");
-    }
-  };
-
-  const handleStopBillingForApplication = async (customer: CustomerItem) => {
-    if (
-      !confirm(
-        `Stop billing for ${customer.firstName} ${customer.lastName}? This will cancel the subscription.`,
-      )
-    )
-      return;
-
-    try {
-      await stopBilling({
-        applicationId: customer.applicationId,
-        reason: "Admin action",
-      });
-      toast.success(
-        `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to stop billing");
-    }
-  };
-
-  const handleMarkInstallationBillAsPaid = async (
-    bill: any,
-    customer: CustomerItem,
-  ) => {
-    if (!confirm(`Mark installation invoice ${bill.invoiceNumber} as paid?`))
-      return;
-    try {
-      await markInstallationBillAsPaid(bill._id, {
-        referenceNumber: `INST-ADMIN-${Date.now()}`,
-        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
-      });
-      toast.success(
-        `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      await loadData(true);
-    } catch (error: any) {
-      console.error("Mark installation bill as paid error:", error);
-      toast.error(
-        error.response?.data?.message ||
-          "Failed to mark installation bill as paid",
-      );
-    }
-  };
-
-  // ==================== LOAD DATA ====================
-  const loadData = useCallback(
-    async (forceRefresh = false) => {
-      // Prevent multiple simultaneous loads
-      if (isLoadingRef.current) {
-        console.log("⏳ Load already in progress, skipping...");
-        return;
-      }
-
-      // If data is already loaded and not forcing refresh, use cached data
-      if (dataLoadedRef.current && !forceRefresh) {
-        console.log("📦 Data already loaded, using existing state");
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      // Check global cache
-      const now = Date.now();
-      if (!forceRefresh && globalCache) {
-        if (now - globalCacheTimestamp < CACHE_TTL) {
-          const cached = globalCache;
-          setCustomers(cached.customers);
-          setBillingCycles(cached.billingCycles);
-          setBills(cached.bills);
-          setPendingPayments(cached.pendingPayments);
-          setStats(cached.stats);
-          setPendingProRated(cached.pendingProRated || []);
-          setPendingActivations(cached.pendingActivations || []);
-          setPendingInstallationBills(cached.pendingInstallationBills || []);
-          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
-          setLoading(false);
-          setRefreshing(false);
-          dataLoadedRef.current = true;
-          console.log("✅ Using global cached billing data");
-          return;
-        } else {
-          // Cache expired
-          globalCache = null;
-          dataLoadedRef.current = false;
-        }
-      }
-
-      // If we have customers but no cache and not forcing refresh
-      if (customers.length > 0 && !forceRefresh) {
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      // Start loading
-      isLoadingRef.current = true;
-
-      if (forceRefresh) {
-        setRefreshing(true);
-        clearBillingCache();
-        globalCache = null;
-        globalCacheTimestamp = 0;
-        dataLoadedRef.current = false;
-      } else {
-        setLoading(true);
-      }
-
-      try {
-        console.log("🔄 Loading billing data...");
-
-        const [
-          cyclesResult,
-          billsResult,
-          usersResult,
-          applicationsResult,
-          pendingPaymentsResult,
-          customersWithoutAccountsResult,
-          pendingInstallationBillsResult,
-        ] = await Promise.all([
-          getAllBillingCycles({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllBills({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-          getPendingInstallationBills().catch(() => ({ data: [] })),
-        ]);
-
-        if (!isMountedRef.current) {
-          isLoadingRef.current = false;
-          return;
-        }
-
-        const cyclesData = cyclesResult?.data || [];
-        const billsList = billsResult?.data || [];
-        const usersList = usersResult?.data || [];
-        const applicationsList = applicationsResult?.data || [];
-        const pendingPaymentsList = pendingPaymentsResult?.data || [];
-        const customersWithoutAccountsData =
-          customersWithoutAccountsResult?.data || [];
-        const pendingInstallationBillsData =
-          pendingInstallationBillsResult?.data || [];
-
-        setBillingCycles(cyclesData);
-        setBills(billsList);
-        setPendingPayments(pendingPaymentsList);
-        setCustomersWithoutAccounts(customersWithoutAccountsData);
-        setPendingInstallationBills(pendingInstallationBillsData);
-
-        // Build customers - moved to a separate function for better performance
-        const allCustomers = buildCustomers(
-          usersList,
-          applicationsList,
-          billsList,
-          cyclesData,
-          buildingsList,
-        );
-
-        setCustomers(allCustomers);
-
-        // Calculate stats
-        const newStats = calculateStats(
-          allCustomers,
-          cyclesData,
-          applicationsList,
-          pendingPaymentsList,
-          pendingInstallationBillsData,
-        );
-
-        setStats(newStats);
-
-        // Get pending data
-        const [proRatedResult, activationsResult] = await Promise.all([
-          getPendingProRatedBills(),
-          getPendingActivations(),
-        ]);
-
-        const pendingProRatedData = proRatedResult?.data || [];
-        const pendingActivationsData = activationsResult?.data || [];
-
-        setPendingProRated(pendingProRatedData);
-        setPendingActivations(pendingActivationsData);
-
-        // Update cache
-        globalCache = {
-          customers: allCustomers,
-          billingCycles: cyclesData,
-          bills: billsList,
-          pendingPayments: pendingPaymentsList,
-          stats: newStats,
-          pendingProRated: pendingProRatedData,
-          pendingActivations: pendingActivationsData,
-          pendingInstallationBills: pendingInstallationBillsData,
-          customersWithoutAccounts: customersWithoutAccountsData,
-        };
-        globalCacheTimestamp = now;
-        dataLoadedRef.current = true;
-
-        console.log(
-          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
-        );
-      } catch (error) {
-        console.error("Failed to load billing data:", error);
-        if (isMountedRef.current) {
-          toast.error("Failed to load billing data");
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-        isLoadingRef.current = false;
-        initialLoadDone.current = true;
-      }
-    },
-    [buildingsList],
-  ); // Removed pagination dependency
-
-  // Helper function to build customers
-  const buildCustomers = (
-    usersList: any[],
-    applicationsList: any[],
-    billsList: any[],
-    cyclesData: any[],
-    buildingsList: Building[],
-  ): CustomerItem[] => {
-    const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-      const userBills = billsList.filter(
-        (bill: any) =>
-          bill.userId?._id === user._id &&
-          bill.status !== "paid" &&
-          !bill.isInstallationBill,
-      );
-      const totalBalance = userBills.reduce(
-        (sum: number, bill: any) => sum + (bill.total || 0),
-        0,
-      );
-      const overdueBills = userBills.filter(
-        (bill: any) =>
-          bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-      );
-      const userCycle = cyclesData.find(
-        (cycle: any) =>
-          cycle.userId?._id === user._id || cycle.userId === user._id,
-      );
-
-      let buildingObj = user.building || null;
-      if (buildingObj && typeof buildingObj === "object" && !buildingObj._id) {
-        const foundBuilding = buildingsList.find(
-          (b) => b.buildingName === buildingObj.buildingName,
-        );
-        if (foundBuilding) {
-          buildingObj = foundBuilding;
-        }
-      }
-
-      return {
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        username: user.username,
-        phoneNumber: user.phoneNumber,
-        status: user.status,
-        type: "user" as const,
-        planName: user.planId?.name || "No Plan",
-        planPrice: user.planId?.price || 0,
-        currentBalance: totalBalance,
-        unpaidBills: userBills,
-        overdueBills: overdueBills,
-        billingCycle: userCycle || null,
-        installationFee: 0,
-        installationFeePaid: true,
-        building: buildingObj,
-        unitNumber: user.unitNumber,
-        floor: user.floor,
-      };
-    });
-
-    const applicationCustomers: CustomerItem[] = applicationsList
-      .filter(
-        (app: any) => app.status === "approved" || app.billingStarted === true,
-      )
-      .map((app: any) => {
-        const appBills = billsList.filter(
-          (bill: any) =>
-            bill.applicationId === app.applicationId &&
-            bill.status !== "paid" &&
-            !bill.isInstallationBill,
-        );
-        const totalBalance = appBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
-        const overdueBills = appBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
-        const appCycle = cyclesData.find(
-          (cycle: any) => cycle.applicationId === app.applicationId,
-        );
-
-        let buildingObj = null;
-        if (app.buildingId) {
-          if (typeof app.buildingId === "object" && app.buildingId._id) {
-            buildingObj = app.buildingId;
-          } else if (typeof app.buildingId === "string") {
-            const foundBuilding = buildingsList.find(
-              (b) =>
-                b._id === app.buildingId || b.buildingName === app.buildingId,
-            );
-            if (foundBuilding) {
-              buildingObj = foundBuilding;
-            }
-          }
-        }
-        if (!buildingObj && app.buildingName) {
-          const foundBuilding = buildingsList.find(
-            (b) => b.buildingName === app.buildingName,
-          );
-          if (foundBuilding) {
-            buildingObj = foundBuilding;
-          } else {
-            buildingObj = { buildingName: app.buildingName };
-          }
-        }
-
-        return {
-          _id: app._id,
-          firstName: app.firstName,
-          lastName: app.lastName,
-          email: app.email,
-          phoneNumber: app.phoneNumber,
-          status: app.billingStarted ? "billing_started" : "approved",
-          type: "application" as const,
-          planName: app.planId?.name || "No Plan",
-          planPrice: app.planId?.price || 0,
-          currentBalance: totalBalance,
-          unpaidBills: appBills,
-          overdueBills: overdueBills,
-          billingCycle: appCycle || null,
-          applicationId: app.applicationId,
-          installationFee: app.installationFee || 0,
-          installationFeePaid: app.installationFeePaid || false,
-          building: buildingObj,
-          unitNumber: app.unitNumber,
-          floor: app.floor,
-        };
-      });
-
-    const allCustomers = [...userCustomers, ...applicationCustomers];
-    allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
-    return allCustomers;
-  };
-
-  // Helper function to calculate stats
-  const calculateStats = (
-    allCustomers: CustomerItem[],
-    cyclesData: any[],
-    applicationsList: any[],
-    pendingPaymentsList: any[],
-    pendingInstallationBillsData: any[],
-  ) => {
-    const totalBalance = allCustomers.reduce(
-      (sum, c) => sum + c.currentBalance,
-      0,
-    );
-    const customersWithBalance = allCustomers.filter(
-      (c) => c.currentBalance > 0,
-    ).length;
-    const overdueCustomers = allCustomers.filter(
-      (c) => c.overdueBills.length > 0,
-    ).length;
-    const activeCycles = cyclesData.filter(
-      (c: any) => c.status === "active",
-    ).length;
-    const pausedCycles = cyclesData.filter(
-      (c: any) => c.status === "paused",
-    ).length;
-    const applicationsWithoutBilling = applicationsList.filter(
-      (app: any) => app.status === "approved" && !app.billingStarted,
-    ).length;
-
-    const totalInstallationFeesDue = allCustomers
-      .filter(
-        (c) =>
-          c.type === "application" &&
-          !c.installationFeePaid &&
-          (c.installationFee || 0) > 0,
-      )
-      .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-    const installationFeesPaidCount = allCustomers.filter(
-      (c) => c.type === "application" && c.installationFeePaid,
-    ).length;
-
-    return {
-      totalCustomers: allCustomers.length,
-      totalBalance: totalBalance,
-      customersWithBalanceCount: customersWithBalance,
-      overdueCustomersCount: overdueCustomers,
-      activeCyclesCount: activeCycles,
-      pausedCyclesCount: pausedCycles,
-      pendingProRatedCount: 0,
-      pendingActivationsCount: 0,
-      pendingPaymentsCount: pendingPaymentsList.length,
-      pendingInstallationBillsCount: pendingInstallationBillsData.length,
-      applicationsWithoutBilling: applicationsWithoutBilling,
-      totalInstallationFeesDue: totalInstallationFeesDue,
-      installationFeesPaidCount: installationFeesPaidCount,
-    };
-  };
-
-  // ==================== HANDLE ACTION ====================
-  const handleAction = (action: string, customer: CustomerItem, data?: any) => {
-    switch (action) {
-      case "view":
-        setSelectedCustomer(customer);
-        setShowCustomerDetailModal(true);
-        break;
-      case "email":
-        openEmailModal(customer, "custom");
-        break;
-      case "recover":
-        handleRecoverMissingBills(customer);
-        break;
-      case "start":
-        setSelectedApplicationId(customer.applicationId || customer._id);
-        setSelectedCustomerName(`${customer.firstName} ${customer.lastName}`);
-        setSelectedCustomerEmail(customer.email);
-        setIncludeInstallationFee(true);
-        setShowStartModal(true);
-        break;
-      case "pause":
-        if (customer.type === "application") {
-          handlePauseBillingForApplication(customer);
-        } else {
-          setSelectedUserId(customer._id);
-          setShowPauseModal(true);
-        }
-        break;
-      case "resume":
-        if (customer.type === "application") {
-          handleResumeBillingForApplication(customer);
-        } else {
-          handleResumeBilling(customer._id, customer.firstName);
-        }
-        break;
-      case "disconnect":
-        if (customer.type === "application") {
-          handleDisconnectApplication(customer);
-        } else {
-          handleDisconnect(customer);
-        }
-        break;
-      case "reconnect":
-        if (customer.type === "application") {
-          handleReconnectApplication(customer);
-        } else {
-          handleReconnect(customer);
-        }
-        break;
-      case "stop":
-        if (customer.type === "application") {
-          handleStopBillingForApplication(customer);
-        } else {
-          handleStopBilling(customer._id, customer.firstName);
-        }
-        break;
-      case "delete":
-        setCustomerToDelete(customer);
-        setShowDeleteConfirmModal(true);
-        break;
-      default:
-        break;
-    }
-  };
-
-  // ==================== HANDLE RESUME BILLING ====================
-  const handleResumeBilling = async (userId: string, customerName: string) => {
-    if (!confirm(`Resume billing for ${customerName}?`)) return;
-    try {
-      await resumeBilling({ userId });
-      toast.success(`✅ Billing resumed for ${customerName}!`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to resume billing");
-    }
-  };
-
-  const handleStopBilling = async (userId: string, customerName: string) => {
-    if (
-      !confirm(
-        `Stop billing for ${customerName}? This will cancel the subscription.`,
-      )
-    )
-      return;
-    try {
-      await stopBilling({ userId, reason: "Admin action" });
-      toast.success(`⛔ Billing stopped for ${customerName}.`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to stop billing");
-    }
-  };
-
-  const handleDisconnect = async (customer: CustomerItem) => {
-    const reason = prompt(
-      "Enter reason for disconnection (e.g., non-payment, violation):",
-    );
-    if (reason === null) return;
-
-    if (
-      !confirm(
-        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?\n\nReason: ${reason}\n\nThis will disable their internet access immediately.`,
-      )
-    )
-      return;
-
-    try {
-      await disconnectClient({ userId: customer._id, reason });
-      toast.success(
-        `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      console.error("Disconnect error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to disconnect client",
-      );
-    }
-  };
-
-  const handleReconnect = async (customer: CustomerItem) => {
-    if (
-      !confirm(
-        `Reconnect ${customer.firstName} ${customer.lastName} to the network?`,
-      )
-    )
-      return;
-
-    try {
-      await reconnectClient({ userId: customer._id });
-      toast.success(
-        `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
-      );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      console.error("Reconnect error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to reconnect client",
-      );
-    }
-  };
-
-  // ==================== HANDLE CONFIRM PAYMENT ====================
-  const handleConfirmPayment = async (paymentId: string) => {
-    if (!confirm("Confirm this payment? This will mark the bill as paid."))
-      return;
-    try {
-      await confirmPayment(paymentId);
-      toast.success("Payment confirmed! User notified.");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to confirm payment");
-    }
-  };
-
-  const handleRejectPayment = async (paymentId: string) => {
-    const reason = prompt("Enter reason for rejection:");
-    if (reason === null) return;
-    try {
-      await rejectPayment(paymentId, reason);
-      toast.success("Payment rejected");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to reject payment");
-    }
-  };
-
-  const handleMarkBillAsPaid = async (bill: any, customer: CustomerItem) => {
-    if (!confirm(`Mark invoice ${bill.invoiceNumber} as paid?`)) return;
-    try {
-      await markBillAsPaid(bill._id, {
-        referenceNumber: `ADMIN-${Date.now()}`,
-        notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
-      });
-      toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      console.error("Mark bill as paid error:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to mark bill as paid",
-      );
-    }
-  };
-
-  // ==================== HANDLE START BILLING ====================
-  const handleStartBillingForApplication = async () => {
-    if (!selectedApplicationId) {
-      toast.error("No application selected");
-      return;
-    }
-
-    try {
-      toast.loading("Starting billing...", { id: "start-billing-app" });
-      const result = await startBillingForApplication(selectedApplicationId, {
-        installationDate: startDate || undefined,
-        notes: billingNotes,
-        includeInstallationFee: includeInstallationFee,
-      });
-      toast.dismiss("start-billing-app");
-
-      if (result.success) {
-        const feeMsg = includeInstallationFee
-          ? ` Includes installation fee of ₱${billingFlowSettings.installationFee.toLocaleString()}.`
-          : "";
-        toast.success(
-          `✅ Billing started for ${selectedCustomerName}! Service is now ACTIVE. Invoice sent to ${selectedCustomerEmail}.${feeMsg}`,
-        );
-        setShowStartModal(false);
-        setSelectedApplicationId("");
-        setSelectedCustomerName("");
-        setSelectedCustomerEmail("");
-        setStartDate("");
-        setCustomAmount("");
-        setBillingNotes("");
-        setIncludeInstallationFee(true);
-        globalCache = null;
-        globalCacheTimestamp = 0;
-        dataLoadedRef.current = false;
-        await loadData(true);
-      } else {
-        toast.error(result.message || "Failed to start billing");
-      }
-    } catch (error: any) {
-      toast.dismiss("start-billing-app");
-      console.error("Error:", error);
-      toast.error(error.response?.data?.message || "Failed to start billing");
-    }
-  };
-
-  const handleStartBillingForUser = async () => {
-    if (!selectedUserId) {
-      toast.error("Please select a user");
-      return;
-    }
-    try {
-      await startBilling({
-        userId: selectedUserId,
-        startDate: startDate || undefined,
-        customAmount: customAmount ? parseFloat(customAmount) : undefined,
-        notes: billingNotes,
-        includeInstallationFee: includeInstallationFee,
-      });
-      toast.success(`✅ Billing started! Invoice sent to customer`);
-      setShowStartModal(false);
-      setSelectedUserId("");
-      setStartDate("");
-      setCustomAmount("");
-      setBillingNotes("");
-      setIncludeInstallationFee(true);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to start billing");
-    }
-  };
-
-  const handlePauseBilling = async () => {
-    if (!selectedUserId) {
-      toast.error("Please select a user");
-      return;
-    }
-    try {
-      await pauseBilling({
-        userId: selectedUserId,
-        reason: pauseReason || "Admin initiated pause",
-        pauseUntilDate: pauseUntilDate || undefined,
-      });
-      toast.success("⏸️ Billing paused successfully!");
-      setShowPauseModal(false);
-      setSelectedUserId("");
-      setPauseReason("");
-      setPauseUntilDate("");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to pause billing");
-    }
-  };
-
-  // ==================== HANDLE MANUAL CUSTOMER ====================
-  const handleManualCustomerSubmit = async () => {
-    if (
-      !manualCustomerForm.firstName ||
-      !manualCustomerForm.lastName ||
-      !manualCustomerForm.email ||
-      !manualCustomerForm.phoneNumber
-    ) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-    if (!manualCustomerForm.planId) {
-      toast.error("Please select a plan");
-      return;
-    }
-
-    try {
-      const result = await createManualCustomer({
-        ...manualCustomerForm,
-        startBillingImmediately: manualCustomerForm.startBillingImmediately,
-        includeInstallationFee: manualCustomerForm.includeInstallationFee,
-      });
-      toast.success(result.message || "Customer created successfully!");
-      setShowManualCustomerModal(false);
-      setManualCustomerForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phoneNumber: "",
-        buildingId: "",
-        buildingName: "",
-        floor: "",
-        unitNumber: "",
-        planId: "",
-        idType: "Valid ID",
-        idNumber: "",
-        startBillingImmediately: true,
-        installationDate: "",
-        notes: "",
-        includeInstallationFee: true,
-      });
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
-      await loadData(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to create customer");
-    }
+  // ==================== HANDLE REFRESH ====================
+  const handleRefresh = () => {
+    clearBillingCache();
+    dataLoadedRef.current = false;
+    loadData(true);
   };
 
   // ==================== USE EFFECTS ====================
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Only load data once on mount
-    if (!dataLoadedRef.current && customers.length === 0) {
-      // Use a slight delay to prevent multiple rapid calls
-      const timer = setTimeout(() => {
-        loadData();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
+    const init = async () => {
+      // Load auxiliary data in parallel
+      await Promise.all([
+        loadPlans(),
+        loadBuildings(),
+        loadBillingFlowSettings(),
+      ]);
 
-    loadBillingFlowSettings();
-    loadPlans();
-    loadBuildings();
+      // Load main billing data
+      await loadData(false);
+    };
+
+    init();
 
     return () => {
       isMountedRef.current = false;
-      if (loadTimeoutRef.current) {
-        clearTimeout(loadTimeoutRef.current);
-      }
     };
-  }, []); // Empty dependency array - only run once
-
-  // ==================== HANDLE REFRESH ====================
-  const handleRefresh = () => {
-    globalCache = null;
-    globalCacheTimestamp = 0;
-    dataLoadedRef.current = false;
-    loadData(true);
-  };
+  }, []);
 
   // ==================== COMPUTED VALUES ====================
   const totalPendingCount =
@@ -2608,6 +2474,41 @@ export default function AdminBillingPage() {
                   onChange={(e) => {
                     const newType = e.target.value;
                     setEmailType(newType);
+                    // Auto-fill based on template
+                    const customer = emailCustomer;
+                    if (customer) {
+                      switch (newType) {
+                        case "invoice":
+                          setEmailSubject(`Invoice Reminder - MisterFyber`);
+                          setEmailMessage(
+                            `Dear ${customer.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${customer.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
+                          );
+                          break;
+                        case "payment_confirmation":
+                          setEmailSubject(`Payment Confirmation - MisterFyber`);
+                          setEmailMessage(
+                            `Dear ${customer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+                          );
+                          break;
+                        case "disconnection":
+                          setEmailSubject(
+                            `Important: Service Disconnection Notice - MisterFyber`,
+                          );
+                          setEmailMessage(
+                            `Dear ${customer.firstName},\n\nThis is to notify you that your internet service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance of ₱${customer.currentBalance.toLocaleString()}.\n\nBest regards,\nMisterFyber Team`,
+                          );
+                          break;
+                        case "welcome":
+                          setEmailSubject(`Welcome to MisterFyber!`);
+                          setEmailMessage(
+                            `Dear ${customer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up. You can now log in to your account to manage your subscription.\n\nBest regards,\nMisterFyber Team`,
+                          );
+                          break;
+                        default:
+                          setEmailSubject(`Message from MisterFyber`);
+                          setEmailMessage(`Dear ${customer.firstName},\n\n`);
+                      }
+                    }
                   }}
                   className="w-full px-3 py-2 text-sm border rounded-lg"
                 >

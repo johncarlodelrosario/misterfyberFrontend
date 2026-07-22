@@ -1,5 +1,4 @@
-// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/components/admin/billingTable.tsx
-
+// components/admin/billingTable.tsx - COMPLETE VERSION
 import React, {
   useState,
   useEffect,
@@ -538,13 +537,11 @@ export default function BillingTable({
   customersWithoutAccounts,
   applicationsWithoutBillingCount,
 }: BillingTableProps) {
-  // Horizontal scroll state
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // ==================== CHECK SCROLL POSITION ====================
   const checkScrollPosition = useCallback(() => {
     if (tableContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } =
@@ -566,7 +563,6 @@ export default function BillingTable({
     }
   };
 
-  // ==================== MEMOIZED FILTERS ====================
   const filteredCustomers = useMemo(() => {
     return customers.filter((customer) => {
       const matchesSearch =
@@ -663,14 +659,12 @@ export default function BillingTable({
     return sorted;
   }, [filteredCustomers, sortField, sortDirection]);
 
-  // ==================== PAGINATED DATA ====================
   const paginatedCustomers = useMemo(() => {
     const start = (pagination.page - 1) * pagination.limit;
     const end = start + pagination.limit;
     return sortedAndFilteredCustomers.slice(start, end);
   }, [sortedAndFilteredCustomers, pagination.page, pagination.limit]);
 
-  // Update pagination total when filtered data changes
   useEffect(() => {
     setPagination((prev: any) => ({
       ...prev,
@@ -679,7 +673,6 @@ export default function BillingTable({
     }));
   }, [sortedAndFilteredCustomers, setPagination]);
 
-  // ==================== HANDLE SORT ====================
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -689,7 +682,6 @@ export default function BillingTable({
     }
   };
 
-  // ==================== HANDLE PAGE CHANGE ====================
   const handlePageChange = (newPage: number) => {
     setPagination((prev: any) => ({ ...prev, page: newPage }));
     if (tableContainerRef.current) {
@@ -697,7 +689,6 @@ export default function BillingTable({
     }
   };
 
-  // ==================== USE EFFECTS ====================
   useEffect(() => {
     const handleResize = () => {
       checkScrollPosition();
@@ -715,7 +706,6 @@ export default function BillingTable({
     setTimeout(checkScrollPosition, 100);
   }, [customers, checkScrollPosition]);
 
-  // ==================== SORT ICON ====================
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
       return <FiArrowUp className="w-3 h-3 opacity-30" />;
@@ -726,7 +716,6 @@ export default function BillingTable({
     );
   };
 
-  // ==================== COMPACT STATS ====================
   const compactStatsCards = [
     {
       label: "Total Customers",
@@ -790,19 +779,53 @@ export default function BillingTable({
     },
   ];
 
-  // ==================== LOADING STATE ====================
+  // Skeleton loading UI
   if (loading && customers.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading billing data...</p>
+      <div className="p-4 md:p-6 bg-gray-50 min-h-screen ml-0 md:ml-0">
+        <div className="mb-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div>
+              <div className="h-8 w-48 bg-gray-200 rounded-lg animate-pulse"></div>
+              <div className="h-4 w-64 bg-gray-200 rounded-lg animate-pulse mt-1"></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="h-10 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
+              <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
+              <div className="h-10 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
+              <div className="h-10 w-28 bg-gray-200 rounded-lg animate-pulse"></div>
+              <div className="h-10 w-28 bg-gray-200 rounded-lg animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
+          {[...Array(10)].map((_, i) => (
+            <div
+              key={i}
+              className="bg-white rounded-lg shadow-sm p-3 border border-gray-100"
+            >
+              <div className="h-3 w-20 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-6 w-16 bg-gray-200 rounded animate-pulse mt-1"></div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-48 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-40 bg-gray-200 rounded-lg animate-pulse"></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300">
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading billing data...</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ==================== RENDER ====================
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-screen ml-0 md:ml-0">
       {/* Header */}
@@ -1060,7 +1083,7 @@ export default function BillingTable({
           </div>
         )}
 
-        {/* Scroll buttons - hidden on mobile */}
+        {/* Scroll buttons */}
         {!isMobile && (
           <>
             <button
