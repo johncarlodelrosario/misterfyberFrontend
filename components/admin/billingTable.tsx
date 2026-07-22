@@ -1,5 +1,3 @@
-// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/components/admin/billingTable.tsx
-
 import React, {
   useState,
   useEffect,
@@ -128,7 +126,6 @@ interface BillingTableProps {
   onAction: (action: string, customer: CustomerItem, data?: any) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
-  onOpenManualCustomer: () => void;
   onOpenBackdated: () => void;
   onOpenExistingCustomers: () => void;
   onOpenPending: () => void;
@@ -529,7 +526,6 @@ export default function BillingTable({
   onAction,
   onRefresh,
   onOpenSettings,
-  onOpenManualCustomer,
   onOpenBackdated,
   onOpenExistingCustomers,
   onOpenPending,
@@ -828,12 +824,6 @@ export default function BillingTable({
               className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 cursor-pointer"
             >
               <FiCalendarIcon className="w-3.5 h-3.5" /> Backdated
-            </button>
-            <button
-              onClick={onOpenManualCustomer}
-              className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <FiUserPlus className="w-3.5 h-3.5" /> Add
             </button>
             {(customersWithoutAccounts.length > 0 ||
               applicationsWithoutBillingCount > 0) && (

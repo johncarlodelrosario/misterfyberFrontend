@@ -1232,9 +1232,6 @@ export default function ApplicationsPage() {
             <span className="hidden xs:inline">
               {refreshing ? "Refreshing..." : "Refresh"}
             </span>
-            <span className="xs:hidden">
-              <FiRefreshCw className="w-3.5 h-3.5" />
-            </span>
           </button>
 
           <button
