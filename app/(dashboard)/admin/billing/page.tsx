@@ -1,3 +1,5 @@
+// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/app/admin/billing/page.tsx
+
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -121,9 +123,9 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// ==================== PERSISTENT CACHE ====================
-const PERSISTENT_CACHE_KEY = "billing_page_data";
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+// ==================== STATIC DATA CACHE ====================
+const STATIC_CACHE_KEY = "billing_static_data";
+const STATIC_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -152,6 +154,47 @@ function getBuildingDisplay(customer: CustomerItem): string {
     }
   }
   return "-";
+}
+
+// ==================== STATIC DATA LOADER ====================
+async function loadStaticData() {
+  try {
+    // Check if static data exists in cache
+    const cached = localStorage.getItem(STATIC_CACHE_KEY);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < STATIC_CACHE_TTL) {
+        return data;
+      }
+    }
+
+    // Load static data (plans, buildings, settings) - these rarely change
+    const [plansRes, buildingsRes, settingsRes] = await Promise.all([
+      fetch("/api/plans").then((r) => r.json()),
+      fetch("/api/buildings/active").then((r) => r.json()),
+      getBillingSettingsAdmin(),
+    ]);
+
+    const staticData = {
+      plans: plansRes.data || [],
+      buildings: buildingsRes.data || [],
+      settings: settingsRes?.data || settingsRes || null,
+    };
+
+    // Cache static data
+    localStorage.setItem(
+      STATIC_CACHE_KEY,
+      JSON.stringify({
+        data: staticData,
+        timestamp: Date.now(),
+      }),
+    );
+
+    return staticData;
+  } catch (error) {
+    console.error("Failed to load static data:", error);
+    return null;
+  }
 }
 
 // ==================== MAIN PAGE COMPONENT ====================
@@ -299,37 +342,19 @@ export default function AdminBillingPage() {
   const isLoadingRef = useRef(false);
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialDataLoaded = useRef(false);
+  const staticDataLoaded = useRef(false);
 
-  // ==================== LOAD PLANS & BUILDINGS ====================
-  const loadPlans = async () => {
-    try {
-      const response = await fetch("/api/plans");
-      const data = await response.json();
-      setPlans(data.data || []);
-    } catch (error) {
-      console.error("Failed to load plans:", error);
-    }
-  };
+  // ==================== LOAD PLANS & BUILDINGS (STATIC) ====================
+  const loadStaticDataOnce = useCallback(async () => {
+    if (staticDataLoaded.current) return;
 
-  const loadBuildings = async () => {
-    setLoadingBuildings(true);
-    try {
-      const response = await fetch("/api/buildings/active");
-      const data = await response.json();
-      setBuildings(data.data || []);
-      setBuildingsList(data.data || []);
-    } catch (error) {
-      console.error("Failed to load buildings:", error);
-    } finally {
-      setLoadingBuildings(false);
-    }
-  };
-
-  const loadBillingFlowSettings = async () => {
-    try {
-      const response = await getBillingSettingsAdmin();
-      const settingsData = response?.data || response;
-      if (settingsData) {
+    const staticData = await loadStaticData();
+    if (staticData) {
+      setPlans(staticData.plans || []);
+      setBuildings(staticData.buildings || []);
+      setBuildingsList(staticData.buildings || []);
+      if (staticData.settings) {
+        const settingsData = staticData.settings;
         setBillingFlowSettings({
           proRatedDueDay: settingsData.proRatedDueDay || 25,
           monthlyDueDay: settingsData.monthlyDueDay || 5,
@@ -348,16 +373,19 @@ export default function AdminBillingPage() {
         });
         setBillingSettingsState(settingsData);
       }
-    } catch (error) {
-      console.error("Failed to load billing flow settings:", error);
+      staticDataLoaded.current = true;
     }
-  };
+  }, []);
 
   const saveBillingFlowSettings = async () => {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
       clearBillingCache();
+      // Invalidate static cache
+      localStorage.removeItem(STATIC_CACHE_KEY);
+      staticDataLoaded.current = false;
+      await loadStaticDataOnce();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
@@ -706,7 +734,7 @@ export default function AdminBillingPage() {
     }
   };
 
-  // ==================== LOAD DATA ====================
+  // ==================== LOAD DATA (DYNAMIC - PAGE 1 ONLY) ====================
   const loadData = useCallback(
     async (forceRefresh = false) => {
       // Prevent multiple simultaneous loads
@@ -735,184 +763,105 @@ export default function AdminBillingPage() {
       }
 
       try {
-        console.log("🔄 Loading billing data...");
+        console.log("🔄 Loading billing data (page 1 only)...");
 
-        // Use preload function for faster loading
-        const preloadedData = await preloadBillingData();
+        // Load static data if not loaded
+        await loadStaticDataOnce();
 
-        if (!preloadedData) {
-          console.log("Preload failed, falling back to direct fetch...");
-          const [
-            cyclesResult,
-            billsResult,
-            usersResult,
-            applicationsResult,
-            pendingPaymentsResult,
-            customersWithoutAccountsResult,
-            pendingInstallationBillsResult,
-          ] = await Promise.all([
-            getAllBillingCycles({
-              limit: 1000,
-              page: 1,
-              forceRefresh,
+        // Only fetch first page of data for faster loading
+        const page = 1;
+        const limit = 20;
+
+        const [
+          cyclesResult,
+          billsResult,
+          usersResult,
+          applicationsResult,
+          pendingPaymentsResult,
+          customersWithoutAccountsResult,
+          pendingInstallationBillsResult,
+        ] = await Promise.all([
+          getAllBillingCycles({
+            limit: limit,
+            page: page,
+            forceRefresh,
+          }),
+          getAllBills({
+            limit: limit,
+            page: page,
+            forceRefresh,
+          }),
+          getAllUsers({ limit: limit, page: page, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getAllApplications({ limit: limit, page: page, forceRefresh }).catch(
+            () => ({
+              data: [],
             }),
-            getAllBills({
-              limit: 1000,
-              page: 1,
-              forceRefresh,
-            }),
-            getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
-              data: [],
-            })),
-            getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
-              data: [],
-            })),
-            getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-            getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-            getPendingInstallationBills().catch(() => ({ data: [] })),
-          ]);
+          ),
+          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+          getPendingInstallationBills().catch(() => ({ data: [] })),
+        ]);
 
-          if (!isMountedRef.current) {
-            isLoadingRef.current = false;
-            return;
-          }
-
-          const cyclesData = cyclesResult?.data || [];
-          const billsList = billsResult?.data || [];
-          const usersList = usersResult?.data || [];
-          const applicationsList = applicationsResult?.data || [];
-          const pendingPaymentsList = pendingPaymentsResult?.data || [];
-          const customersWithoutAccountsData =
-            customersWithoutAccountsResult?.data || [];
-          const pendingInstallationBillsData =
-            pendingInstallationBillsResult?.data || [];
-
-          setBillingCycles(cyclesData);
-          setBills(billsList);
-          setPendingPayments(pendingPaymentsList);
-          setCustomersWithoutAccounts(customersWithoutAccountsData);
-          setPendingInstallationBills(pendingInstallationBillsData);
-
-          // Build customers
-          const allCustomers = buildCustomers(
-            usersList,
-            applicationsList,
-            billsList,
-            cyclesData,
-            buildingsList,
-          );
-
-          setCustomers(allCustomers);
-
-          // Calculate stats
-          const newStats = calculateStats(
-            allCustomers,
-            cyclesData,
-            applicationsList,
-            pendingPaymentsList,
-            pendingInstallationBillsData,
-          );
-
-          setStats(newStats);
-
-          // Get pending data
-          const [proRatedResult, activationsResult] = await Promise.all([
-            getPendingProRatedBills(),
-            getPendingActivations(),
-          ]);
-
-          const pendingProRatedData = proRatedResult?.data || [];
-          const pendingActivationsData = activationsResult?.data || [];
-
-          setPendingProRated(pendingProRatedData);
-          setPendingActivations(pendingActivationsData);
-
-          dataLoadedRef.current = true;
-
-          console.log(
-            `✅ Loaded ${allCustomers.length} customers (direct fetch)`,
-          );
-        } else {
-          // Use preloaded data
-          if (!isMountedRef.current) {
-            isLoadingRef.current = false;
-            return;
-          }
-
-          // Fetch users and applications separately for customer building
-          const [usersResult, applicationsResult] = await Promise.all([
-            getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
-              data: [],
-            })),
-            getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
-              data: [],
-            })),
-          ]);
-
-          const usersList = usersResult?.data || [];
-          const applicationsList = applicationsResult?.data || [];
-          const cyclesData = preloadedData.cycles || [];
-          const billsList = preloadedData.bills || [];
-          const pendingPaymentsList = preloadedData.pendingPayments || [];
-
-          // Get additional data
-          const [
-            customersWithoutAccountsResult,
-            pendingInstallationBillsResult,
-          ] = await Promise.all([
-            getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-            getPendingInstallationBills().catch(() => ({ data: [] })),
-          ]);
-
-          const customersWithoutAccountsData =
-            customersWithoutAccountsResult?.data || [];
-          const pendingInstallationBillsData =
-            pendingInstallationBillsResult?.data || [];
-
-          setBillingCycles(cyclesData);
-          setBills(billsList);
-          setPendingPayments(pendingPaymentsList);
-          setCustomersWithoutAccounts(customersWithoutAccountsData);
-          setPendingInstallationBills(pendingInstallationBillsData);
-
-          // Build customers
-          const allCustomers = buildCustomers(
-            usersList,
-            applicationsList,
-            billsList,
-            cyclesData,
-            buildingsList,
-          );
-
-          setCustomers(allCustomers);
-
-          // Calculate stats
-          const newStats = calculateStats(
-            allCustomers,
-            cyclesData,
-            applicationsList,
-            pendingPaymentsList,
-            pendingInstallationBillsData,
-          );
-
-          setStats(newStats);
-
-          // Get pending data
-          const [proRatedResult, activationsResult] = await Promise.all([
-            getPendingProRatedBills(),
-            getPendingActivations(),
-          ]);
-
-          const pendingProRatedData = proRatedResult?.data || [];
-          const pendingActivationsData = activationsResult?.data || [];
-
-          setPendingProRated(pendingProRatedData);
-          setPendingActivations(pendingActivationsData);
-
-          dataLoadedRef.current = true;
-
-          console.log(`✅ Loaded ${allCustomers.length} customers (preloaded)`);
+        if (!isMountedRef.current) {
+          isLoadingRef.current = false;
+          return;
         }
+
+        const cyclesData = cyclesResult?.data || [];
+        const billsList = billsResult?.data || [];
+        const usersList = usersResult?.data || [];
+        const applicationsList = applicationsResult?.data || [];
+        const pendingPaymentsList = pendingPaymentsResult?.data || [];
+        const customersWithoutAccountsData =
+          customersWithoutAccountsResult?.data || [];
+        const pendingInstallationBillsData =
+          pendingInstallationBillsResult?.data || [];
+
+        setBillingCycles(cyclesData);
+        setBills(billsList);
+        setPendingPayments(pendingPaymentsList);
+        setCustomersWithoutAccounts(customersWithoutAccountsData);
+        setPendingInstallationBills(pendingInstallationBillsData);
+
+        // Build customers from first page data
+        const allCustomers = buildCustomers(
+          usersList,
+          applicationsList,
+          billsList,
+          cyclesData,
+          buildingsList,
+        );
+
+        setCustomers(allCustomers);
+
+        // Calculate stats
+        const newStats = calculateStats(
+          allCustomers,
+          cyclesData,
+          applicationsList,
+          pendingPaymentsList,
+          pendingInstallationBillsData,
+        );
+
+        setStats(newStats);
+
+        // Get pending data (these are usually small)
+        const [proRatedResult, activationsResult] = await Promise.all([
+          getPendingProRatedBills(),
+          getPendingActivations(),
+        ]);
+
+        const pendingProRatedData = proRatedResult?.data || [];
+        const pendingActivationsData = activationsResult?.data || [];
+
+        setPendingProRated(pendingProRatedData);
+        setPendingActivations(pendingActivationsData);
+
+        dataLoadedRef.current = true;
+
+        console.log(`✅ Loaded ${allCustomers.length} customers (page 1 only)`);
       } catch (error) {
         console.error("Failed to load billing data:", error);
         if (isMountedRef.current) {
@@ -928,7 +877,7 @@ export default function AdminBillingPage() {
         initialDataLoaded.current = true;
       }
     },
-    [buildingsList, customers.length],
+    [buildingsList, customers.length, loadStaticDataOnce],
   );
 
   // Helper function to build customers
@@ -1461,16 +1410,14 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Load static data
-    loadBillingFlowSettings();
-    loadPlans();
-    loadBuildings();
+    // Load static data immediately
+    loadStaticDataOnce();
 
-    // Load billing data only once on mount
+    // Load billing data only once on mount with a small delay for static data to load
     if (!initialDataLoaded.current) {
       const timer = setTimeout(() => {
         loadData();
-      }, 50);
+      }, 100);
       return () => clearTimeout(timer);
     }
 
@@ -1480,7 +1427,7 @@ export default function AdminBillingPage() {
         clearTimeout(loadTimeoutRef.current);
       }
     };
-  }, []);
+  }, [loadData, loadStaticDataOnce]);
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
