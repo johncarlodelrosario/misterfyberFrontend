@@ -1,17 +1,10 @@
-// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/app/admin/billing/page.tsx
-
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllBillingCycles,
   getAllBills,
+  getBillingSettings,
   startBilling,
   stopBilling,
   pauseBilling,
@@ -32,6 +25,7 @@ import {
   startBillingForApplication,
   initializeBackdatedBilling,
   recoverMissingBills,
+  getUnpaidBillsReport,
 } from "@/services/billing";
 import {
   getPendingPayments,
@@ -70,6 +64,10 @@ import {
   FiChevronRight,
   FiArrowUp,
   FiArrowDown,
+  FiInfo,
+  FiCheckCircle,
+  FiPrinter,
+  FiMoreVertical,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
@@ -122,11 +120,10 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// ==================== STATIC DATA CACHE ====================
-const STATIC_CACHE_KEY = "billing_static_data_v2";
-const CUSTOMER_CACHE_KEY = "billing_customers_cache_v2";
-const STATIC_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const CUSTOMER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// ==================== GLOBAL CACHE ====================
+let globalCache: any = null;
+let globalCacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -157,79 +154,14 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
-// ==================== STATIC DATA LOADER ====================
-async function loadStaticData() {
-  try {
-    const cached = localStorage.getItem(STATIC_CACHE_KEY);
-    if (cached) {
-      const { data, timestamp } = JSON.parse(cached);
-      if (Date.now() - timestamp < STATIC_CACHE_TTL) {
-        return data;
-      }
-    }
-
-    const [plansRes, buildingsRes, settingsRes] = await Promise.all([
-      fetch("/api/plans")
-        .then((r) => r.json())
-        .catch(() => ({ data: [] })),
-      fetch("/api/buildings/active")
-        .then((r) => r.json())
-        .catch(() => ({ data: [] })),
-      getBillingSettingsAdmin().catch(() => null),
-    ]);
-
-    const staticData = {
-      plans: plansRes?.data || [],
-      buildings: buildingsRes?.data || [],
-      settings: settingsRes?.data || settingsRes || null,
-    };
-
-    localStorage.setItem(
-      STATIC_CACHE_KEY,
-      JSON.stringify({ data: staticData, timestamp: Date.now() }),
-    );
-
-    return staticData;
-  } catch (error) {
-    console.error("Failed to load static data:", error);
-    return null;
-  }
-}
-
-// ==================== LOAD CACHED CUSTOMERS ====================
-function loadCachedCustomers() {
-  try {
-    const cached = localStorage.getItem(CUSTOMER_CACHE_KEY);
-    if (cached) {
-      const { data, timestamp } = JSON.parse(cached);
-      if (Date.now() - timestamp < CUSTOMER_CACHE_TTL) {
-        return data;
-      }
-    }
-  } catch (e) {}
-  return null;
-}
-
-function saveCachedCustomers(customers: any, stats: any) {
-  try {
-    localStorage.setItem(
-      CUSTOMER_CACHE_KEY,
-      JSON.stringify({
-        data: { customers, stats },
-        timestamp: Date.now(),
-      }),
-    );
-  } catch (e) {}
-}
-
 // ==================== MAIN PAGE COMPONENT ====================
 export default function AdminBillingPage() {
-  // ==================== STATE WITH INSTANT DEFAULT VALUES ====================
+  // ==================== STATE ====================
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [billingCycles, setBillingCycles] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -271,7 +203,10 @@ export default function AdminBillingPage() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [billingSettings, setBillingSettingsState] = useState<any>(null);
   const [showBillingReportsModal, setShowBillingReportsModal] = useState(false);
+  const [unpaidBillsReport, setUnpaidBillsReport] = useState<any>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
 
+  // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -279,6 +214,7 @@ export default function AdminBillingPage() {
     totalPages: 1,
   });
 
+  // Sorting state
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -314,6 +250,7 @@ export default function AdminBillingPage() {
   });
   const [plans, setPlans] = useState<Plan[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [loadingBuildings, setLoadingBuildings] = useState(false);
   const [customersWithoutAccounts, setCustomersWithoutAccounts] = useState<
     any[]
   >([]);
@@ -357,22 +294,41 @@ export default function AdminBillingPage() {
   });
 
   const isMountedRef = useRef(true);
-  const isLoadingRef = useRef(false);
-  const dataLoadedRef = useRef(false);
-  const staticDataLoaded = useRef(false);
   const initialLoadDone = useRef(false);
+  const dataLoadedRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ==================== LOAD STATIC DATA ONCE ====================
-  const loadStaticDataOnce = useCallback(async () => {
-    if (staticDataLoaded.current) return;
+  // ==================== LOAD PLANS & BUILDINGS ====================
+  const loadPlans = async () => {
+    try {
+      const response = await fetch("/api/plans");
+      const data = await response.json();
+      setPlans(data.data || []);
+    } catch (error) {
+      console.error("Failed to load plans:", error);
+    }
+  };
 
-    const staticData = await loadStaticData();
-    if (staticData) {
-      setPlans(staticData.plans || []);
-      setBuildings(staticData.buildings || []);
-      setBuildingsList(staticData.buildings || []);
-      if (staticData.settings) {
-        const settingsData = staticData.settings;
+  const loadBuildings = async () => {
+    setLoadingBuildings(true);
+    try {
+      const response = await fetch("/api/buildings/active");
+      const data = await response.json();
+      setBuildings(data.data || []);
+      setBuildingsList(data.data || []);
+    } catch (error) {
+      console.error("Failed to load buildings:", error);
+    } finally {
+      setLoadingBuildings(false);
+    }
+  };
+
+  const loadBillingFlowSettings = async () => {
+    try {
+      const response = await getBillingSettingsAdmin();
+      const settingsData = response?.data || response;
+      if (settingsData) {
         setBillingFlowSettings({
           proRatedDueDay: settingsData.proRatedDueDay || 25,
           monthlyDueDay: settingsData.monthlyDueDay || 5,
@@ -391,353 +347,17 @@ export default function AdminBillingPage() {
         });
         setBillingSettingsState(settingsData);
       }
-      staticDataLoaded.current = true;
+    } catch (error) {
+      console.error("Failed to load billing flow settings:", error);
     }
-  }, []);
+  };
 
-  // ==================== BUILD CUSTOMERS ====================
-  const buildCustomers = useCallback(
-    (
-      usersList: any[],
-      applicationsList: any[],
-      billsList: any[],
-      cyclesData: any[],
-      buildingsList: Building[],
-    ): CustomerItem[] => {
-      const userCustomers: CustomerItem[] = usersList.map((user: any) => {
-        const userBills = billsList.filter(
-          (bill: any) =>
-            bill.userId?._id === user._id &&
-            bill.status !== "paid" &&
-            !bill.isInstallationBill,
-        );
-        const totalBalance = userBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        );
-        const overdueBills = userBills.filter(
-          (bill: any) =>
-            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-        );
-        const userCycle = cyclesData.find(
-          (cycle: any) =>
-            cycle.userId?._id === user._id || cycle.userId === user._id,
-        );
-
-        let buildingObj = user.building || null;
-        if (
-          buildingObj &&
-          typeof buildingObj === "object" &&
-          !buildingObj._id
-        ) {
-          const foundBuilding = buildingsList.find(
-            (b) => b.buildingName === buildingObj.buildingName,
-          );
-          if (foundBuilding) {
-            buildingObj = foundBuilding;
-          }
-        }
-
-        return {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          username: user.username,
-          phoneNumber: user.phoneNumber,
-          status: user.status,
-          type: "user" as const,
-          planName: user.planId?.name || "No Plan",
-          planPrice: user.planId?.price || 0,
-          currentBalance: totalBalance,
-          unpaidBills: userBills,
-          overdueBills: overdueBills,
-          billingCycle: userCycle || null,
-          installationFee: 0,
-          installationFeePaid: true,
-          building: buildingObj,
-          unitNumber: user.unitNumber,
-          floor: user.floor,
-        };
-      });
-
-      const applicationCustomers: CustomerItem[] = applicationsList
-        .filter(
-          (app: any) =>
-            app.status === "approved" || app.billingStarted === true,
-        )
-        .map((app: any) => {
-          const appBills = billsList.filter(
-            (bill: any) =>
-              bill.applicationId === app.applicationId &&
-              bill.status !== "paid" &&
-              !bill.isInstallationBill,
-          );
-          const totalBalance = appBills.reduce(
-            (sum: number, bill: any) => sum + (bill.total || 0),
-            0,
-          );
-          const overdueBills = appBills.filter(
-            (bill: any) =>
-              bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
-          );
-          const appCycle = cyclesData.find(
-            (cycle: any) => cycle.applicationId === app.applicationId,
-          );
-
-          let buildingObj = null;
-          if (app.buildingId) {
-            if (typeof app.buildingId === "object" && app.buildingId._id) {
-              buildingObj = app.buildingId;
-            } else if (typeof app.buildingId === "string") {
-              const foundBuilding = buildingsList.find(
-                (b) =>
-                  b._id === app.buildingId || b.buildingName === app.buildingId,
-              );
-              if (foundBuilding) {
-                buildingObj = foundBuilding;
-              }
-            }
-          }
-          if (!buildingObj && app.buildingName) {
-            const foundBuilding = buildingsList.find(
-              (b) => b.buildingName === app.buildingName,
-            );
-            if (foundBuilding) {
-              buildingObj = foundBuilding;
-            } else {
-              buildingObj = { buildingName: app.buildingName };
-            }
-          }
-
-          return {
-            _id: app._id,
-            firstName: app.firstName,
-            lastName: app.lastName,
-            email: app.email,
-            phoneNumber: app.phoneNumber,
-            status: app.billingStarted ? "billing_started" : "approved",
-            type: "application" as const,
-            planName: app.planId?.name || "No Plan",
-            planPrice: app.planId?.price || 0,
-            currentBalance: totalBalance,
-            unpaidBills: appBills,
-            overdueBills: overdueBills,
-            billingCycle: appCycle || null,
-            applicationId: app.applicationId,
-            installationFee: app.installationFee || 0,
-            installationFeePaid: app.installationFeePaid || false,
-            building: buildingObj,
-            unitNumber: app.unitNumber,
-            floor: app.floor,
-          };
-        });
-
-      const allCustomers = [...userCustomers, ...applicationCustomers];
-      allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
-      return allCustomers;
-    },
-    [],
-  );
-
-  // ==================== CALCULATE STATS ====================
-  const calculateStats = useCallback(
-    (
-      allCustomers: CustomerItem[],
-      cyclesData: any[],
-      applicationsList: any[],
-      pendingPaymentsList: any[],
-      pendingInstallationBillsData: any[],
-    ) => {
-      const totalBalance = allCustomers.reduce(
-        (sum, c) => sum + c.currentBalance,
-        0,
-      );
-      const customersWithBalance = allCustomers.filter(
-        (c) => c.currentBalance > 0,
-      ).length;
-      const overdueCustomers = allCustomers.filter(
-        (c) => c.overdueBills.length > 0,
-      ).length;
-      const activeCycles = cyclesData.filter(
-        (c: any) => c.status === "active",
-      ).length;
-      const pausedCycles = cyclesData.filter(
-        (c: any) => c.status === "paused",
-      ).length;
-      const applicationsWithoutBilling = applicationsList.filter(
-        (app: any) => app.status === "approved" && !app.billingStarted,
-      ).length;
-
-      const totalInstallationFeesDue = allCustomers
-        .filter(
-          (c) =>
-            c.type === "application" &&
-            !c.installationFeePaid &&
-            (c.installationFee || 0) > 0,
-        )
-        .reduce((sum, c) => sum + (c.installationFee || 0), 0);
-      const installationFeesPaidCount = allCustomers.filter(
-        (c) => c.type === "application" && c.installationFeePaid,
-      ).length;
-
-      return {
-        totalCustomers: allCustomers.length,
-        totalBalance: totalBalance,
-        customersWithBalanceCount: customersWithBalance,
-        overdueCustomersCount: overdueCustomers,
-        activeCyclesCount: activeCycles,
-        pausedCyclesCount: pausedCycles,
-        pendingProRatedCount: 0,
-        pendingActivationsCount: 0,
-        pendingPaymentsCount: pendingPaymentsList.length,
-        pendingInstallationBillsCount: pendingInstallationBillsData.length,
-        applicationsWithoutBilling: applicationsWithoutBilling,
-        totalInstallationFeesDue: totalInstallationFeesDue,
-        installationFeesPaidCount: installationFeesPaidCount,
-      };
-    },
-    [],
-  );
-
-  // ==================== LOAD DATA (FAST - WITH CACHE) ====================
-  const loadData = useCallback(
-    async (forceRefresh = false) => {
-      if (isLoadingRef.current) return;
-      isLoadingRef.current = true;
-
-      try {
-        // Load static data if not loaded
-        await loadStaticDataOnce();
-
-        // Check for cached data first (instant load)
-        const cached = loadCachedCustomers();
-        if (cached && !forceRefresh) {
-          setCustomers(cached.customers || []);
-          setStats(cached.stats || stats);
-          dataLoadedRef.current = true;
-          setLoading(false);
-          isLoadingRef.current = false;
-          return;
-        }
-
-        if (forceRefresh) {
-          setRefreshing(true);
-          clearBillingCache();
-        } else {
-          setLoading(true);
-        }
-
-        // Fetch data in parallel
-        const [
-          cyclesResult,
-          billsResult,
-          usersResult,
-          applicationsResult,
-          pendingPaymentsResult,
-          customersWithoutAccountsResult,
-          pendingInstallationBillsResult,
-        ] = await Promise.all([
-          getAllBillingCycles({ limit: 100, page: 1, forceRefresh }).catch(
-            () => ({ data: [] }),
-          ),
-          getAllBills({ limit: 100, page: 1, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getAllUsers({ limit: 100, page: 1, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getAllApplications({ limit: 100, page: 1, forceRefresh }).catch(
-            () => ({ data: [] }),
-          ),
-          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-          getPendingInstallationBills().catch(() => ({ data: [] })),
-        ]);
-
-        if (!isMountedRef.current) {
-          isLoadingRef.current = false;
-          return;
-        }
-
-        const cyclesData = cyclesResult?.data || [];
-        const billsList = billsResult?.data || [];
-        const usersList = usersResult?.data || [];
-        const applicationsList = applicationsResult?.data || [];
-        const pendingPaymentsList = pendingPaymentsResult?.data || [];
-        const customersWithoutAccountsData =
-          customersWithoutAccountsResult?.data || [];
-        const pendingInstallationBillsData =
-          pendingInstallationBillsResult?.data || [];
-
-        setBillingCycles(cyclesData);
-        setBills(billsList);
-        setPendingPayments(pendingPaymentsList);
-        setCustomersWithoutAccounts(customersWithoutAccountsData);
-        setPendingInstallationBills(pendingInstallationBillsData);
-
-        // Build customers
-        const allCustomers = buildCustomers(
-          usersList,
-          applicationsList,
-          billsList,
-          cyclesData,
-          buildingsList,
-        );
-
-        setCustomers(allCustomers);
-
-        // Calculate stats
-        const newStats = calculateStats(
-          allCustomers,
-          cyclesData,
-          applicationsList,
-          pendingPaymentsList,
-          pendingInstallationBillsData,
-        );
-
-        setStats(newStats);
-
-        // Save to cache
-        saveCachedCustomers(allCustomers, newStats);
-
-        // Get pending data
-        const [proRatedResult, activationsResult] = await Promise.all([
-          getPendingProRatedBills().catch(() => ({ data: [] })),
-          getPendingActivations().catch(() => ({ data: [] })),
-        ]);
-
-        setPendingProRated(proRatedResult?.data || []);
-        setPendingActivations(activationsResult?.data || []);
-
-        dataLoadedRef.current = true;
-      } catch (error) {
-        console.error("Failed to load billing data:", error);
-        if (isMountedRef.current) {
-          toast.error("Failed to load billing data");
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-        isLoadingRef.current = false;
-        initialLoadDone.current = true;
-      }
-    },
-    [buildingsList, stats, loadStaticDataOnce, buildCustomers, calculateStats],
-  );
-
-  // ==================== SAVE SETTINGS ====================
   const saveBillingFlowSettings = async () => {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
-      clearBillingCache();
-      localStorage.removeItem(STATIC_CACHE_KEY);
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
-      staticDataLoaded.current = false;
-      await loadStaticDataOnce();
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
@@ -752,6 +372,10 @@ export default function AdminBillingPage() {
     }
     if (!backdatedForm.serviceStartDate) {
       toast.error("Please enter the service start date");
+      return;
+    }
+    if (!backdatedForm.customPlanName && !backdatedForm.monthlyRate) {
+      toast.error("Please enter either a plan name or monthly rate");
       return;
     }
 
@@ -782,8 +406,8 @@ export default function AdminBillingPage() {
           includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
-        clearBillingCache();
-        localStorage.removeItem(CUSTOMER_CACHE_KEY);
+        globalCache = null;
+        globalCacheTimestamp = 0;
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
@@ -821,8 +445,8 @@ export default function AdminBillingPage() {
 
       if (result.success) {
         toast.success(result.message);
-        clearBillingCache();
-        localStorage.removeItem(CUSTOMER_CACHE_KEY);
+        globalCache = null;
+        globalCacheTimestamp = 0;
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to recover missing bills");
@@ -844,7 +468,7 @@ export default function AdminBillingPage() {
 
     if (
       !confirm(
-        `⚠️ Are you sure you want to delete the billing cycle for ${customer.firstName} ${customer.lastName}?`,
+        `⚠️ Are you sure you want to delete the billing cycle for ${customer.firstName} ${customer.lastName}?\n\nThis action cannot be undone and will remove all billing records for this customer.`,
       )
     ) {
       return;
@@ -860,8 +484,8 @@ export default function AdminBillingPage() {
         toast.success(
           `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
         );
-        clearBillingCache();
-        localStorage.removeItem(CUSTOMER_CACHE_KEY);
+        globalCache = null;
+        globalCacheTimestamp = 0;
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to delete billing cycle");
@@ -969,8 +593,8 @@ export default function AdminBillingPage() {
       toast.success(
         `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -988,8 +612,8 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -1012,8 +636,8 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to disconnect");
@@ -1033,8 +657,8 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reconnect");
@@ -1057,8 +681,8 @@ export default function AdminBillingPage() {
       toast.success(
         `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -1079,8 +703,8 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
       await loadData(true);
     } catch (error: any) {
       console.error("Mark installation bill as paid error:", error);
@@ -1089,6 +713,386 @@ export default function AdminBillingPage() {
           "Failed to mark installation bill as paid",
       );
     }
+  };
+
+  // ==================== LOAD DATA ====================
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
+      // Prevent multiple simultaneous loads
+      if (isLoadingRef.current) {
+        console.log("⏳ Load already in progress, skipping...");
+        return;
+      }
+
+      // If data is already loaded and not forcing refresh, use cached data
+      if (dataLoadedRef.current && !forceRefresh) {
+        console.log("📦 Data already loaded, using existing state");
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Check global cache
+      const now = Date.now();
+      if (!forceRefresh && globalCache) {
+        if (now - globalCacheTimestamp < CACHE_TTL) {
+          const cached = globalCache;
+          setCustomers(cached.customers);
+          setBillingCycles(cached.billingCycles);
+          setBills(cached.bills);
+          setPendingPayments(cached.pendingPayments);
+          setStats(cached.stats);
+          setPendingProRated(cached.pendingProRated || []);
+          setPendingActivations(cached.pendingActivations || []);
+          setPendingInstallationBills(cached.pendingInstallationBills || []);
+          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
+          setLoading(false);
+          setRefreshing(false);
+          dataLoadedRef.current = true;
+          console.log("✅ Using global cached billing data");
+          return;
+        } else {
+          // Cache expired
+          globalCache = null;
+          dataLoadedRef.current = false;
+        }
+      }
+
+      // If we have customers but no cache and not forcing refresh
+      if (customers.length > 0 && !forceRefresh) {
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Start loading
+      isLoadingRef.current = true;
+
+      if (forceRefresh) {
+        setRefreshing(true);
+        clearBillingCache();
+        globalCache = null;
+        globalCacheTimestamp = 0;
+        dataLoadedRef.current = false;
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        console.log("🔄 Loading billing data...");
+
+        const [
+          cyclesResult,
+          billsResult,
+          usersResult,
+          applicationsResult,
+          pendingPaymentsResult,
+          customersWithoutAccountsResult,
+          pendingInstallationBillsResult,
+        ] = await Promise.all([
+          getAllBillingCycles({
+            limit: 1000, // Increased limit to get all data
+            page: 1,
+            forceRefresh,
+          }),
+          getAllBills({
+            limit: 1000, // Increased limit to get all data
+            page: 1,
+            forceRefresh,
+          }),
+          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
+            data: [],
+          })),
+          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+          getPendingInstallationBills().catch(() => ({ data: [] })),
+        ]);
+
+        if (!isMountedRef.current) {
+          isLoadingRef.current = false;
+          return;
+        }
+
+        const cyclesData = cyclesResult?.data || [];
+        const billsList = billsResult?.data || [];
+        const usersList = usersResult?.data || [];
+        const applicationsList = applicationsResult?.data || [];
+        const pendingPaymentsList = pendingPaymentsResult?.data || [];
+        const customersWithoutAccountsData =
+          customersWithoutAccountsResult?.data || [];
+        const pendingInstallationBillsData =
+          pendingInstallationBillsResult?.data || [];
+
+        setBillingCycles(cyclesData);
+        setBills(billsList);
+        setPendingPayments(pendingPaymentsList);
+        setCustomersWithoutAccounts(customersWithoutAccountsData);
+        setPendingInstallationBills(pendingInstallationBillsData);
+
+        // Build customers - moved to a separate function for better performance
+        const allCustomers = buildCustomers(
+          usersList,
+          applicationsList,
+          billsList,
+          cyclesData,
+          buildingsList,
+        );
+
+        setCustomers(allCustomers);
+
+        // Calculate stats
+        const newStats = calculateStats(
+          allCustomers,
+          cyclesData,
+          applicationsList,
+          pendingPaymentsList,
+          pendingInstallationBillsData,
+        );
+
+        setStats(newStats);
+
+        // Get pending data
+        const [proRatedResult, activationsResult] = await Promise.all([
+          getPendingProRatedBills(),
+          getPendingActivations(),
+        ]);
+
+        const pendingProRatedData = proRatedResult?.data || [];
+        const pendingActivationsData = activationsResult?.data || [];
+
+        setPendingProRated(pendingProRatedData);
+        setPendingActivations(pendingActivationsData);
+
+        // Update cache
+        globalCache = {
+          customers: allCustomers,
+          billingCycles: cyclesData,
+          bills: billsList,
+          pendingPayments: pendingPaymentsList,
+          stats: newStats,
+          pendingProRated: pendingProRatedData,
+          pendingActivations: pendingActivationsData,
+          pendingInstallationBills: pendingInstallationBillsData,
+          customersWithoutAccounts: customersWithoutAccountsData,
+        };
+        globalCacheTimestamp = now;
+        dataLoadedRef.current = true;
+
+        console.log(
+          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
+        );
+      } catch (error) {
+        console.error("Failed to load billing data:", error);
+        if (isMountedRef.current) {
+          toast.error("Failed to load billing data");
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        isLoadingRef.current = false;
+        initialLoadDone.current = true;
+      }
+    },
+    [buildingsList],
+  ); // Removed pagination dependency
+
+  // Helper function to build customers
+  const buildCustomers = (
+    usersList: any[],
+    applicationsList: any[],
+    billsList: any[],
+    cyclesData: any[],
+    buildingsList: Building[],
+  ): CustomerItem[] => {
+    const userCustomers: CustomerItem[] = usersList.map((user: any) => {
+      const userBills = billsList.filter(
+        (bill: any) =>
+          bill.userId?._id === user._id &&
+          bill.status !== "paid" &&
+          !bill.isInstallationBill,
+      );
+      const totalBalance = userBills.reduce(
+        (sum: number, bill: any) => sum + (bill.total || 0),
+        0,
+      );
+      const overdueBills = userBills.filter(
+        (bill: any) =>
+          bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+      );
+      const userCycle = cyclesData.find(
+        (cycle: any) =>
+          cycle.userId?._id === user._id || cycle.userId === user._id,
+      );
+
+      let buildingObj = user.building || null;
+      if (buildingObj && typeof buildingObj === "object" && !buildingObj._id) {
+        const foundBuilding = buildingsList.find(
+          (b) => b.buildingName === buildingObj.buildingName,
+        );
+        if (foundBuilding) {
+          buildingObj = foundBuilding;
+        }
+      }
+
+      return {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        username: user.username,
+        phoneNumber: user.phoneNumber,
+        status: user.status,
+        type: "user" as const,
+        planName: user.planId?.name || "No Plan",
+        planPrice: user.planId?.price || 0,
+        currentBalance: totalBalance,
+        unpaidBills: userBills,
+        overdueBills: overdueBills,
+        billingCycle: userCycle || null,
+        installationFee: 0,
+        installationFeePaid: true,
+        building: buildingObj,
+        unitNumber: user.unitNumber,
+        floor: user.floor,
+      };
+    });
+
+    const applicationCustomers: CustomerItem[] = applicationsList
+      .filter(
+        (app: any) => app.status === "approved" || app.billingStarted === true,
+      )
+      .map((app: any) => {
+        const appBills = billsList.filter(
+          (bill: any) =>
+            bill.applicationId === app.applicationId &&
+            bill.status !== "paid" &&
+            !bill.isInstallationBill,
+        );
+        const totalBalance = appBills.reduce(
+          (sum: number, bill: any) => sum + (bill.total || 0),
+          0,
+        );
+        const overdueBills = appBills.filter(
+          (bill: any) =>
+            bill.status === "overdue" || new Date(bill.dueDate) < new Date(),
+        );
+        const appCycle = cyclesData.find(
+          (cycle: any) => cycle.applicationId === app.applicationId,
+        );
+
+        let buildingObj = null;
+        if (app.buildingId) {
+          if (typeof app.buildingId === "object" && app.buildingId._id) {
+            buildingObj = app.buildingId;
+          } else if (typeof app.buildingId === "string") {
+            const foundBuilding = buildingsList.find(
+              (b) =>
+                b._id === app.buildingId || b.buildingName === app.buildingId,
+            );
+            if (foundBuilding) {
+              buildingObj = foundBuilding;
+            }
+          }
+        }
+        if (!buildingObj && app.buildingName) {
+          const foundBuilding = buildingsList.find(
+            (b) => b.buildingName === app.buildingName,
+          );
+          if (foundBuilding) {
+            buildingObj = foundBuilding;
+          } else {
+            buildingObj = { buildingName: app.buildingName };
+          }
+        }
+
+        return {
+          _id: app._id,
+          firstName: app.firstName,
+          lastName: app.lastName,
+          email: app.email,
+          phoneNumber: app.phoneNumber,
+          status: app.billingStarted ? "billing_started" : "approved",
+          type: "application" as const,
+          planName: app.planId?.name || "No Plan",
+          planPrice: app.planId?.price || 0,
+          currentBalance: totalBalance,
+          unpaidBills: appBills,
+          overdueBills: overdueBills,
+          billingCycle: appCycle || null,
+          applicationId: app.applicationId,
+          installationFee: app.installationFee || 0,
+          installationFeePaid: app.installationFeePaid || false,
+          building: buildingObj,
+          unitNumber: app.unitNumber,
+          floor: app.floor,
+        };
+      });
+
+    const allCustomers = [...userCustomers, ...applicationCustomers];
+    allCustomers.sort((a, b) => b.currentBalance - a.currentBalance);
+    return allCustomers;
+  };
+
+  // Helper function to calculate stats
+  const calculateStats = (
+    allCustomers: CustomerItem[],
+    cyclesData: any[],
+    applicationsList: any[],
+    pendingPaymentsList: any[],
+    pendingInstallationBillsData: any[],
+  ) => {
+    const totalBalance = allCustomers.reduce(
+      (sum, c) => sum + c.currentBalance,
+      0,
+    );
+    const customersWithBalance = allCustomers.filter(
+      (c) => c.currentBalance > 0,
+    ).length;
+    const overdueCustomers = allCustomers.filter(
+      (c) => c.overdueBills.length > 0,
+    ).length;
+    const activeCycles = cyclesData.filter(
+      (c: any) => c.status === "active",
+    ).length;
+    const pausedCycles = cyclesData.filter(
+      (c: any) => c.status === "paused",
+    ).length;
+    const applicationsWithoutBilling = applicationsList.filter(
+      (app: any) => app.status === "approved" && !app.billingStarted,
+    ).length;
+
+    const totalInstallationFeesDue = allCustomers
+      .filter(
+        (c) =>
+          c.type === "application" &&
+          !c.installationFeePaid &&
+          (c.installationFee || 0) > 0,
+      )
+      .reduce((sum, c) => sum + (c.installationFee || 0), 0);
+    const installationFeesPaidCount = allCustomers.filter(
+      (c) => c.type === "application" && c.installationFeePaid,
+    ).length;
+
+    return {
+      totalCustomers: allCustomers.length,
+      totalBalance: totalBalance,
+      customersWithBalanceCount: customersWithBalance,
+      overdueCustomersCount: overdueCustomers,
+      activeCyclesCount: activeCycles,
+      pausedCyclesCount: pausedCycles,
+      pendingProRatedCount: 0,
+      pendingActivationsCount: 0,
+      pendingPaymentsCount: pendingPaymentsList.length,
+      pendingInstallationBillsCount: pendingInstallationBillsData.length,
+      applicationsWithoutBilling: applicationsWithoutBilling,
+      totalInstallationFeesDue: totalInstallationFeesDue,
+      installationFeesPaidCount: installationFeesPaidCount,
+    };
   };
 
   // ==================== HANDLE ACTION ====================
@@ -1162,8 +1166,9 @@ export default function AdminBillingPage() {
     try {
       await resumeBilling({ userId });
       toast.success(`✅ Billing resumed for ${customerName}!`);
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -1180,8 +1185,9 @@ export default function AdminBillingPage() {
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success(`⛔ Billing stopped for ${customerName}.`);
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -1196,7 +1202,7 @@ export default function AdminBillingPage() {
 
     if (
       !confirm(
-        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?`,
+        `⚠️ Disconnect ${customer.firstName} ${customer.lastName} from the network?\n\nReason: ${reason}\n\nThis will disable their internet access immediately.`,
       )
     )
       return;
@@ -1206,8 +1212,9 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       console.error("Disconnect error:", error);
@@ -1230,8 +1237,9 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
       );
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       console.error("Reconnect error:", error);
@@ -1248,8 +1256,9 @@ export default function AdminBillingPage() {
     try {
       await confirmPayment(paymentId);
       toast.success("Payment confirmed! User notified.");
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -1262,8 +1271,9 @@ export default function AdminBillingPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
@@ -1278,8 +1288,9 @@ export default function AdminBillingPage() {
         notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
       });
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       console.error("Mark bill as paid error:", error);
@@ -1320,8 +1331,9 @@ export default function AdminBillingPage() {
         setCustomAmount("");
         setBillingNotes("");
         setIncludeInstallationFee(true);
-        clearBillingCache();
-        localStorage.removeItem(CUSTOMER_CACHE_KEY);
+        globalCache = null;
+        globalCacheTimestamp = 0;
+        dataLoadedRef.current = false;
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to start billing");
@@ -1353,8 +1365,9 @@ export default function AdminBillingPage() {
       setCustomAmount("");
       setBillingNotes("");
       setIncludeInstallationFee(true);
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
@@ -1377,8 +1390,9 @@ export default function AdminBillingPage() {
       setSelectedUserId("");
       setPauseReason("");
       setPauseUntilDate("");
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -1426,8 +1440,9 @@ export default function AdminBillingPage() {
         notes: "",
         includeInstallationFee: true,
       });
-      clearBillingCache();
-      localStorage.removeItem(CUSTOMER_CACHE_KEY);
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      dataLoadedRef.current = false;
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create customer");
@@ -1438,56 +1453,43 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Load static data and customer data immediately
-    const init = async () => {
-      await loadStaticDataOnce();
+    // Only load data once on mount
+    if (!dataLoadedRef.current && customers.length === 0) {
+      // Use a slight delay to prevent multiple rapid calls
+      const timer = setTimeout(() => {
+        loadData();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
 
-      // Try to load cached customers first (instant display)
-      const cached = loadCachedCustomers();
-      if (cached) {
-        setCustomers(cached.customers || []);
-        setStats(cached.stats || stats);
-        setLoading(false);
-        dataLoadedRef.current = true;
-      }
-
-      // Then load fresh data in background
-      loadData();
-    };
-
-    init();
+    loadBillingFlowSettings();
+    loadPlans();
+    loadBuildings();
 
     return () => {
       isMountedRef.current = false;
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
     };
-  }, []);
+  }, []); // Empty dependency array - only run once
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
-    clearBillingCache();
-    localStorage.removeItem(CUSTOMER_CACHE_KEY);
+    globalCache = null;
+    globalCacheTimestamp = 0;
     dataLoadedRef.current = false;
     loadData(true);
   };
 
   // ==================== COMPUTED VALUES ====================
-  const totalPendingCount = useMemo(() => {
-    return (
-      pendingProRated.length +
-      pendingActivations.length +
-      pendingPayments.length +
-      pendingInstallationBills.length +
-      customersWithoutAccounts.length +
-      stats.applicationsWithoutBilling
-    );
-  }, [
-    pendingProRated,
-    pendingActivations,
-    pendingPayments,
-    pendingInstallationBills,
-    customersWithoutAccounts,
-    stats.applicationsWithoutBilling,
-  ]);
+  const totalPendingCount =
+    pendingProRated.length +
+    pendingActivations.length +
+    pendingPayments.length +
+    pendingInstallationBills.length +
+    customersWithoutAccounts.length +
+    stats.applicationsWithoutBilling;
 
   // ==================== RENDER ====================
   return (
@@ -2385,41 +2387,25 @@ export default function AdminBillingPage() {
             <div className="flex flex-wrap gap-1 border-b mb-3">
               <button
                 onClick={() => setPendingModalType("pro-rated")}
-                className={`px-3 py-1.5 text-sm font-medium ${
-                  pendingModalType === "pro-rated"
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-500"
-                }`}
+                className={`px-3 py-1.5 text-sm font-medium ${pendingModalType === "pro-rated" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
               >
                 Pro-rated ({pendingProRated.length})
               </button>
               <button
                 onClick={() => setPendingModalType("installation")}
-                className={`px-3 py-1.5 text-sm font-medium ${
-                  pendingModalType === "installation"
-                    ? "border-b-2 border-amber-500 text-amber-600"
-                    : "text-gray-500"
-                }`}
+                className={`px-3 py-1.5 text-sm font-medium ${pendingModalType === "installation" ? "border-b-2 border-amber-500 text-amber-600" : "text-gray-500"}`}
               >
                 Installation ({pendingInstallationBills.length})
               </button>
               <button
                 onClick={() => setPendingModalType("activation")}
-                className={`px-3 py-1.5 text-sm font-medium ${
-                  pendingModalType === "activation"
-                    ? "border-b-2 border-purple-500 text-purple-600"
-                    : "text-gray-500"
-                }`}
+                className={`px-3 py-1.5 text-sm font-medium ${pendingModalType === "activation" ? "border-b-2 border-purple-500 text-purple-600" : "text-gray-500"}`}
               >
                 Activations ({pendingActivations.length})
               </button>
               <button
                 onClick={() => setPendingModalType("payments")}
-                className={`px-3 py-1.5 text-sm font-medium ${
-                  pendingModalType === "payments"
-                    ? "border-b-2 border-green-500 text-green-600"
-                    : "text-gray-500"
-                }`}
+                className={`px-3 py-1.5 text-sm font-medium ${pendingModalType === "payments" ? "border-b-2 border-green-500 text-green-600" : "text-gray-500"}`}
               >
                 Payments ({pendingPayments.length})
               </button>
