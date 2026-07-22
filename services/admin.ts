@@ -51,6 +51,7 @@ export function clearAdminCache(): void {
 }
 
 // ==================== CUSTOMER EMAIL ALERTS TOGGLE ====================
+// CRITICAL FIX: No defaults - send EXACT value
 export const toggleCustomerEmailAlerts = async (enabled: boolean) => {
   try {
     const response = await api.put("/admin/customer-email-alerts/toggle", {
@@ -67,6 +68,7 @@ export const toggleCustomerEmailAlerts = async (enabled: boolean) => {
   }
 };
 
+// CRITICAL FIX: Return EXACT value from server - no defaults
 export const getCustomerEmailAlertsPreference = async (
   forceRefresh?: boolean,
 ) => {

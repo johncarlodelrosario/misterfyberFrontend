@@ -200,8 +200,12 @@ export default function AdminLayout({
   const preloadedRef = useRef(false);
 
   // ==================== EMAIL ALERT TOGGLE STATE ====================
-  const [emailEnabled, setEmailEnabled] = useState(true);
+  // CRITICAL FIX: Start with undefined to represent "not loaded" state
+  const [emailEnabled, setEmailEnabled] = useState<boolean | undefined>(
+    undefined,
+  );
   const [togglingEmail, setTogglingEmail] = useState(false);
+  const [emailLoaded, setEmailLoaded] = useState(false);
 
   useEffect(() => {
     const savedState = localStorage.getItem(SIDEBAR_STATE_KEY);
@@ -234,22 +238,33 @@ export default function AdminLayout({
   const fetchEmailStatus = useCallback(async () => {
     try {
       const result = await getCustomerEmailAlertsPreference();
-      // Only set if value is defined (not undefined or null)
+      // Get the EXACT value from server - could be undefined, true, or false
       const value = result.data?.customerEmailAlertsEnabled;
-      if (value !== undefined && value !== null) {
-        setEmailEnabled(value);
-      }
-      // If undefined, keep the default UI state (true) but NEVER save it back
+
+      // Set the state to whatever the server returns (even if undefined)
+      setEmailEnabled(value);
+      setEmailLoaded(true);
+
+      console.log(
+        `📧 Email alert status loaded: ${value === undefined ? "NOT SET (undefined)" : value}`,
+      );
     } catch (error) {
       console.error("Failed to fetch email status:", error);
+      setEmailLoaded(true);
+      // Leave emailEnabled as undefined on error
     }
   }, []);
 
   // ==================== TOGGLE EMAIL ====================
   const handleToggleEmail = useCallback(async () => {
+    if (togglingEmail) return;
+
     setTogglingEmail(true);
     try {
-      const newState = !emailEnabled;
+      // Toggle: if currently undefined, default to true for the toggle action
+      const currentState = emailEnabled === undefined ? true : emailEnabled;
+      const newState = !currentState;
+
       const result = await toggleCustomerEmailAlerts(newState);
       if (result.success) {
         setEmailEnabled(newState);
@@ -258,14 +273,18 @@ export default function AdminLayout({
         );
       } else {
         toast.error(result.message || "Failed to toggle email settings");
+        // Refresh to get actual state
+        await fetchEmailStatus();
       }
     } catch (error) {
       console.error("Failed to toggle email:", error);
       toast.error("Failed to toggle email settings");
+      // Refresh to get actual state
+      await fetchEmailStatus();
     } finally {
       setTogglingEmail(false);
     }
-  }, [emailEnabled]);
+  }, [emailEnabled, togglingEmail, fetchEmailStatus]);
 
   useEffect(() => {
     const preloadApplications = async () => {
@@ -399,12 +418,12 @@ export default function AdminLayout({
     generateNotifications();
   }, [generateNotifications]);
 
-  // Fetch email status on mount
+  // Fetch email status on mount - ONLY after auth is ready
   useEffect(() => {
-    if (isAuthenticated && user?.role) {
+    if (isAuthenticated && user?.role && !emailLoaded) {
       fetchEmailStatus();
     }
-  }, [isAuthenticated, user, fetchEmailStatus]);
+  }, [isAuthenticated, user, fetchEmailStatus, emailLoaded]);
 
   useEffect(() => {
     if (!isLoading && mounted) {
@@ -491,6 +510,11 @@ export default function AdminLayout({
       user.role === "admin" ||
       user.role === "staff");
   if (!isAdminUser) return null;
+
+  // Determine email display state
+  const isEmailEnabled = emailEnabled === true;
+  const isEmailDisabled = emailEnabled === false;
+  const isEmailNotSet = emailEnabled === undefined;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
@@ -680,23 +704,39 @@ export default function AdminLayout({
                   </span>
                 </div>
 
-                {/* Email Alert Toggle Switch */}
+                {/* Email Alert Toggle Switch - FIXED: No auto toggle */}
                 <div className="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-sm border border-gray-100">
                   <FiEmailIcon
-                    className={`w-4 h-4 ${emailEnabled ? "text-emerald-600" : "text-gray-400"}`}
+                    className={`w-4 h-4 ${
+                      isEmailEnabled
+                        ? "text-emerald-600"
+                        : isEmailDisabled
+                          ? "text-gray-400"
+                          : "text-yellow-500"
+                    }`}
                   />
                   <button
                     onClick={handleToggleEmail}
-                    disabled={togglingEmail}
+                    disabled={togglingEmail || !emailLoaded}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 flex-shrink-0 ${
-                      togglingEmail
+                      togglingEmail || !emailLoaded
                         ? "opacity-50 cursor-not-allowed"
                         : "cursor-pointer"
-                    } ${emailEnabled ? "bg-emerald-500" : "bg-gray-300"}`}
+                    } ${
+                      isEmailEnabled
+                        ? "bg-emerald-500"
+                        : isEmailDisabled
+                          ? "bg-gray-300"
+                          : "bg-yellow-400"
+                    }`}
                     title={
-                      emailEnabled
-                        ? "Customer emails: ON"
-                        : "Customer emails: OFF"
+                      !emailLoaded
+                        ? "Loading..."
+                        : isEmailEnabled
+                          ? "Customer emails: ON"
+                          : isEmailDisabled
+                            ? "Customer emails: OFF"
+                            : "Customer emails: Not Set"
                     }
                   >
                     {togglingEmail ? (
@@ -704,17 +744,27 @@ export default function AdminLayout({
                     ) : (
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
-                          emailEnabled ? "translate-x-6" : "translate-x-1"
+                          isEmailEnabled ? "translate-x-6" : "translate-x-1"
                         }`}
                       />
                     )}
                   </button>
                   <span
                     className={`text-xs font-medium ${
-                      emailEnabled ? "text-emerald-600" : "text-gray-500"
+                      isEmailEnabled
+                        ? "text-emerald-600"
+                        : isEmailDisabled
+                          ? "text-gray-500"
+                          : "text-yellow-600"
                     }`}
                   >
-                    {emailEnabled ? "ON" : "OFF"}
+                    {!emailLoaded
+                      ? "..."
+                      : isEmailEnabled
+                        ? "ON"
+                        : isEmailDisabled
+                          ? "OFF"
+                          : "—"}
                   </span>
                 </div>
               </div>
