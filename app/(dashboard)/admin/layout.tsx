@@ -75,8 +75,8 @@ interface Notification {
 const navItems: NavItem[] = [
   { name: "Dashboard", href: "/admin", icon: FiHome },
   { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
-  { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
   { name: "Billing", href: "/admin/billing", icon: FiClipboard },
+  { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
   { name: "Invoices", href: "/admin/invoice", icon: FiFileText },
   { name: "Manual Email", href: "/admin/manual-email", icon: FiMail },
   { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
