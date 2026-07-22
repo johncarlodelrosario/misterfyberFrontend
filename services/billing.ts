@@ -102,10 +102,15 @@ export interface Bill {
   updatedAt: string;
 }
 
+// ==================== PERSISTENT STORAGE ====================
+// Use localStorage for persistent cache across page reloads
+const PERSISTENT_CACHE_KEY = "billing_persistent_cache";
+const PERSISTENT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 // ==================== ULTRA-FAST CACHE ====================
 const BILLING_CACHE = new Map();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
-const MAX_CACHE_ITEMS = 20;
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const MAX_CACHE_ITEMS = 50;
 let cacheKeys: string[] = [];
 
 // LRU cache manager
@@ -121,7 +126,6 @@ const cacheManager = {
   },
 
   set<T>(key: string, data: T): void {
-    // LRU: Remove oldest if cache is full
     if (BILLING_CACHE.size >= MAX_CACHE_ITEMS) {
       const firstKey = BILLING_CACHE.keys().next().value;
       if (firstKey) BILLING_CACHE.delete(firstKey);
@@ -131,10 +135,58 @@ const cacheManager = {
 
   clear(): void {
     BILLING_CACHE.clear();
+    // Also clear persistent cache
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(PERSISTENT_CACHE_KEY);
+      } catch (e) {
+        // Ignore
+      }
+    }
   },
 
   remove(key: string): void {
     BILLING_CACHE.delete(key);
+  },
+};
+
+// ==================== PERSISTENT CACHE ====================
+const persistentCache = {
+  get<T>(): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = localStorage.getItem(PERSISTENT_CACHE_KEY);
+      if (!stored) return null;
+      const data = JSON.parse(stored);
+      if (Date.now() - data.timestamp > PERSISTENT_CACHE_TTL) {
+        localStorage.removeItem(PERSISTENT_CACHE_KEY);
+        return null;
+      }
+      return data.data as T;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  set<T>(data: T): void {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        PERSISTENT_CACHE_KEY,
+        JSON.stringify({ data, timestamp: Date.now() }),
+      );
+    } catch (e) {
+      // Ignore
+    }
+  },
+
+  clear(): void {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem(PERSISTENT_CACHE_KEY);
+    } catch (e) {
+      // Ignore
+    }
   },
 };
 
@@ -146,11 +198,40 @@ const CACHE_KEYS = {
   PENDING_PRO_RATED: "pending_pro_rated",
   PENDING_INSTALLATION: "pending_installation",
   PENDING_ACTIVATIONS: "pending_activations",
+  PENDING_PAYMENTS: "pending_payments",
+  USERS: "users",
+  APPLICATIONS: "applications",
 };
 
 function getCacheKey(prefix: string, params?: any): string {
   return `${prefix}_${params ? JSON.stringify(params) : ""}`;
 }
+
+// ==================== PENDING PAYMENTS FUNCTION ====================
+// This function is now defined here instead of importing from payment service
+// to avoid circular dependency issues
+export const getPendingPayments = async (
+  forceRefresh?: boolean,
+): Promise<{ data: any[] }> => {
+  const cacheKey = CACHE_KEYS.PENDING_PAYMENTS;
+
+  if (!forceRefresh) {
+    const cached = cacheManager.get<{ data: any[] }>(cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const response = await api.get("/billing/pending-payments", {
+      timeout: 8000,
+    });
+    const result = { data: response.data?.data || [] };
+    cacheManager.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.error("Error fetching pending payments:", error);
+    return { data: [] };
+  }
+};
 
 // ==================== API FUNCTIONS ====================
 
@@ -167,8 +248,9 @@ export const getAllBillingCycles = async (params?: {
   total: number;
 }> => {
   const cacheKey = getCacheKey(CACHE_KEYS.BILLING_CYCLES, {
-    ...params,
-    forceRefresh: false,
+    page: params?.page || 1,
+    limit: params?.limit || 1000,
+    status: params?.status || "all",
   });
 
   if (!params?.forceRefresh) {
@@ -183,14 +265,15 @@ export const getAllBillingCycles = async (params?: {
 
   try {
     const response = await api.get("/billing/cycles", {
-      params: { ...params, limit: params?.limit || 20 },
+      params: { ...params, limit: params?.limit || 1000 },
+      timeout: 10000,
     });
 
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 1000;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -224,8 +307,9 @@ export const getAllBills = async (params?: {
   total: number;
 }> => {
   const cacheKey = getCacheKey(CACHE_KEYS.BILLS, {
-    ...params,
-    forceRefresh: false,
+    page: params?.page || 1,
+    limit: params?.limit || 1000,
+    status: params?.status || "all",
   });
 
   if (!params?.forceRefresh) {
@@ -241,14 +325,15 @@ export const getAllBills = async (params?: {
 
   try {
     const response = await api.get("/billing/all-bills", {
-      params: { ...params, limit: params?.limit || 20 },
+      params: { ...params, limit: params?.limit || 1000 },
+      timeout: 10000,
     });
 
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 1000;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -279,7 +364,9 @@ export const getPendingProRatedBills = async (
   }
 
   try {
-    const response = await api.get("/billing/pending-pro-rated");
+    const response = await api.get("/billing/pending-pro-rated", {
+      timeout: 8000,
+    });
     const result = { data: response.data?.data || [] };
     cacheManager.set(cacheKey, result);
     return result;
@@ -301,7 +388,9 @@ export const getPendingInstallationBills = async (
   }
 
   try {
-    const response = await api.get("/billing/pending-installation");
+    const response = await api.get("/billing/pending-installation", {
+      timeout: 8000,
+    });
     const result = { data: response.data?.data || [] };
     cacheManager.set(cacheKey, result);
     return result;
@@ -323,7 +412,9 @@ export const getPendingActivations = async (
   }
 
   try {
-    const response = await api.get("/billing/pending-activations");
+    const response = await api.get("/billing/pending-activations", {
+      timeout: 8000,
+    });
     const result = { data: response.data?.data || [] };
     cacheManager.set(cacheKey, result);
     return result;
@@ -345,7 +436,9 @@ export const getBillingSettingsAdmin = async (
   }
 
   try {
-    const response = await api.get("/billing/settings/admin");
+    const response = await api.get("/billing/settings/admin", {
+      timeout: 8000,
+    });
     const result = response.data;
     cacheManager.set(cacheKey, result);
     return result;
@@ -361,8 +454,8 @@ export const updateBillingSettingsAdmin = async (
 ): Promise<any> => {
   try {
     const response = await api.put("/billing/settings/admin", data);
-    // Clear all caches
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error updating admin billing settings:", error);
@@ -389,6 +482,7 @@ export const startBillingForApplication = async (
       includeInstallationFee: data?.includeInstallationFee,
     });
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error starting billing for application:", error);
@@ -408,6 +502,7 @@ export const startBilling = async (data: {
   try {
     const response = await api.post("/billing/start", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error starting billing:", error);
@@ -424,6 +519,7 @@ export const stopBilling = async (data: {
   try {
     const response = await api.post("/billing/stop", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error stopping billing:", error);
@@ -441,6 +537,7 @@ export const pauseBilling = async (data: {
   try {
     const response = await api.post("/billing/pause", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error pausing billing:", error);
@@ -456,6 +553,7 @@ export const resumeBilling = async (data: {
   try {
     const response = await api.post("/billing/resume", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error resuming billing:", error);
@@ -472,6 +570,7 @@ export const disconnectClient = async (data: {
   try {
     const response = await api.post("/billing/disconnect", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error disconnecting client:", error);
@@ -487,6 +586,7 @@ export const reconnectClient = async (data: {
   try {
     const response = await api.post("/billing/reconnect", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error reconnecting client:", error);
@@ -502,6 +602,7 @@ export const deleteBillingCycle = async (data: {
   try {
     const response = await api.delete("/billing/delete-cycle", { data });
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error deleting billing cycle:", error);
@@ -520,6 +621,7 @@ export const markBillAsPaid = async (
   try {
     const response = await api.put(`/billing/mark-paid/${billId}`, paymentData);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error marking bill as paid:", error);
@@ -541,6 +643,7 @@ export const markInstallationBillAsPaid = async (
       paymentData,
     );
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error marking installation bill as paid:", error);
@@ -557,6 +660,7 @@ export const confirmProRatedPayment = async (data: {
   try {
     const response = await api.post("/billing/confirm-pro-rated", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error confirming pro-rated payment:", error);
@@ -572,6 +676,7 @@ export const startMonthlyBilling = async (data: {
   try {
     const response = await api.post("/billing/start-monthly", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error starting monthly billing:", error);
@@ -592,6 +697,7 @@ export const initializeBackdatedBilling = async (data: {
   try {
     const response = await api.post("/billing/initialize-backdated", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error initializing backdated billing:", error);
@@ -607,6 +713,7 @@ export const recoverMissingBills = async (data: {
   try {
     const response = await api.post("/billing/recover-missing-bills", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error recovering missing bills:", error);
@@ -631,6 +738,7 @@ export const getUnpaidBillsReport = async (params?: {
 // CLEAR ALL CACHES
 export const clearBillingCache = (): void => {
   cacheManager.clear();
+  persistentCache.clear();
 };
 
 // ==================== USER BILLING FUNCTIONS ====================
@@ -729,6 +837,7 @@ export const updateBillingSettings = async (
   try {
     const response = await api.put("/billing/settings", data);
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error updating billing settings:", error);
@@ -770,6 +879,7 @@ export const submitProRatedPayment = async (data: {
       data,
     );
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error submitting pro-rated payment:", error);
@@ -788,6 +898,7 @@ export const submitMonthlyPayment = async (data: {
       data,
     );
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error submitting monthly payment:", error);
@@ -806,6 +917,7 @@ export const submitInstallationPayment = async (data: {
       data,
     );
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error submitting installation payment:", error);
@@ -827,6 +939,7 @@ export const autoGenerateMonthlyBills = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-generate");
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error auto-generating monthly bills:", error);
@@ -838,6 +951,7 @@ export const autoSendReminders = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-reminders");
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error auto-sending reminders:", error);
@@ -849,9 +963,43 @@ export const autoSuspendOverdue = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-suspend");
     cacheManager.clear();
+    persistentCache.clear();
     return response.data;
   } catch (error) {
     console.error("Error auto-suspending overdue:", error);
     throw error;
+  }
+};
+
+// ==================== PRELOAD DATA ====================
+export const preloadBillingData = async (): Promise<any> => {
+  try {
+    // Check persistent cache first
+    const cached = persistentCache.get<any>();
+    if (cached) {
+      console.log("📦 Using persistent cache for billing data");
+      return cached;
+    }
+
+    console.log("🔄 Preloading billing data...");
+    const [cyclesResult, billsResult, pendingPaymentsResult] =
+      await Promise.all([
+        getAllBillingCycles({ limit: 1000 }),
+        getAllBills({ limit: 1000 }),
+        getPendingPayments(true).catch(() => ({ data: [] })),
+      ]);
+
+    const data = {
+      cycles: cyclesResult.data || [],
+      bills: billsResult.data || [],
+      pendingPayments: pendingPaymentsResult.data || [],
+      timestamp: Date.now(),
+    };
+
+    persistentCache.set(data);
+    return data;
+  } catch (error) {
+    console.error("Failed to preload billing data:", error);
+    return null;
   }
 };

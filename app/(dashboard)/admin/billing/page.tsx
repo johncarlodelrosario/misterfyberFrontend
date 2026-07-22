@@ -26,6 +26,7 @@ import {
   initializeBackdatedBilling,
   recoverMissingBills,
   getUnpaidBillsReport,
+  preloadBillingData,
 } from "@/services/billing";
 import {
   getPendingPayments,
@@ -120,10 +121,9 @@ interface Plan {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// ==================== GLOBAL CACHE ====================
-let globalCache: any = null;
-let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
+// ==================== PERSISTENT CACHE ====================
+const PERSISTENT_CACHE_KEY = "billing_page_data";
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -298,6 +298,7 @@ export default function AdminBillingPage() {
   const dataLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialDataLoaded = useRef(false);
 
   // ==================== LOAD PLANS & BUILDINGS ====================
   const loadPlans = async () => {
@@ -356,8 +357,7 @@ export default function AdminBillingPage() {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
@@ -406,8 +406,7 @@ export default function AdminBillingPage() {
           includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
-        globalCache = null;
-        globalCacheTimestamp = 0;
+        clearBillingCache();
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
@@ -445,8 +444,7 @@ export default function AdminBillingPage() {
 
       if (result.success) {
         toast.success(result.message);
-        globalCache = null;
-        globalCacheTimestamp = 0;
+        clearBillingCache();
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to recover missing bills");
@@ -484,8 +482,7 @@ export default function AdminBillingPage() {
         toast.success(
           `✅ Billing cycle deleted for ${customer.firstName} ${customer.lastName}`,
         );
-        globalCache = null;
-        globalCacheTimestamp = 0;
+        clearBillingCache();
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to delete billing cycle");
@@ -593,8 +590,7 @@ export default function AdminBillingPage() {
       toast.success(
         `⏸️ Billing paused for ${customer.firstName} ${customer.lastName}!`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -612,8 +608,7 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Billing resumed for ${customer.firstName} ${customer.lastName}!`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -636,8 +631,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} disconnected.`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to disconnect");
@@ -657,8 +651,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} reconnected.`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reconnect");
@@ -681,8 +674,7 @@ export default function AdminBillingPage() {
       toast.success(
         `⛔ Billing stopped for ${customer.firstName} ${customer.lastName}.`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -703,8 +695,7 @@ export default function AdminBillingPage() {
       toast.success(
         `✅ Installation invoice ${bill.invoiceNumber} marked as paid!`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       console.error("Mark installation bill as paid error:", error);
@@ -724,42 +715,9 @@ export default function AdminBillingPage() {
         return;
       }
 
-      // If data is already loaded and not forcing refresh, use cached data
-      if (dataLoadedRef.current && !forceRefresh) {
+      // If data is already loaded and not forcing refresh, use existing state
+      if (dataLoadedRef.current && !forceRefresh && customers.length > 0) {
         console.log("📦 Data already loaded, using existing state");
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      // Check global cache
-      const now = Date.now();
-      if (!forceRefresh && globalCache) {
-        if (now - globalCacheTimestamp < CACHE_TTL) {
-          const cached = globalCache;
-          setCustomers(cached.customers);
-          setBillingCycles(cached.billingCycles);
-          setBills(cached.bills);
-          setPendingPayments(cached.pendingPayments);
-          setStats(cached.stats);
-          setPendingProRated(cached.pendingProRated || []);
-          setPendingActivations(cached.pendingActivations || []);
-          setPendingInstallationBills(cached.pendingInstallationBills || []);
-          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
-          setLoading(false);
-          setRefreshing(false);
-          dataLoadedRef.current = true;
-          console.log("✅ Using global cached billing data");
-          return;
-        } else {
-          // Cache expired
-          globalCache = null;
-          dataLoadedRef.current = false;
-        }
-      }
-
-      // If we have customers but no cache and not forcing refresh
-      if (customers.length > 0 && !forceRefresh) {
         setLoading(false);
         setRefreshing(false);
         return;
@@ -771,8 +729,6 @@ export default function AdminBillingPage() {
       if (forceRefresh) {
         setRefreshing(true);
         clearBillingCache();
-        globalCache = null;
-        globalCacheTimestamp = 0;
         dataLoadedRef.current = false;
       } else {
         setLoading(true);
@@ -781,109 +737,182 @@ export default function AdminBillingPage() {
       try {
         console.log("🔄 Loading billing data...");
 
-        const [
-          cyclesResult,
-          billsResult,
-          usersResult,
-          applicationsResult,
-          pendingPaymentsResult,
-          customersWithoutAccountsResult,
-          pendingInstallationBillsResult,
-        ] = await Promise.all([
-          getAllBillingCycles({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllBills({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
-          getCustomersWithoutAccounts().catch(() => ({ data: [] })),
-          getPendingInstallationBills().catch(() => ({ data: [] })),
-        ]);
+        // Use preload function for faster loading
+        const preloadedData = await preloadBillingData();
 
-        if (!isMountedRef.current) {
-          isLoadingRef.current = false;
-          return;
+        if (!preloadedData) {
+          console.log("Preload failed, falling back to direct fetch...");
+          const [
+            cyclesResult,
+            billsResult,
+            usersResult,
+            applicationsResult,
+            pendingPaymentsResult,
+            customersWithoutAccountsResult,
+            pendingInstallationBillsResult,
+          ] = await Promise.all([
+            getAllBillingCycles({
+              limit: 1000,
+              page: 1,
+              forceRefresh,
+            }),
+            getAllBills({
+              limit: 1000,
+              page: 1,
+              forceRefresh,
+            }),
+            getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
+              data: [],
+            })),
+            getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
+              data: [],
+            })),
+            getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
+            getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+            getPendingInstallationBills().catch(() => ({ data: [] })),
+          ]);
+
+          if (!isMountedRef.current) {
+            isLoadingRef.current = false;
+            return;
+          }
+
+          const cyclesData = cyclesResult?.data || [];
+          const billsList = billsResult?.data || [];
+          const usersList = usersResult?.data || [];
+          const applicationsList = applicationsResult?.data || [];
+          const pendingPaymentsList = pendingPaymentsResult?.data || [];
+          const customersWithoutAccountsData =
+            customersWithoutAccountsResult?.data || [];
+          const pendingInstallationBillsData =
+            pendingInstallationBillsResult?.data || [];
+
+          setBillingCycles(cyclesData);
+          setBills(billsList);
+          setPendingPayments(pendingPaymentsList);
+          setCustomersWithoutAccounts(customersWithoutAccountsData);
+          setPendingInstallationBills(pendingInstallationBillsData);
+
+          // Build customers
+          const allCustomers = buildCustomers(
+            usersList,
+            applicationsList,
+            billsList,
+            cyclesData,
+            buildingsList,
+          );
+
+          setCustomers(allCustomers);
+
+          // Calculate stats
+          const newStats = calculateStats(
+            allCustomers,
+            cyclesData,
+            applicationsList,
+            pendingPaymentsList,
+            pendingInstallationBillsData,
+          );
+
+          setStats(newStats);
+
+          // Get pending data
+          const [proRatedResult, activationsResult] = await Promise.all([
+            getPendingProRatedBills(),
+            getPendingActivations(),
+          ]);
+
+          const pendingProRatedData = proRatedResult?.data || [];
+          const pendingActivationsData = activationsResult?.data || [];
+
+          setPendingProRated(pendingProRatedData);
+          setPendingActivations(pendingActivationsData);
+
+          dataLoadedRef.current = true;
+
+          console.log(
+            `✅ Loaded ${allCustomers.length} customers (direct fetch)`,
+          );
+        } else {
+          // Use preloaded data
+          if (!isMountedRef.current) {
+            isLoadingRef.current = false;
+            return;
+          }
+
+          // Fetch users and applications separately for customer building
+          const [usersResult, applicationsResult] = await Promise.all([
+            getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
+              data: [],
+            })),
+            getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
+              data: [],
+            })),
+          ]);
+
+          const usersList = usersResult?.data || [];
+          const applicationsList = applicationsResult?.data || [];
+          const cyclesData = preloadedData.cycles || [];
+          const billsList = preloadedData.bills || [];
+          const pendingPaymentsList = preloadedData.pendingPayments || [];
+
+          // Get additional data
+          const [
+            customersWithoutAccountsResult,
+            pendingInstallationBillsResult,
+          ] = await Promise.all([
+            getCustomersWithoutAccounts().catch(() => ({ data: [] })),
+            getPendingInstallationBills().catch(() => ({ data: [] })),
+          ]);
+
+          const customersWithoutAccountsData =
+            customersWithoutAccountsResult?.data || [];
+          const pendingInstallationBillsData =
+            pendingInstallationBillsResult?.data || [];
+
+          setBillingCycles(cyclesData);
+          setBills(billsList);
+          setPendingPayments(pendingPaymentsList);
+          setCustomersWithoutAccounts(customersWithoutAccountsData);
+          setPendingInstallationBills(pendingInstallationBillsData);
+
+          // Build customers
+          const allCustomers = buildCustomers(
+            usersList,
+            applicationsList,
+            billsList,
+            cyclesData,
+            buildingsList,
+          );
+
+          setCustomers(allCustomers);
+
+          // Calculate stats
+          const newStats = calculateStats(
+            allCustomers,
+            cyclesData,
+            applicationsList,
+            pendingPaymentsList,
+            pendingInstallationBillsData,
+          );
+
+          setStats(newStats);
+
+          // Get pending data
+          const [proRatedResult, activationsResult] = await Promise.all([
+            getPendingProRatedBills(),
+            getPendingActivations(),
+          ]);
+
+          const pendingProRatedData = proRatedResult?.data || [];
+          const pendingActivationsData = activationsResult?.data || [];
+
+          setPendingProRated(pendingProRatedData);
+          setPendingActivations(pendingActivationsData);
+
+          dataLoadedRef.current = true;
+
+          console.log(`✅ Loaded ${allCustomers.length} customers (preloaded)`);
         }
-
-        const cyclesData = cyclesResult?.data || [];
-        const billsList = billsResult?.data || [];
-        const usersList = usersResult?.data || [];
-        const applicationsList = applicationsResult?.data || [];
-        const pendingPaymentsList = pendingPaymentsResult?.data || [];
-        const customersWithoutAccountsData =
-          customersWithoutAccountsResult?.data || [];
-        const pendingInstallationBillsData =
-          pendingInstallationBillsResult?.data || [];
-
-        setBillingCycles(cyclesData);
-        setBills(billsList);
-        setPendingPayments(pendingPaymentsList);
-        setCustomersWithoutAccounts(customersWithoutAccountsData);
-        setPendingInstallationBills(pendingInstallationBillsData);
-
-        // Build customers - moved to a separate function for better performance
-        const allCustomers = buildCustomers(
-          usersList,
-          applicationsList,
-          billsList,
-          cyclesData,
-          buildingsList,
-        );
-
-        setCustomers(allCustomers);
-
-        // Calculate stats
-        const newStats = calculateStats(
-          allCustomers,
-          cyclesData,
-          applicationsList,
-          pendingPaymentsList,
-          pendingInstallationBillsData,
-        );
-
-        setStats(newStats);
-
-        // Get pending data
-        const [proRatedResult, activationsResult] = await Promise.all([
-          getPendingProRatedBills(),
-          getPendingActivations(),
-        ]);
-
-        const pendingProRatedData = proRatedResult?.data || [];
-        const pendingActivationsData = activationsResult?.data || [];
-
-        setPendingProRated(pendingProRatedData);
-        setPendingActivations(pendingActivationsData);
-
-        // Update cache
-        globalCache = {
-          customers: allCustomers,
-          billingCycles: cyclesData,
-          bills: billsList,
-          pendingPayments: pendingPaymentsList,
-          stats: newStats,
-          pendingProRated: pendingProRatedData,
-          pendingActivations: pendingActivationsData,
-          pendingInstallationBills: pendingInstallationBillsData,
-          customersWithoutAccounts: customersWithoutAccountsData,
-        };
-        globalCacheTimestamp = now;
-        dataLoadedRef.current = true;
-
-        console.log(
-          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
-        );
       } catch (error) {
         console.error("Failed to load billing data:", error);
         if (isMountedRef.current) {
@@ -896,10 +925,11 @@ export default function AdminBillingPage() {
         }
         isLoadingRef.current = false;
         initialLoadDone.current = true;
+        initialDataLoaded.current = true;
       }
     },
-    [buildingsList],
-  ); // Removed pagination dependency
+    [buildingsList, customers.length],
+  );
 
   // Helper function to build customers
   const buildCustomers = (
@@ -1166,9 +1196,7 @@ export default function AdminBillingPage() {
     try {
       await resumeBilling({ userId });
       toast.success(`✅ Billing resumed for ${customerName}!`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -1185,9 +1213,7 @@ export default function AdminBillingPage() {
     try {
       await stopBilling({ userId, reason: "Admin action" });
       toast.success(`⛔ Billing stopped for ${customerName}.`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -1212,9 +1238,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} disconnected from network.`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       console.error("Disconnect error:", error);
@@ -1237,9 +1261,7 @@ export default function AdminBillingPage() {
       toast.success(
         `🔌 ${customer.firstName} ${customer.lastName} reconnected to network.`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       console.error("Reconnect error:", error);
@@ -1256,9 +1278,7 @@ export default function AdminBillingPage() {
     try {
       await confirmPayment(paymentId);
       toast.success("Payment confirmed! User notified.");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -1271,9 +1291,7 @@ export default function AdminBillingPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
@@ -1288,9 +1306,7 @@ export default function AdminBillingPage() {
         notes: `Manually marked as paid by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
       });
       toast.success(`✅ Invoice ${bill.invoiceNumber} marked as paid!`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       console.error("Mark bill as paid error:", error);
@@ -1331,9 +1347,7 @@ export default function AdminBillingPage() {
         setCustomAmount("");
         setBillingNotes("");
         setIncludeInstallationFee(true);
-        globalCache = null;
-        globalCacheTimestamp = 0;
-        dataLoadedRef.current = false;
+        clearBillingCache();
         await loadData(true);
       } else {
         toast.error(result.message || "Failed to start billing");
@@ -1365,9 +1379,7 @@ export default function AdminBillingPage() {
       setCustomAmount("");
       setBillingNotes("");
       setIncludeInstallationFee(true);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to start billing");
@@ -1390,9 +1402,7 @@ export default function AdminBillingPage() {
       setSelectedUserId("");
       setPauseReason("");
       setPauseUntilDate("");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -1440,9 +1450,7 @@ export default function AdminBillingPage() {
         notes: "",
         includeInstallationFee: true,
       });
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      dataLoadedRef.current = false;
+      clearBillingCache();
       await loadData(true);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create customer");
@@ -1453,18 +1461,18 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Only load data once on mount
-    if (!dataLoadedRef.current && customers.length === 0) {
-      // Use a slight delay to prevent multiple rapid calls
-      const timer = setTimeout(() => {
-        loadData();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-
+    // Load static data
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
+
+    // Load billing data only once on mount
+    if (!initialDataLoaded.current) {
+      const timer = setTimeout(() => {
+        loadData();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
 
     return () => {
       isMountedRef.current = false;
@@ -1472,12 +1480,11 @@ export default function AdminBillingPage() {
         clearTimeout(loadTimeoutRef.current);
       }
     };
-  }, []); // Empty dependency array - only run once
+  }, []);
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
-    globalCache = null;
-    globalCacheTimestamp = 0;
+    clearBillingCache();
     dataLoadedRef.current = false;
     loadData(true);
   };
