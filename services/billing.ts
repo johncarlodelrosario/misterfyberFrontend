@@ -104,11 +104,9 @@ export interface Bill {
 
 // ==================== ULTRA-FAST CACHE ====================
 const BILLING_CACHE = new Map();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
-const MAX_CACHE_ITEMS = 20;
-let cacheKeys: string[] = [];
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_ITEMS = 30;
 
-// LRU cache manager
 const cacheManager = {
   get<T>(key: string): T | null {
     const cached = BILLING_CACHE.get(key);
@@ -121,7 +119,6 @@ const cacheManager = {
   },
 
   set<T>(key: string, data: T): void {
-    // LRU: Remove oldest if cache is full
     if (BILLING_CACHE.size >= MAX_CACHE_ITEMS) {
       const firstKey = BILLING_CACHE.keys().next().value;
       if (firstKey) BILLING_CACHE.delete(firstKey);
@@ -152,9 +149,9 @@ function getCacheKey(prefix: string, params?: any): string {
   return `${prefix}_${params ? JSON.stringify(params) : ""}`;
 }
 
-// ==================== API FUNCTIONS ====================
+// ==================== API FUNCTIONS - OPTIMIZED ====================
 
-// ADMIN BILLING - GET ALL CYCLES
+// ADMIN BILLING - GET ALL CYCLES (optimized)
 export const getAllBillingCycles = async (params?: {
   page?: number;
   limit?: number;
@@ -167,8 +164,9 @@ export const getAllBillingCycles = async (params?: {
   total: number;
 }> => {
   const cacheKey = getCacheKey(CACHE_KEYS.BILLING_CYCLES, {
-    ...params,
-    forceRefresh: false,
+    page: params?.page || 1,
+    limit: params?.limit || 100,
+    status: params?.status || "all",
   });
 
   if (!params?.forceRefresh) {
@@ -183,14 +181,18 @@ export const getAllBillingCycles = async (params?: {
 
   try {
     const response = await api.get("/billing/cycles", {
-      params: { ...params, limit: params?.limit || 20 },
+      params: {
+        ...params,
+        limit: params?.limit || 100,
+        page: params?.page || 1,
+      },
     });
 
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 100;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -208,7 +210,7 @@ export const getAllBillingCycles = async (params?: {
   }
 };
 
-// ADMIN BILLING - GET ALL BILLS
+// ADMIN BILLING - GET ALL BILLS (optimized)
 export const getAllBills = async (params?: {
   page?: number;
   limit?: number;
@@ -224,8 +226,9 @@ export const getAllBills = async (params?: {
   total: number;
 }> => {
   const cacheKey = getCacheKey(CACHE_KEYS.BILLS, {
-    ...params,
-    forceRefresh: false,
+    page: params?.page || 1,
+    limit: params?.limit || 100,
+    status: params?.status || "all",
   });
 
   if (!params?.forceRefresh) {
@@ -241,14 +244,18 @@ export const getAllBills = async (params?: {
 
   try {
     const response = await api.get("/billing/all-bills", {
-      params: { ...params, limit: params?.limit || 20 },
+      params: {
+        ...params,
+        limit: params?.limit || 100,
+        page: params?.page || 1,
+      },
     });
 
     const result = response.data;
     const data = result.data || [];
     const total = result.total || data.length;
     const currentPage = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 100;
     const totalPages = Math.ceil(total / limit);
 
     const returnData = {
@@ -361,7 +368,6 @@ export const updateBillingSettingsAdmin = async (
 ): Promise<any> => {
   try {
     const response = await api.put("/billing/settings/admin", data);
-    // Clear all caches
     cacheManager.clear();
     return response.data;
   } catch (error) {
@@ -372,7 +378,6 @@ export const updateBillingSettingsAdmin = async (
 
 // ==================== BILLING ACTIONS ====================
 
-// START BILLING FOR APPLICATION
 export const startBillingForApplication = async (
   applicationId: string,
   data?: {
@@ -396,7 +401,6 @@ export const startBillingForApplication = async (
   }
 };
 
-// START BILLING
 export const startBilling = async (data: {
   userId?: string;
   applicationId?: string;
@@ -415,7 +419,6 @@ export const startBilling = async (data: {
   }
 };
 
-// STOP BILLING
 export const stopBilling = async (data: {
   userId?: string;
   applicationId?: string;
@@ -431,7 +434,6 @@ export const stopBilling = async (data: {
   }
 };
 
-// PAUSE BILLING
 export const pauseBilling = async (data: {
   userId?: string;
   applicationId?: string;
@@ -448,7 +450,6 @@ export const pauseBilling = async (data: {
   }
 };
 
-// RESUME BILLING
 export const resumeBilling = async (data: {
   userId?: string;
   applicationId?: string;
@@ -463,7 +464,6 @@ export const resumeBilling = async (data: {
   }
 };
 
-// DISCONNECT CLIENT
 export const disconnectClient = async (data: {
   userId?: string;
   applicationId?: string;
@@ -479,7 +479,6 @@ export const disconnectClient = async (data: {
   }
 };
 
-// RECONNECT CLIENT
 export const reconnectClient = async (data: {
   userId?: string;
   applicationId?: string;
@@ -494,7 +493,6 @@ export const reconnectClient = async (data: {
   }
 };
 
-// DELETE BILLING CYCLE
 export const deleteBillingCycle = async (data: {
   billingCycleId: string;
   applicationId?: string;
@@ -509,7 +507,6 @@ export const deleteBillingCycle = async (data: {
   }
 };
 
-// MARK BILL AS PAID
 export const markBillAsPaid = async (
   billId: string,
   paymentData: {
@@ -527,7 +524,6 @@ export const markBillAsPaid = async (
   }
 };
 
-// MARK INSTALLATION BILL AS PAID
 export const markInstallationBillAsPaid = async (
   billId: string,
   paymentData: {
@@ -548,7 +544,6 @@ export const markInstallationBillAsPaid = async (
   }
 };
 
-// CONFIRM PRO-RATED PAYMENT
 export const confirmProRatedPayment = async (data: {
   userId?: string;
   applicationId?: string;
@@ -564,7 +559,6 @@ export const confirmProRatedPayment = async (data: {
   }
 };
 
-// START MONTHLY BILLING
 export const startMonthlyBilling = async (data: {
   userId?: string;
   applicationId?: string;
@@ -579,7 +573,6 @@ export const startMonthlyBilling = async (data: {
   }
 };
 
-// INITIALIZE BACKDATED BILLING
 export const initializeBackdatedBilling = async (data: {
   applicationId: string;
   serviceStartDate: string;
@@ -599,7 +592,6 @@ export const initializeBackdatedBilling = async (data: {
   }
 };
 
-// RECOVER MISSING BILLS
 export const recoverMissingBills = async (data: {
   applicationId: string;
   startFromDate?: string;
@@ -614,7 +606,6 @@ export const recoverMissingBills = async (data: {
   }
 };
 
-// GET UNPAID BILLS REPORT
 export const getUnpaidBillsReport = async (params?: {
   applicationId?: string;
   includePaid?: boolean;
@@ -628,7 +619,6 @@ export const getUnpaidBillsReport = async (params?: {
   }
 };
 
-// CLEAR ALL CACHES
 export const clearBillingCache = (): void => {
   cacheManager.clear();
 };

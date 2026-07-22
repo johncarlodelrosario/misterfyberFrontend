@@ -1,4 +1,5 @@
-// /Users/johncarlodelrosario/Documents/John Carlo Del Rosario/MisterFyberWebsite/MisterFyber_Website_Main copy 33 - Master/isp-frontend/components/admin/billingTable.tsx
+// components/admin/billingTable.tsx - ULTRA FAST VERSION
+"use client";
 
 import React, {
   useState,
@@ -38,7 +39,6 @@ import {
   FiChevronLeft,
   FiChevronRight,
 } from "react-icons/fi";
-import toast from "react-hot-toast";
 
 // ==================== TYPES ====================
 export interface CustomerItem {
@@ -139,19 +139,6 @@ interface BillingTableProps {
 }
 
 // ==================== HELPERS ====================
-function formatDateFixed(dateStr: string): string {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
-}
-
-function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
-  if (!startDateStr || !endDateStr) return "-";
-  const start = new Date(startDateStr);
-  const end = new Date(endDateStr);
-  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
-}
-
 function getBuildingDisplay(customer: CustomerItem): string {
   if (customer.building) {
     if (

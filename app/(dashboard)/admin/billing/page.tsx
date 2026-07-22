@@ -1,6 +1,13 @@
+// app/admin/billing/page.tsx - ULTRA FAST VERSION
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import {
   getAllBillingCycles,
   getAllBills,
@@ -123,7 +130,7 @@ type SortDirection = "asc" | "desc";
 // ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (reduced from 10)
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 // ==================== HELPERS ====================
 function formatDateFixed(dateStr: string): string {
@@ -294,10 +301,10 @@ export default function AdminBillingPage() {
   });
 
   const isMountedRef = useRef(true);
-  const initialLoadDone = useRef(false);
   const dataLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialRenderDone = useRef(false);
 
   // ==================== LOAD PLANS & BUILDINGS ====================
   const loadPlans = async () => {
@@ -720,54 +727,34 @@ export default function AdminBillingPage() {
     async (forceRefresh = false) => {
       // Prevent multiple simultaneous loads
       if (isLoadingRef.current) {
-        console.log("⏳ Load already in progress, skipping...");
-        return;
-      }
-
-      // If data is already loaded and not forcing refresh, use cached data
-      if (dataLoadedRef.current && !forceRefresh) {
-        console.log("📦 Data already loaded, using existing state");
-        setLoading(false);
-        setRefreshing(false);
         return;
       }
 
       // Check global cache
       const now = Date.now();
-      if (!forceRefresh && globalCache) {
-        if (now - globalCacheTimestamp < CACHE_TTL) {
-          const cached = globalCache;
-          setCustomers(cached.customers);
-          setBillingCycles(cached.billingCycles);
-          setBills(cached.bills);
-          setPendingPayments(cached.pendingPayments);
-          setStats(cached.stats);
-          setPendingProRated(cached.pendingProRated || []);
-          setPendingActivations(cached.pendingActivations || []);
-          setPendingInstallationBills(cached.pendingInstallationBills || []);
-          setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
-          setLoading(false);
-          setRefreshing(false);
-          dataLoadedRef.current = true;
-          console.log("✅ Using global cached billing data");
-          return;
-        } else {
-          // Cache expired
-          globalCache = null;
-          dataLoadedRef.current = false;
-        }
-      }
-
-      // If we have customers but no cache and not forcing refresh
-      if (customers.length > 0 && !forceRefresh) {
+      if (
+        !forceRefresh &&
+        globalCache &&
+        now - globalCacheTimestamp < CACHE_TTL
+      ) {
+        const cached = globalCache;
+        setCustomers(cached.customers || []);
+        setBillingCycles(cached.billingCycles || []);
+        setBills(cached.bills || []);
+        setPendingPayments(cached.pendingPayments || []);
+        setStats(cached.stats || {});
+        setPendingProRated(cached.pendingProRated || []);
+        setPendingActivations(cached.pendingActivations || []);
+        setPendingInstallationBills(cached.pendingInstallationBills || []);
+        setCustomersWithoutAccounts(cached.customersWithoutAccounts || []);
         setLoading(false);
         setRefreshing(false);
+        dataLoadedRef.current = true;
         return;
       }
 
       // Start loading
       isLoadingRef.current = true;
-
       if (forceRefresh) {
         setRefreshing(true);
         clearBillingCache();
@@ -779,8 +766,7 @@ export default function AdminBillingPage() {
       }
 
       try {
-        console.log("🔄 Loading billing data...");
-
+        // Fetch all data in parallel for speed
         const [
           cyclesResult,
           billsResult,
@@ -790,20 +776,10 @@ export default function AdminBillingPage() {
           customersWithoutAccountsResult,
           pendingInstallationBillsResult,
         ] = await Promise.all([
-          getAllBillingCycles({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllBills({
-            limit: 1000, // Increased limit to get all data
-            page: 1,
-            forceRefresh,
-          }),
-          getAllUsers({ limit: 1000, forceRefresh }).catch(() => ({
-            data: [],
-          })),
-          getAllApplications({ limit: 1000, forceRefresh }).catch(() => ({
+          getAllBillingCycles({ limit: 500, page: 1, forceRefresh }),
+          getAllBills({ limit: 500, page: 1, forceRefresh }),
+          getAllUsers({ limit: 500, forceRefresh }).catch(() => ({ data: [] })),
+          getAllApplications({ limit: 500, forceRefresh }).catch(() => ({
             data: [],
           })),
           getPendingPayments(forceRefresh).catch(() => ({ data: [] })),
@@ -832,7 +808,7 @@ export default function AdminBillingPage() {
         setCustomersWithoutAccounts(customersWithoutAccountsData);
         setPendingInstallationBills(pendingInstallationBillsData);
 
-        // Build customers - moved to a separate function for better performance
+        // Build customers - optimized
         const allCustomers = buildCustomers(
           usersList,
           applicationsList,
@@ -854,7 +830,7 @@ export default function AdminBillingPage() {
 
         setStats(newStats);
 
-        // Get pending data
+        // Get pending data - parallel
         const [proRatedResult, activationsResult] = await Promise.all([
           getPendingProRatedBills(),
           getPendingActivations(),
@@ -880,10 +856,6 @@ export default function AdminBillingPage() {
         };
         globalCacheTimestamp = now;
         dataLoadedRef.current = true;
-
-        console.log(
-          `✅ Loaded ${allCustomers.length} customers (cached globally)`,
-        );
       } catch (error) {
         console.error("Failed to load billing data:", error);
         if (isMountedRef.current) {
@@ -895,13 +867,12 @@ export default function AdminBillingPage() {
           setRefreshing(false);
         }
         isLoadingRef.current = false;
-        initialLoadDone.current = true;
       }
     },
     [buildingsList],
-  ); // Removed pagination dependency
+  );
 
-  // Helper function to build customers
+  // Helper function to build customers - optimized
   const buildCustomers = (
     usersList: any[],
     applicationsList: any[],
@@ -1453,26 +1424,26 @@ export default function AdminBillingPage() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Only load data once on mount
-    if (!dataLoadedRef.current && customers.length === 0) {
-      // Use a slight delay to prevent multiple rapid calls
-      const timer = setTimeout(() => {
+    // Load data immediately on mount - with small delay to prevent blocking
+    const timer = setTimeout(() => {
+      if (!dataLoadedRef.current) {
         loadData();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
+      }
+    }, 50);
 
+    // Load settings and metadata in background
     loadBillingFlowSettings();
     loadPlans();
     loadBuildings();
 
     return () => {
       isMountedRef.current = false;
+      clearTimeout(timer);
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
     };
-  }, []); // Empty dependency array - only run once
+  }, []);
 
   // ==================== HANDLE REFRESH ====================
   const handleRefresh = () => {
