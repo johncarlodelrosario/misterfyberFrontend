@@ -1,3 +1,5 @@
+// frontend/services/building.ts - COMPLETE WITH INSTALLATION FEE
+
 import api from "./api";
 
 export interface Building {
@@ -9,9 +11,18 @@ export interface Building {
   barangay: string;
   streetAddress: string;
   zipCode: string;
+  location: "breeze" | "sil" | "other" | "";
+  installationFee: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BuildingInstallationFee {
+  buildingId: string;
+  buildingName: string;
+  installationFee: number;
+  location: string;
 }
 
 export const getActiveBuildings = async (): Promise<Building[]> => {
@@ -41,4 +52,21 @@ export const updateBuilding = async (id: string, data: Partial<Building>) => {
 export const deleteBuilding = async (id: string) => {
   const response = await api.delete(`/buildings/${id}`);
   return response.data;
+};
+
+export const getBuildingInstallationFee = async (
+  buildingId: string,
+): Promise<BuildingInstallationFee> => {
+  const response = await api.get(`/buildings/${buildingId}/installation-fee`);
+  return response.data.data;
+};
+
+export const updateBuildingInstallationFee = async (
+  buildingId: string,
+  installationFee: number,
+): Promise<BuildingInstallationFee> => {
+  const response = await api.put(`/buildings/${buildingId}/installation-fee`, {
+    installationFee,
+  });
+  return response.data.data;
 };

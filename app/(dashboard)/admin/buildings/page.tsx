@@ -1,3 +1,5 @@
+// frontend/app/admin/buildings/page.tsx - COMPLETE FIXED WITH TYPE SAFETY
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,6 +9,7 @@ import {
   updateBuilding,
   deleteBuilding,
   Building,
+  updateBuildingInstallationFee,
 } from "@/services/building";
 import {
   getRegions,
@@ -19,7 +22,16 @@ import {
   Barangay,
 } from "@/services/application";
 import toast from "react-hot-toast";
-import { FiPlus, FiEdit2, FiTrash2, FiX, FiAlertCircle } from "react-icons/fi";
+import {
+  FiPlus,
+  FiEdit2,
+  FiTrash2,
+  FiX,
+  FiAlertCircle,
+  FiHome,
+} from "react-icons/fi";
+
+type LocationType = "" | "breeze" | "sil" | "other";
 
 export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -27,6 +39,11 @@ export default function BuildingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
+  const [isInstallationFeeModalOpen, setIsInstallationFeeModalOpen] =
+    useState(false);
+  const [selectedBuildingForFee, setSelectedBuildingForFee] =
+    useState<Building | null>(null);
+  const [tempInstallationFee, setTempInstallationFee] = useState<number>(0);
 
   const [formData, setFormData] = useState({
     buildingName: "",
@@ -36,6 +53,8 @@ export default function BuildingsPage() {
     barangay: "",
     streetAddress: "",
     zipCode: "",
+    location: "" as LocationType,
+    installationFee: 1500,
     isActive: true,
   });
 
@@ -46,7 +65,6 @@ export default function BuildingsPage() {
   const [loadingAddress, setLoadingAddress] = useState(false);
   const [isNCR, setIsNCR] = useState(false);
 
-  // Hardcoded NCR cities as fallback
   const ncrCitiesFallback: City[] = [
     { code: "1374010000", name: "Manila" },
     { code: "1374020000", name: "Quezon City" },
@@ -72,7 +90,6 @@ export default function BuildingsPage() {
     loadRegions();
   }, []);
 
-  // Handle region change and NCR detection
   useEffect(() => {
     const ncrCodes = ["NCR", "National Capital Region", "13", "1300000000"];
     const ncrDetected = ncrCodes.includes(formData.region);
@@ -80,17 +97,14 @@ export default function BuildingsPage() {
 
     if (formData.region) {
       if (ncrDetected) {
-        // For NCR: auto-set province
         setFormData((prev) => ({
           ...prev,
           province: "NCR",
           city: "",
           barangay: "",
         }));
-        // Load cities for NCR
         loadCitiesForNCR();
       } else {
-        // For non-NCR: load provinces
         loadProvinces(formData.region);
         setFormData((prev) => ({
           ...prev,
@@ -104,7 +118,6 @@ export default function BuildingsPage() {
     }
   }, [formData.region]);
 
-  // Handle province change for non-NCR
   useEffect(() => {
     if (formData.province && !isNCR) {
       loadCities(formData.province);
@@ -113,7 +126,6 @@ export default function BuildingsPage() {
     }
   }, [formData.province, isNCR]);
 
-  // Handle city change
   useEffect(() => {
     if (formData.city) {
       loadBarangays(formData.city);
@@ -134,10 +146,9 @@ export default function BuildingsPage() {
         error.message ||
         "Failed to load buildings";
       setError(errorMessage);
-
       if (error.response?.status === 403) {
         toast.error(
-          "Access denied: You don't have permission to manage buildings. Please contact your administrator.",
+          "Access denied: You don't have permission to manage buildings.",
         );
       } else {
         toast.error(errorMessage);
@@ -187,11 +198,7 @@ export default function BuildingsPage() {
   const loadCitiesForNCR = async () => {
     try {
       setLoadingAddress(true);
-
-      // Try multiple approaches to get NCR cities
       let citiesData: City[] = [];
-
-      // Approach 1: Try getting provinces first then cities
       try {
         const provincesData = await getProvincesByRegion(formData.region);
         if (provincesData && provincesData.length > 0) {
@@ -200,18 +207,14 @@ export default function BuildingsPage() {
       } catch (e) {
         console.log("Approach 1 failed:", e);
       }
-
-      // Approach 2: If no cities found, use fallback hardcoded cities
       if (!citiesData || citiesData.length === 0) {
         console.log("Using fallback NCR cities");
         citiesData = ncrCitiesFallback;
         toast.success("Using default NCR cities list");
       }
-
       setCities(citiesData);
     } catch (error) {
       console.error("Failed to load cities for NCR:", error);
-      // Use fallback cities
       setCities(ncrCitiesFallback);
       toast.success("Using default NCR cities list");
     } finally {
@@ -247,6 +250,13 @@ export default function BuildingsPage() {
       return;
     }
 
+    // Validate location type
+    const validLocations: LocationType[] = ["", "breeze", "sil", "other"];
+    const locationValue = formData.location as string;
+    const validLocation = validLocations.includes(locationValue as LocationType)
+      ? (locationValue as LocationType)
+      : "";
+
     const submitData: Partial<Building> = {
       buildingName: formData.buildingName,
       region: formData.region,
@@ -255,6 +265,8 @@ export default function BuildingsPage() {
       barangay: formData.barangay,
       streetAddress: formData.streetAddress,
       zipCode: formData.zipCode || undefined,
+      location: validLocation,
+      installationFee: formData.installationFee || 1500,
       isActive: formData.isActive,
     };
 
@@ -273,7 +285,6 @@ export default function BuildingsPage() {
       console.error("Failed to save building:", error);
       const errorMessage =
         error.response?.data?.message || "Failed to save building";
-
       if (error.response?.status === 403) {
         toast.error(
           "Access denied: You don't have permission to manage buildings.",
@@ -294,7 +305,6 @@ export default function BuildingsPage() {
       console.error("Failed to delete building:", error);
       const errorMessage =
         error.response?.data?.message || "Failed to delete building";
-
       if (error.response?.status === 403) {
         toast.error(
           "Access denied: You don't have permission to delete buildings.",
@@ -310,6 +320,13 @@ export default function BuildingsPage() {
     const ncrCodes = ["NCR", "National Capital Region", "13", "1300000000"];
     const isBuildingNCR = ncrCodes.includes(building.region);
 
+    // Validate location type
+    const validLocations: LocationType[] = ["", "breeze", "sil", "other"];
+    const locationValue = building.location || "";
+    const validLocation = validLocations.includes(locationValue as LocationType)
+      ? (locationValue as LocationType)
+      : "";
+
     setFormData({
       buildingName: building.buildingName,
       region: building.region,
@@ -318,19 +335,19 @@ export default function BuildingsPage() {
       barangay: building.barangay,
       streetAddress: building.streetAddress,
       zipCode: building.zipCode || "",
+      location: validLocation,
+      installationFee: building.installationFee || 1500,
       isActive: building.isActive,
     });
 
     setIsNCR(isBuildingNCR);
 
-    // Load appropriate data for editing
     if (isBuildingNCR) {
       loadCitiesForNCR();
     } else if (building.province) {
       loadCities(building.province);
     }
 
-    // Load barangays after cities are loaded
     if (building.city) {
       setTimeout(() => {
         loadBarangays(building.city);
@@ -338,6 +355,33 @@ export default function BuildingsPage() {
     }
 
     setIsModalOpen(true);
+  };
+
+  const handleUpdateInstallationFee = async () => {
+    if (!selectedBuildingForFee) return;
+    try {
+      await updateBuildingInstallationFee(
+        selectedBuildingForFee._id,
+        tempInstallationFee,
+      );
+      toast.success(
+        `Installation fee updated to ₱${tempInstallationFee.toLocaleString()}`,
+      );
+      setIsInstallationFeeModalOpen(false);
+      setSelectedBuildingForFee(null);
+      loadBuildings();
+    } catch (error: any) {
+      console.error("Failed to update installation fee:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to update installation fee",
+      );
+    }
+  };
+
+  const openInstallationFeeModal = (building: Building) => {
+    setSelectedBuildingForFee(building);
+    setTempInstallationFee(building.installationFee || 1500);
+    setIsInstallationFeeModalOpen(true);
   };
 
   const resetForm = () => {
@@ -350,12 +394,20 @@ export default function BuildingsPage() {
       barangay: "",
       streetAddress: "",
       zipCode: "",
+      location: "",
+      installationFee: 1500,
       isActive: true,
     });
     setProvinces([]);
     setCities([]);
     setBarangays([]);
     setIsNCR(false);
+  };
+
+  // Handle location select change with type safety
+  const handleLocationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as LocationType;
+    setFormData({ ...formData, location: value });
   };
 
   if (loading) {
@@ -398,14 +450,14 @@ export default function BuildingsPage() {
   }
 
   return (
-    <div>
+    <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
             Buildings Management
           </h1>
           <p className="text-gray-600">
-            Manage building locations for client applications
+            Manage building locations and installation fees
           </p>
         </div>
         <button
@@ -432,6 +484,12 @@ export default function BuildingsPage() {
                   Address
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Installation Fee
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -443,7 +501,7 @@ export default function BuildingsPage() {
               {buildings.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     No buildings found. Click "Add Building" to create one.
@@ -461,6 +519,26 @@ export default function BuildingsPage() {
                         {building.barangay}, {building.city}
                         {building.province && `, ${building.province}`}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900">
+                        ₱{(building.installationFee || 0).toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => openInstallationFeeModal(building)}
+                        className="ml-2 text-blue-600 hover:text-blue-800 text-xs"
+                      >
+                        <FiHome className="w-4 h-4 inline" />
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${building.location ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-500"}`}
+                      >
+                        {building.location
+                          ? building.location.toUpperCase()
+                          : "Not Set"}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -497,7 +575,7 @@ export default function BuildingsPage() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Create/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -660,6 +738,45 @@ export default function BuildingsPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location
+                  </label>
+                  <select
+                    value={formData.location}
+                    onChange={handleLocationChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select Location</option>
+                    <option value="breeze">Breeze</option>
+                    <option value="sil">SIL</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Installation Fee (₱)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={formData.installationFee}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        installationFee: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    This fee will be charged to customers when billing starts
+                    for this building.
+                  </p>
+                </div>
+
                 <div className="flex items-center">
                   <input
                     type="checkbox"
@@ -697,6 +814,79 @@ export default function BuildingsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Installation Fee Modal */}
+      {isInstallationFeeModalOpen && selectedBuildingForFee && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-md w-full mx-4 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Update Installation Fee</h2>
+              <button
+                onClick={() => {
+                  setIsInstallationFeeModalOpen(false);
+                  setSelectedBuildingForFee(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600">
+                  <strong>Building:</strong>{" "}
+                  {selectedBuildingForFee.buildingName}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Current Fee:</strong> ₱
+                  {(
+                    selectedBuildingForFee.installationFee || 0
+                  ).toLocaleString()}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Installation Fee (₱)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={tempInstallationFee}
+                  onChange={(e) =>
+                    setTempInstallationFee(parseInt(e.target.value) || 0)
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This fee will be charged to customers when billing starts for
+                  this building.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  onClick={() => {
+                    setIsInstallationFeeModalOpen(false);
+                    setSelectedBuildingForFee(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateInstallationFee}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Update Fee
+                </button>
+              </div>
             </div>
           </div>
         </div>
