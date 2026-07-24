@@ -1,5 +1,4 @@
-// frontend/services/authService.ts - FIXED VERSION
-
+// frontend/services/authService.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 interface LoginResponse {
@@ -60,14 +59,16 @@ interface ApplicationStatusResponse {
 
 // FIXED: Supports both email and username
 export const login = async (
-  identifier: string,
+  identifier: string, // Can be email OR username
   password: string,
 ): Promise<LoginResponse> => {
   try {
     console.log("[Auth] Attempting login for:", identifier);
     console.log("[Auth] API baseURL:", api.defaults.baseURL);
 
+    // Check if identifier is email or username
     const isEmail = identifier.includes("@") && identifier.includes(".");
+
     const payload = isEmail
       ? { email: identifier, password }
       : { username: identifier, password };
@@ -133,7 +134,7 @@ export const login = async (
 
     if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
       throw new Error(
-        "Cannot connect to server. Please check if the backend is running.",
+        "Cannot connect to server. Please check your internet connection and try again.",
       );
     }
 
@@ -252,15 +253,8 @@ export const checkApplicationStatus = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    // FIXED: Use the SAME API instance, not hardcoded URL
-    // Use the baseURL from api instance
-    const baseURL =
-      api.defaults.baseURL ||
-      (process.env.NODE_ENV === "production"
-        ? "https://misterfyberbackend.onrender.com/api"
-        : "http://localhost:5000/api");
-
-    const url = `${baseURL}/auth/check-application/${applicationId}`;
+    // FIXED: Use relative URL - let Next.js rewrites handle it
+    const url = `/api/auth/check-application/${applicationId}`;
 
     console.log("[Auth] Checking URL:", url);
 

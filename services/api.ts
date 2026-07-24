@@ -59,20 +59,16 @@ const safeStorage = {
   },
 };
 
-// ==================== BACKEND URL ====================
+// ==================== BACKEND URL - FIXED TO USE REWRITES ====================
 const getApiUrl = (): string => {
   // Server-side rendering
   if (typeof window === "undefined") {
     return process.env.NEXT_PUBLIC_API_URL || "/api";
   }
 
-  // Development - use localhost with port 5000
-  if (process.env.NODE_ENV === "development") {
-    return "http://localhost:5000/api";
-  }
-
-  // Production - use the deployed backend URL
-  return "https://misterfyberbackend.onrender.com/api";
+  // Use relative path for ALL environments - let Next.js rewrites handle it
+  // This avoids CORS issues completely
+  return "/api";
 };
 
 // ==================== AXIOS INSTANCE ====================
