@@ -618,7 +618,7 @@ export default function BillingReportsWithDownload({
           8: { cellWidth: 18 },
           9: { cellWidth: 25 },
         },
-        didDrawPage: (data) => {
+        didDrawPage: (data: any) => {
           // Footer with totals
           const pageCount = doc.getNumberOfPages();
           for (let i = 1; i <= pageCount; i++) {
@@ -655,7 +655,7 @@ export default function BillingReportsWithDownload({
         Customer: bill.customerName,
         Email: bill.customerEmail,
         Phone: bill.customerPhone,
-        Type: bill.customerType,
+        "Customer Type": bill.customerType,
         Building: bill.building,
         Unit: bill.unitNumber,
         Floor: bill.floor,
@@ -668,7 +668,7 @@ export default function BillingReportsWithDownload({
         "Due Date": formatDateFixed(bill.dueDate),
         Amount: bill.total,
         Status: bill.status,
-        Type: bill.isInstallationBill
+        "Bill Type": bill.isInstallationBill
           ? "Installation"
           : bill.isProRated
             ? "Pro-rated"
@@ -714,7 +714,7 @@ export default function BillingReportsWithDownload({
         { wch: 25 },
         { wch: 30 },
         { wch: 15 },
-        { wch: 12 },
+        { wch: 15 },
         { wch: 20 },
         { wch: 10 },
         { wch: 10 },
