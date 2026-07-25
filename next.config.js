@@ -145,11 +145,12 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "https://misterfyberbackend.onrender.com/api/:path*",
+        destination: "https://misterfyberbackend-lvjd.onrender.com/api/:path*",
       },
       {
         source: "/uploads/:path*",
-        destination: "https://misterfyberbackend.onrender.com/uploads/:path*",
+        destination:
+          "https://misterfyberbackend-lvjd.onrender.com/uploads/:path*",
       },
     ];
   },

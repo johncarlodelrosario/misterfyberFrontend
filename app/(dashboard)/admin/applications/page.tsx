@@ -206,7 +206,7 @@ export default function ApplicationsPage() {
 
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const PRODUCTION_URL = "https://misterfyberbackend.onrender.com";
+  const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const checkTableScroll = useCallback(() => {
