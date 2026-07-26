@@ -206,7 +206,6 @@ export default function ApplicationsPage() {
 
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const checkTableScroll = useCallback(() => {
@@ -579,7 +578,98 @@ export default function ApplicationsPage() {
     }
   }, [applications, initialLoading]);
 
-  // FIXED: Simplified - no more error
+  // FIXED: Use relative path for image URLs
+  const getImageUrl = useCallback((imagePath: string) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
+      return imagePath;
+    if (imagePath.startsWith("data:image")) return imagePath;
+    let cleanPath = imagePath.replace(/^\/+/, "");
+    if (
+      !cleanPath.startsWith("uploads/") &&
+      !cleanPath.startsWith("uploads\\")
+    ) {
+      cleanPath = `uploads/${cleanPath}`;
+    }
+    cleanPath = cleanPath.replace(/\\/g, "/");
+    // Use relative path - let Next.js rewrites handle it
+    return `/${cleanPath}`;
+  }, []);
+
+  // FIXED: Use relative path for API calls
+  const handleUpdateMacAddress = async (
+    applicationId: string,
+    macAddress: string,
+  ) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `/api/applications/${applicationId}/mac-address`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({ macAddress }),
+        },
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setApplications((prev) =>
+          prev.map((app) =>
+            app._id === applicationId
+              ? { ...app, macAddress: result.data?.macAddress || macAddress }
+              : app,
+          ),
+        );
+        toast.success("MAC address updated successfully");
+      } else {
+        toast.error("Failed to update MAC address");
+      }
+    } catch (error) {
+      toast.error("Error updating MAC address");
+    } finally {
+      setEditingMacAddress(null);
+      setTempMacAddress("");
+    }
+  };
+
+  // FIXED: Use relative path for API calls
+  const handleUpdateTower = async (applicationId: string, tower: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/applications/${applicationId}/tower`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({ tower }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setApplications((prev) =>
+          prev.map((app) =>
+            app._id === applicationId
+              ? { ...app, tower: result.data?.tower || tower }
+              : app,
+          ),
+        );
+        toast.success("Tower updated successfully");
+      } else {
+        toast.error("Failed to update tower");
+      }
+    } catch (error) {
+      toast.error("Error updating tower");
+    } finally {
+      setEditingTower(null);
+      setTempTower("");
+    }
+  };
+
   const handleViewApplication = (app: any) => {
     setSelectedApp(app);
   };
@@ -652,100 +742,6 @@ export default function ApplicationsPage() {
       setProcessingId(null);
     }
   };
-
-  const handleUpdateMacAddress = async (
-    applicationId: string,
-    macAddress: string,
-  ) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(
-        `${PRODUCTION_URL}/api/applications/${applicationId}/mac-address`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({ macAddress }),
-        },
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
-            app._id === applicationId
-              ? { ...app, macAddress: result.data?.macAddress || macAddress }
-              : app,
-          ),
-        );
-        toast.success("MAC address updated successfully");
-      } else {
-        toast.error("Failed to update MAC address");
-      }
-    } catch (error) {
-      toast.error("Error updating MAC address");
-    } finally {
-      setEditingMacAddress(null);
-      setTempMacAddress("");
-    }
-  };
-
-  const handleUpdateTower = async (applicationId: string, tower: string) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(
-        `${PRODUCTION_URL}/api/applications/${applicationId}/tower`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({ tower }),
-        },
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
-            app._id === applicationId
-              ? { ...app, tower: result.data?.tower || tower }
-              : app,
-          ),
-        );
-        toast.success("Tower updated successfully");
-      } else {
-        toast.error("Failed to update tower");
-      }
-    } catch (error) {
-      toast.error("Error updating tower");
-    } finally {
-      setEditingTower(null);
-      setTempTower("");
-    }
-  };
-
-  const getImageUrl = useCallback(
-    (imagePath: string) => {
-      if (!imagePath) return null;
-      if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
-        return imagePath;
-      if (imagePath.startsWith("data:image")) return imagePath;
-      let cleanPath = imagePath.replace(/^\/+/, "");
-      if (
-        !cleanPath.startsWith("uploads/") &&
-        !cleanPath.startsWith("uploads\\")
-      ) {
-        cleanPath = `uploads/${cleanPath}`;
-      }
-      cleanPath = cleanPath.replace(/\\/g, "/");
-      return `${PRODUCTION_URL}/${cleanPath}`;
-    },
-    [PRODUCTION_URL],
-  );
 
   const uniqueBuildings = useMemo(() => {
     const buildingSet = new Set<string>();

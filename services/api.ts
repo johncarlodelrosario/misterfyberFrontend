@@ -59,15 +59,15 @@ const safeStorage = {
   },
 };
 
-// ==================== BACKEND URL - FIXED TO USE REWRITES ====================
+// ==================== BACKEND URL - USE RELATIVE PATHS ONLY ====================
 const getApiUrl = (): string => {
   // Server-side rendering
   if (typeof window === "undefined") {
-    return process.env.NEXT_PUBLIC_API_URL || "/api";
+    return "/api";
   }
 
-  // Use relative path for ALL environments - let Next.js rewrites handle it
-  // This avoids CORS issues completely
+  // ALWAYS use relative path - let Next.js rewrites handle it
+  // This completely avoids CORS issues
   return "/api";
 };
 

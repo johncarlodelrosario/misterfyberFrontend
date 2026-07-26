@@ -1,17 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import {
-  FiUsers,
-  FiCpu,
-  FiClock,
-  FiHeadphones,
-  FiTrendingUp,
-  FiGlobe,
-  FiZap,
-  FiShield,
-} from "react-icons/fi";
+import { FiUsers, FiCpu, FiClock, FiHeadphones } from "react-icons/fi";
 
 interface StatsSectionProps {
   stats: {
@@ -68,14 +59,17 @@ function StatCard({
   stat,
   speed,
   uptime,
-  index,
 }: {
   stat: (typeof statsData)[0];
   speed: number;
   uptime: number;
-  index: number;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const { scrollYProgress } = useScroll({
     target: cardRef,
@@ -91,6 +85,7 @@ function StatCard({
     displayValue = `${uptime}%`;
   }
 
+  // Only apply transforms on client
   const x = useTransform(
     scrollYProgress,
     [0, 0.15, 0.4, 0.7],
@@ -120,20 +115,25 @@ function StatCard({
   return (
     <motion.div
       ref={cardRef}
-      style={{
-        x,
-        opacity,
-        scale,
-        rotate,
-      }}
+      style={
+        isMounted
+          ? {
+              x,
+              opacity,
+              scale,
+              rotate,
+            }
+          : {}
+      }
       whileHover={{
         scale: 1.08,
         y: -8,
         transition: { type: "spring", stiffness: 400, damping: 25 },
       }}
+      suppressHydrationWarning
       className={`relative group ${stat.bgColor} backdrop-blur-sm rounded-2xl p-6 border ${stat.borderColor} 
                  shadow-xl hover:shadow-2xl transition-all duration-500
-                 hover:border-transparent hover:ring-2 hover:ring-opacity-50 hover:ring-${stat.color.split(" ")[1].replace("to-", "")}`}
+                 hover:border-transparent hover:ring-2 hover:ring-opacity-50`}
     >
       {/* Glow Effect */}
       <div
@@ -175,6 +175,7 @@ function StatCard({
           className={`font-bold mb-2 ${
             stat.label === "" ? "text-lg md:text-xl" : "text-3xl md:text-4xl"
           } bg-gradient-to-r ${stat.color} bg-clip-text text-transparent tracking-tight`}
+          suppressHydrationWarning
         >
           {displayValue}
         </motion.div>
@@ -198,6 +199,11 @@ function StatCard({
 
 export default function StatsSection({ stats }: StatsSectionProps) {
   const headerRef = useRef(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const { scrollYProgress: headerScroll } = useScroll({
     target: headerRef,
@@ -216,22 +222,100 @@ export default function StatsSection({ stats }: StatsSectionProps) {
     [0, 0.6, 1, 1],
   );
 
-  // Animated background elements
-  const particles = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    size: Math.random() * 4 + 2,
-    duration: Math.random() * 20 + 10,
-    delay: Math.random() * 10,
-  }));
+  // Generate particles only on client to avoid hydration mismatch
+  const [particles, setParticles] = useState<
+    Array<{
+      id: number;
+      x: number;
+      y: number;
+      size: number;
+      duration: number;
+      delay: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    setParticles(
+      Array.from({ length: 20 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        size: Math.random() * 4 + 2,
+        duration: Math.random() * 20 + 10,
+        delay: Math.random() * 10,
+      })),
+    );
+  }, []);
+
+  // If not mounted, render static version
+  if (!isMounted) {
+    return (
+      <section className="py-24 relative overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 tracking-tight">
+              Our{" "}
+              <span className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent animate-gradient">
+                Statistics
+              </span>
+            </h2>
+            <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+              Numbers that speak for themselves — built for speed, reliability,
+              and scale.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+            {statsData.map((stat, index) => (
+              <div
+                key={index}
+                className={`relative group ${stat.bgColor} backdrop-blur-sm rounded-2xl p-6 border ${stat.borderColor} 
+                           shadow-xl`}
+              >
+                <div className="relative z-10 text-center">
+                  <div className="mb-4 flex items-center justify-center">
+                    <div className="relative">
+                      <div
+                        className={`relative p-3 rounded-full bg-white shadow-lg border ${stat.borderColor}`}
+                      >
+                        <stat.icon
+                          className={`w-6 h-6 bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    className={`font-bold mb-2 ${
+                      stat.label === ""
+                        ? "text-lg md:text-xl"
+                        : "text-3xl md:text-4xl"
+                    } bg-gradient-to-r ${stat.color} bg-clip-text text-transparent tracking-tight`}
+                  >
+                    {stat.label === "Max Speed"
+                      ? `${stats.speed} Mbps`
+                      : stat.label === "Uptime Guarantee"
+                        ? `${stats.uptime}%`
+                        : stat.value}
+                  </div>
+                  {stat.label && (
+                    <div className="text-gray-600 font-medium text-sm uppercase tracking-wider">
+                      {stat.label}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="py-24 relative overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50">
       {/* Futuristic Grid Background */}
       <div className="absolute inset-0 bg-grid-pattern opacity-5" />
 
-      {/* Animated Particles */}
+      {/* Animated Particles - Only render on client */}
       <div className="absolute inset-0 pointer-events-none">
         {particles.map((particle) => (
           <motion.div
@@ -254,6 +338,7 @@ export default function StatsSection({ stats }: StatsSectionProps) {
               delay: particle.delay,
               ease: "easeInOut",
             }}
+            suppressHydrationWarning
           />
         ))}
       </div>
@@ -267,6 +352,7 @@ export default function StatsSection({ stats }: StatsSectionProps) {
             opacity: headerOpacity,
           }}
           className="text-center mb-16"
+          suppressHydrationWarning
         >
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 tracking-tight">
             Our{" "}
@@ -289,7 +375,6 @@ export default function StatsSection({ stats }: StatsSectionProps) {
               stat={stat}
               speed={stats.speed}
               uptime={stats.uptime}
-              index={index}
             />
           ))}
         </div>

@@ -22,31 +22,18 @@ const nextConfig = {
     ],
   },
 
-  // Enable compression for faster loading
   compress: true,
-
-  // Use SWC for faster minification
   swcMinify: true,
-
-  // Disable React strict mode in production for performance
   reactStrictMode: false,
-
-  // Disable source maps in production
   productionBrowserSourceMaps: false,
-
-  // Remove X-Powered-By header for security
   poweredByHeader: false,
-
-  // Generate ETags for better caching
   generateEtags: true,
 
-  // Performance optimizations
   onDemandEntries: {
     maxInactiveAge: 60 * 1000,
     pagesBufferLength: 2,
   },
 
-  // Experimental features for better performance
   experimental: {
     optimizePackageImports: [
       "react-icons",
@@ -65,7 +52,6 @@ const nextConfig = {
     optimizeCss: true,
   },
 
-  // Compiler optimizations
   compiler: {
     removeConsole:
       process.env.NODE_ENV === "production"
@@ -73,7 +59,6 @@ const nextConfig = {
         : false,
   },
 
-  // Headers for caching and security
   async headers() {
     return [
       {
@@ -140,22 +125,20 @@ const nextConfig = {
     ];
   },
 
-  // FIXED: Rewrites to proxy API requests and avoid CORS
+  // CRITICAL FIX: Rewrites to proxy API requests
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: "https://misterfyberbackend-lvjd.onrender.com/api/:path*",
+        destination: "https://misterfyberbackend.onrender.com/api/:path*",
       },
       {
         source: "/uploads/:path*",
-        destination:
-          "https://misterfyberbackend-lvjd.onrender.com/uploads/:path*",
+        destination: "https://misterfyberbackend.onrender.com/uploads/:path*",
       },
     ];
   },
 
-  // Redirects for SEO and better UX
   async redirects() {
     return [
       {
@@ -171,10 +154,7 @@ const nextConfig = {
     ];
   },
 
-  // Trailing slash configuration
   trailingSlash: false,
-
-  // Skip middleware for better performance
   skipMiddlewareUrlNormalize: true,
   skipTrailingSlashRedirect: true,
 };

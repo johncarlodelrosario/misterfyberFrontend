@@ -12,6 +12,7 @@ const CACHE_KEYS = {
 };
 
 const CACHE_DURATION = 5 * 60 * 1000;
+const MAX_CACHE_SIZE = 4.5 * 1024 * 1024; // 4.5MB - Safe limit for localStorage
 
 interface CacheItem<T> {
   data: T;
@@ -36,9 +37,65 @@ function getCachedData<T>(key: string): T | null {
 function setCachedData<T>(key: string, data: T): void {
   try {
     const item: CacheItem<T> = { data, timestamp: Date.now() };
-    localStorage.setItem(key, JSON.stringify(item));
+    const serialized = JSON.stringify(item);
+
+    // Check size before storing to avoid quota exceeded errors
+    if (serialized.length > MAX_CACHE_SIZE) {
+      console.warn(
+        `Cache data for ${key} too large (${serialized.length} bytes), skipping cache`,
+      );
+      // Try to clear old cache and retry
+      clearOldCache();
+      try {
+        localStorage.setItem(key, serialized);
+      } catch (retryError) {
+        console.error("Failed to cache data even after clearing:", retryError);
+      }
+      return;
+    }
+
+    localStorage.setItem(key, serialized);
   } catch (error) {
-    console.error("Failed to cache data:", error);
+    if (error instanceof DOMException && error.name === "QuotaExceededError") {
+      // Clear old cache and retry
+      clearOldCache();
+      try {
+        const item: CacheItem<T> = { data, timestamp: Date.now() };
+        localStorage.setItem(key, JSON.stringify(item));
+      } catch (retryError) {
+        console.error("Failed to cache data even after clearing:", retryError);
+      }
+    } else {
+      console.error("Failed to cache data:", error);
+    }
+  }
+}
+
+// Helper function to clear old cache items when quota is exceeded
+function clearOldCache(): void {
+  try {
+    const keys = Object.keys(localStorage);
+    const cacheKeys = keys.filter(
+      (k) => k.includes("_cache") || k.includes("_timestamp"),
+    );
+
+    // Get all cache items with their timestamps
+    const items = cacheKeys
+      .filter((k) => k.includes("_timestamp"))
+      .map((k) => ({
+        key: k.replace("_timestamp", ""),
+        timestamp: parseInt(localStorage.getItem(k) || "0", 10),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove oldest 30%
+    const toRemove = Math.ceil(items.length * 0.3);
+    items.slice(0, toRemove).forEach(({ key }) => {
+      localStorage.removeItem(key);
+      localStorage.removeItem(`${key}_timestamp`);
+    });
+  } catch (error) {
+    console.error("Error clearing old cache:", error);
   }
 }
 

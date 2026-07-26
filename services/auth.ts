@@ -57,28 +57,19 @@ interface ApplicationStatusResponse {
   message?: string;
 }
 
-// FIXED: Supports both email and username
 export const login = async (
-  identifier: string, // Can be email OR username
+  identifier: string,
   password: string,
 ): Promise<LoginResponse> => {
   try {
     console.log("[Auth] Attempting login for:", identifier);
-    console.log("[Auth] API baseURL:", api.defaults.baseURL);
 
-    // Check if identifier is email or username
     const isEmail = identifier.includes("@") && identifier.includes(".");
-
     const payload = isEmail
       ? { email: identifier, password }
       : { username: identifier, password };
 
-    console.log("[Auth] Sending payload to /auth/login:", payload);
-
     const response = await api.post("/auth/login", payload);
-
-    console.log("[Auth] Login response status:", response.status);
-    console.log("[Auth] Login response data:", response.data);
 
     let token: string;
     let userData: any;
@@ -118,23 +109,17 @@ export const login = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Login error details:", {
-      message: error.message,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      config: error.config,
-    });
+    console.error("[Auth] Login error:", error.message);
 
     if (error.response?.status === 405) {
       throw new Error(
-        "Login endpoint not found (405). Please check if the backend is running and the route is correct.",
+        "Login endpoint not found (405). Please check if the backend is running.",
       );
     }
 
     if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
       throw new Error(
-        "Cannot connect to server. Please check your internet connection and try again.",
+        "Cannot connect to server. Please check if the backend is running.",
       );
     }
 
@@ -190,8 +175,6 @@ export const registerWithApplication = async (
   data: RegisterWithApplicationData,
 ): Promise<LoginResponse> => {
   try {
-    console.log("[Auth] Registering with application:", data.applicationId);
-
     const response = await api.post("/auth/register-with-application", {
       username: data.username,
       email: data.email,
@@ -253,10 +236,8 @@ export const checkApplicationStatus = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    // FIXED: Use relative URL - let Next.js rewrites handle it
+    // USE RELATIVE PATH - let Next.js rewrites handle it
     const url = `/api/auth/check-application/${applicationId}`;
-
-    console.log("[Auth] Checking URL:", url);
 
     const response = await fetch(url, {
       method: "GET",
