@@ -20,6 +20,7 @@ import {
 } from "react-icons/fi";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import api from "@/services/api";
 
 export interface Plan {
   _id: string;
@@ -69,24 +70,33 @@ export default function PlansSection() {
       setLoading(true);
       setError(null);
 
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-      const response = await fetch(`${apiUrl}/plans`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
+      // Use the api instance directly - this handles all the routing properly
+      const response = await api.get("/plans");
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      console.log("API Response:", response.data); // Debug log
 
       let plansData = [];
-      if (data.data && Array.isArray(data.data)) plansData = data.data;
-      else if (Array.isArray(data)) plansData = data;
-      else if (data.plans && Array.isArray(data.plans)) plansData = data.plans;
-      else plansData = [];
+
+      // Handle different response formats
+      if (
+        response.data &&
+        response.data.data &&
+        Array.isArray(response.data.data)
+      ) {
+        plansData = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        plansData = response.data;
+      } else if (
+        response.data &&
+        response.data.plans &&
+        Array.isArray(response.data.plans)
+      ) {
+        plansData = response.data.plans;
+      } else {
+        plansData = [];
+      }
+
+      console.log("Plans data extracted:", plansData); // Debug log
 
       // Filter to show ONLY these specific plans: Fiber Plan 100, Fiber Plan 150, Fiber Plan 200
       const allowedPlanNames = [
@@ -101,17 +111,19 @@ export default function PlansSection() {
         return isActive && isAllowed;
       });
 
+      console.log("Filtered plans:", filteredPlans); // Debug log
+
       // Sort plans to maintain order: 100, 150, 200
       const sortedPlans = filteredPlans.sort((a: Plan, b: Plan) => {
         const order = ["Fiber Plan 100", "Fiber Plan 150", "Fiber Plan 200"];
         return order.indexOf(a.name) - order.indexOf(b.name);
       });
 
-      console.log("Filtered plans:", sortedPlans); // For debugging
       setPlans(sortedPlans);
     } catch (err) {
       console.error("Failed to fetch plans:", err);
       setError("Unable to load plans. Please try again later.");
+
       // Fallback data - only showing the three allowed plans
       setPlans([
         {
@@ -295,107 +307,122 @@ export default function PlansSection() {
             )}
 
             {!loading && !error && (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {plans.map((plan, idx) => {
-                  const isPopular = plan.name === "Fiber Plan 150" || idx === 1;
-                  return (
-                    <motion.div
-                      key={plan._id}
-                      initial={{ opacity: 0, y: 50 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.1, duration: 0.6 }}
-                      whileHover={{ y: -8 }}
-                      className={`relative bg-white rounded-2xl transition-all duration-300 shadow-lg ${
-                        isPopular
-                          ? "border-2 border-blue-600 shadow-xl shadow-blue-200"
-                          : "border border-gray-200 hover:shadow-xl hover:shadow-blue-100"
-                      }`}
-                    >
-                      {isPopular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
-                            <FiStar className="w-3 h-3" />
-                            Most Popular
-                          </div>
-                        </div>
-                      )}
-                      <div className="p-7">
-                        <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                          {plan.name}
-                        </h3>
-                        <p className="text-sm text-gray-600 mb-5">
-                          {plan.description}
-                        </p>
-                        <div className="mb-5">
-                          <span className="text-4xl font-bold text-gray-900">
-                            {formatPrice(plan.price)}
-                          </span>
-                          <span className="text-gray-500 text-sm ml-1">
-                            /month
-                          </span>
-                        </div>
-                        <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-blue-100">
-                          <div className="flex justify-between items-center">
-                            <div className="text-center flex-1">
-                              <p className="text-xs text-gray-500 mb-1">
-                                Download
-                              </p>
-                              <p className="text-lg font-bold text-gray-900">
-                                {plan.speed.download}{" "}
-                                <span className="text-sm font-normal text-gray-500">
-                                  Mbps
-                                </span>
-                              </p>
-                            </div>
-                            <div className="w-px h-10 bg-gray-200" />
-                            <div className="text-center flex-1">
-                              <p className="text-xs text-gray-500 mb-1">
-                                Upload
-                              </p>
-                              <p className="text-lg font-bold text-gray-900">
-                                {plan.speed.upload}{" "}
-                                <span className="text-sm font-normal text-gray-500">
-                                  Mbps
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <ul className="space-y-3 mb-8">
-                          {plan.features.slice(0, 5).map((feature, i) => (
-                            <motion.li
-                              key={i}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.1 + i * 0.05 }}
-                              className="flex items-start gap-2.5 text-sm text-gray-700"
-                            >
-                              <FiCheckCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                              <span>{feature}</span>
-                            </motion.li>
-                          ))}
-                        </ul>
+              <>
+                {plans.length === 0 ? (
+                  <div className="text-center py-20 bg-white/90 backdrop-blur-sm rounded-2xl border border-gray-200 shadow-lg">
+                    <FiAlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                    <p className="text-gray-700 text-lg">
+                      No plans available at the moment.
+                    </p>
+                    <p className="text-gray-500 text-sm mt-2">
+                      Please check back later.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {plans.map((plan, idx) => {
+                      const isPopular =
+                        plan.name === "Fiber Plan 150" || idx === 1;
+                      return (
                         <motion.div
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
+                          key={plan._id}
+                          initial={{ opacity: 0, y: 50 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.1, duration: 0.6 }}
+                          whileHover={{ y: -8 }}
+                          className={`relative bg-white rounded-2xl transition-all duration-300 shadow-lg ${
+                            isPopular
+                              ? "border-2 border-blue-600 shadow-xl shadow-blue-200"
+                              : "border border-gray-200 hover:shadow-xl hover:shadow-blue-100"
+                          }`}
                         >
-                          <Link
-                            href={`/apply?plan=${plan._id}`}
-                            className={`block text-center py-3 rounded-xl font-semibold transition-all duration-300 ${
-                              isPopular
-                                ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:shadow-lg hover:shadow-blue-300 hover:opacity-90"
-                                : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-200"
-                            }`}
-                          >
-                            Get Started
-                            <FiArrowRight className="inline ml-2 w-4 h-4" />
-                          </Link>
+                          {isPopular && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1">
+                                <FiStar className="w-3 h-3" />
+                                Most Popular
+                              </div>
+                            </div>
+                          )}
+                          <div className="p-7">
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                              {plan.name}
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-5">
+                              {plan.description}
+                            </p>
+                            <div className="mb-5">
+                              <span className="text-4xl font-bold text-gray-900">
+                                {formatPrice(plan.price)}
+                              </span>
+                              <span className="text-gray-500 text-sm ml-1">
+                                /month
+                              </span>
+                            </div>
+                            <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-blue-100">
+                              <div className="flex justify-between items-center">
+                                <div className="text-center flex-1">
+                                  <p className="text-xs text-gray-500 mb-1">
+                                    Download
+                                  </p>
+                                  <p className="text-lg font-bold text-gray-900">
+                                    {plan.speed.download}{" "}
+                                    <span className="text-sm font-normal text-gray-500">
+                                      Mbps
+                                    </span>
+                                  </p>
+                                </div>
+                                <div className="w-px h-10 bg-gray-200" />
+                                <div className="text-center flex-1">
+                                  <p className="text-xs text-gray-500 mb-1">
+                                    Upload
+                                  </p>
+                                  <p className="text-lg font-bold text-gray-900">
+                                    {plan.speed.upload}{" "}
+                                    <span className="text-sm font-normal text-gray-500">
+                                      Mbps
+                                    </span>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            <ul className="space-y-3 mb-8">
+                              {plan.features.slice(0, 5).map((feature, i) => (
+                                <motion.li
+                                  key={i}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: idx * 0.1 + i * 0.05 }}
+                                  className="flex items-start gap-2.5 text-sm text-gray-700"
+                                >
+                                  <FiCheckCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                  <span>{feature}</span>
+                                </motion.li>
+                              ))}
+                            </ul>
+                            <motion.div
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              <Link
+                                href={`/apply?plan=${plan._id}`}
+                                className={`block text-center py-3 rounded-xl font-semibold transition-all duration-300 ${
+                                  isPopular
+                                    ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:shadow-lg hover:shadow-blue-300 hover:opacity-90"
+                                    : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-200"
+                                }`}
+                              >
+                                Get Started
+                                <FiArrowRight className="inline ml-2 w-4 h-4" />
+                              </Link>
+                            </motion.div>
+                          </div>
                         </motion.div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>
