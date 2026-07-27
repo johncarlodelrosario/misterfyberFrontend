@@ -1,44 +1,37 @@
+// components/admin/BillingTable.tsx
+"use client";
+
 import React, {
   useState,
-  useEffect,
-  useCallback,
   useMemo,
+  useCallback,
   useRef,
+  useEffect,
 } from "react";
 import {
-  FiRefreshCw,
+  FiX,
   FiPlay,
   FiPause,
-  FiX,
-  FiSettings,
-  FiUser,
-  FiActivity,
-  FiAlertCircle,
-  FiWifi,
-  FiWifiOff,
   FiEye,
-  FiCheckCircle,
-  FiClock,
-  FiSearch,
-  FiBell,
-  FiCalendar,
-  FiInfo,
-  FiUserPlus,
   FiMail,
-  FiFileText,
+  FiCalendar,
+  FiWifiOff,
+  FiWifi,
   FiTrash2,
-  FiCalendar as FiCalendarIcon,
-  FiPrinter,
-  FiMoreVertical,
+  FiHome,
+  FiUser,
+  FiFileText,
+  FiSearch,
   FiArrowUp,
   FiArrowDown,
-  FiHome,
+  FiRefreshCw,
   FiChevronLeft,
   FiChevronRight,
+  FiSettings,
+  FiBell,
 } from "react-icons/fi";
-import toast from "react-hot-toast";
 
-// ==================== TYPES ====================
+// Types
 export interface CustomerItem {
   _id: string;
   firstName: string;
@@ -135,20 +128,7 @@ interface BillingTableProps {
   applicationsWithoutBillingCount: number;
 }
 
-// ==================== HELPERS ====================
-function formatDateFixed(dateStr: string): string {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
-}
-
-function formatBillingPeriod(startDateStr: string, endDateStr: string): string {
-  if (!startDateStr || !endDateStr) return "-";
-  const start = new Date(startDateStr);
-  const end = new Date(endDateStr);
-  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
-}
-
+// Helper functions
 function getBuildingDisplay(customer: CustomerItem): string {
   if (customer.building) {
     if (
@@ -164,7 +144,7 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
-// ==================== MEMOIZED ROW COMPONENT ====================
+// Memoized Row Component
 const CustomerRow = React.memo(
   ({
     customer,
@@ -252,10 +232,10 @@ const CustomerRow = React.memo(
       <tr
         className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
       >
-        <td className="px-3 py-2 border-r border-gray-200 text-center bg-white sticky left-0 z-10">
-          <span className="text-sm font-medium text-gray-500">{index + 1}</span>
+        <td className="px-3 py-2 text-center text-sm font-medium text-gray-500 sticky left-0 bg-inherit z-10">
+          {index + 1}
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           <div className="flex items-center gap-2">
             {customer.type === "application" ? (
               <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
@@ -275,7 +255,7 @@ const CustomerRow = React.memo(
             </div>
           </div>
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           <p className="text-sm font-medium text-gray-900">
             {customer.planName}
           </p>
@@ -283,7 +263,7 @@ const CustomerRow = React.memo(
             ₱{customer.planPrice.toLocaleString()}/mo
           </p>
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           <p
             className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
           >
@@ -295,14 +275,14 @@ const CustomerRow = React.memo(
             </p>
           )}
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           <span
             className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge()}`}
           >
             {getStatusText()}
           </span>
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           {customer.type === "application" &&
           (customer.installationFee ?? 0) > 0 ? (
             <div>
@@ -319,9 +299,9 @@ const CustomerRow = React.memo(
             <p className="text-xs text-gray-400">—</p>
           )}
         </td>
-        <td className="px-3 py-2 border-r border-gray-200">
+        <td className="px-3 py-2">
           <div className="flex items-center gap-1">
-            <FiHome className="w-3 h-3 text-gray-400" />
+            <FiHome className="w-3 h-3 text-gray-400 flex-shrink-0" />
             <span className="text-xs text-gray-600">
               {getBuildingDisplay(customer)}
             </span>
@@ -501,12 +481,9 @@ const CustomerRow = React.memo(
 
 CustomerRow.displayName = "CustomerRow";
 
-// ==================== MAIN TABLE COMPONENT ====================
+// Main Table Component
 export default function BillingTable({
   customers,
-  billingCycles,
-  bills,
-  pendingPayments,
   loading,
   refreshing,
   searchTerm,
@@ -534,84 +511,57 @@ export default function BillingTable({
   customersWithoutAccounts,
   applicationsWithoutBillingCount,
 }: BillingTableProps) {
-  // Horizontal scroll state
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  // Filter and sort customers
+  const filteredAndSortedCustomers = useMemo(() => {
+    let filtered = [...customers];
 
-  // ==================== CHECK SCROLL POSITION ====================
-  const checkScrollPosition = useCallback(() => {
-    if (tableContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } =
-        tableContainerRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 5);
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.firstName?.toLowerCase().includes(term) ||
+          c.lastName?.toLowerCase().includes(term) ||
+          c.email?.toLowerCase().includes(term) ||
+          (c.applicationId && c.applicationId.toLowerCase().includes(term)),
+      );
     }
-  }, []);
 
-  const scrollLeft = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+    // Building filter
+    if (buildingFilter !== "all") {
+      filtered = filtered.filter((c) => {
+        const customerBuildingId = c.building?._id || null;
+        return customerBuildingId === buildingFilter;
+      });
     }
-  };
 
-  const scrollRight = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((c) => {
+        if (statusFilter === "has_balance") return c.currentBalance > 0;
+        if (statusFilter === "overdue") return c.overdueBills.length > 0;
+        if (statusFilter === "active") return c.status === "active";
+        if (statusFilter === "suspended") return c.status === "suspended";
+        if (statusFilter === "paused")
+          return c.billingCycle?.status === "paused";
+        if (statusFilter === "pending_activation") {
+          const hasUnpaid = c.unpaidBills && c.unpaidBills.length > 0;
+          return c.billingCycle?.status === "pending_activation" && hasUnpaid;
+        }
+        if (statusFilter === "applications") return c.type === "application";
+        if (statusFilter === "installation_fee_due") {
+          return (
+            c.type === "application" &&
+            (c.installationFee ?? 0) > 0 &&
+            !c.installationFeePaid
+          );
+        }
+        return true;
+      });
     }
-  };
 
-  // ==================== MEMOIZED FILTERS ====================
-  const filteredCustomers = useMemo(() => {
-    return customers.filter((customer) => {
-      const matchesSearch =
-        customer.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (customer.applicationId &&
-          customer.applicationId
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()));
-
-      let matchesBuilding = true;
-      if (buildingFilter !== "all") {
-        const customerBuildingId = customer.building?._id || null;
-        matchesBuilding = customerBuildingId === buildingFilter;
-      }
-
-      if (!matchesSearch || !matchesBuilding) return false;
-
-      if (statusFilter === "all") return true;
-      if (statusFilter === "has_balance") return customer.currentBalance > 0;
-      if (statusFilter === "overdue") return customer.overdueBills.length > 0;
-      if (statusFilter === "active") return customer.status === "active";
-      if (statusFilter === "suspended") return customer.status === "suspended";
-      if (statusFilter === "paused")
-        return customer.billingCycle?.status === "paused";
-      if (statusFilter === "pending_activation") {
-        const hasUnpaid =
-          customer.unpaidBills && customer.unpaidBills.length > 0;
-        return (
-          customer.billingCycle?.status === "pending_activation" && hasUnpaid
-        );
-      }
-      if (statusFilter === "applications")
-        return customer.type === "application";
-      if (statusFilter === "installation_fee_due") {
-        return (
-          customer.type === "application" &&
-          (customer.installationFee ?? 0) > 0 &&
-          !customer.installationFeePaid
-        );
-      }
-      return true;
-    });
-  }, [customers, searchTerm, statusFilter, buildingFilter]);
-
-  const sortedAndFilteredCustomers = useMemo(() => {
-    const sorted = [...filteredCustomers];
-    sorted.sort((a, b) => {
+    // Sort
+    filtered.sort((a, b) => {
       let aValue: any;
       let bValue: any;
 
@@ -656,26 +606,37 @@ export default function BillingTable({
       if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
-    return sorted;
-  }, [filteredCustomers, sortField, sortDirection]);
 
-  // ==================== PAGINATED DATA ====================
-  const paginatedCustomers = useMemo(() => {
-    const start = (pagination.page - 1) * pagination.limit;
-    const end = start + pagination.limit;
-    return sortedAndFilteredCustomers.slice(start, end);
-  }, [sortedAndFilteredCustomers, pagination.page, pagination.limit]);
+    return filtered;
+  }, [
+    customers,
+    searchTerm,
+    statusFilter,
+    buildingFilter,
+    sortField,
+    sortDirection,
+  ]);
 
-  // Update pagination total when filtered data changes
+  // Update pagination
   useEffect(() => {
     setPagination((prev: any) => ({
       ...prev,
-      total: sortedAndFilteredCustomers.length,
-      totalPages: Math.ceil(sortedAndFilteredCustomers.length / prev.limit),
+      total: filteredAndSortedCustomers.length,
+      totalPages: Math.ceil(filteredAndSortedCustomers.length / prev.limit),
+      page: Math.min(
+        prev.page,
+        Math.ceil(filteredAndSortedCustomers.length / prev.limit) || 1,
+      ),
     }));
-  }, [sortedAndFilteredCustomers, setPagination]);
+  }, [filteredAndSortedCustomers.length, setPagination]);
 
-  // ==================== HANDLE SORT ====================
+  // Get current page data
+  const currentPageData = useMemo(() => {
+    const start = (pagination.page - 1) * pagination.limit;
+    const end = start + pagination.limit;
+    return filteredAndSortedCustomers.slice(start, end);
+  }, [filteredAndSortedCustomers, pagination.page, pagination.limit]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -685,33 +646,6 @@ export default function BillingTable({
     }
   };
 
-  // ==================== HANDLE PAGE CHANGE ====================
-  const handlePageChange = (newPage: number) => {
-    setPagination((prev: any) => ({ ...prev, page: newPage }));
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollTop = 0;
-    }
-  };
-
-  // ==================== USE EFFECTS ====================
-  useEffect(() => {
-    const handleResize = () => {
-      checkScrollPosition();
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener("resize", handleResize);
-    handleResize();
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [checkScrollPosition]);
-
-  useEffect(() => {
-    setTimeout(checkScrollPosition, 100);
-  }, [customers, checkScrollPosition]);
-
-  // ==================== SORT ICON ====================
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
       return <FiArrowUp className="w-3 h-3 opacity-30" />;
@@ -722,71 +656,6 @@ export default function BillingTable({
     );
   };
 
-  // ==================== COMPACT STATS ====================
-  const compactStatsCards = [
-    {
-      label: "Total Customers",
-      value: stats.totalCustomers,
-      icon: FiUser,
-      color: "blue",
-    },
-    {
-      label: "Total Balance",
-      value: `₱${stats.totalBalance.toLocaleString()}`,
-      color: "red",
-    },
-    {
-      label: "With Balance",
-      value: stats.customersWithBalanceCount,
-      icon: FiAlertCircle,
-      color: "orange",
-    },
-    {
-      label: "Overdue",
-      value: stats.overdueCustomersCount,
-      icon: FiClock,
-      color: "red",
-    },
-    {
-      label: "Active Cycles",
-      value: stats.activeCyclesCount,
-      icon: FiActivity,
-      color: "green",
-    },
-    {
-      label: "Paused Cycles",
-      value: stats.pausedCyclesCount,
-      icon: FiPause,
-      color: "yellow",
-    },
-    {
-      label: "Pending Payments",
-      value: stats.pendingPaymentsCount,
-      icon: FiClock,
-      color: "purple",
-    },
-    {
-      label: "Applications",
-      value: customers.filter((c) => c.type === "application").length,
-      icon: FiFileText,
-      color: "indigo",
-    },
-    {
-      label: "Installation Fees Due",
-      value: `₱${stats.totalInstallationFeesDue.toLocaleString()}`,
-      sub: "Unpaid",
-      icon: FiAlertCircle,
-      color: "amber",
-    },
-    {
-      label: "Pending Install Bills",
-      value: stats.pendingInstallationBillsCount,
-      icon: FiFileText,
-      color: "amber",
-    },
-  ];
-
-  // ==================== LOADING STATE ====================
   if (loading && customers.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -798,9 +667,8 @@ export default function BillingTable({
     );
   }
 
-  // ==================== RENDER ====================
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen ml-0 md:ml-0">
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -823,7 +691,7 @@ export default function BillingTable({
               onClick={onOpenBackdated}
               className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 cursor-pointer"
             >
-              <FiCalendarIcon className="w-3.5 h-3.5" /> Backdated
+              <FiCalendar className="w-3.5 h-3.5" /> Backdated
             </button>
             {(customersWithoutAccounts.length > 0 ||
               applicationsWithoutBillingCount > 0) && (
@@ -867,26 +735,46 @@ export default function BillingTable({
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
-        {compactStatsCards.map((stat, idx) => (
-          <div
-            key={idx}
-            className="bg-white rounded-lg shadow-sm p-3 border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">
-                  {stat.label}
-                </p>
-                <p className={`text-lg font-bold text-${stat.color}-600`}>
-                  {stat.value}
-                </p>
-                {stat.sub && (
-                  <p className="text-[10px] text-gray-400">{stat.sub}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">
+            Total Customers
+          </p>
+          <p className="text-lg font-bold text-blue-600">
+            {stats.totalCustomers}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">
+            Total Balance
+          </p>
+          <p className="text-lg font-bold text-red-600">
+            ₱{stats.totalBalance.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">
+            With Balance
+          </p>
+          <p className="text-lg font-bold text-orange-600">
+            {stats.customersWithBalanceCount}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">
+            Overdue
+          </p>
+          <p className="text-lg font-bold text-red-600">
+            {stats.overdueCustomersCount}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">
+            Active Cycles
+          </p>
+          <p className="text-lg font-bold text-green-600">
+            {stats.activeCyclesCount}
+          </p>
+        </div>
       </div>
 
       {/* Filters */}
@@ -933,182 +821,132 @@ export default function BillingTable({
       </div>
 
       {/* Table */}
-      <div className="relative" id="table-section">
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300">
         <div
-          ref={tableContainerRef}
-          onScroll={checkScrollPosition}
-          className="overflow-x-auto scrollbar-always-visible"
-          style={{ scrollbarWidth: "thin", msOverflowStyle: "auto" }}
+          className="overflow-x-auto"
+          style={{ maxHeight: "600px", overflowY: "auto" }}
         >
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300 min-w-[1100px]">
-            <table className="min-w-full border-collapse">
-              <thead className="sticky top-0 z-10 bg-gray-100">
-                <tr className="border-b border-gray-300">
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20"></th>
-                  <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => handleSort("name")}
+          <table className="min-w-full border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-100">
+              <tr className="border-b border-gray-300">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20 w-12"></th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1">
+                    Customer <SortIcon field="name" />
+                  </div>
+                </th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("plan")}
+                >
+                  <div className="flex items-center gap-1">
+                    Plan <SortIcon field="plan" />
+                  </div>
+                </th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("balance")}
+                >
+                  <div className="flex items-center gap-1">
+                    Balance <SortIcon field="balance" />
+                  </div>
+                </th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center gap-1">
+                    Status <SortIcon field="status" />
+                  </div>
+                </th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  onClick={() => handleSort("installationFee")}
+                >
+                  <div className="flex items-center gap-1">
+                    Install Fee <SortIcon field="installationFee" />
+                  </div>
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                  <div className="flex items-center gap-1">
+                    <FiHome className="w-3 h-3" /> Building
+                  </div>
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {currentPageData.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-3 py-8 text-center text-gray-500 text-sm"
                   >
-                    <div className="flex items-center gap-1">
-                      Customer <SortIcon field="name" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => handleSort("plan")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Plan <SortIcon field="plan" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => handleSort("balance")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Balance <SortIcon field="balance" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => handleSort("status")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Status <SortIcon field="status" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => handleSort("installationFee")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Install Fee <SortIcon field="installationFee" />
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
-                    <div className="flex items-center gap-1">
-                      <FiHome className="w-3 h-3" /> Building
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Actions
-                  </th>
+                    No customers found
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {paginatedCustomers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-3 py-8 text-center text-gray-500 text-sm border-t border-gray-200"
-                    >
-                      No customers found
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedCustomers.map((customer, idx) => (
-                    <CustomerRow
-                      key={`${customer.type}-${customer._id}`}
-                      customer={customer}
-                      index={(pagination.page - 1) * pagination.limit + idx}
-                      onAction={onAction}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+              ) : (
+                currentPageData.map((customer, idx) => (
+                  <CustomerRow
+                    key={`${customer.type}-${customer._id}`}
+                    customer={customer}
+                    index={(pagination.page - 1) * pagination.limit + idx}
+                    onAction={onAction}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex justify-between items-center mt-4 px-4 py-2 bg-white rounded-lg border border-gray-200">
-            <div className="text-sm text-gray-600">
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
-              {Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
-              of {pagination.total} customers
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={pagination.page === 1}
-                className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded-lg">
-                {pagination.page} / {pagination.totalPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={pagination.page === pagination.totalPages}
-                className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Scroll buttons - hidden on mobile */}
-        {!isMobile && (
-          <>
-            <button
-              onClick={scrollLeft}
-              disabled={!canScrollLeft}
-              className={`fixed left-[80px] top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollLeft ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
-              title="Scroll left"
-            >
-              <FiChevronLeft className="w-6 h-6 text-gray-700" />
-            </button>
-            <button
-              onClick={scrollRight}
-              disabled={!canScrollRight}
-              className={`fixed right-4 top-1/2 transform -translate-y-1/2 z-50 bg-white rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-300 ${canScrollRight ? "hover:bg-gray-100 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"}`}
-              title="Scroll right"
-            >
-              <FiChevronRight className="w-6 h-6 text-gray-700" />
-            </button>
-          </>
-        )}
       </div>
 
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex justify-between items-center mt-4 px-4 py-2 bg-white rounded-lg border border-gray-200">
+          <div className="text-sm text-gray-600">
+            Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+            {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
+            {pagination.total} customers
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() =>
+                setPagination((prev: any) => ({ ...prev, page: prev.page - 1 }))
+              }
+              disabled={pagination.page === 1}
+              className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded-lg">
+              {pagination.page} / {pagination.totalPages}
+            </span>
+            <button
+              onClick={() =>
+                setPagination((prev: any) => ({ ...prev, page: prev.page + 1 }))
+              }
+              disabled={pagination.page === pagination.totalPages}
+              className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
       <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
-        Showing {paginatedCustomers.length} of{" "}
-        {sortedAndFilteredCustomers.length} customers (
-        {customers.filter((c) => c.type === "user").length} users,{" "}
+        Showing {currentPageData.length} of {filteredAndSortedCustomers.length}{" "}
+        customers ({customers.filter((c) => c.type === "user").length} users,{" "}
         {customers.filter((c) => c.type === "application").length} applications)
         - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
-        {buildingFilter !== "all" && (
-          <span className="ml-2 text-blue-600">
-            - Filtered by building:{" "}
-            {buildingsList.find((b) => b._id === buildingFilter)?.buildingName}
-          </span>
-        )}
       </div>
-
-      {/* Global Styles */}
-      <style jsx global>{`
-        .scrollbar-always-visible {
-          scrollbar-width: thin;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar {
-          height: 10px;
-          display: block;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 10px;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 10px;
-        }
-        .scrollbar-always-visible::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
-        }
-      `}</style>
     </div>
   );
 }

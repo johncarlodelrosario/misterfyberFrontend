@@ -1,3 +1,4 @@
+// services/admin.ts
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -12,7 +13,7 @@ const CACHE_KEYS = {
 };
 
 const CACHE_DURATION = 5 * 60 * 1000;
-const MAX_CACHE_SIZE = 4.5 * 1024 * 1024; // 4.5MB - Safe limit for localStorage
+const MAX_CACHE_SIZE = 3 * 1024 * 1024; // 3MB - Safe limit for localStorage
 
 interface CacheItem<T> {
   data: T;
@@ -42,28 +43,25 @@ function setCachedData<T>(key: string, data: T): void {
     // Check size before storing to avoid quota exceeded errors
     if (serialized.length > MAX_CACHE_SIZE) {
       console.warn(
-        `Cache data for ${key} too large (${serialized.length} bytes), skipping cache`,
+        `⚠️ Cache data for ${key} too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping cache`,
       );
-      // Try to clear old cache and retry
-      clearOldCache();
-      try {
-        localStorage.setItem(key, serialized);
-      } catch (retryError) {
-        console.error("Failed to cache data even after clearing:", retryError);
-      }
       return;
     }
 
     localStorage.setItem(key, serialized);
   } catch (error) {
     if (error instanceof DOMException && error.name === "QuotaExceededError") {
-      // Clear old cache and retry
-      clearOldCache();
+      console.warn(`⚠️ Quota exceeded for ${key}, clearing old cache...`);
+      // Clear only this cache key
+      localStorage.removeItem(key);
       try {
         const item: CacheItem<T> = { data, timestamp: Date.now() };
-        localStorage.setItem(key, JSON.stringify(item));
+        const serialized = JSON.stringify(item);
+        if (serialized.length <= MAX_CACHE_SIZE) {
+          localStorage.setItem(key, serialized);
+        }
       } catch (retryError) {
-        console.error("Failed to cache data even after clearing:", retryError);
+        console.error("Failed to cache data after clearing:", retryError);
       }
     } else {
       console.error("Failed to cache data:", error);
@@ -194,6 +192,7 @@ export const getAllUsers = async (params?: {
     const response = await api.get("/admin/users", { params });
     const result = response.data;
 
+    // Only cache if data is not too large
     setCachedData(CACHE_KEYS.USERS, result);
     return result;
   } catch (error: any) {
@@ -557,14 +556,17 @@ export const getAllApplications = async (params?: {
   forceRefresh?: boolean;
 }) => {
   try {
-    if (!params?.forceRefresh) {
-      const cached = getCachedData(CACHE_KEYS.APPLICATIONS);
-      if (cached) return cached;
-    }
-
-    const response = await api.get("/applications", { params });
+    // Always skip cache for applications as they're too large
+    // Instead use the dashboard-data endpoint for aggregated data
+    const response = await api.get("/applications", {
+      params: {
+        ...params,
+        limit: params?.limit || 50, // Reduce default limit
+      },
+    });
     const result = response.data;
 
+    // Only cache if small enough
     setCachedData(CACHE_KEYS.APPLICATIONS, result);
     return result;
   } catch (error: any) {
@@ -648,6 +650,45 @@ export const getApplicationBillingStatus = async (applicationId: string) => {
   }
 };
 
+// ==================== DASHBOARD DATA AGGREGATION ====================
+export const fetchDashboardData = async (forceRefresh?: boolean) => {
+  try {
+    const response = await api.get("/billing/dashboard-data");
+    return response.data.data;
+  } catch (error: any) {
+    console.error(
+      "Error fetching dashboard data:",
+      error.response?.data || error.message,
+    );
+    // Return empty data structure
+    return {
+      customers: [],
+      billingCycles: [],
+      bills: [],
+      pendingPayments: [],
+      customersWithoutAccounts: [],
+      pendingInstallationBills: [],
+      pendingProRated: [],
+      pendingActivations: [],
+      stats: {
+        totalCustomers: 0,
+        totalBalance: 0,
+        customersWithBalanceCount: 0,
+        overdueCustomersCount: 0,
+        activeCyclesCount: 0,
+        pausedCyclesCount: 0,
+        pendingProRatedCount: 0,
+        pendingActivationsCount: 0,
+        pendingPaymentsCount: 0,
+        pendingInstallationBillsCount: 0,
+        applicationsWithoutBilling: 0,
+        totalInstallationFeesDue: 0,
+        installationFeesPaidCount: 0,
+      },
+    };
+  }
+};
+
 // ==================== CACHE MANAGEMENT ====================
 export const clearBillingCache = () => {
   const keys = [
@@ -701,6 +742,7 @@ export default {
   startBillingForApplication,
   getApplicationBillingStatus,
   getAllBillingCycles,
+  fetchDashboardData,
   clearBillingCache,
   clearAdminCache,
 };
