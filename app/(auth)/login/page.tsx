@@ -1,4 +1,3 @@
-// frontend/app/login/page.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect } from "react";
@@ -30,22 +29,35 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      console.log("Attempting login with:", { email });
+      console.log("🔐 Attempting login with email:", email);
+      console.log("🌍 Environment:", process.env.NODE_ENV);
+      console.log("🌐 Hostname:", window.location.hostname);
+
       await login(email, password);
       // Redirect happens inside login function or via useEffect
     } catch (error: any) {
-      console.error("Login page error:", error);
+      console.error("❌ Login page error:", error);
 
       // Provide user-friendly error messages
       let errorMessage = error.message || "Login failed. Please try again.";
 
-      if (errorMessage.includes("405")) {
+      if (
+        errorMessage.includes("405") ||
+        errorMessage.includes("Method Not Allowed")
+      ) {
         errorMessage =
           "Login service is temporarily unavailable. Please contact support.";
-      } else if (errorMessage.includes("Cannot connect to server")) {
+      } else if (
+        errorMessage.includes("Cannot connect to server") ||
+        errorMessage.includes("Network Error") ||
+        errorMessage.includes("ERR_NETWORK")
+      ) {
         errorMessage =
           "Cannot connect to server. Please check your internet connection and try again.";
-      } else if (errorMessage.includes("Invalid credentials")) {
+      } else if (
+        errorMessage.includes("Invalid credentials") ||
+        errorMessage.includes("Invalid email")
+      ) {
         errorMessage = "Invalid email or password. Please try again.";
       }
 

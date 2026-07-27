@@ -1,4 +1,3 @@
-// frontend/services/authService.ts - COMPLETE FIXED VERSION
 import api from "./api";
 
 interface LoginResponse {
@@ -57,19 +56,52 @@ interface ApplicationStatusResponse {
   message?: string;
 }
 
+// ==================== GET API URL - PRODUCTION FIXED ====================
+const getApiUrl = (): string => {
+  // Server-side rendering
+  if (typeof window === "undefined") {
+    return (
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://misterfyberbackend.onrender.com/api"
+    );
+  }
+
+  // Check if in production environment
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Check if on production domain
+  const isProdDomain =
+    window.location.hostname.includes("vercel.app") ||
+    window.location.hostname.includes("misterfyber.com") ||
+    window.location.hostname.includes("render.com");
+
+  // ALWAYS USE RENDER BACKEND FOR PRODUCTION
+  if (isProduction || isProdDomain) {
+    console.log("🌍 PRODUCTION: Using Render backend in authService");
+    return "https://misterfyberbackend.onrender.com/api";
+  }
+
+  // DEVELOPMENT - Use localhost
+  console.log("🛠️ DEVELOPMENT: Using local backend in authService");
+  return "http://localhost:5000/api";
+};
+
 export const login = async (
   identifier: string,
   password: string,
 ): Promise<LoginResponse> => {
   try {
-    console.log("[Auth] Attempting login for:", identifier);
+    const apiUrl = getApiUrl();
+    console.log("🔐 [Auth] Attempting login for:", identifier);
+    console.log("🔐 [Auth] Using API URL:", apiUrl);
 
     const isEmail = identifier.includes("@") && identifier.includes(".");
     const payload = isEmail
       ? { email: identifier, password }
       : { username: identifier, password };
 
-    const response = await api.post("/auth/login", payload);
+    // Use FULL URL for login
+    const response = await api.post(`${apiUrl}/auth/login`, payload);
 
     let token: string;
     let userData: any;
@@ -109,18 +141,28 @@ export const login = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Login error:", error.message);
+    console.error("❌ [Auth] Login error:", error.message);
 
+    // Enhanced error handling
     if (error.response?.status === 405) {
       throw new Error(
-        "Login endpoint not found (405). Please check if the backend is running.",
+        "Login endpoint not found (405). Please check if the backend is running at: " +
+          getApiUrl(),
       );
     }
 
-    if (error.message?.includes("CORS") || error.code === "ERR_NETWORK") {
+    if (
+      error.code === "ERR_NETWORK" ||
+      error.message?.includes("Network Error")
+    ) {
       throw new Error(
-        "Cannot connect to server. Please check if the backend is running.",
+        "Cannot connect to server. Please check if the backend is running at: " +
+          getApiUrl(),
       );
+    }
+
+    if (error.message?.includes("CORS")) {
+      throw new Error("CORS error. Please check backend CORS configuration.");
     }
 
     throw new Error(
@@ -131,9 +173,10 @@ export const login = async (
 
 export const logout = async (): Promise<void> => {
   try {
-    await api.post("/auth/logout");
+    const apiUrl = getApiUrl();
+    await api.post(`${apiUrl}/auth/logout`);
   } catch (error) {
-    console.error("[Auth] Logout error:", error);
+    console.error("❌ [Auth] Logout error:", error);
   } finally {
     if (typeof window !== "undefined") {
       localStorage.removeItem("token");
@@ -143,7 +186,10 @@ export const logout = async (): Promise<void> => {
 
 export const getCurrentUser = async (): Promise<User> => {
   try {
-    const response = await api.get("/auth/me");
+    const apiUrl = getApiUrl();
+    console.log("🔐 [Auth] Getting current user from:", `${apiUrl}/auth/me`);
+
+    const response = await api.get(`${apiUrl}/auth/me`);
 
     let userData;
     if (response.data.data) {
@@ -166,7 +212,7 @@ export const getCurrentUser = async (): Promise<User> => {
       profilePicture: userData.profilePicture,
     };
   } catch (error: any) {
-    console.error("[Auth] Get current user error:", error);
+    console.error("❌ [Auth] Get current user error:", error);
     throw error;
   }
 };
@@ -175,12 +221,21 @@ export const registerWithApplication = async (
   data: RegisterWithApplicationData,
 ): Promise<LoginResponse> => {
   try {
-    const response = await api.post("/auth/register-with-application", {
-      username: data.username,
-      email: data.email,
-      password: data.password,
-      applicationId: data.applicationId,
-    });
+    const apiUrl = getApiUrl();
+    console.log(
+      "🔐 [Auth] Registering with application using:",
+      `${apiUrl}/auth/register-with-application`,
+    );
+
+    const response = await api.post(
+      `${apiUrl}/auth/register-with-application`,
+      {
+        username: data.username,
+        email: data.email,
+        password: data.password,
+        applicationId: data.applicationId,
+      },
+    );
 
     let token: string;
     let userData: any;
@@ -213,7 +268,7 @@ export const registerWithApplication = async (
       },
     };
   } catch (error: any) {
-    console.error("[Auth] Register error:", error.message);
+    console.error("❌ [Auth] Register error:", error.message);
     throw new Error(
       error.response?.data?.message || error.message || "Registration failed",
     );
@@ -230,14 +285,16 @@ export const checkApplicationStatus = async (
     };
   }
 
-  console.log("[Auth] Checking application status:", applicationId);
+  console.log("🔐 [Auth] Checking application status:", applicationId);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    // USE RELATIVE PATH - let Next.js rewrites handle it
-    const url = `/api/auth/check-application/${applicationId}`;
+    const apiUrl = getApiUrl();
+    // Use FULL URL for application check
+    const url = `${apiUrl}/auth/check-application/${applicationId}`;
+    console.log("🔐 [Auth] Checking URL:", url);
 
     const response = await fetch(url, {
       method: "GET",
@@ -307,7 +364,7 @@ export const checkApplicationStatus = async (
     };
   } catch (error: any) {
     clearTimeout(timeoutId);
-    console.error("[Auth] Fetch error:", error.name, error.message);
+    console.error("❌ [Auth] Fetch error:", error.name, error.message);
 
     if (error.name === "AbortError") {
       return {

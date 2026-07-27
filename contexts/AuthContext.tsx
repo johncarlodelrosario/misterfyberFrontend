@@ -39,6 +39,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ==================== GET API URL - PRODUCTION FIXED ====================
+const getApiUrl = (): string => {
+  if (typeof window === "undefined") {
+    return "https://misterfyberbackend.onrender.com/api";
+  }
+
+  const isProduction = process.env.NODE_ENV === "production";
+  const isProdDomain =
+    window.location.hostname.includes("vercel.app") ||
+    window.location.hostname.includes("misterfyber.com") ||
+    window.location.hostname.includes("render.com");
+
+  if (isProduction || isProdDomain) {
+    console.log("🌍 PRODUCTION: Using Render backend in AuthContext");
+    return "https://misterfyberbackend.onrender.com/api";
+  }
+
+  console.log("🛠️ DEVELOPMENT: Using local backend in AuthContext");
+  return "http://localhost:5000/api";
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       try {
+        const apiUrl = getApiUrl();
+        console.log("🔐 LOGIN ATTEMPT TO:", `${apiUrl}/auth/login`);
+
         const response = await loginApi(email, password);
         localStorage.setItem("token", response.token);
 
@@ -118,8 +142,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.push("/user/dashboard");
         }
       } catch (error: any) {
-        toast.error(error.message || "Login failed");
-        throw error;
+        console.error("❌ Login error:", error);
+
+        // Enhanced error handling for 405
+        let errorMessage = error.message || "Login failed";
+        if (
+          errorMessage.includes("405") ||
+          errorMessage.includes("Method Not Allowed")
+        ) {
+          errorMessage = "Login service unavailable. Please contact support.";
+        } else if (
+          errorMessage.includes("Network Error") ||
+          errorMessage.includes("ERR_NETWORK")
+        ) {
+          errorMessage =
+            "Cannot connect to server. Please check your internet connection.";
+        }
+
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
     },
     [router],

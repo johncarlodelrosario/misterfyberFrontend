@@ -1,6 +1,4 @@
-// frontend/services/api.ts - COMPLETE FIXED VERSION
 import axios from "axios";
-import toast from "react-hot-toast";
 
 // ==================== CACHE CONFIGURATION ====================
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -59,16 +57,34 @@ const safeStorage = {
   },
 };
 
-// ==================== BACKEND URL - USE RELATIVE PATHS ONLY ====================
+// ==================== GET API URL - PRODUCTION FIXED ====================
 const getApiUrl = (): string => {
   // Server-side rendering
   if (typeof window === "undefined") {
-    return "/api";
+    return (
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://misterfyberbackend.onrender.com/api"
+    );
   }
 
-  // ALWAYS use relative path - let Next.js rewrites handle it
-  // This completely avoids CORS issues
-  return "/api";
+  // CHECK IF IN PRODUCTION ENVIRONMENT
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // CHECK IF ON PRODUCTION DOMAIN
+  const isProdDomain =
+    window.location.hostname.includes("vercel.app") ||
+    window.location.hostname.includes("misterfyber.com") ||
+    window.location.hostname.includes("render.com");
+
+  // ALWAYS USE RENDER BACKEND FOR PRODUCTION
+  if (isProduction || isProdDomain) {
+    console.log("🌍 PRODUCTION MODE: Using Render backend");
+    return "https://misterfyberbackend.onrender.com/api";
+  }
+
+  // DEVELOPMENT - Use localhost
+  console.log("🛠️ DEVELOPMENT MODE: Using local backend");
+  return "http://localhost:5000/api";
 };
 
 // ==================== AXIOS INSTANCE ====================
@@ -81,6 +97,9 @@ const api = axios.create({
   withCredentials: true,
   timeout: 30000,
 });
+
+// Log the API URL being used (for debugging)
+console.log("📡 API Base URL:", getApiUrl());
 
 // ==================== REQUEST INTERCEPTOR ====================
 api.interceptors.request.use(

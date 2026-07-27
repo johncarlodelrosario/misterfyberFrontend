@@ -6,6 +6,8 @@ const nextConfig = {
       "localhost",
       "misterfyberbackend.onrender.com",
       "www.misterfyber.com",
+      "misterfyber.com",
+      "vercel.app",
     ],
     unoptimized: process.env.NODE_ENV === "development",
     formats: ["image/avif", "image/webp"],
@@ -125,8 +127,12 @@ const nextConfig = {
     ];
   },
 
-  // CRITICAL FIX: Rewrites to proxy API requests
+  // CRITICAL FIX: Rewrites to proxy API requests to Render backend
   async rewrites() {
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://misterfyberbackend.onrender.com/api";
+
     return [
       {
         source: "/api/:path*",
