@@ -44,7 +44,7 @@ const STORAGE_KEYS = {
   APPLICATIONS: "misterfyber_apps_cache",
   LAST_FETCH: "misterfyber_last_fetch",
   FILTER_STATE: "misterfyber_filter_state",
-  CACHE_VERSION: "misterfyber_cache_v4",
+  CACHE_VERSION: "misterfyber_cache_v5",
   LAST_KNOWN_TOTAL: "misterfyber_total",
   LAST_KNOWN_PENDING: "misterfyber_pending",
 };
@@ -71,9 +71,7 @@ const persistentStorage = {
     try {
       const serialized = JSON.stringify(value);
       if (serialized.length > 5 * 1024 * 1024) {
-        console.warn(
-          `⚠️ Cache data for ${key} too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping cache`,
-        );
+        console.warn(`⚠️ Cache too large, skipping`);
         return false;
       }
       localStorage.setItem(key, serialized);
@@ -206,7 +204,7 @@ export default function ApplicationTable() {
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const dataFetchedRef = useRef(false);
+  const dataLoadedRef = useRef(false);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -348,16 +346,20 @@ export default function ApplicationTable() {
     };
   }, [isOnline, initialLoading, checkForNewApplicants]);
 
-  // Load cached data immediately on mount
+  // ============================================================
+  // PINAKA IMPORTANTE: LOAD DATA AGAD - WALANG DELAY!
+  // ============================================================
   useEffect(() => {
-    const loadCachedData = () => {
+    const loadData = () => {
+      // Step 1: Kunin agad ang cache
       const cached = persistentStorage.getItem(
         STORAGE_KEYS.APPLICATIONS,
       ) as StoredApplicationsData | null;
       const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
+      // Step 2: Kung may cache, display agad - WALANG HINTAY!
       if (cached && cached.applications && cached.applications.length > 0) {
-        console.log(`📦 Loaded ${cached.applications.length} apps from cache`);
+        console.log(`📦 INSTANT LOAD: ${cached.applications.length} apps`);
         setApplications(cached.applications);
         if (lastFetch) setLastFetchTime(new Date(lastFetch));
 
@@ -368,26 +370,82 @@ export default function ApplicationTable() {
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
         setInitialLoading(false);
+        dataLoadedRef.current = true;
+
+        // Step 3: Background fetch agad - WALANG 5 MINUTES NA HINTAY!
+        // Kahit 1 second pa yan, magfa-fetch agad para updated
+        setTimeout(() => {
+          if (!refreshInProgressRef.current) {
+            console.log("🔄 Background refresh agad para updated...");
+            fetchApplicationsSilent();
+          }
+        }, 500); // 0.5 second lang, hindi 5 minutes!
+
         return true;
       }
+
+      // Step 4: Walang cache, fetch na agad
+      console.log("📡 No cache, fetching...");
+      fetchApplications();
       return false;
     };
 
-    const hasCache = loadCachedData();
-
-    // Only fetch if no cache or cache is old (> 5 minutes)
-    if (!hasCache) {
-      fetchApplications();
-    } else {
-      // Background refresh if cache is older than 5 minutes
-      const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
-      if (lastFetch && Date.now() - lastFetch > 5 * 60 * 1000) {
-        setTimeout(() => {
-          fetchApplications();
-        }, 2000);
-      }
-    }
+    loadData();
   }, []);
+
+  // Silent fetch - walang loading spinner, walang abala
+  const fetchApplicationsSilent = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+
+    try {
+      console.log("🔄 Silent background fetch...");
+      const data = await getAllApplications({ page: 1, limit: 100 });
+      const applicationsList = data.data || [];
+
+      if (applicationsList.length > 0) {
+        // Check kung may bago
+        const currentIds = new Set(applications.map((a: any) => a._id));
+        const newApps = applicationsList.filter(
+          (a: any) => !currentIds.has(a._id),
+        );
+
+        if (newApps.length > 0) {
+          console.log(`🆕 ${newApps.length} new apps found in background`);
+          setApplications(applicationsList);
+          setLastFetchTime(new Date());
+
+          // Update cache
+          const dataToStore: StoredApplicationsData = {
+            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
+            timestamp: Date.now(),
+            version: STORAGE_KEYS.CACHE_VERSION,
+            totalCount: applicationsList.length,
+          };
+          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+
+          const total = applicationsList.length;
+          const pending = applicationsList.filter(
+            (a: any) => a.status === "pending",
+          ).length;
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+          toast.success(
+            `🆕 ${newApps.length} new application${newApps.length > 1 ? "s" : ""} loaded`,
+          );
+        } else {
+          // Walang bago, update lang timestamp
+          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+        }
+      }
+    } catch (error) {
+      console.log("Background fetch failed:", error);
+    } finally {
+      refreshInProgressRef.current = false;
+    }
+  }, [applications]);
 
   const silentRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
@@ -760,8 +818,9 @@ export default function ApplicationTable() {
     if (!lastFetchTime) return "Never";
     const now = new Date();
     const diff = now.getTime() - lastFetchTime.getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return "Just now";
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
     return `${hours}h ago`;
@@ -1067,7 +1126,9 @@ export default function ApplicationTable() {
     setShowBulkUploadModal(false);
   };
 
-  // Show loading only on first load with no data
+  // ============================================================
+  // WALANG LOADING SPINNER KUNG MAY DATA NA!
+  // ============================================================
   if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1466,7 +1527,6 @@ export default function ApplicationTable() {
         </div>
       </div>
 
-      {/* Rest of the modals remain the same */}
       {/* MODAL - Application Details */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
