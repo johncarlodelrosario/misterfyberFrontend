@@ -103,12 +103,6 @@ export default function UserDashboard() {
                 your service will be fully activated.
               </p>
             </div>
-            <Link
-              href="/user/billing"
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-            >
-              Pay Now
-            </Link>
           </div>
         )}
 
@@ -122,12 +116,6 @@ export default function UserDashboard() {
                 service interruption.
               </p>
             </div>
-            <Link
-              href="/user/billing"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              Pay Now
-            </Link>
           </div>
         )}
 
