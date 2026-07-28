@@ -41,18 +41,16 @@ import {
 } from "react-icons/fi";
 
 const STORAGE_KEYS = {
-  APPLICATIONS: "misterfyber_applications_data",
+  APPLICATIONS: "misterfyber_apps_cache",
   LAST_FETCH: "misterfyber_last_fetch",
-  FILTER_STATE: "misterfyber_applications_filter",
-  CACHE_VERSION: "misterfyber_cache_v3",
-  PRELOAD_CACHE: "misterfyber_preload_applications",
-  PRELOAD_TIMESTAMP: "misterfyber_preload_timestamp",
-  LAST_KNOWN_TOTAL: "misterfyber_last_known_total",
-  LAST_KNOWN_PENDING: "misterfyber_last_known_pending",
+  FILTER_STATE: "misterfyber_filter_state",
+  CACHE_VERSION: "misterfyber_cache_v4",
+  LAST_KNOWN_TOTAL: "misterfyber_total",
+  LAST_KNOWN_PENDING: "misterfyber_pending",
 };
 
-const MAX_STORED_APPLICATIONS = 500;
-const CHECK_INTERVAL = 15000;
+const MAX_CACHE_SIZE = 100;
+const CHECK_INTERVAL = 30000;
 const ITEMS_PER_PAGE = 20;
 
 interface StoredApplicationsData {
@@ -72,21 +70,21 @@ const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
       const serialized = JSON.stringify(value);
+      if (serialized.length > 5 * 1024 * 1024) {
+        console.warn(
+          `⚠️ Cache data for ${key} too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping cache`,
+        );
+        return false;
+      }
       localStorage.setItem(key, serialized);
       return true;
     } catch (e: any) {
       if (e.name === "QuotaExceededError") {
-        Object.values(STORAGE_KEYS).forEach((k) => {
-          if (k !== key) {
-            try {
-              localStorage.removeItem(k);
-            } catch (err) {}
-          }
-        });
         try {
+          localStorage.removeItem(key);
           localStorage.setItem(key, JSON.stringify(value));
           return true;
-        } catch (retryError) {
+        } catch {
           return false;
         }
       }
@@ -208,6 +206,7 @@ export default function ApplicationTable() {
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const dataFetchedRef = useRef(false);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -260,7 +259,6 @@ export default function ApplicationTable() {
     const handleOnline = () => {
       setIsOnline(true);
       toast.success("Network connected");
-      checkForNewApplicants();
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -318,15 +316,11 @@ export default function ApplicationTable() {
 
       const hasNew =
         currentTotal > lastKnownTotal || currentPending > lastKnownPending;
-      const newCount =
-        currentTotal - lastKnownTotal + (currentPending - lastKnownPending);
 
       if (hasNew) {
-        console.log(
-          `🆕 New applicant detected! Total: ${lastKnownTotal} → ${currentTotal}, Pending: ${lastKnownPending} → ${currentPending}`,
-        );
+        console.log(`🆕 New applicant detected!`);
         setHasNewApplicant(true);
-        setNewApplicantCount(newCount > 0 ? newCount : 1);
+        setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
         await silentRefresh();
 
         setTimeout(() => {
@@ -344,8 +338,6 @@ export default function ApplicationTable() {
       intervalRef.current = setInterval(() => {
         checkForNewApplicants();
       }, CHECK_INTERVAL);
-
-      console.log("🔍 Started checking for new applicants every 15 seconds");
     }
 
     return () => {
@@ -356,70 +348,45 @@ export default function ApplicationTable() {
     };
   }, [isOnline, initialLoading, checkForNewApplicants]);
 
+  // Load cached data immediately on mount
   useEffect(() => {
-    const loadStoredData = () => {
-      try {
-        const preloadData = persistentStorage.getItem(
-          STORAGE_KEYS.PRELOAD_CACHE,
-        ) as StoredApplicationsData | null;
-        const storedData = persistentStorage.getItem(
-          STORAGE_KEYS.APPLICATIONS,
-        ) as StoredApplicationsData | null;
-        const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
+    const loadCachedData = () => {
+      const cached = persistentStorage.getItem(
+        STORAGE_KEYS.APPLICATIONS,
+      ) as StoredApplicationsData | null;
+      const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
-        if (
-          preloadData &&
-          preloadData.applications &&
-          preloadData.applications.length > 0
-        ) {
-          console.log(
-            `📦 LOADING from PRELOAD: ${preloadData.applications.length} applications`,
-          );
-          setApplications(preloadData.applications);
-          if (preloadData.timestamp)
-            setLastFetchTime(new Date(preloadData.timestamp));
+      if (cached && cached.applications && cached.applications.length > 0) {
+        console.log(`📦 Loaded ${cached.applications.length} apps from cache`);
+        setApplications(cached.applications);
+        if (lastFetch) setLastFetchTime(new Date(lastFetch));
 
-          const total = preloadData.applications.length;
-          const pending = preloadData.applications.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-          setInitialLoading(false);
-          return;
-        }
-
-        if (
-          storedData &&
-          storedData.applications &&
-          storedData.applications.length > 0
-        ) {
-          console.log(
-            `📦 LOADING from CACHE: ${storedData.applications.length} applications`,
-          );
-          setApplications(storedData.applications);
-          if (lastFetch) setLastFetchTime(new Date(lastFetch));
-
-          const total = storedData.applications.length;
-          const pending = storedData.applications.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-          setInitialLoading(false);
-          return;
-        }
-
-        fetchApplications();
-      } catch (err) {
-        console.error("Failed to load from storage:", err);
-        fetchApplications();
+        const total = cached.applications.length;
+        const pending = cached.applications.filter(
+          (a: any) => a.status === "pending",
+        ).length;
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+        setInitialLoading(false);
+        return true;
       }
+      return false;
     };
 
-    loadStoredData();
+    const hasCache = loadCachedData();
+
+    // Only fetch if no cache or cache is old (> 5 minutes)
+    if (!hasCache) {
+      fetchApplications();
+    } else {
+      // Background refresh if cache is older than 5 minutes
+      const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
+      if (lastFetch && Date.now() - lastFetch > 5 * 60 * 1000) {
+        setTimeout(() => {
+          fetchApplications();
+        }, 2000);
+      }
+    }
   }, []);
 
   const silentRefresh = useCallback(async () => {
@@ -427,7 +394,7 @@ export default function ApplicationTable() {
     refreshInProgressRef.current = true;
 
     try {
-      console.log("🔄 Silent refresh - new applicant detected...");
+      console.log("🔄 Silent refresh...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -436,7 +403,7 @@ export default function ApplicationTable() {
         setLastFetchTime(new Date());
 
         const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
           timestamp: Date.now(),
           version: STORAGE_KEYS.CACHE_VERSION,
           totalCount: applicationsList.length,
@@ -444,8 +411,6 @@ export default function ApplicationTable() {
 
         persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
         persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
-        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
         const total = applicationsList.length;
         const pending = applicationsList.filter(
@@ -453,12 +418,6 @@ export default function ApplicationTable() {
         ).length;
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-        localStorage.setItem("misterfyber_pending_count", pending.toString());
-
-        toast.success(
-          `🆕 New applicant(s) loaded! Total: ${total} applications`,
-        );
       }
     } catch (error) {
       console.log("Silent refresh failed");
@@ -474,7 +433,7 @@ export default function ApplicationTable() {
     setError(null);
 
     try {
-      console.log("🔄 Manual refresh...");
+      console.log("🔄 Fetching applications...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -483,7 +442,7 @@ export default function ApplicationTable() {
       setLastFetchTime(new Date());
 
       const dataToStore: StoredApplicationsData = {
-        applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+        applications: applicationsList.slice(0, MAX_CACHE_SIZE),
         timestamp: Date.now(),
         version: STORAGE_KEYS.CACHE_VERSION,
         totalCount: applicationsList.length,
@@ -491,8 +450,6 @@ export default function ApplicationTable() {
 
       persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
       persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
 
       const total = applicationsList.length;
       const pending = applicationsList.filter(
@@ -501,17 +458,14 @@ export default function ApplicationTable() {
       persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
       persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
 
-      localStorage.setItem("misterfyber_pending_count", pending.toString());
-
-      toast.success(`Loaded ${applicationsList.length} applications`);
       setHasNewApplicant(false);
     } catch (error: any) {
       console.error("Failed to fetch:", error);
-      const storedData = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-      if (storedData?.applications?.length > 0) {
-        setApplications(storedData.applications);
+      const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+      if (cached?.applications?.length > 0) {
+        setApplications(cached.applications);
         setError(
-          `Network error. Showing ${storedData.applications.length} cached.`,
+          `Network error. Showing ${cached.applications.length} cached.`,
         );
         toast.error("Network error, using cached data");
       } else {
@@ -529,7 +483,7 @@ export default function ApplicationTable() {
     if (refreshInProgressRef.current) return;
 
     try {
-      console.log("⚡ Quick refresh after adding customer...");
+      console.log("⚡ Quick refresh...");
       const data = await getAllApplications({ page: 1, limit: 100 });
       const applicationsList = data.data || [];
 
@@ -538,13 +492,13 @@ export default function ApplicationTable() {
 
       setTimeout(() => {
         const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, MAX_STORED_APPLICATIONS),
+          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
           timestamp: Date.now(),
           version: STORAGE_KEYS.CACHE_VERSION,
           totalCount: applicationsList.length,
         };
         persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-        persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
 
         const total = applicationsList.length;
         const pending = applicationsList.filter(
@@ -557,27 +511,6 @@ export default function ApplicationTable() {
       console.error("Quick refresh failed:", error);
     }
   }, []);
-
-  useEffect(() => {
-    if (applications.length > 0 && !initialLoading) {
-      const total = applications.length;
-      const pending = applications.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-      const dataToStore: StoredApplicationsData = {
-        applications: applications.slice(0, MAX_STORED_APPLICATIONS),
-        timestamp: Date.now(),
-        version: STORAGE_KEYS.CACHE_VERSION,
-        totalCount: applications.length,
-      };
-      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_CACHE, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now());
-    }
-  }, [applications, initialLoading]);
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -724,7 +657,7 @@ export default function ApplicationTable() {
 
       if (result.success) {
         toast.success(
-          `✅ Billing started for ${app.firstName} ${app.lastName}! Invoice sent to ${app.email}`,
+          `✅ Billing started for ${app.firstName} ${app.lastName}!`,
         );
         setTimeout(() => quickRefresh(), 500);
         setSelectedAppForBilling(null);
@@ -829,9 +762,9 @@ export default function ApplicationTable() {
     const diff = now.getTime() - lastFetchTime.getTime();
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+    if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
-    return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    return `${hours}h ago`;
   }, [lastFetchTime]);
 
   const stats = useMemo(
@@ -887,18 +820,12 @@ export default function ApplicationTable() {
       const result = await submitApplication(customerForm as any);
 
       if (result.success && result.data) {
-        const newApplication = result.data;
-        setApplications((prev) => [newApplication, ...prev]);
-
         toast.success(
-          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added successfully!`,
+          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added!`,
         );
         setShowAddCustomerModal(false);
         resetCustomerForm();
-
-        setTimeout(() => {
-          quickRefresh();
-        }, 1000);
+        setTimeout(() => quickRefresh(), 500);
       } else {
         toast.error(result.message || "Failed to submit application");
       }
@@ -1140,6 +1067,7 @@ export default function ApplicationTable() {
     setShowBulkUploadModal(false);
   };
 
+  // Show loading only on first load with no data
   if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1154,7 +1082,7 @@ export default function ApplicationTable() {
   return (
     <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden relative">
       {hasNewApplicant && (
-        <div className="mb-3 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-3 rounded-lg shadow-md animate-pulse">
+        <div className="mb-3 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-3 rounded-lg shadow-md">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
               <FiBell className="w-4 h-4 text-white" />
@@ -1165,11 +1093,9 @@ export default function ApplicationTable() {
               </p>
               <p className="text-xs text-green-700">
                 {newApplicantCount} new applicant
-                {newApplicantCount > 1 ? "s have" : " has"} been added. Page is
-                automatically refreshing...
+                {newApplicantCount > 1 ? "s have" : " has"} been added.
               </p>
             </div>
-            <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
           </div>
         </div>
       )}
@@ -1180,7 +1106,7 @@ export default function ApplicationTable() {
             Applications
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
-            Review and manage customer applications
+            {applications.length} total applications
           </p>
         </div>
 
@@ -1211,7 +1137,7 @@ export default function ApplicationTable() {
 
           <div className="hidden lg:flex text-xs text-gray-500 items-center gap-1">
             <FiClock className="w-3 h-3" />
-            <span>Auto: 15s | Last: {getLastFetchDisplay()}</span>
+            <span>{getLastFetchDisplay()}</span>
           </div>
 
           <button
@@ -1324,12 +1250,7 @@ export default function ApplicationTable() {
         {showLeftButton && (
           <button
             onClick={scrollTableLeft}
-            className="hidden sm:flex fixed top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
-            aria-label="Scroll table left"
-            style={{
-              boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
-              left: "12px",
-            }}
+            className="hidden sm:flex absolute left-0 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200"
           >
             <FiChevronLeft className="w-4 h-4" />
           </button>
@@ -1338,11 +1259,7 @@ export default function ApplicationTable() {
         {showRightButton && (
           <button
             onClick={scrollTableRight}
-            className="fixed right-3 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-105"
-            aria-label="Scroll table right"
-            style={{
-              boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
-            }}
+            className="absolute right-0 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200"
           >
             <FiChevronRight className="w-4 h-4" />
           </button>
@@ -1350,29 +1267,9 @@ export default function ApplicationTable() {
 
         <div
           ref={tableContainerRef}
-          className="bg-white rounded-md border border-gray-200 overflow-x-auto shadow-sm scroll-smooth"
-          style={{
-            scrollbarWidth: "thin",
-            msOverflowStyle: "none",
-          }}
+          className="bg-white rounded-md border border-gray-200 overflow-x-auto shadow-sm"
           onScroll={checkTableScroll}
         >
-          <style>{`
-            div::-webkit-scrollbar {
-              height: 6px;
-            }
-            div::-webkit-scrollbar-track {
-              background: #f1f1f1;
-              border-radius: 10px;
-            }
-            div::-webkit-scrollbar-thumb {
-              background: #c1c1c1;
-              border-radius: 10px;
-            }
-            div::-webkit-scrollbar-thumb:hover {
-              background: #a8a8a8;
-            }
-          `}</style>
           <table className="min-w-[1050px] w-full border-collapse">
             <thead>
               <tr className="bg-[#f0f0f0] border-b border-gray-300">
@@ -1569,6 +1466,7 @@ export default function ApplicationTable() {
         </div>
       </div>
 
+      {/* Rest of the modals remain the same */}
       {/* MODAL - Application Details */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
