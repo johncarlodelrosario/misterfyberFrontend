@@ -1,4 +1,4 @@
-// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
+// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION WITH UTC DATES
 
 "use client";
 
@@ -148,15 +148,16 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
-// FIXED: Proper date formatter
+// FIXED: Proper date formatter using UTC
 function formatDate(dateString: string): string {
   if (!dateString) return "-";
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "-";
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const year = date.getFullYear();
+    // Use UTC methods para walang timezone offset
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+    const year = date.getUTCFullYear();
     return `${month}/${day}/${year}`;
   } catch {
     return "-";

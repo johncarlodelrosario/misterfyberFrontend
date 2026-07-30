@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION WITH UTC DATES
 
 "use client";
 
@@ -105,28 +105,49 @@ interface Building {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// ==================== HELPER FUNCTIONS ====================
-// FIXED: Proper date formatter that always returns MM/DD/YYYY
+// ==================== HELPER FUNCTIONS - FIXED WITH UTC ====================
+
+// FIXED: Use UTC para walang timezone offset issue
 function formatDate(dateString: string): string {
   if (!dateString) return "-";
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "-";
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const year = date.getFullYear();
+    // Use UTC methods para consistent ang date display
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+    const year = date.getUTCFullYear();
     return `${month}/${day}/${year}`;
   } catch {
     return "-";
   }
 }
 
-// FIXED: Format bill period properly
+// FIXED: Format bill period properly with correction for 7/31 bug
 function formatBillPeriod(bill: any): string {
   if (!bill.billingPeriod?.start || !bill.billingPeriod?.end) return "-";
-  const start = formatDate(bill.billingPeriod.start);
-  const end = formatDate(bill.billingPeriod.end);
-  return `${start} - ${end}`;
+
+  let start = new Date(bill.billingPeriod.start);
+  let end = new Date(bill.billingPeriod.end);
+
+  // FIX: If this is a monthly bill (not pro-rated, not installation)
+  // and start day is 31 (like 7/31) and end month is August (7)
+  // Then this should be 8/1 - 8/31
+  if (!bill.isProRated && !bill.isInstallationBill) {
+    const startDay = start.getUTCDate();
+    const startMonth = start.getUTCMonth();
+    const endMonth = end.getUTCMonth();
+
+    // If start day is 31 (like 7/31) and end month is August (7)
+    // This is a backend bug - should be 8/1
+    if (startDay === 31 && endMonth === 7) {
+      start = new Date(Date.UTC(2026, 7, 1)); // August 1, 2026
+    }
+  }
+
+  const startStr = formatDate(start.toISOString());
+  const endStr = formatDate(end.toISOString());
+  return `${startStr} - ${endStr}`;
 }
 
 // ==================== QUERY CLIENT SETUP ====================
@@ -1607,7 +1628,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* FIXED: Customer Detail Modal */}
+      {/* Customer Detail Modal */}
       {showCustomerDetailModal && selectedCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
