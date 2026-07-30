@@ -1,4 +1,5 @@
-// app/(dashboard)/admin/billing/page.tsx
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
+
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -58,6 +59,7 @@ import {
   initializeBackdatedBilling,
   recoverMissingBills,
   clearBillingCache,
+  manuallyGenerateEarlyBill,
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
 import api from "@/services/api";
@@ -89,6 +91,7 @@ interface CustomerItem {
   } | null;
   unitNumber?: string;
   floor?: string;
+  nextMonthBill?: any;
 }
 
 interface Building {
@@ -102,6 +105,30 @@ interface Building {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
+// ==================== HELPER FUNCTIONS ====================
+// FIXED: Proper date formatter that always returns MM/DD/YYYY
+function formatDate(dateString: string): string {
+  if (!dateString) return "-";
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "-";
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
+  } catch {
+    return "-";
+  }
+}
+
+// FIXED: Format bill period properly
+function formatBillPeriod(bill: any): string {
+  if (!bill.billingPeriod?.start || !bill.billingPeriod?.end) return "-";
+  const start = formatDate(bill.billingPeriod.start);
+  const end = formatDate(bill.billingPeriod.end);
+  return `${start} - ${end}`;
+}
+
 // ==================== QUERY CLIENT SETUP ====================
 import { QueryClient } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
@@ -110,8 +137,8 @@ import { persistQueryClient } from "@tanstack/react-query-persist-client";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 30 * 60 * 1000, // 30 minutes
+      staleTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
       refetchOnMount: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -281,6 +308,7 @@ function AdminBillingPageContent() {
     installationFeeDueDays: 7,
     autoSendReminders: true,
     autoSuspendOnNonPayment: true,
+    earlyBillGenerationDays: 15,
   });
 
   // ==================== QUERIES ====================
@@ -364,10 +392,7 @@ function AdminBillingPageContent() {
 
   // ==================== MUTATIONS ====================
   const invalidateAll = useCallback(() => {
-    // Clear service-level cache
     clearBillingCache();
-
-    // Invalidate React Query caches
     queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
     queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
     queryClient.invalidateQueries({ queryKey: ["bills"] });
@@ -375,26 +400,38 @@ function AdminBillingPageContent() {
     queryClient.invalidateQueries({ queryKey: ["applications"] });
     queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
 
-    // Refetch immediately for fresh data
     setTimeout(() => {
       refetch();
     }, 100);
   }, [queryClient, refetch]);
 
-  // Start Billing Mutation - FIXED to prevent duplicates
+  // ==================== EARLY BILL GENERATION MUTATION ====================
+  const generateEarlyBillMutation = useMutation({
+    mutationFn: (applicationId: string) =>
+      manuallyGenerateEarlyBill({ applicationId }),
+    onSuccess: (data) => {
+      toast.success(data.message || "✅ Early bill generated successfully!");
+      clearBillingCache();
+      setTimeout(() => {
+        invalidateAll();
+      }, 200);
+    },
+    onError: (error: any) => {
+      const errorMsg =
+        error.response?.data?.message || "Failed to generate early bill";
+      toast.error(errorMsg);
+      console.error("Early bill generation error:", error);
+    },
+  });
+
+  // Start Billing Mutation
   const startBillingMutation = useMutation({
     mutationFn: (params: any) => startBilling(params),
     onMutate: async (params) => {
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
-
-      // Snapshot the previous value
       const previousData = queryClient.getQueryData(["dashboardData"]);
-
-      // Optimistically update the UI
       queryClient.setQueryData(["dashboardData"], (old: any) => {
         if (!old) return old;
-        // Add a loading indicator to the customer
         const updatedCustomers = old.customers?.map((c: any) => {
           if (
             c.applicationId === params.applicationId ||
@@ -406,37 +443,31 @@ function AdminBillingPageContent() {
         });
         return { ...old, customers: updatedCustomers };
       });
-
       return { previousData };
     },
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       toast.success("✅ Billing started successfully!");
-
-      // Force clear all caches and refetch
       clearBillingCache();
       setTimeout(() => {
         invalidateAll();
       }, 200);
-
       setShowStartModal(false);
       resetStartForm();
     },
     onError: (error: any, variables, context) => {
-      // Rollback on error
       if (context?.previousData) {
         queryClient.setQueryData(["dashboardData"], context.previousData);
       }
       toast.error(error.response?.data?.message || "Failed to start billing");
     },
     onSettled: () => {
-      // Always refetch after error or success
       setTimeout(() => {
         invalidateAll();
       }, 300);
     },
   });
 
-  // Start Billing for Application Mutation - FIXED to prevent duplicates
+  // Start Billing for Application Mutation
   const startBillingForAppMutation = useMutation({
     mutationFn: ({
       applicationId,
@@ -447,9 +478,7 @@ function AdminBillingPageContent() {
     }) => startBillingForApplication(applicationId, data),
     onMutate: async ({ applicationId }) => {
       await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
-
       const previousData = queryClient.getQueryData(["dashboardData"]);
-
       queryClient.setQueryData(["dashboardData"], (old: any) => {
         if (!old) return old;
         const updatedCustomers = old.customers?.map((c: any) => {
@@ -460,7 +489,6 @@ function AdminBillingPageContent() {
         });
         return { ...old, customers: updatedCustomers };
       });
-
       return { previousData };
     },
     onSuccess: () => {
@@ -657,6 +685,42 @@ function AdminBillingPageContent() {
     toast.success("🔄 Refreshing data...");
   };
 
+  // ==================== Handle Early Bill Generation ====================
+  const handleGenerateEarlyBill = async (customer: CustomerItem) => {
+    if (!customer.applicationId) {
+      toast.error("No application ID found for this customer");
+      return;
+    }
+
+    if (!customer.billingCycle || customer.billingCycle.status !== "active") {
+      toast.error(
+        "Customer must have an active billing cycle to generate early bill",
+      );
+      return;
+    }
+
+    if (customer.nextMonthBill) {
+      toast.success(
+        `📄 Already have a bill for next month: ${customer.nextMonthBill.invoiceNumber}`,
+        {
+          icon: "📄",
+          duration: 4000,
+        },
+      );
+      return;
+    }
+
+    if (
+      !confirm(
+        `Generate next month's bill for ${customer.firstName} ${customer.lastName}?`,
+      )
+    ) {
+      return;
+    }
+
+    generateEarlyBillMutation.mutate(customer.applicationId);
+  };
+
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
       case "view":
@@ -674,7 +738,6 @@ function AdminBillingPageContent() {
         handleRecoverMissingBills(customer);
         break;
       case "start":
-        // Prevent duplicate start - check if already has billing cycle
         if (
           customer.billingCycle &&
           customer.billingCycle.status !== "cancelled"
@@ -799,7 +862,6 @@ function AdminBillingPageContent() {
   };
 
   const handleStartBilling = () => {
-    // Prevent duplicate start
     if (
       startBillingMutation.isPending ||
       startBillingForAppMutation.isPending
@@ -809,7 +871,6 @@ function AdminBillingPageContent() {
     }
 
     if (selectedApplicationId) {
-      // Check if this customer already has a billing cycle
       const existingCustomer = customers.find(
         (c: CustomerItem) => c.applicationId === selectedApplicationId,
       );
@@ -1046,6 +1107,7 @@ function AdminBillingPageContent() {
           autoSendReminders: settingsData.autoSendReminders !== false,
           autoSuspendOnNonPayment:
             settingsData.autoSuspendOnNonPayment !== false,
+          earlyBillGenerationDays: settingsData.earlyBillGenerationDays || 15,
         });
       }
     } catch (error) {
@@ -1106,6 +1168,7 @@ function AdminBillingPageContent() {
         totalPendingCount={totalPendingCount}
         customersWithoutAccounts={customersWithoutAccounts}
         applicationsWithoutBillingCount={stats.applicationsWithoutBilling}
+        onGenerateEarlyBill={handleGenerateEarlyBill}
       />
 
       {/* ==================== MODALS ==================== */}
@@ -1544,7 +1607,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* Customer Detail Modal */}
+      {/* FIXED: Customer Detail Modal */}
       {showCustomerDetailModal && selectedCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -1673,13 +1736,10 @@ function AdminBillingPageContent() {
                             {bill.invoiceNumber}
                           </td>
                           <td className="px-3 py-2">
-                            {bill.billingPeriod?.start &&
-                            bill.billingPeriod?.end
-                              ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
-                              : "-"}
+                            {formatBillPeriod(bill)}
                           </td>
                           <td className="px-3 py-2">
-                            {new Date(bill.dueDate).toLocaleDateString()}
+                            {formatDate(bill.dueDate)}
                           </td>
                           <td className="px-3 py-2 text-red-600">
                             ₱{bill.total.toLocaleString()}
@@ -1846,7 +1906,7 @@ function AdminBillingPageContent() {
                           ₱{bill.total?.toLocaleString()}
                         </td>
                         <td className="px-4 py-2">
-                          {new Date(bill.dueDate).toLocaleDateString()}
+                          {formatDate(bill.dueDate)}
                         </td>
                         <td className="px-4 py-2">
                           <button
@@ -2086,6 +2146,27 @@ function AdminBillingPageContent() {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Early Bill Generation (Days before next month)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={billingFlowSettings.earlyBillGenerationDays}
+                    onChange={(e) =>
+                      setBillingFlowSettings({
+                        ...billingFlowSettings,
+                        earlyBillGenerationDays: parseInt(e.target.value) || 15,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Bills will auto-generate X days before the next month starts
+                  </p>
                 </div>
               </div>
 

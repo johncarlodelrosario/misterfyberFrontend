@@ -1,4 +1,5 @@
-// components/admin/BillingTable.tsx
+// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
+
 "use client";
 
 import React, {
@@ -29,6 +30,7 @@ import {
   FiChevronRight,
   FiSettings,
   FiBell,
+  FiClock,
 } from "react-icons/fi";
 
 // Types
@@ -58,6 +60,7 @@ export interface CustomerItem {
   } | null;
   unitNumber?: string;
   floor?: string;
+  nextMonthBill?: any;
 }
 
 export interface Building {
@@ -126,6 +129,7 @@ interface BillingTableProps {
   totalPendingCount: number;
   customersWithoutAccounts: any[];
   applicationsWithoutBillingCount: number;
+  onGenerateEarlyBill?: (customer: CustomerItem) => void;
 }
 
 // Helper functions
@@ -144,16 +148,33 @@ function getBuildingDisplay(customer: CustomerItem): string {
   return "-";
 }
 
+// FIXED: Proper date formatter
+function formatDate(dateString: string): string {
+  if (!dateString) return "-";
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "-";
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
+  } catch {
+    return "-";
+  }
+}
+
 // Memoized Row Component
 const CustomerRow = React.memo(
   ({
     customer,
     index,
     onAction,
+    onGenerateEarlyBill,
   }: {
     customer: CustomerItem;
     index: number;
     onAction: (action: string, customer: CustomerItem, data?: any) => void;
+    onGenerateEarlyBill?: (customer: CustomerItem) => void;
   }) => {
     const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
@@ -166,6 +187,7 @@ const CustomerRow = React.memo(
       customer.type === "application" &&
       (customer.installationFee ?? 0) > 0 &&
       !customer.installationFeePaid;
+    const hasNextMonthBill = !!customer.nextMonthBill;
 
     const getStatusBadge = () => {
       if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
@@ -281,6 +303,11 @@ const CustomerRow = React.memo(
           >
             {getStatusText()}
           </span>
+          {hasNextMonthBill && (
+            <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded-full">
+              Next Month Ready
+            </span>
+          )}
         </td>
         <td className="px-3 py-2">
           {customer.type === "application" &&
@@ -337,6 +364,17 @@ const CustomerRow = React.memo(
                 <FiCalendar className="w-3.5 h-3.5" />
               </button>
             )}
+            {customer.type === "application" &&
+              isActive &&
+              !hasNextMonthBill && (
+                <button
+                  onClick={() => onGenerateEarlyBill?.(customer)}
+                  className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                  title="Generate Next Month Bill"
+                >
+                  <FiClock className="w-3.5 h-3.5" />
+                </button>
+              )}
             {customer.type === "application" && (
               <>
                 {!hasBillingCycle && (
@@ -510,6 +548,7 @@ export default function BillingTable({
   totalPendingCount,
   customersWithoutAccounts,
   applicationsWithoutBillingCount,
+  onGenerateEarlyBill,
 }: BillingTableProps) {
   // Filter and sort customers
   const filteredAndSortedCustomers = useMemo(() => {
@@ -897,6 +936,7 @@ export default function BillingTable({
                     customer={customer}
                     index={(pagination.page - 1) * pagination.limit + idx}
                     onAction={onAction}
+                    onGenerateEarlyBill={onGenerateEarlyBill}
                   />
                 ))
               )}
@@ -946,6 +986,9 @@ export default function BillingTable({
         {customers.filter((c) => c.type === "application").length} applications)
         - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
+        <span className="ml-4 text-blue-600">
+          ⏰ Early bill generation: {stats.activeCyclesCount} active customers
+        </span>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
-// frontend/services/billing.ts - ULTRA FAST VERSION
+// frontend/services/billing.ts - UPDATED WITH EARLY BILL FUNCTIONS
+
 import api from "./api";
 
 // ==================== TYPES ====================
@@ -63,6 +64,7 @@ export interface BillingSettings {
   requireAdminActivation: boolean;
   installationFee: number;
   installationFeeDueDays: number;
+  earlyBillGenerationDays: number; // NEW
 }
 
 export interface Bill {
@@ -106,7 +108,6 @@ export interface Bill {
 const BILLING_CACHE = new Map();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 const MAX_CACHE_ITEMS = 20;
-let cacheKeys: string[] = [];
 
 // LRU cache manager
 const cacheManager = {
@@ -121,7 +122,6 @@ const cacheManager = {
   },
 
   set<T>(key: string, data: T): void {
-    // LRU: Remove oldest if cache is full
     if (BILLING_CACHE.size >= MAX_CACHE_ITEMS) {
       const firstKey = BILLING_CACHE.keys().next().value;
       if (firstKey) BILLING_CACHE.delete(firstKey);
@@ -361,7 +361,6 @@ export const updateBillingSettingsAdmin = async (
 ): Promise<any> => {
   try {
     const response = await api.put("/billing/settings/admin", data);
-    // Clear all caches
     cacheManager.clear();
     return response.data;
   } catch (error) {
@@ -625,6 +624,23 @@ export const getUnpaidBillsReport = async (params?: {
   } catch (error) {
     console.error("Error fetching unpaid bills report:", error);
     return { data: { bills: [], summary: {} } };
+  }
+};
+
+// ==================== NEW: MANUALLY GENERATE EARLY BILL ====================
+export const manuallyGenerateEarlyBill = async (data: {
+  applicationId: string;
+}): Promise<any> => {
+  try {
+    const response = await api.post(
+      "/billing/manually-generate-early-bill",
+      data,
+    );
+    cacheManager.clear();
+    return response.data;
+  } catch (error) {
+    console.error("Error manually generating early bill:", error);
+    throw error;
   }
 };
 
