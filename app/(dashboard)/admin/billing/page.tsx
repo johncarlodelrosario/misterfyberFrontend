@@ -57,9 +57,10 @@ import {
   startBillingForApplication,
   initializeBackdatedBilling,
   recoverMissingBills,
+  clearBillingCache,
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
-import api from "@/services/api"; // ✅ ADD THIS IMPORT
+import api from "@/services/api";
 
 // Import types
 interface CustomerItem {
@@ -109,8 +110,8 @@ import { persistQueryClient } from "@tanstack/react-query-persist-client";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 10 * 60 * 1000,
-      gcTime: 60 * 60 * 1000,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 30 * 60 * 1000, // 30 minutes
       refetchOnMount: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -122,20 +123,19 @@ const queryClient = new QueryClient({
 const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,
   key: "BILLING_APP_CACHE",
-  throttleTime: 2000,
+  throttleTime: 1000,
 });
 
 if (typeof window !== "undefined") {
   persistQueryClient({
     queryClient,
     persister,
-    maxAge: 60 * 60 * 1000,
-    buster: "v1",
+    maxAge: 30 * 60 * 1000,
+    buster: "v2",
   });
 }
 
 // ==================== API FUNCTIONS ====================
-// ✅ FIXED: Use api client with authentication
 const fetchDashboardData = async () => {
   try {
     const response = await api.get("/billing/dashboard-data");
@@ -176,7 +176,7 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 10 * 60 * 1000,
+    staleTime: 3 * 60 * 1000,
   });
 };
 
@@ -364,29 +364,79 @@ function AdminBillingPageContent() {
 
   // ==================== MUTATIONS ====================
   const invalidateAll = useCallback(() => {
+    // Clear service-level cache
+    clearBillingCache();
+
+    // Invalidate React Query caches
     queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
     queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
     queryClient.invalidateQueries({ queryKey: ["bills"] });
     queryClient.invalidateQueries({ queryKey: ["users"] });
     queryClient.invalidateQueries({ queryKey: ["applications"] });
     queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
-  }, [queryClient]);
 
-  // Start Billing Mutation
+    // Refetch immediately for fresh data
+    setTimeout(() => {
+      refetch();
+    }, 100);
+  }, [queryClient, refetch]);
+
+  // Start Billing Mutation - FIXED to prevent duplicates
   const startBillingMutation = useMutation({
     mutationFn: (params: any) => startBilling(params),
-    onSuccess: () => {
+    onMutate: async (params) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
+
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData(["dashboardData"]);
+
+      // Optimistically update the UI
+      queryClient.setQueryData(["dashboardData"], (old: any) => {
+        if (!old) return old;
+        // Add a loading indicator to the customer
+        const updatedCustomers = old.customers?.map((c: any) => {
+          if (
+            c.applicationId === params.applicationId ||
+            c._id === params.userId
+          ) {
+            return { ...c, billingCycle: { status: "starting" } };
+          }
+          return c;
+        });
+        return { ...old, customers: updatedCustomers };
+      });
+
+      return { previousData };
+    },
+    onSuccess: (data, variables) => {
       toast.success("✅ Billing started successfully!");
-      invalidateAll();
+
+      // Force clear all caches and refetch
+      clearBillingCache();
+      setTimeout(() => {
+        invalidateAll();
+      }, 200);
+
       setShowStartModal(false);
       resetStartForm();
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        queryClient.setQueryData(["dashboardData"], context.previousData);
+      }
       toast.error(error.response?.data?.message || "Failed to start billing");
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      setTimeout(() => {
+        invalidateAll();
+      }, 300);
     },
   });
 
-  // Start Billing for Application Mutation - FIXED
+  // Start Billing for Application Mutation - FIXED to prevent duplicates
   const startBillingForAppMutation = useMutation({
     mutationFn: ({
       applicationId,
@@ -395,14 +445,43 @@ function AdminBillingPageContent() {
       applicationId: string;
       data?: any;
     }) => startBillingForApplication(applicationId, data),
+    onMutate: async ({ applicationId }) => {
+      await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
+
+      const previousData = queryClient.getQueryData(["dashboardData"]);
+
+      queryClient.setQueryData(["dashboardData"], (old: any) => {
+        if (!old) return old;
+        const updatedCustomers = old.customers?.map((c: any) => {
+          if (c.applicationId === applicationId) {
+            return { ...c, billingCycle: { status: "starting" } };
+          }
+          return c;
+        });
+        return { ...old, customers: updatedCustomers };
+      });
+
+      return { previousData };
+    },
     onSuccess: () => {
       toast.success("✅ Billing started for application!");
-      invalidateAll();
+      clearBillingCache();
+      setTimeout(() => {
+        invalidateAll();
+      }, 200);
       setShowStartModal(false);
       resetStartForm();
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(["dashboardData"], context.previousData);
+      }
       toast.error(error.response?.data?.message || "Failed to start billing");
+    },
+    onSettled: () => {
+      setTimeout(() => {
+        invalidateAll();
+      }, 300);
     },
   });
 
@@ -573,8 +652,9 @@ function AdminBillingPageContent() {
   };
 
   const handleRefresh = () => {
+    clearBillingCache();
     invalidateAll();
-    refetch();
+    toast.success("🔄 Refreshing data...");
   };
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
@@ -594,6 +674,16 @@ function AdminBillingPageContent() {
         handleRecoverMissingBills(customer);
         break;
       case "start":
+        // Prevent duplicate start - check if already has billing cycle
+        if (
+          customer.billingCycle &&
+          customer.billingCycle.status !== "cancelled"
+        ) {
+          toast.error(
+            `⚠️ ${customer.firstName} ${customer.lastName} already has an active billing cycle`,
+          );
+          return;
+        }
         setSelectedApplicationId(customer.applicationId || customer._id);
         setSelectedCustomerName(`${customer.firstName} ${customer.lastName}`);
         setSelectedCustomerEmail(customer.email);
@@ -709,7 +799,30 @@ function AdminBillingPageContent() {
   };
 
   const handleStartBilling = () => {
+    // Prevent duplicate start
+    if (
+      startBillingMutation.isPending ||
+      startBillingForAppMutation.isPending
+    ) {
+      toast.error("⚠️ Please wait, billing is already being started");
+      return;
+    }
+
     if (selectedApplicationId) {
+      // Check if this customer already has a billing cycle
+      const existingCustomer = customers.find(
+        (c: CustomerItem) => c.applicationId === selectedApplicationId,
+      );
+      if (
+        existingCustomer?.billingCycle &&
+        existingCustomer.billingCycle.status !== "cancelled"
+      ) {
+        toast.error(
+          `⚠️ ${existingCustomer.firstName} ${existingCustomer.lastName} already has an active billing cycle`,
+        );
+        return;
+      }
+
       startBillingForAppMutation.mutate({
         applicationId: selectedApplicationId,
         data: {
@@ -1305,9 +1418,21 @@ function AdminBillingPageContent() {
                 </button>
                 <button
                   onClick={handleStartBilling}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                  disabled={
+                    startBillingMutation.isPending ||
+                    startBillingForAppMutation.isPending
+                  }
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Start Billing
+                  {startBillingMutation.isPending ||
+                  startBillingForAppMutation.isPending ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Starting...
+                    </>
+                  ) : (
+                    "Start Billing"
+                  )}
                 </button>
               </div>
             </div>

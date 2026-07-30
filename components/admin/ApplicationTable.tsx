@@ -77,7 +77,10 @@ const persistentStorage = {
       localStorage.setItem(key, serialized);
       return true;
     } catch (e: any) {
-      if (e.name === "QuotaExceededError") {
+      if (
+        e.name === "QuotaExceededError" ||
+        e.name === "NS_ERROR_DOM_QUOTA_REACHED"
+      ) {
         try {
           localStorage.removeItem(key);
           localStorage.setItem(key, JSON.stringify(value));

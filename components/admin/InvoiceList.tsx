@@ -170,11 +170,6 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     Download PDF
                   </button>
                 )}
-                {invoice.status === "sent" && showActions && (
-                  <button className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">
-                    Pay Now
-                  </button>
-                )}
               </div>
             </div>
           </li>
