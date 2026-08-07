@@ -1,8 +1,14 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION WITH UTC DATES
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION WITH REAL-TIME AUTO-DETECTION
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
   QueryClientProvider,
   useQuery,
@@ -33,6 +39,7 @@ import {
   FiHome,
   FiInfo,
   FiCheckCircle,
+  FiZap,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -60,6 +67,11 @@ import {
   recoverMissingBills,
   clearBillingCache,
   manuallyGenerateEarlyBill,
+  autoGenerateEarlyBills,
+  checkForNewCustomers,
+  startRealtimePolling,
+  stopRealtimePolling,
+  billingEvents,
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
 import api from "@/services/api";
@@ -158,11 +170,11 @@ import { persistQueryClient } from "@tanstack/react-query-persist-client";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 30 * 60 * 1000,
-      refetchOnMount: false,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      staleTime: 30 * 1000, // 30 seconds - REDUCED for real-time
+      gcTime: 5 * 60 * 1000,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       retry: 1,
     },
   },
@@ -171,15 +183,15 @@ const queryClient = new QueryClient({
 const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,
   key: "BILLING_APP_CACHE",
-  throttleTime: 1000,
+  throttleTime: 500,
 });
 
 if (typeof window !== "undefined") {
   persistQueryClient({
     queryClient,
     persister,
-    maxAge: 30 * 60 * 1000,
-    buster: "v2",
+    maxAge: 5 * 60 * 1000,
+    buster: "v3",
   });
 }
 
@@ -224,7 +236,8 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 3 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 10000, // Auto-refetch every 10 seconds for real-time
   });
 };
 
@@ -232,7 +245,7 @@ const useBuildings = () => {
   return useQuery({
     queryKey: ["buildings"],
     queryFn: fetchBuildings,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -240,7 +253,7 @@ const usePlans = () => {
   return useQuery({
     queryKey: ["plans"],
     queryFn: fetchPlans,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -273,6 +286,13 @@ function AdminBillingPageContent() {
   const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+
+  // Real-time states
+  const [newCustomerDetected, setNewCustomerDetected] = useState(false);
+  const [newCustomerCount, setNewCustomerCount] = useState(0);
+  const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
+  const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
@@ -421,6 +441,7 @@ function AdminBillingPageContent() {
     queryClient.invalidateQueries({ queryKey: ["applications"] });
     queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
 
+    // Also refetch with new data
     setTimeout(() => {
       refetch();
     }, 100);
@@ -442,6 +463,33 @@ function AdminBillingPageContent() {
         error.response?.data?.message || "Failed to generate early bill";
       toast.error(errorMsg);
       console.error("Early bill generation error:", error);
+    },
+  });
+
+  // Auto-generate early bills mutation
+  const autoGenerateEarlyBillsMutation = useMutation({
+    mutationFn: autoGenerateEarlyBills,
+    onMutate: () => {
+      setAutoGenerationRunning(true);
+    },
+    onSuccess: (data) => {
+      setAutoGenerationRunning(false);
+      setLastAutoGenTime(new Date());
+      if (data?.generated > 0) {
+        toast.success(`✅ Auto-generated ${data.generated} early bills!`);
+      } else {
+        toast.success("✅ No early bills needed at this time.");
+      }
+      clearBillingCache();
+      setTimeout(() => {
+        invalidateAll();
+      }, 200);
+    },
+    onError: (error: any) => {
+      setAutoGenerationRunning(false);
+      toast.error(
+        error.response?.data?.message || "Failed to auto-generate bills",
+      );
     },
   });
 
@@ -741,6 +789,110 @@ function AdminBillingPageContent() {
 
     generateEarlyBillMutation.mutate(customer.applicationId);
   };
+
+  // ==================== REAL-TIME AUTO-DETECTION ====================
+  const handleAutoGenerateEarlyBills = async () => {
+    if (autoGenerationRunning) {
+      toast("⏳ Auto-generation already running...", {
+        icon: "⏳",
+        duration: 3000,
+      });
+      return;
+    }
+
+    // Check if enough days have passed since last auto-generation
+    if (lastAutoGenTime) {
+      const hoursSince =
+        (Date.now() - lastAutoGenTime.getTime()) / (1000 * 60 * 60);
+      if (hoursSince < 1) {
+        toast(
+          `⏳ Auto-generation already ran ${Math.round(hoursSince * 60)} minutes ago`,
+          {
+            icon: "⏳",
+            duration: 3000,
+          },
+        );
+        return;
+      }
+    }
+
+    autoGenerateEarlyBillsMutation.mutate();
+  };
+
+  // Setup real-time polling and event listeners
+  useEffect(() => {
+    // Start polling for new customers every 10 seconds
+    pollingIntervalRef.current = startRealtimePolling(
+      (data) => {
+        if (data.totalNew > 0) {
+          setNewCustomerDetected(true);
+          setNewCustomerCount(data.totalNew);
+          // Auto-refresh dashboard data
+          invalidateAll();
+          toast.success(`🆕 ${data.totalNew} new customer(s) detected!`, {
+            icon: "👤",
+            duration: 5000,
+          });
+        }
+      },
+      10000, // Check every 10 seconds
+    );
+
+    // Listen to billing events
+    const unsubscribeBilling = billingEvents.on(
+      "billing_updated",
+      (payload) => {
+        console.log("🔄 Billing updated:", payload);
+        invalidateAll();
+      },
+    );
+
+    const unsubscribePayment = billingEvents.on(
+      "payment_confirmed",
+      (payload) => {
+        console.log("💳 Payment confirmed:", payload);
+        invalidateAll();
+      },
+    );
+
+    const unsubscribeBill = billingEvents.on("bill_generated", (payload) => {
+      console.log("📄 Bill generated:", payload);
+      invalidateAll();
+      toast.success(`📄 New bill generated!`, { icon: "📄" });
+    });
+
+    const unsubscribeSettings = billingEvents.on(
+      "settings_updated",
+      (payload) => {
+        console.log("⚙️ Settings updated:", payload);
+        loadBillingFlowSettings();
+      },
+    );
+
+    // Cleanup on unmount
+    return () => {
+      if (pollingIntervalRef.current) {
+        stopRealtimePolling(pollingIntervalRef.current);
+      }
+      unsubscribeBilling();
+      unsubscribePayment();
+      unsubscribeBill();
+      unsubscribeSettings();
+      billingEvents.disconnect();
+    };
+  }, [invalidateAll]);
+
+  // Auto-refresh when new customers are detected
+  useEffect(() => {
+    if (newCustomerDetected) {
+      // Reset detection after a few seconds
+      const timer = setTimeout(() => {
+        setNewCustomerDetected(false);
+        setNewCustomerCount(0);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [newCustomerDetected]);
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
@@ -1110,7 +1262,7 @@ function AdminBillingPageContent() {
 
   const loadBillingFlowSettings = async () => {
     try {
-      const response = await getBillingSettingsAdmin();
+      const response = await getBillingSettingsAdmin(true);
       const settingsData = response?.data || response;
       if (settingsData) {
         setBillingFlowSettings({
@@ -1150,11 +1302,55 @@ function AdminBillingPageContent() {
   // ==================== EFFECTS ====================
   useEffect(() => {
     loadBillingFlowSettings();
+
+    // Check for auto-generation on mount
+    if (billingFlowSettings.earlyBillGenerationDays > 0) {
+      // Auto-generate every hour if enabled
+      const autoGenInterval = setInterval(() => {
+        handleAutoGenerateEarlyBills();
+      }, 3600000); // Every hour
+
+      return () => clearInterval(autoGenInterval);
+    }
   }, []);
 
   // ==================== RENDER ====================
   return (
     <div>
+      {/* Real-time status bar */}
+      {(newCustomerDetected || autoGenerationRunning) && (
+        <div className="sticky top-0 z-50 bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {newCustomerDetected && (
+              <span className="flex items-center gap-1 text-blue-700">
+                <FiZap className="w-4 h-4 animate-pulse" />
+                <span className="font-medium">
+                  {newCustomerCount} new customer(s) detected!
+                </span>
+                <span className="text-sm text-blue-500">Updating...</span>
+              </span>
+            )}
+            {autoGenerationRunning && (
+              <span className="flex items-center gap-1 text-amber-700">
+                <FiClock className="w-4 h-4 animate-spin" />
+                <span className="font-medium">
+                  Auto-generating early bills...
+                </span>
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              setNewCustomerDetected(false);
+              setNewCustomerCount(0);
+            }}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            <FiX className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <BillingTable
         customers={customers}
         billingCycles={billingCycles}
@@ -1190,6 +1386,9 @@ function AdminBillingPageContent() {
         customersWithoutAccounts={customersWithoutAccounts}
         applicationsWithoutBillingCount={stats.applicationsWithoutBilling}
         onGenerateEarlyBill={handleGenerateEarlyBill}
+        onAutoGenerateEarlyBills={handleAutoGenerateEarlyBills}
+        autoGenerationRunning={autoGenerationRunning}
+        lastAutoGenTime={lastAutoGenTime}
       />
 
       {/* ==================== MODALS ==================== */}

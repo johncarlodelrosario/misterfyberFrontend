@@ -1,4 +1,4 @@
-// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION WITH UTC DATES
+// components/admin/BillingTable.tsx - UPDATED WITH AUTO-GENERATE BUTTON
 
 "use client";
 
@@ -31,6 +31,7 @@ import {
   FiSettings,
   FiBell,
   FiClock,
+  FiZap,
 } from "react-icons/fi";
 
 // Types
@@ -130,6 +131,9 @@ interface BillingTableProps {
   customersWithoutAccounts: any[];
   applicationsWithoutBillingCount: number;
   onGenerateEarlyBill?: (customer: CustomerItem) => void;
+  onAutoGenerateEarlyBills?: () => void;
+  autoGenerationRunning?: boolean;
+  lastAutoGenTime?: Date | null;
 }
 
 // Helper functions
@@ -550,6 +554,9 @@ export default function BillingTable({
   customersWithoutAccounts,
   applicationsWithoutBillingCount,
   onGenerateEarlyBill,
+  onAutoGenerateEarlyBills,
+  autoGenerationRunning = false,
+  lastAutoGenTime = null,
 }: BillingTableProps) {
   // Filter and sort customers
   const filteredAndSortedCustomers = useMemo(() => {
@@ -696,6 +703,18 @@ export default function BillingTable({
     );
   };
 
+  // Helper to format last auto-gen time
+  const getLastAutoGenText = () => {
+    if (!lastAutoGenTime) return "Never";
+    const now = new Date();
+    const diff = now.getTime() - lastAutoGenTime.getTime();
+    const minutes = Math.floor(diff / (1000 * 60));
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m ago`;
+  };
+
   if (loading && customers.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -721,6 +740,31 @@ export default function BillingTable({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* Auto-generate Early Bills Button */}
+            {onAutoGenerateEarlyBills && (
+              <button
+                onClick={onAutoGenerateEarlyBills}
+                disabled={autoGenerationRunning}
+                className={`px-3 py-1.5 text-sm rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                  autoGenerationRunning
+                    ? "bg-gray-400 text-white cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+                title={`Last run: ${getLastAutoGenText()}`}
+              >
+                <FiZap
+                  className={`w-3.5 h-3.5 ${autoGenerationRunning ? "animate-pulse" : ""}`}
+                />
+                {autoGenerationRunning
+                  ? "Generating..."
+                  : "Auto-Gen Early Bills"}
+                {lastAutoGenTime && (
+                  <span className="text-[10px] opacity-75 ml-1">
+                    ({getLastAutoGenText()})
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={onOpenReports}
               className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-700 hover:to-indigo-700 transition flex items-center gap-1.5 cursor-pointer shadow-md"
@@ -990,6 +1034,11 @@ export default function BillingTable({
         <span className="ml-4 text-blue-600">
           ⏰ Early bill generation: {stats.activeCyclesCount} active customers
         </span>
+        {lastAutoGenTime && (
+          <span className="ml-4 text-gray-400">
+            ⚡ Auto-gen last run: {getLastAutoGenText()}
+          </span>
+        )}
       </div>
     </div>
   );
