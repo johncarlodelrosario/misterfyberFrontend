@@ -25,6 +25,8 @@ export default function ManualEmailPage() {
   const [sentRecords, setSentRecords] = useState<EmailSentRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [buildingFilter, setBuildingFilter] = useState<string>("all");
+  const [totalEmailsSent, setTotalEmailsSent] = useState<number>(0);
 
   // Email form state
   const [subject, setSubject] = useState("");
@@ -140,6 +142,14 @@ export default function ManualEmailPage() {
     }
   }, [selectedCustomer]);
 
+  // ==================== CALCULATE TOTAL EMAILS SENT ====================
+  useEffect(() => {
+    const total = sentRecords.filter(
+      (record) => record.status === "sent",
+    ).length;
+    setTotalEmailsSent(total);
+  }, [sentRecords]);
+
   // ==================== LOAD FUNCTIONS - NO CACHING ====================
   const loadCustomers = useCallback(async (search?: string) => {
     if (!isMountedRef.current) return;
@@ -170,6 +180,7 @@ export default function ManualEmailPage() {
             name: `${c.firstName} ${c.lastName}`,
             id: c.applicationId,
             email: c.email,
+            building: c.buildingName,
           })),
         );
       }
@@ -206,6 +217,7 @@ export default function ManualEmailPage() {
     try {
       const data = await emailService.getSentRecords();
       setSentRecords(data || []);
+      // Total emails sent will be updated by the useEffect above
     } catch (error) {
       console.error("Failed to load sent records:", error);
       setSentRecords([]);
@@ -510,18 +522,47 @@ export default function ManualEmailPage() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
-    toast.success("All data refreshed!");
+    setLoading(true);
+    try {
+      await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
+      toast.success("✅ All data refreshed successfully!");
+      console.log("🔄 Refresh completed at:", new Date().toISOString());
+      console.log("📊 Total customers:", customers.length);
+      console.log("📧 Total emails sent:", totalEmailsSent);
+    } catch (error) {
+      console.error("Refresh failed:", error);
+      toast.error("Failed to refresh data");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ==================== FILTERS ====================
-  const filteredCustomers = customers.filter(
-    (c) =>
+  const filteredCustomers = customers.filter((c) => {
+    // Search filter
+    const matchesSearch =
       (c.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (c.lastName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (c.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (c.applicationId?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
-  );
+      (c.applicationId?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+
+    // Building filter
+    let matchesBuilding = true;
+    if (buildingFilter === "breeze") {
+      matchesBuilding = (c.buildingName || "").toLowerCase().includes("breeze");
+    } else if (buildingFilter === "sil") {
+      matchesBuilding =
+        (c.buildingName || "").toLowerCase().includes("sil") ||
+        (c.buildingName || "").toLowerCase().includes("silk");
+    } else if (buildingFilter === "other") {
+      matchesBuilding =
+        !(c.buildingName || "").toLowerCase().includes("breeze") &&
+        !(c.buildingName || "").toLowerCase().includes("sil") &&
+        !(c.buildingName || "").toLowerCase().includes("silk");
+    }
+
+    return matchesSearch && matchesBuilding;
+  });
 
   const filteredUnpaidCustomers = filteredCustomers.filter(
     (c) => c.hasUnpaidBills === true,
@@ -530,6 +571,24 @@ export default function ManualEmailPage() {
   const displayCustomers = showUnpaidOnly
     ? filteredUnpaidCustomers
     : filteredCustomers;
+
+  // Get building statistics
+  const breezeCount = customers.filter((c) =>
+    (c.buildingName || "").toLowerCase().includes("breeze"),
+  ).length;
+
+  const silCount = customers.filter(
+    (c) =>
+      (c.buildingName || "").toLowerCase().includes("sil") ||
+      (c.buildingName || "").toLowerCase().includes("silk"),
+  ).length;
+
+  const otherCount = customers.filter(
+    (c) =>
+      !(c.buildingName || "").toLowerCase().includes("breeze") &&
+      !(c.buildingName || "").toLowerCase().includes("sil") &&
+      !(c.buildingName || "").toLowerCase().includes("silk"),
+  ).length;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString("en-US", {
@@ -545,23 +604,61 @@ export default function ManualEmailPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8 flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              📧 Manual Email Management
-            </h1>
-            <p className="text-gray-500 mt-1">
-              Send custom emails to customers based on their building location
-              (Breeze or SIL)
-            </p>
+        {/* Header with Stats */}
+        <div className="mb-8">
+          <div className="flex justify-between items-start flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                📧 Manual Email Management
+              </h1>
+              <p className="text-gray-500 mt-1">
+                Send custom emails to customers based on their building location
+                (Breeze or SIL)
+              </p>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                loading
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Refreshing...
+                </>
+              ) : (
+                <>🔄 Refresh All</>
+              )}
+            </button>
           </div>
-          <button
-            onClick={handleRefresh}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
-          >
-            🔄 Refresh All
-          </button>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">Total Customers</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {customers.length}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">📧 Total Emails Sent</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {totalEmailsSent}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">🌊 Breeze Customers</p>
+              <p className="text-2xl font-bold text-blue-600">{breezeCount}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">🏢 SIL Customers</p>
+              <p className="text-2xl font-bold text-purple-600">{silCount}</p>
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -584,6 +681,11 @@ export default function ManualEmailPage() {
               >
                 <span className="mr-2">{tab.icon}</span>
                 {tab.name}
+                {tab.id === "sent" && totalEmailsSent > 0 && (
+                  <span className="ml-2 bg-blue-100 text-blue-600 text-xs px-2 py-0.5 rounded-full">
+                    {totalEmailsSent}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -597,6 +699,55 @@ export default function ManualEmailPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Select Customer
               </h2>
+
+              {/* Building Filter */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Building
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setBuildingFilter("all")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "all"
+                        ? "bg-gray-800 text-white border-gray-800"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    All ({customers.length})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("breeze")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "breeze"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                    }`}
+                  >
+                    🌊 Breeze ({breezeCount})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("sil")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "sil"
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
+                    }`}
+                  >
+                    🏢 SIL ({silCount})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("other")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "other"
+                        ? "bg-gray-600 text-white border-gray-600"
+                        : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    📍 Other ({otherCount})
+                  </button>
+                </div>
+              </div>
 
               <input
                 type="text"
@@ -630,8 +781,9 @@ export default function ManualEmailPage() {
                     <div className="text-center py-8 text-gray-500">
                       <p>No customers found</p>
                       <p className="text-xs mt-1">
-                        Make sure there are approved applications with email
-                        addresses
+                        {buildingFilter !== "all"
+                          ? `No customers found in "${buildingFilter}" building`
+                          : "Make sure there are approved applications with email addresses"}
                       </p>
                     </div>
                   ) : (
@@ -950,6 +1102,55 @@ export default function ManualEmailPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Select Customers
               </h2>
+
+              {/* Building Filter */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Building
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setBuildingFilter("all")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "all"
+                        ? "bg-gray-800 text-white border-gray-800"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    All ({customers.length})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("breeze")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "breeze"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                    }`}
+                  >
+                    🌊 Breeze ({breezeCount})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("sil")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "sil"
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
+                    }`}
+                  >
+                    🏢 SIL ({silCount})
+                  </button>
+                  <button
+                    onClick={() => setBuildingFilter("other")}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                      buildingFilter === "other"
+                        ? "bg-gray-600 text-white border-gray-600"
+                        : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    📍 Other ({otherCount})
+                  </button>
+                </div>
+              </div>
 
               <div className="flex gap-2 mb-4">
                 <input
@@ -1341,14 +1542,21 @@ export default function ManualEmailPage() {
                 <h2 className="text-lg font-semibold text-gray-900">
                   📨 Sent Email Records
                 </h2>
-                <button
-                  onClick={async () => {
-                    await loadSentRecords();
-                  }}
-                  className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  🔄 Refresh
-                </button>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-500">
+                    Total:{" "}
+                    <strong className="text-blue-600">{totalEmailsSent}</strong>{" "}
+                    emails sent
+                  </span>
+                  <button
+                    onClick={async () => {
+                      await loadSentRecords();
+                    }}
+                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
               </div>
 
               {loading && sentRecords.length === 0 && (
