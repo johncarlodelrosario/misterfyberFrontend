@@ -1,4 +1,3 @@
-// frontend/services/emailService.ts
 import api from "./api";
 
 export interface Customer {
@@ -87,7 +86,7 @@ export interface BulkEmailParams {
 class EmailService {
   private baseUrl = "/manual-email";
 
-  // Get customers for email selection
+  // Get customers for email selection - WITH NO CACHE HEADERS
   async getCustomers(params?: {
     search?: string;
     status?: string;
@@ -101,7 +100,21 @@ class EmailService {
         queryParams.append("hasBilling", String(params.hasBilling));
 
       const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
-      const response = await api.get(url);
+
+      // FORCE NO CACHE - important para makita ang bagong customers
+      const response = await api.get(url, {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
+
+      console.log(
+        "📦 Customers fetched:",
+        response.data?.data?.length || 0,
+        "customers",
+      );
       return response.data.data || [];
     } catch (error) {
       console.error("Failed to fetch customers:", error);

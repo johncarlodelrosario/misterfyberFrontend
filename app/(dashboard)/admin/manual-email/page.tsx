@@ -153,6 +153,9 @@ export default function ManualEmailPage() {
       // Always fetch fresh data - no caching
       const data = await emailService.getCustomers({ search });
 
+      console.log("🔄 loadCustomers called with search:", search);
+      console.log("📊 Raw data from API:", data);
+
       // Ensure each customer has buildingName property
       const processedData = (data || []).map((customer) => ({
         ...customer,
@@ -161,6 +164,18 @@ export default function ManualEmailPage() {
 
       setCustomers(processedData);
       console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
+
+      // Log the first few customers to verify
+      if (processedData.length > 0) {
+        console.log(
+          "👤 First 3 customers:",
+          processedData.slice(0, 3).map((c) => ({
+            name: `${c.firstName} ${c.lastName}`,
+            id: c.applicationId,
+            email: c.email,
+          })),
+        );
+      }
     } catch (error: any) {
       console.error("Failed to load customers:", error);
       const errorMsg =
@@ -312,10 +327,9 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      // Clear cache and refresh
+      // Clear cache and refresh - IMPORTANT: reload customers
       await loadSentRecords();
-      // Refresh customers to show updated data
-      await loadCustomers(searchTerm);
+      await loadCustomers(searchTerm); // Refresh customers to show updated data
 
       // Clear form
       setSubject("");
@@ -359,7 +373,7 @@ export default function ManualEmailPage() {
       );
 
       await loadSentRecords();
-      await loadCustomers(searchTerm);
+      await loadCustomers(searchTerm); // Refresh customers
 
       // Clear selections
       setSelectedCustomers([]);
@@ -393,7 +407,7 @@ export default function ManualEmailPage() {
       setReminderMessage("");
 
       await loadSentRecords();
-      await loadCustomers(searchTerm);
+      await loadCustomers(searchTerm); // Refresh customers
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
