@@ -32,7 +32,8 @@ export default function ManualEmailPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [includeBilling, setIncludeBilling] = useState(false);
-  const [selectedBillId, setSelectedBillId] = useState("");
+  // CHANGED: Support multiple bill IDs
+  const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [sendCopyToAdmin, setSendCopyToAdmin] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
@@ -157,13 +158,11 @@ export default function ManualEmailPage() {
     try {
       setLoading(true);
       setError(null);
-      // Always fetch fresh data - no caching
       const data = await emailService.getCustomers({ search });
 
       console.log("🔄 loadCustomers called with search:", search);
       console.log("📊 Raw data from API:", data?.length || 0, "customers");
 
-      // Ensure each customer has buildingName property
       const processedData = (data || []).map((customer) => ({
         ...customer,
         buildingName: customer.buildingName || "",
@@ -172,7 +171,6 @@ export default function ManualEmailPage() {
       setCustomers(processedData);
       console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
 
-      // Log the first few customers to verify
       if (processedData.length > 0) {
         console.log(
           "👤 First 3 customers:",
@@ -217,7 +215,6 @@ export default function ManualEmailPage() {
     try {
       const data = await emailService.getSentRecords();
       setSentRecords(data || []);
-      // Total emails sent will be updated by the useEffect above
     } catch (error) {
       console.error("Failed to load sent records:", error);
       setSentRecords([]);
@@ -228,10 +225,13 @@ export default function ManualEmailPage() {
     try {
       const data = await emailService.getCustomerBills(applicationId);
       setCustomerBills(data?.bills || []);
+      // Reset selected bills when customer changes
+      setSelectedBillIds([]);
     } catch (error) {
       console.error("Failed to load customer bills:", error);
       toast.error("Failed to load customer bills");
       setCustomerBills([]);
+      setSelectedBillIds([]);
     }
   };
 
@@ -258,7 +258,7 @@ export default function ManualEmailPage() {
       await loadCustomerBills(customer.applicationId);
     } else {
       setCustomerBills([]);
-      setSelectedBillId("");
+      setSelectedBillIds([]);
     }
   };
 
@@ -270,6 +270,28 @@ export default function ManualEmailPage() {
       setMessage(template.message || "");
       setIncludeBilling(template.includeBillingDefault || false);
     }
+  };
+
+  // CHANGED: Toggle bill selection
+  const toggleBillSelection = (billId: string) => {
+    setSelectedBillIds((prev) => {
+      if (prev.includes(billId)) {
+        return prev.filter((id) => id !== billId);
+      } else {
+        return [...prev, billId];
+      }
+    });
+  };
+
+  // CHANGED: Select all bills
+  const selectAllBills = () => {
+    const allBillIds = customerBills.map((bill) => bill._id);
+    setSelectedBillIds(allBillIds);
+  };
+
+  // CHANGED: Deselect all bills
+  const deselectAllBills = () => {
+    setSelectedBillIds([]);
   };
 
   const handlePreview = async () => {
@@ -285,7 +307,8 @@ export default function ManualEmailPage() {
         message,
         includeBilling,
         applicationId: selectedCustomer.applicationId,
-        billId: includeBilling ? selectedBillId : undefined,
+        // CHANGED: Send array of bill IDs
+        billIds: includeBilling ? selectedBillIds : undefined,
         useAdminSender: useAdminSender,
       });
       setPreviewHtml(preview.html || "");
@@ -311,8 +334,8 @@ export default function ManualEmailPage() {
       return;
     }
 
-    if (includeBilling && !selectedBillId) {
-      toast.error("Please select a bill to include");
+    if (includeBilling && selectedBillIds.length === 0) {
+      toast.error("Please select at least one bill to include");
       return;
     }
 
@@ -323,7 +346,8 @@ export default function ManualEmailPage() {
         subject,
         message,
         includeBilling,
-        billId: includeBilling ? selectedBillId : undefined,
+        // CHANGED: Send array of bill IDs
+        billIds: includeBilling ? selectedBillIds : undefined,
         sendCopyToAdmin,
         useAdminSender: useAdminSender,
       });
@@ -336,15 +360,13 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      // Clear cache and refresh - IMPORTANT: reload customers
       await loadSentRecords();
-      await loadCustomers(searchTerm); // Refresh customers to show updated data
+      await loadCustomers(searchTerm);
 
-      // Clear form
       setSubject("");
       setMessage("");
       setIncludeBilling(false);
-      setSelectedBillId("");
+      setSelectedBillIds([]);
     } catch (error: any) {
       console.error("Failed to send email:", error);
       toast.error(error.response?.data?.message || "Failed to send email");
@@ -382,9 +404,8 @@ export default function ManualEmailPage() {
       );
 
       await loadSentRecords();
-      await loadCustomers(searchTerm); // Refresh customers
+      await loadCustomers(searchTerm);
 
-      // Clear selections
       setSelectedCustomers([]);
       setSubject("");
       setMessage("");
@@ -416,7 +437,7 @@ export default function ManualEmailPage() {
       setReminderMessage("");
 
       await loadSentRecords();
-      await loadCustomers(searchTerm); // Refresh customers
+      await loadCustomers(searchTerm);
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
@@ -539,14 +560,12 @@ export default function ManualEmailPage() {
 
   // ==================== FILTERS ====================
   const filteredCustomers = customers.filter((c) => {
-    // Search filter
     const matchesSearch =
       (c.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (c.lastName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (c.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (c.applicationId?.toLowerCase() || "").includes(searchTerm.toLowerCase());
 
-    // Building filter
     let matchesBuilding = true;
     if (buildingFilter === "breeze") {
       matchesBuilding = (c.buildingName || "").toLowerCase().includes("breeze");
@@ -572,7 +591,6 @@ export default function ManualEmailPage() {
     ? filteredUnpaidCustomers
     : filteredCustomers;
 
-  // Get building statistics
   const breezeCount = customers.filter((c) =>
     (c.buildingName || "").toLowerCase().includes("breeze"),
   ).length;
@@ -999,7 +1017,7 @@ export default function ManualEmailPage() {
                   Message
                 </label>
                 <textarea
-                  rows={8}
+                  rows={6}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -1012,7 +1030,12 @@ export default function ManualEmailPage() {
                   type="checkbox"
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   checked={includeBilling}
-                  onChange={(e) => setIncludeBilling(e.target.checked)}
+                  onChange={(e) => {
+                    setIncludeBilling(e.target.checked);
+                    if (!e.target.checked) {
+                      setSelectedBillIds([]);
+                    }
+                  }}
                 />
                 <span className="ml-2 text-sm text-gray-700">
                   Include Billing Information
@@ -1021,31 +1044,105 @@ export default function ManualEmailPage() {
 
               {includeBilling && (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Bill
-                  </label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Select Bills ({selectedBillIds.length} selected)
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAllBills}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllBills}
+                        className="text-xs text-red-600 hover:text-red-800"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+
                   {customerBills.length > 0 ? (
-                    <select
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      value={selectedBillId}
-                      onChange={(e) => setSelectedBillId(e.target.value)}
-                    >
-                      <option value="">Select a bill...</option>
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
                       {customerBills.map((bill) => (
-                        <option key={bill._id} value={bill._id}>
-                          {bill.invoiceNumber || "N/A"} - ₱
-                          {(bill.total || 0).toLocaleString()} -{" "}
-                          {bill.status || "N/A"}
-                          {bill.isInstallationBill && " (Installation Fee)"}
-                          {bill.isProRated && " (Pro-rated)"}
-                        </option>
+                        <label
+                          key={bill._id}
+                          className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${
+                            selectedBillIds.includes(bill._id)
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            checked={selectedBillIds.includes(bill._id)}
+                            onChange={() => toggleBillSelection(bill._id)}
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium text-gray-900">
+                                {bill.invoiceNumber || "N/A"}
+                              </span>
+                              <span className="text-sm font-bold text-red-600">
+                                ₱{(bill.total || 0).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded-full ${
+                                  bill.status === "paid"
+                                    ? "bg-green-100 text-green-700"
+                                    : bill.status === "overdue"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
+                              >
+                                {bill.status || "N/A"}
+                              </span>
+                              {bill.isInstallationBill && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  Installation
+                                </span>
+                              )}
+                              {bill.isProRated && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                                  Pro-rated
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-500">
+                                Due:{" "}
+                                {new Date(bill.dueDate).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
                       ))}
-                    </select>
+                    </div>
                   ) : (
                     <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg">
                       No bills found for this customer. Please create a bill
                       first.
                     </p>
+                  )}
+
+                  {selectedBillIds.length > 0 && (
+                    <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">
+                        Selected {selectedBillIds.length} bill(s)
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Total: ₱
+                        {customerBills
+                          .filter((b) => selectedBillIds.includes(b._id))
+                          .reduce((sum, b) => sum + (b.total || 0), 0)
+                          .toLocaleString()}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -1078,7 +1175,8 @@ export default function ManualEmailPage() {
                     loading ||
                     !selectedCustomer ||
                     !subject.trim() ||
-                    !message.trim()
+                    !message.trim() ||
+                    (includeBilling && selectedBillIds.length === 0)
                   }
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >

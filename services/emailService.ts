@@ -1,3 +1,5 @@
+// services/emailService.ts
+
 import api from "./api";
 
 export interface Customer {
@@ -66,7 +68,8 @@ export interface SendEmailParams {
   subject: string;
   message: string;
   includeBilling: boolean;
-  billId?: string;
+  // CHANGED: support multiple bill IDs
+  billIds?: string[];
   sendCopyToAdmin?: boolean;
   attachments?: any[];
   priority?: "low" | "normal" | "high";
@@ -86,7 +89,7 @@ export interface BulkEmailParams {
 class EmailService {
   private baseUrl = "/manual-email";
 
-  // Get customers for email selection - WITHOUT problematic headers
+  // Get customers for email selection
   async getCustomers(params?: {
     search?: string;
     status?: string;
@@ -99,12 +102,10 @@ class EmailService {
       if (params?.hasBilling !== undefined)
         queryParams.append("hasBilling", String(params.hasBilling));
 
-      // Add a random timestamp to prevent caching
       queryParams.append("_t", Date.now().toString());
 
       const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
 
-      // Only use Cache-Control header, remove Pragma
       const response = await api.get(url, {
         headers: {
           "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -138,7 +139,7 @@ class EmailService {
     }
   }
 
-  // Send manual email to a single customer
+  // Send manual email to a single customer (supports multiple bills)
   async sendEmail(params: SendEmailParams): Promise<any> {
     try {
       const response = await api.post(`${this.baseUrl}/send`, params);
@@ -230,13 +231,14 @@ class EmailService {
     }
   }
 
-  // Preview email before sending
+  // Preview email before sending (supports multiple bills)
   async previewEmail(params: {
     subject: string;
     message: string;
     includeBilling: boolean;
     applicationId?: string;
-    billId?: string;
+    // CHANGED: support multiple bill IDs
+    billIds?: string[];
     useAdminSender?: boolean;
   }): Promise<{
     html: string;
