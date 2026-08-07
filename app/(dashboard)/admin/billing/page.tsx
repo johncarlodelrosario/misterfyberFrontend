@@ -170,7 +170,7 @@ import { persistQueryClient } from "@tanstack/react-query-persist-client";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000, // 30 seconds - REDUCED for real-time
+      staleTime: 5 * 1000, // 5 seconds - ULTRA FAST for real-time
       gcTime: 5 * 60 * 1000,
       refetchOnMount: true,
       refetchOnWindowFocus: true,
@@ -236,8 +236,8 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 30 * 1000,
-    refetchInterval: 10000, // Auto-refetch every 10 seconds for real-time
+    staleTime: 5 * 1000, // 5 seconds
+    refetchInterval: 3000, // Auto-refetch every 3 seconds for real-time
   });
 };
 
@@ -800,13 +800,13 @@ function AdminBillingPageContent() {
       return;
     }
 
-    // Check if enough days have passed since last auto-generation
+    // Check if enough time has passed since last auto-generation (reduced to 5 minutes)
     if (lastAutoGenTime) {
-      const hoursSince =
-        (Date.now() - lastAutoGenTime.getTime()) / (1000 * 60 * 60);
-      if (hoursSince < 1) {
+      const minutesSince =
+        (Date.now() - lastAutoGenTime.getTime()) / (1000 * 60);
+      if (minutesSince < 5) {
         toast(
-          `⏳ Auto-generation already ran ${Math.round(hoursSince * 60)} minutes ago`,
+          `⏳ Auto-generation already ran ${Math.round(minutesSince)} minutes ago`,
           {
             icon: "⏳",
             duration: 3000,
@@ -821,7 +821,7 @@ function AdminBillingPageContent() {
 
   // Setup real-time polling and event listeners
   useEffect(() => {
-    // Start polling for new customers every 10 seconds
+    // Start polling for new customers every 3 seconds (reduced for faster detection)
     pollingIntervalRef.current = startRealtimePolling(
       (data) => {
         if (data.totalNew > 0) {
@@ -835,7 +835,7 @@ function AdminBillingPageContent() {
           });
         }
       },
-      10000, // Check every 10 seconds
+      3000, // Check every 3 seconds
     );
 
     // Listen to billing events
@@ -1303,12 +1303,11 @@ function AdminBillingPageContent() {
   useEffect(() => {
     loadBillingFlowSettings();
 
-    // Check for auto-generation on mount
+    // Check for auto-generation every 5 minutes (reduced from 1 hour)
     if (billingFlowSettings.earlyBillGenerationDays > 0) {
-      // Auto-generate every hour if enabled
       const autoGenInterval = setInterval(() => {
         handleAutoGenerateEarlyBills();
-      }, 3600000); // Every hour
+      }, 300000); // Every 5 minutes
 
       return () => clearInterval(autoGenInterval);
     }
