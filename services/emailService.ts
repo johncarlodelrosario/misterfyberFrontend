@@ -86,7 +86,7 @@ export interface BulkEmailParams {
 class EmailService {
   private baseUrl = "/manual-email";
 
-  // Get customers for email selection - WITH NO CACHE HEADERS
+  // Get customers for email selection - WITHOUT problematic headers
   async getCustomers(params?: {
     search?: string;
     status?: string;
@@ -99,14 +99,15 @@ class EmailService {
       if (params?.hasBilling !== undefined)
         queryParams.append("hasBilling", String(params.hasBilling));
 
+      // Add a random timestamp to prevent caching
+      queryParams.append("_t", Date.now().toString());
+
       const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
 
-      // FORCE NO CACHE - important para makita ang bagong customers
+      // Only use Cache-Control header, remove Pragma
       const response = await api.get(url, {
         headers: {
           "Cache-Control": "no-cache, no-store, must-revalidate",
-          Pragma: "no-cache",
-          Expires: "0",
         },
       });
 

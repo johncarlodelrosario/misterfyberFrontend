@@ -10,9 +10,6 @@ import emailService, {
 } from "@/services/emailService";
 import toast from "react-hot-toast";
 
-// ==================== NO CACHING - Always fetch fresh data ====================
-// Removed global cache to ensure new customers always show
-
 export default function ManualEmailPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
@@ -154,7 +151,7 @@ export default function ManualEmailPage() {
       const data = await emailService.getCustomers({ search });
 
       console.log("🔄 loadCustomers called with search:", search);
-      console.log("📊 Raw data from API:", data);
+      console.log("📊 Raw data from API:", data?.length || 0, "customers");
 
       // Ensure each customer has buildingName property
       const processedData = (data || []).map((customer) => ({
