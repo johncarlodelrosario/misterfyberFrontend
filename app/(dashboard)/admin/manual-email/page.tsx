@@ -1,4 +1,3 @@
-// frontend/app/manual-email/page.tsx
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -11,10 +10,8 @@ import emailService, {
 } from "@/services/emailService";
 import toast from "react-hot-toast";
 
-// ==================== GLOBAL CACHE ====================
-let globalCache: any = null;
-let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// ==================== NO CACHING - Always fetch fresh data ====================
+// Removed global cache to ensure new customers always show
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
@@ -146,25 +143,14 @@ export default function ManualEmailPage() {
     }
   }, [selectedCustomer]);
 
-  // ==================== LOAD FUNCTIONS WITH CACHING ====================
+  // ==================== LOAD FUNCTIONS - NO CACHING ====================
   const loadCustomers = useCallback(async (search?: string) => {
     if (!isMountedRef.current) return;
-
-    const now = Date.now();
-    if (
-      globalCache &&
-      globalCache.customers &&
-      now - globalCacheTimestamp < CACHE_TTL
-    ) {
-      setCustomers(globalCache.customers);
-      setError(null);
-      setLoading(false);
-      return;
-    }
 
     try {
       setLoading(true);
       setError(null);
+      // Always fetch fresh data - no caching
       const data = await emailService.getCustomers({ search });
 
       // Ensure each customer has buildingName property
@@ -174,10 +160,7 @@ export default function ManualEmailPage() {
       }));
 
       setCustomers(processedData);
-
-      if (!globalCache) globalCache = {};
-      globalCache.customers = processedData;
-      globalCacheTimestamp = now;
+      console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
     } catch (error: any) {
       console.error("Failed to load customers:", error);
       const errorMsg =
@@ -196,23 +179,9 @@ export default function ManualEmailPage() {
   const loadTemplates = useCallback(async () => {
     if (!isMountedRef.current) return;
 
-    const now = Date.now();
-    if (
-      globalCache &&
-      globalCache.templates &&
-      now - globalCacheTimestamp < CACHE_TTL
-    ) {
-      setTemplates(globalCache.templates);
-      return;
-    }
-
     try {
       const data = await emailService.getTemplates();
       setTemplates(data || []);
-
-      if (!globalCache) globalCache = {};
-      globalCache.templates = data || [];
-      globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load templates:", error);
       setTemplates([]);
@@ -222,23 +191,9 @@ export default function ManualEmailPage() {
   const loadSentRecords = useCallback(async () => {
     if (!isMountedRef.current) return;
 
-    const now = Date.now();
-    if (
-      globalCache &&
-      globalCache.sentRecords &&
-      now - globalCacheTimestamp < CACHE_TTL
-    ) {
-      setSentRecords(globalCache.sentRecords);
-      return;
-    }
-
     try {
       const data = await emailService.getSentRecords();
       setSentRecords(data || []);
-
-      if (!globalCache) globalCache = {};
-      globalCache.sentRecords = data || [];
-      globalCacheTimestamp = now;
     } catch (error) {
       console.error("Failed to load sent records:", error);
       setSentRecords([]);
@@ -357,9 +312,10 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      globalCache = null;
-      globalCacheTimestamp = 0;
+      // Clear cache and refresh
       await loadSentRecords();
+      // Refresh customers to show updated data
+      await loadCustomers(searchTerm);
 
       // Clear form
       setSubject("");
@@ -402,9 +358,8 @@ export default function ManualEmailPage() {
         `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
       );
 
-      globalCache = null;
-      globalCacheTimestamp = 0;
       await loadSentRecords();
+      await loadCustomers(searchTerm);
 
       // Clear selections
       setSelectedCustomers([]);
@@ -437,9 +392,8 @@ export default function ManualEmailPage() {
       setShowReminderDialog(false);
       setReminderMessage("");
 
-      globalCache = null;
-      globalCacheTimestamp = 0;
       await loadSentRecords();
+      await loadCustomers(searchTerm);
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
@@ -466,8 +420,6 @@ export default function ManualEmailPage() {
         includeBillingDefault: false,
       });
 
-      globalCache = null;
-      globalCacheTimestamp = 0;
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to save template:", error);
@@ -511,8 +463,6 @@ export default function ManualEmailPage() {
         includeBillingDefault: false,
       });
 
-      globalCache = null;
-      globalCacheTimestamp = 0;
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to update template:", error);
@@ -526,8 +476,6 @@ export default function ManualEmailPage() {
         await emailService.deleteTemplate(templateId);
         toast.success("Template deleted successfully");
 
-        globalCache = null;
-        globalCacheTimestamp = 0;
         await loadTemplates();
       } catch (error) {
         console.error("Failed to delete template:", error);
@@ -542,8 +490,6 @@ export default function ManualEmailPage() {
         await emailService.deleteSentRecord(recordId);
         toast.success("Record deleted successfully");
 
-        globalCache = null;
-        globalCacheTimestamp = 0;
         await loadSentRecords();
       } catch (error) {
         console.error("Failed to delete record:", error);
@@ -553,8 +499,6 @@ export default function ManualEmailPage() {
   };
 
   const handleRefresh = async () => {
-    globalCache = null;
-    globalCacheTimestamp = 0;
     await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
     toast.success("All data refreshed!");
   };
@@ -661,7 +605,7 @@ export default function ManualEmailPage() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                   <p className="text-red-600 text-sm">{error}</p>
                   <button
-                    onClick={() => loadCustomers()}
+                    onClick={() => loadCustomers(searchTerm)}
                     className="mt-2 text-sm text-red-700 underline"
                   >
                     Try Again
@@ -1388,8 +1332,6 @@ export default function ManualEmailPage() {
                 </h2>
                 <button
                   onClick={async () => {
-                    globalCache = null;
-                    globalCacheTimestamp = 0;
                     await loadSentRecords();
                   }}
                   className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
