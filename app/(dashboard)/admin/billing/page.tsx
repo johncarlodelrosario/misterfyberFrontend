@@ -170,7 +170,7 @@ import { persistQueryClient } from "@tanstack/react-query-persist-client";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 1000, // 5 seconds - ULTRA FAST for real-time
+      staleTime: 3 * 1000, // 3 seconds - EVEN FASTER for real-time
       gcTime: 5 * 60 * 1000,
       refetchOnMount: true,
       refetchOnWindowFocus: true,
@@ -236,8 +236,8 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 5 * 1000, // 5 seconds
-    refetchInterval: 3000, // Auto-refetch every 3 seconds for real-time
+    staleTime: 3 * 1000, // 3 seconds
+    refetchInterval: 2000, // Auto-refetch every 2 seconds for REAL-TIME
   });
 };
 
@@ -293,6 +293,8 @@ function AdminBillingPageContent() {
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
   const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [realtimeUpdate, setRealtimeUpdate] = useState(0); // Trigger re-renders
+  const [lastPaymentUpdate, setLastPaymentUpdate] = useState<Date | null>(null);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
@@ -366,32 +368,32 @@ function AdminBillingPageContent() {
   const customers = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customers || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]); // Added realtimeUpdate dependency
 
   const billingCycles = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.billingCycles || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const bills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.bills || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const pendingPayments = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingPayments || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const customersWithoutAccounts = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customersWithoutAccounts || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const pendingInstallationBills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingInstallationBills || [];
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const stats = useMemo(() => {
     if (!dashboardData?.stats) {
@@ -412,7 +414,7 @@ function AdminBillingPageContent() {
       };
     }
     return dashboardData.stats;
-  }, [dashboardData]);
+  }, [dashboardData, realtimeUpdate]);
 
   const totalPendingCount = useMemo(() => {
     return (
@@ -429,6 +431,7 @@ function AdminBillingPageContent() {
     pendingInstallationBills,
     customersWithoutAccounts,
     stats,
+    realtimeUpdate,
   ]);
 
   // ==================== MUTATIONS ====================
@@ -440,6 +443,10 @@ function AdminBillingPageContent() {
     queryClient.invalidateQueries({ queryKey: ["users"] });
     queryClient.invalidateQueries({ queryKey: ["applications"] });
     queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
+    queryClient.invalidateQueries({ queryKey: ["pendingInstallationBills"] });
+
+    // Trigger re-render
+    setRealtimeUpdate((prev) => prev + 1);
 
     // Also refetch with new data
     setTimeout(() => {
@@ -676,6 +683,7 @@ function AdminBillingPageContent() {
     }) => markBillAsPaid(billId, paymentData),
     onSuccess: () => {
       toast.success("✅ Bill marked as paid!");
+      setLastPaymentUpdate(new Date());
       invalidateAll();
     },
     onError: (error: any) => {
@@ -696,6 +704,7 @@ function AdminBillingPageContent() {
     }) => markInstallationBillAsPaid(billId, paymentData),
     onSuccess: () => {
       toast.success("✅ Installation bill marked as paid!");
+      setLastPaymentUpdate(new Date());
       invalidateAll();
     },
     onError: (error: any) => {
@@ -711,6 +720,7 @@ function AdminBillingPageContent() {
     mutationFn: (paymentId: string) => confirmPayment(paymentId),
     onSuccess: () => {
       toast.success("✅ Payment confirmed!");
+      setLastPaymentUpdate(new Date());
       invalidateAll();
     },
     onError: (error: any) => {
@@ -819,15 +829,141 @@ function AdminBillingPageContent() {
     autoGenerateEarlyBillsMutation.mutate();
   };
 
-  // Setup real-time polling and event listeners
+  // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS ====================
   useEffect(() => {
-    // Start polling for new customers every 3 seconds (reduced for faster detection)
+    // Listen for payment confirmed events - UPDATE REAL-TIME
+    const unsubscribePayment = billingEvents.on(
+      "payment_confirmed",
+      (payload) => {
+        console.log("💳 Payment confirmed - Real-time update:", payload);
+        // Force refresh data immediately
+        clearBillingCache();
+        setLastPaymentUpdate(new Date());
+        invalidateAll();
+        // Show toast notification
+        toast.success(`💳 Payment confirmed! Data updated.`, {
+          icon: "✅",
+          duration: 3000,
+        });
+      },
+    );
+
+    // Listen for bill generated events
+    const unsubscribeBill = billingEvents.on("bill_generated", (payload) => {
+      console.log("📄 Bill generated - Real-time update:", payload);
+      clearBillingCache();
+      invalidateAll();
+      toast.success(`📄 New bill generated!`, { icon: "📄" });
+    });
+
+    // Listen for billing updated events (start, stop, pause, resume, etc.)
+    const unsubscribeBilling = billingEvents.on(
+      "billing_updated",
+      (payload) => {
+        console.log("🔄 Billing updated - Real-time update:", payload);
+        clearBillingCache();
+        invalidateAll();
+        const action = payload.type || "updated";
+        toast.success(`🔄 Billing ${action}!`, { icon: "🔄" });
+      },
+    );
+
+    // Listen for bills recovered
+    const unsubscribeBillsRecovered = billingEvents.on(
+      "bills_recovered",
+      (payload) => {
+        console.log("📄 Bills recovered - Real-time update:", payload);
+        clearBillingCache();
+        invalidateAll();
+        toast.success(`📄 Bills recovered!`, { icon: "📄" });
+      },
+    );
+
+    // Listen for settings updated
+    const unsubscribeSettings = billingEvents.on(
+      "settings_updated",
+      (payload) => {
+        console.log("⚙️ Settings updated - Real-time update:", payload);
+        loadBillingFlowSettings();
+      },
+    );
+
+    // Listen for suspension updated
+    const unsubscribeSuspension = billingEvents.on(
+      "suspension_updated",
+      (payload) => {
+        console.log("⛔ Suspension updated - Real-time update:", payload);
+        clearBillingCache();
+        invalidateAll();
+        toast.success(`⛔ Suspension status updated!`, { icon: "⛔" });
+      },
+    );
+
+    // Listen for payment submitted events (from user side)
+    const unsubscribePaymentSubmitted = billingEvents.on(
+      "payment_submitted",
+      (payload) => {
+        console.log("💳 Payment submitted - Real-time update:", payload);
+        clearBillingCache();
+        invalidateAll();
+        toast.success(`💳 Payment submitted! Waiting for confirmation.`, {
+          icon: "💳",
+        });
+      },
+    );
+
+    // Listen for new customer detection from WebSocket
+    const unsubscribeNewCustomer = billingEvents.on(
+      "new_customer",
+      (payload) => {
+        console.log("🆕 New customer detected via WebSocket:", payload);
+        setNewCustomerDetected(true);
+        setNewCustomerCount(payload.totalNew || 1);
+        clearBillingCache();
+        invalidateAll();
+        toast.success(`🆕 New customer detected! Refreshing data...`, {
+          icon: "👤",
+          duration: 5000,
+        });
+      },
+    );
+
+    // Listen for bills generated (auto monthly)
+    const unsubscribeBillsGenerated = billingEvents.on(
+      "bills_generated",
+      (payload) => {
+        console.log("📄 Bills generated - Real-time update:", payload);
+        clearBillingCache();
+        invalidateAll();
+        toast.success(`📄 Monthly bills generated!`, { icon: "📄" });
+      },
+    );
+
+    // Cleanup all listeners on unmount
+    return () => {
+      unsubscribePayment();
+      unsubscribeBill();
+      unsubscribeBilling();
+      unsubscribeBillsRecovered();
+      unsubscribeSettings();
+      unsubscribeSuspension();
+      unsubscribePaymentSubmitted();
+      unsubscribeNewCustomer();
+      unsubscribeBillsGenerated();
+      billingEvents.disconnect();
+    };
+  }, [invalidateAll]); // Re-run if invalidateAll changes
+
+  // ==================== POLLING FOR NEW CUSTOMERS ====================
+  useEffect(() => {
+    // Start polling for new customers every 2 seconds (FASTER)
     pollingIntervalRef.current = startRealtimePolling(
       (data) => {
         if (data.totalNew > 0) {
           setNewCustomerDetected(true);
           setNewCustomerCount(data.totalNew);
           // Auto-refresh dashboard data
+          clearBillingCache();
           invalidateAll();
           toast.success(`🆕 ${data.totalNew} new customer(s) detected!`, {
             icon: "👤",
@@ -835,38 +971,7 @@ function AdminBillingPageContent() {
           });
         }
       },
-      3000, // Check every 3 seconds
-    );
-
-    // Listen to billing events
-    const unsubscribeBilling = billingEvents.on(
-      "billing_updated",
-      (payload) => {
-        console.log("🔄 Billing updated:", payload);
-        invalidateAll();
-      },
-    );
-
-    const unsubscribePayment = billingEvents.on(
-      "payment_confirmed",
-      (payload) => {
-        console.log("💳 Payment confirmed:", payload);
-        invalidateAll();
-      },
-    );
-
-    const unsubscribeBill = billingEvents.on("bill_generated", (payload) => {
-      console.log("📄 Bill generated:", payload);
-      invalidateAll();
-      toast.success(`📄 New bill generated!`, { icon: "📄" });
-    });
-
-    const unsubscribeSettings = billingEvents.on(
-      "settings_updated",
-      (payload) => {
-        console.log("⚙️ Settings updated:", payload);
-        loadBillingFlowSettings();
-      },
+      2000, // Check every 2 seconds
     );
 
     // Cleanup on unmount
@@ -874,11 +979,6 @@ function AdminBillingPageContent() {
       if (pollingIntervalRef.current) {
         stopRealtimePolling(pollingIntervalRef.current);
       }
-      unsubscribeBilling();
-      unsubscribePayment();
-      unsubscribeBill();
-      unsubscribeSettings();
-      billingEvents.disconnect();
     };
   }, [invalidateAll]);
 
@@ -1317,7 +1417,7 @@ function AdminBillingPageContent() {
   return (
     <div>
       {/* Real-time status bar */}
-      {(newCustomerDetected || autoGenerationRunning) && (
+      {(newCustomerDetected || autoGenerationRunning || lastPaymentUpdate) && (
         <div className="sticky top-0 z-50 bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {newCustomerDetected && (
@@ -1337,11 +1437,21 @@ function AdminBillingPageContent() {
                 </span>
               </span>
             )}
+            {lastPaymentUpdate && !newCustomerDetected && (
+              <span className="flex items-center gap-1 text-green-700">
+                <FiCheckCircle className="w-4 h-4" />
+                <span className="font-medium">Payment updated!</span>
+                <span className="text-sm text-green-500">
+                  {lastPaymentUpdate.toLocaleTimeString()}
+                </span>
+              </span>
+            )}
           </div>
           <button
             onClick={() => {
               setNewCustomerDetected(false);
               setNewCustomerCount(0);
+              setLastPaymentUpdate(null);
             }}
             className="text-blue-600 hover:text-blue-800 text-sm"
           >
