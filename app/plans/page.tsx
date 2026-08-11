@@ -164,7 +164,6 @@ export default function PlansSection() {
           features: [
             "200 Mbps Speed",
             "Unlimited Internet",
-            "Free Mesh WiFi",
             "Priority Support",
             "Static IP Included",
           ],

@@ -1,4 +1,5 @@
-// services/admin.ts
+// services/admin.ts - COMPLETE WITH BULK DELETE FUNCTIONALITY
+
 import api from "./api";
 
 // ==================== CACHE MANAGEMENT ====================
@@ -351,6 +352,7 @@ export const rejectPayment = async (paymentId: string, reason: string) => {
   }
 };
 
+// ==================== DELETE PAYMENT ====================
 export const deletePayment = async (paymentId: string) => {
   try {
     const response = await api.delete(`/payments/${paymentId}`);
@@ -359,6 +361,33 @@ export const deletePayment = async (paymentId: string) => {
   } catch (error: any) {
     console.error(
       "Error deleting payment:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+// ==================== BULK DELETE CUSTOMER PAYMENTS ====================
+export const bulkDeleteCustomerPayments = async (
+  customerId: string,
+  deleteAll: boolean = false,
+): Promise<any> => {
+  try {
+    const response = await api.delete(`/payments/bulk/customer/${customerId}`, {
+      data: { deleteAll },
+    });
+    // Clear payment cache
+    try {
+      const { clearPaymentsCache } = await import("./payment");
+      clearPaymentsCache();
+    } catch (e) {
+      // If payment module not available, clear admin cache
+      clearAdminCache();
+    }
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error bulk deleting customer payments:",
       error.response?.data || error.message,
     );
     throw error;
@@ -706,6 +735,10 @@ export const clearBillingCache = () => {
     "admin_billing_cycles_cache",
     "admin_customers_without_accounts_cache",
     "admin_email_alerts_preference_cache",
+    "payment_cache_keys",
+    "misterfyber_payments_data",
+    "misterfyber_pending_payments",
+    "misterfyber_admin_all_payments",
   ];
   keys.forEach((key) => {
     try {
@@ -715,34 +748,77 @@ export const clearBillingCache = () => {
   console.log("🗑️ All caches cleared");
 };
 
+// ==================== PAYMENT CACHE CLEAR (ALIAS) ====================
+export const clearPaymentsCache = () => {
+  try {
+    const keys = [
+      "payment_cache_keys",
+      "misterfyber_payments_data",
+      "misterfyber_pending_payments",
+      "misterfyber_admin_all_payments",
+    ];
+    keys.forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    });
+    console.log("🗑️ Payment cache cleared");
+  } catch (e) {
+    console.error("Error clearing payment cache:", e);
+  }
+};
+
 // ==================== DEFAULT EXPORT ====================
 export default {
+  // Email Alerts
   toggleCustomerEmailAlerts,
   getCustomerEmailAlertsPreference,
+
+  // Dashboard
   getDashboardStats,
   getRecentActivities,
+
+  // Users
   getAllUsers,
   getUser,
   updateUser,
   approveUser,
   suspendUser,
   deleteUser,
+
+  // Payments
   getAllPayments,
   getPendingPayments,
   confirmPayment,
   rejectPayment,
   deletePayment,
+  bulkDeleteCustomerPayments,
+  clearPaymentsCache,
+
+  // Bills
   getAllBills,
+
+  // Customers
   createManualCustomer,
   getCustomersWithoutAccounts,
+
+  // Reports
   generateReport,
+
+  // Applications
   getAllApplications,
   approveApplication,
   rejectApplication,
   startBillingForApplication,
   getApplicationBillingStatus,
+
+  // Billing Cycles
   getAllBillingCycles,
+
+  // Dashboard Data
   fetchDashboardData,
+
+  // Cache Management
   clearBillingCache,
   clearAdminCache,
 };

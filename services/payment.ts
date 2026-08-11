@@ -1,4 +1,4 @@
-// frontend/src/services/payment.ts
+// frontend/src/services/payment.ts - COMPLETE WITH DELETE
 
 import api from "./api";
 
@@ -12,7 +12,7 @@ export interface CreatePaymentData {
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
 }
 
 export interface PaymentResponse {
@@ -27,7 +27,7 @@ export interface Payment {
   _id: string;
   userId: any;
   applicationId?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
   amount: number;
   paymentMethod: string;
   paymentType: string;
@@ -54,10 +54,10 @@ export interface GetAllPaymentsParams {
   limit?: number;
   status?: string;
   paymentType?: string;
-  buildingId?: string; // Add buildingId
+  buildingId?: string;
   search?: string;
   forceRefresh?: boolean;
-  startDate?: string; // Add date range
+  startDate?: string;
   endDate?: string;
 }
 
@@ -88,7 +88,7 @@ const PAYMENT_CACHE_KEYS = {
   ADMIN_ALL_PAYMENTS: "misterfyber_admin_all_payments",
 };
 
-const PAYMENT_CACHE_DURATION = 3 * 60 * 1000; // Reduced to 3 minutes
+const PAYMENT_CACHE_DURATION = 3 * 60 * 1000;
 const MAX_CACHE_ITEMS = 15;
 
 function getCachedPayments<T>(key: string): T | null {
@@ -98,7 +98,6 @@ function getCachedPayments<T>(key: string): T | null {
     const item = JSON.parse(cached);
     if (Date.now() - item.timestamp > PAYMENT_CACHE_DURATION) {
       localStorage.removeItem(key);
-      // Update cache keys
       try {
         const storedKeys = localStorage.getItem("payment_cache_keys");
         if (storedKeys) {
@@ -117,7 +116,6 @@ function getCachedPayments<T>(key: string): T | null {
 
 function setCachedPayments<T>(key: string, data: T): void {
   try {
-    // LRU: Remove oldest if cache is full
     try {
       const storedKeys = localStorage.getItem("payment_cache_keys");
       let cacheKeys = storedKeys ? JSON.parse(storedKeys) : [];
@@ -349,6 +347,7 @@ export const getAllPayments = async (
   }
 };
 
+// ==================== DELETE PAYMENT ====================
 export const deletePayment = async (paymentId: string): Promise<any> => {
   try {
     const response = await api.delete(`/payments/${paymentId}`);
@@ -356,6 +355,23 @@ export const deletePayment = async (paymentId: string): Promise<any> => {
     return response.data;
   } catch (error) {
     console.error("Error deleting payment:", error);
+    throw error;
+  }
+};
+
+// ==================== BULK DELETE CUSTOMER PAYMENTS ====================
+export const bulkDeleteCustomerPayments = async (
+  customerId: string,
+  deleteAll: boolean = false,
+): Promise<any> => {
+  try {
+    const response = await api.delete(`/payments/bulk/customer/${customerId}`, {
+      data: { deleteAll },
+    });
+    clearPaymentsCache();
+    return response.data;
+  } catch (error) {
+    console.error("Error bulk deleting customer payments:", error);
     throw error;
   }
 };
@@ -371,5 +387,6 @@ export default {
   getPaymentStats,
   getAllPayments,
   deletePayment,
+  bulkDeleteCustomerPayments,
   clearPaymentsCache,
 };

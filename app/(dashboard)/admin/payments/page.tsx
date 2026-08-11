@@ -1,4 +1,5 @@
-// frontend/src/app/admin/payments/page.tsx
+// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FIXED toast.info ERROR
+
 "use client";
 
 import React, {
@@ -15,6 +16,7 @@ import {
   rejectPayment,
   getPendingPayments,
   deletePayment,
+  bulkDeleteCustomerPayments,
   type Payment as ServicePayment,
 } from "@/services/payment";
 import {
@@ -39,11 +41,11 @@ import {
   FiHome,
   FiBarChart2,
   FiPrinter,
+  FiAlertTriangle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
 
-// Re-export the Payment type from the service to ensure consistency
 type Payment = ServicePayment;
 
 interface CustomerInfo {
@@ -75,21 +77,16 @@ interface Building {
   buildingName?: string;
 }
 
-// ==================== BUILDING CACHE ====================
 const buildingCache = new Map<string, { name: string; address: string }>();
-
-// ==================== CUSTOMER NAME CACHE ====================
 const customerNameCache = new Map<
   string,
   { name: string; email: string; phone: string; buildingId?: string }
 >();
 
-// ==================== GLOBAL CACHE ====================
 let globalCache: any = null;
 let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
-// ==================== HELPERS ====================
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -120,14 +117,12 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-// ==================== FETCH BUILDINGS ====================
 async function fetchBuildings(): Promise<Building[]> {
   try {
     const response = await api.get("/buildings");
     if (response.data?.success && response.data?.data) {
       const buildings = response.data.data;
       buildings.forEach((b: any) => {
-        // Handle both field names: 'name' or 'buildingName'
         const buildingName = b.name || b.buildingName || "Unnamed Building";
         buildingCache.set(b._id, {
           name: buildingName,
@@ -143,7 +138,6 @@ async function fetchBuildings(): Promise<Building[]> {
   }
 }
 
-// ==================== FETCH CUSTOMER NAME ====================
 async function fetchCustomerName(applicationId: string): Promise<{
   name: string;
   email: string;
@@ -183,11 +177,9 @@ async function fetchCustomerName(applicationId: string): Promise<{
   }
 }
 
-// ==================== EXTRACT CUSTOMER INFO ====================
 async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
   let appId = "";
 
-  // Safely extract applicationId with proper type checking
   if (payment.applicationId) {
     if (typeof payment.applicationId === "string") {
       appId = payment.applicationId;
@@ -208,11 +200,9 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
 
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
-  // Get building name - check multiple possible sources
   let buildingId = payment.buildingId;
   let buildingName = "";
 
-  // Try to get building name from cache or API
   if (buildingId) {
     if (buildingCache.has(buildingId)) {
       const building = buildingCache.get(buildingId)!;
@@ -229,20 +219,15 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
           });
           buildingName = name;
         }
-      } catch (e) {
-        // Ignore
-      }
+      } catch (e) {}
     }
   }
 
-  // Also check if building info is nested in userId or other fields
   if (!buildingName) {
-    // Check if userId has building info
     if (payment.userId && typeof payment.userId === "object") {
       const user = payment.userId as any;
       if (user.buildingId) {
         const userBuildingId = user.buildingId;
-        // Try to get building name - check that it's a string
         if (
           typeof userBuildingId === "string" &&
           buildingCache.has(userBuildingId)
@@ -258,7 +243,6 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
 
   if (appId && isAppIdPattern) {
     const customerData = await fetchCustomerName(appId);
-    // Use building info from customer data if available
     const finalBuildingId = customerData.buildingId || buildingId;
     let finalBuildingName = buildingName;
 
@@ -303,7 +287,6 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     if (fullName.length > 1) {
       const isAppId = /^[A-Z]{3}\d+/.test(fullName);
       if (!isAppId) {
-        // Check if user has building info
         let userBuildingId = user.buildingId || buildingId;
         let userBuildingName = buildingName;
         if (
@@ -367,7 +350,6 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
   };
 }
 
-// ==================== GROUP PAYMENTS ====================
 async function groupPaymentsAsync(
   payments: Payment[],
 ): Promise<PaymentGroup[]> {
@@ -432,7 +414,6 @@ async function groupPaymentsAsync(
   return Array.from(groups.values());
 }
 
-// ==================== HELPER FUNCTIONS ====================
 function getStatusColor(status: string): string {
   switch (status) {
     case "completed":
@@ -461,7 +442,7 @@ function getPaymentTypeColor(type: string): string {
   }
 }
 
-// ==================== MEMOIZED CUSTOMER DETAILS ====================
+// ==================== CUSTOMER DETAILS COMPONENT ====================
 const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
   const [info, setInfo] = useState<CustomerInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -580,7 +561,7 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
 
 CustomerDetails.displayName = "CustomerDetails";
 
-// ==================== MEMOIZED PENDING PAYMENT ROW ====================
+// ==================== PENDING PAYMENT ROW COMPONENT ====================
 const PendingPaymentRow = React.memo(
   ({
     payment,
@@ -622,7 +603,7 @@ const PendingPaymentRow = React.memo(
     if (loading || !info) {
       return (
         <tr>
-          <td colSpan={8} className="px-4 py-3 text-center">
+          <td colSpan={9} className="px-4 py-3 text-center">
             <span className="animate-pulse">Loading customer info...</span>
           </td>
         </tr>
@@ -705,7 +686,7 @@ const PendingPaymentRow = React.memo(
 
 PendingPaymentRow.displayName = "PendingPaymentRow";
 
-// ==================== MEMOIZED CUSTOMER SUMMARY ROW ====================
+// ==================== CUSTOMER SUMMARY ROW COMPONENT ====================
 const CustomerSummaryRow = React.memo(
   ({
     group,
@@ -715,7 +696,9 @@ const CustomerSummaryRow = React.memo(
     onToggleExpand,
     onView,
     onDelete,
+    onBulkDelete,
     deleting,
+    bulkDeleting,
   }: {
     group: PaymentGroup;
     index: number;
@@ -724,9 +707,20 @@ const CustomerSummaryRow = React.memo(
     onToggleExpand: (id: string) => void;
     onView: (payment: Payment) => void;
     onDelete: (id: string, ref: string) => void;
+    onBulkDelete: (customerId: string, customerName: string) => void;
     deleting: boolean;
+    bulkDeleting: boolean;
   }) => {
     const hasMultiple = group.paymentCount > 1;
+    const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+
+    // Helper to show toast info (fix for toast.info error)
+    const showToastInfo = (message: string) => {
+      toast(message, {
+        icon: "ℹ️",
+        duration: 4000,
+      });
+    };
 
     return (
       <Fragment>
@@ -791,12 +785,76 @@ const CustomerSummaryRow = React.memo(
             {formatShortDate(group.lastPaymentDate)}
           </td>
           <td className="px-4 py-4 text-center">
-            <button
-              onClick={() => onView(group.payments[0])}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              <FiEye className="w-5 h-5" />
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => onView(group.payments[0])}
+                className="text-blue-600 hover:text-blue-800"
+                title="View Details"
+              >
+                <FiEye className="w-5 h-5" />
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+                  className="text-red-600 hover:text-red-800"
+                  title="Delete Options"
+                >
+                  <FiTrash2 className="w-5 h-5" />
+                </button>
+                {showDeleteMenu && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
+                    <div className="p-2">
+                      <p className="text-xs text-gray-500 px-3 py-1 border-b border-gray-100">
+                        Delete options for {group.customerInfo.name}
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowDeleteMenu(false);
+                          onBulkDelete(
+                            group.customerId,
+                            group.customerInfo.name,
+                          );
+                        }}
+                        disabled={bulkDeleting}
+                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition flex items-center gap-2"
+                      >
+                        <FiTrash2 className="w-4 h-4" />
+                        Delete ALL payments for this customer
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDeleteMenu(false);
+                          // Delete only pending payments
+                          const pendingPayments = group.payments.filter(
+                            (p) => p.status === "pending",
+                          );
+                          if (pendingPayments.length === 0) {
+                            showToastInfo(
+                              "No pending payments to delete for this customer",
+                            );
+                            return;
+                          }
+                          if (
+                            !confirm(
+                              `Delete ${pendingPayments.length} pending payment(s) for ${group.customerInfo.name}?`,
+                            )
+                          )
+                            return;
+                          pendingPayments.forEach((p) =>
+                            onDelete(p._id, p.referenceNumber),
+                          );
+                        }}
+                        disabled={deleting}
+                        className="w-full text-left px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded transition flex items-center gap-2"
+                      >
+                        <FiClock className="w-4 h-4" />
+                        Delete only PENDING payments
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </td>
         </tr>
         {isExpanded && hasMultiple && (
@@ -804,7 +862,7 @@ const CustomerSummaryRow = React.memo(
             <td colSpan={10} className="px-4 py-4 pl-12">
               <div className="border-l-4 border-blue-400 pl-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  Payment History
+                  Payment History ({group.payments.length} payments)
                 </p>
                 <div className="space-y-3">
                   {group.payments.map((p, idx) => {
@@ -926,7 +984,7 @@ const CustomerSummaryRow = React.memo(
 
 CustomerSummaryRow.displayName = "CustomerSummaryRow";
 
-// ==================== MAIN PAGE ====================
+// ==================== MAIN PAGE COMPONENT ====================
 export default function AdminPaymentsPage() {
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
   const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
@@ -942,12 +1000,12 @@ export default function AdminPaymentsPage() {
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [sortField, setSortField] =
     useState<keyof PaymentGroup>("lastPaymentDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
 
-  // Date range filters for PDF
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -970,7 +1028,6 @@ export default function AdminPaymentsPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
 
-  // Load buildings on mount
   useEffect(() => {
     fetchBuildings().then((data) => {
       if (isMountedRef.current) {
@@ -984,7 +1041,6 @@ export default function AdminPaymentsPage() {
     async (forceRefresh = false) => {
       if (!isMountedRef.current) return;
 
-      // Check global cache first
       const now = Date.now();
       if (!forceRefresh && globalCache) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
@@ -1010,7 +1066,6 @@ export default function AdminPaymentsPage() {
       }
 
       try {
-        // Build params with date range if provided
         const params: any = {
           page: currentPage,
           limit: 100,
@@ -1019,7 +1074,6 @@ export default function AdminPaymentsPage() {
           forceRefresh,
         };
 
-        // Add date range if both are set
         if (dateRangeStart && dateRangeEnd) {
           params.startDate = dateRangeStart;
           params.endDate = dateRangeEnd;
@@ -1101,7 +1155,6 @@ export default function AdminPaymentsPage() {
     ],
   );
 
-  // ==================== INITIAL LOAD ====================
   useEffect(() => {
     isMountedRef.current = true;
     loadPayments();
@@ -1177,6 +1230,36 @@ export default function AdminPaymentsPage() {
     }
   };
 
+  const handleBulkDeleteCustomerPayments = async (
+    customerId: string,
+    customerName: string,
+  ) => {
+    if (
+      !confirm(
+        `⚠️ WARNING: This will delete ALL payments for customer "${customerName}". This action cannot be undone!\n\nClick OK to proceed.`,
+      )
+    )
+      return;
+
+    setBulkDeleting(true);
+    try {
+      const result = await bulkDeleteCustomerPayments(customerId, true);
+      toast.success(
+        `Deleted ${result.data?.deletedCount || 0} payments for ${customerName}`,
+      );
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadPayments(true);
+      setSelectedPayment(null);
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to delete customer payments",
+      );
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleSort = (field: keyof PaymentGroup) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -1188,7 +1271,6 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
-    // Get filtered data based on current filters
     const exportData = sortedGroups;
 
     if (exportData.length === 0) {
@@ -1196,7 +1278,6 @@ export default function AdminPaymentsPage() {
       return;
     }
 
-    // Calculate totals for the report
     let grandTotalPaid = 0;
     let grandTotalPending = 0;
     let grandTotalOverall = 0;
@@ -1210,7 +1291,6 @@ export default function AdminPaymentsPage() {
       totalTransactions += group.paymentCount;
     });
 
-    // Build HTML for PDF
     const now = new Date();
     const dateStr = now.toLocaleDateString("en-PH", {
       year: "numeric",
@@ -1220,7 +1300,6 @@ export default function AdminPaymentsPage() {
       minute: "2-digit",
     });
 
-    // Get building name for filter display
     const buildingName = buildingFilter
       ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter
       : "All Buildings";
@@ -1402,7 +1481,6 @@ export default function AdminPaymentsPage() {
       </html>
     `;
 
-    // Create a new window for printing
     const printWindow = window.open("", "_blank", "width=1200,height=800");
     if (printWindow) {
       printWindow.document.write(htmlContent);
@@ -1421,7 +1499,6 @@ export default function AdminPaymentsPage() {
     return paymentGroups.filter((group) => {
       const info = group.customerInfo;
 
-      // Search filter
       let matchesSearch = true;
       if (search.trim()) {
         const searchLower = search.toLowerCase();
@@ -1435,13 +1512,10 @@ export default function AdminPaymentsPage() {
           );
       }
 
-      // Building filter - handle both field name formats
       let matchesBuilding = true;
       if (buildingFilter) {
-        // Check if group's buildingId matches the filter
         matchesBuilding = info.buildingId === buildingFilter;
 
-        // If not, check if buildingName matches the selected building's name
         if (!matchesBuilding && info.buildingName) {
           const selectedBuilding = buildings.find(
             (b) => b._id === buildingFilter,
@@ -1453,11 +1527,9 @@ export default function AdminPaymentsPage() {
           }
         }
 
-        // Also check payments for building info
         if (!matchesBuilding) {
           matchesBuilding = group.payments.some((p) => {
             if (p.buildingId === buildingFilter) return true;
-            // Check if payment has building info in userId
             if (p.userId && typeof p.userId === "object") {
               const user = p.userId as any;
               if (user.buildingId === buildingFilter) return true;
@@ -1509,7 +1581,6 @@ export default function AdminPaymentsPage() {
   const totalFilteredCount = filteredGroups.length;
   const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
 
-  // Calculate grand totals for display
   const grandTotals = useMemo(() => {
     let totalPaid = 0;
     let totalPending = 0;
@@ -1532,7 +1603,6 @@ export default function AdminPaymentsPage() {
     };
   }, [filteredGroups]);
 
-  // ==================== SORT ICON ====================
   const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
     if (sortField !== field)
       return <FiChevronDown className="w-3 h-3 opacity-30" />;
@@ -1543,7 +1613,6 @@ export default function AdminPaymentsPage() {
     );
   };
 
-  // ==================== LOADING STATE ====================
   if (loading && paymentGroups.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1555,7 +1624,6 @@ export default function AdminPaymentsPage() {
     );
   }
 
-  // ==================== RENDER ====================
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-8">
@@ -2017,7 +2085,9 @@ export default function AdminPaymentsPage() {
                       }
                       onView={setSelectedPayment}
                       onDelete={handleDeletePayment}
+                      onBulkDelete={handleBulkDeleteCustomerPayments}
                       deleting={deleting}
+                      bulkDeleting={bulkDeleting}
                     />
                   );
                 })
@@ -2090,6 +2160,33 @@ export default function AdminPaymentsPage() {
             </div>
             <div className="p-6">
               <CustomerDetails payment={selectedPayment} />
+              <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete payment ${selectedPayment.referenceNumber}?`,
+                      )
+                    ) {
+                      handleDeletePayment(
+                        selectedPayment._id,
+                        selectedPayment.referenceNumber,
+                      );
+                      setSelectedPayment(null);
+                    }
+                  }}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2 disabled:opacity-50"
+                >
+                  <FiTrash2 className="w-4 h-4" /> Delete
+                </button>
+                <button
+                  onClick={() => setSelectedPayment(null)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
