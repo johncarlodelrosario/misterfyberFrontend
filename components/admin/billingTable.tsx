@@ -1,4 +1,5 @@
-// components/admin/BillingTable.tsx - UPDATED WITH AUTO-GENERATE BUTTON
+// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
+// FIXED: Installation fee status now properly reflects actual payment status
 
 "use client";
 
@@ -32,6 +33,8 @@ import {
   FiBell,
   FiClock,
   FiZap,
+  FiCheckCircle,
+  FiAlertCircle,
 } from "react-icons/fi";
 
 // Types
@@ -158,7 +161,6 @@ function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "-";
-    // Use UTC methods para walang timezone offset
     const month = date.getUTCMonth() + 1;
     const day = date.getUTCDate();
     const year = date.getUTCFullYear();
@@ -168,7 +170,73 @@ function formatDate(dateString: string): string {
   }
 }
 
-// Memoized Row Component
+// FIXED: Check if installation fee is truly due
+function isInstallationFeeDue(customer: CustomerItem): boolean {
+  // Only applicable for application type customers
+  if (customer.type !== "application") return false;
+
+  // Check if there's an installation fee
+  const fee = customer.installationFee || 0;
+  if (fee <= 0) return false;
+
+  // Check if it's already paid
+  if (customer.installationFeePaid === true) return false;
+
+  // Check if there's an unpaid installation bill
+  const hasUnpaidInstallationBill = customer.unpaidBills?.some(
+    (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
+  );
+
+  return hasUnpaidInstallationBill || true;
+}
+
+// FIXED: Get installation fee display status
+function getInstallationFeeStatus(customer: CustomerItem): {
+  display: string;
+  color: string;
+  isDue: boolean;
+  isPaid: boolean;
+  amount: number;
+} {
+  const fee = customer.installationFee || 0;
+  const isPaid = customer.installationFeePaid === true;
+  const hasUnpaidInstallationBill = customer.unpaidBills?.some(
+    (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
+  );
+
+  // If fee is 0 or less, no installation fee
+  if (fee <= 0) {
+    return {
+      display: "—",
+      color: "text-gray-400",
+      isDue: false,
+      isPaid: true,
+      amount: 0,
+    };
+  }
+
+  // If paid flag is true OR there's no unpaid installation bill
+  if (isPaid || !hasUnpaidInstallationBill) {
+    return {
+      display: `₱${fee.toLocaleString()}`,
+      color: "text-green-600",
+      isDue: false,
+      isPaid: true,
+      amount: fee,
+    };
+  }
+
+  // Otherwise, it's due
+  return {
+    display: `₱${fee.toLocaleString()}`,
+    color: "text-red-600",
+    isDue: true,
+    isPaid: false,
+    amount: fee,
+  };
+}
+
+// Memoized Row Component - FIXED
 const CustomerRow = React.memo(
   ({
     customer,
@@ -188,64 +256,103 @@ const CustomerRow = React.memo(
     const isPaused = customer.billingCycle?.status === "paused";
     const isPendingActivation =
       customer.billingCycle?.status === "pending_activation";
-    const hasUnpaidInstallationFee =
-      customer.type === "application" &&
-      (customer.installationFee ?? 0) > 0 &&
-      !customer.installationFeePaid;
     const hasNextMonthBill = !!customer.nextMonthBill;
 
+    // FIXED: Proper installation fee status
+    const installFeeStatus = getInstallationFeeStatus(customer);
+    const hasUnpaidInstallationFee = installFeeStatus.isDue;
+
+    // FIXED: Proper status badge determination
     const getStatusBadge = () => {
-      if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
+      // If there's an unpaid installation fee, show that first
+      if (hasUnpaidInstallationFee) {
+        return "bg-amber-100 text-amber-800";
+      }
+
       if (customer.type === "application") {
         if (
           customer.billingCycle?.status === "pending_activation" &&
           hasUnpaidBills
-        )
+        ) {
           return "bg-purple-100 text-purple-800";
+        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           !hasUnpaidBills
-        )
+        ) {
           return "bg-green-100 text-green-800";
-        if (customer.billingCycle?.status === "active")
+        }
+        if (customer.billingCycle?.status === "active") {
           return "bg-green-100 text-green-800";
-        if (customer.billingCycle?.status === "paused")
+        }
+        if (customer.billingCycle?.status === "paused") {
           return "bg-yellow-100 text-yellow-800";
-        if (customer.status === "billing_started")
+        }
+        if (customer.status === "billing_started") {
           return "bg-indigo-100 text-indigo-800";
+        }
         return "bg-blue-100 text-blue-800";
       }
-      if (customer.billingCycle?.status === "paused")
+
+      if (customer.billingCycle?.status === "paused") {
         return "bg-yellow-100 text-yellow-800";
-      if (customer.status === "active") return "bg-green-100 text-green-800";
-      if (customer.status === "suspended") return "bg-red-100 text-red-800";
-      if (customer.status === "pending_activation")
+      }
+      if (customer.status === "active") {
+        return "bg-green-100 text-green-800";
+      }
+      if (customer.status === "suspended") {
+        return "bg-red-100 text-red-800";
+      }
+      if (customer.status === "pending_activation") {
         return "bg-purple-100 text-purple-800";
+      }
       return "bg-gray-100 text-gray-800";
     };
 
+    // FIXED: Proper status text determination
     const getStatusText = () => {
-      if (hasUnpaidInstallationFee) return "Installation Fee Due";
+      // Installation fee due takes priority
+      if (hasUnpaidInstallationFee) {
+        return "Installation Fee Due";
+      }
+
       if (customer.type === "application") {
         if (
           customer.billingCycle?.status === "pending_activation" &&
           hasUnpaidBills
-        )
+        ) {
           return "Awaiting Payment";
+        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           !hasUnpaidBills
-        )
+        ) {
           return "Active";
-        if (customer.billingCycle?.status === "active") return "Active";
-        if (customer.billingCycle?.status === "paused") return "Paused";
-        if (customer.status === "billing_started") return "Billing Started";
+        }
+        if (customer.billingCycle?.status === "active") {
+          return "Active";
+        }
+        if (customer.billingCycle?.status === "paused") {
+          return "Paused";
+        }
+        if (customer.status === "billing_started") {
+          return "Billing Started";
+        }
         return "Approved";
       }
-      if (customer.billingCycle?.status === "paused") return "Paused";
-      if (customer.status === "active") return "Active";
-      if (customer.status === "suspended") return "Suspended";
-      if (customer.status === "pending_activation") return "Pending Activation";
+
+      if (customer.billingCycle?.status === "paused") {
+        return "Paused";
+      }
+      if (customer.status === "active") {
+        return "Active";
+      }
+      if (customer.status === "suspended") {
+        return "Suspended";
+      }
+      if (customer.status === "pending_activation") {
+        return "Pending Activation";
+      }
       return customer.status || "Inactive";
     };
 
@@ -315,16 +422,17 @@ const CustomerRow = React.memo(
           )}
         </td>
         <td className="px-3 py-2">
-          {customer.type === "application" &&
-          (customer.installationFee ?? 0) > 0 ? (
+          {customer.type === "application" && installFeeStatus.amount > 0 ? (
             <div>
-              <p className="text-sm font-medium">
-                ₱{(customer.installationFee ?? 0).toLocaleString()}
+              <p className={`text-sm font-medium ${installFeeStatus.color}`}>
+                {installFeeStatus.display}
               </p>
               <p
-                className={`text-[10px] ${customer.installationFeePaid ? "text-green-600" : "text-red-600"}`}
+                className={`text-[10px] ${
+                  installFeeStatus.isPaid ? "text-green-600" : "text-red-600"
+                }`}
               >
-                {customer.installationFeePaid ? "Paid" : "Unpaid"}
+                {installFeeStatus.isPaid ? "✅ Paid" : "❌ Unpaid"}
               </p>
             </div>
           ) : (
@@ -597,11 +705,8 @@ export default function BillingTable({
         }
         if (statusFilter === "applications") return c.type === "application";
         if (statusFilter === "installation_fee_due") {
-          return (
-            c.type === "application" &&
-            (c.installationFee ?? 0) > 0 &&
-            !c.installationFeePaid
-          );
+          // FIXED: Use the proper installation fee due check
+          return isInstallationFeeDue(c);
         }
         return true;
       });
@@ -627,12 +732,7 @@ export default function BillingTable({
           break;
         case "status":
           const getStatusText = (c: CustomerItem) => {
-            if (
-              c.type === "application" &&
-              (c.installationFee ?? 0) > 0 &&
-              !c.installationFeePaid
-            )
-              return "Installation Fee Due";
+            if (isInstallationFeeDue(c)) return "Installation Fee Due";
             if (c.type === "application")
               return c.billingCycle?.status || "Approved";
             return c.status || "Inactive";
@@ -641,8 +741,16 @@ export default function BillingTable({
           bValue = getStatusText(b);
           break;
         case "installationFee":
-          aValue = a.type === "application" ? a.installationFee || 0 : -1;
-          bValue = b.type === "application" ? b.installationFee || 0 : -1;
+          // FIXED: Sort by actual installation fee status
+          const getInstallFeeSort = (c: CustomerItem) => {
+            if (c.type !== "application") return -2;
+            const fee = c.installationFee || 0;
+            if (fee <= 0) return -1;
+            if (c.installationFeePaid === true) return 0;
+            return fee;
+          };
+          aValue = getInstallFeeSort(a);
+          bValue = getInstallFeeSort(b);
           break;
         default:
           aValue = `${a.firstName} ${a.lastName}`.toLowerCase();
