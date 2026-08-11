@@ -1,5 +1,5 @@
 // components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
-// FIXED: Installation fee status now properly reflects actual payment status
+// FIXED: Installation fee status now dynamically determined from unpaid bills
 
 "use client";
 
@@ -170,7 +170,7 @@ function formatDate(dateString: string): string {
   }
 }
 
-// FIXED: Check if installation fee is truly due
+// FIXED: Dynamically check if installation fee is truly due based on unpaid bills
 function isInstallationFeeDue(customer: CustomerItem): boolean {
   // Only applicable for application type customers
   if (customer.type !== "application") return false;
@@ -179,18 +179,29 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
   const fee = customer.installationFee || 0;
   if (fee <= 0) return false;
 
-  // Check if it's already paid
-  if (customer.installationFeePaid === true) return false;
-
-  // Check if there's an unpaid installation bill
+  // CRITICAL FIX: Check if there's an UNPAID installation bill
+  // This is the source of truth - not the installationFeePaid flag
   const hasUnpaidInstallationBill = customer.unpaidBills?.some(
     (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
   );
 
-  return hasUnpaidInstallationBill || true;
+  // If there's an unpaid installation bill, the fee is due
+  if (hasUnpaidInstallationBill) return true;
+
+  // If there's NO unpaid installation bill, but the flag says not paid,
+  // check if there's any installation bill at all
+  const hasAnyInstallationBill = customer.unpaidBills?.some(
+    (bill: any) => bill.isInstallationBill === true,
+  );
+
+  // If there's no installation bill at all, and fee > 0, it's due
+  if (!hasAnyInstallationBill && fee > 0) return true;
+
+  // Otherwise, check the flag as fallback
+  return customer.installationFeePaid !== true;
 }
 
-// FIXED: Get installation fee display status
+// FIXED: Get installation fee display status - DYNAMIC based on bills
 function getInstallationFeeStatus(customer: CustomerItem): {
   display: string;
   color: string;
@@ -199,10 +210,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
   amount: number;
 } {
   const fee = customer.installationFee || 0;
-  const isPaid = customer.installationFeePaid === true;
-  const hasUnpaidInstallationBill = customer.unpaidBills?.some(
-    (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
-  );
 
   // If fee is 0 or less, no installation fee
   if (fee <= 0) {
@@ -215,8 +222,47 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // If paid flag is true OR there's no unpaid installation bill
-  if (isPaid || !hasUnpaidInstallationBill) {
+  // CRITICAL FIX: Check actual unpaid installation bills
+  const hasUnpaidInstallationBill = customer.unpaidBills?.some(
+    (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
+  );
+
+  // Check if there's any installation bill at all
+  const hasAnyInstallationBill = customer.unpaidBills?.some(
+    (bill: any) => bill.isInstallationBill === true,
+  );
+
+  // If there's an unpaid installation bill -> NOT PAID
+  if (hasUnpaidInstallationBill) {
+    return {
+      display: `₱${fee.toLocaleString()}`,
+      color: "text-red-600",
+      isDue: true,
+      isPaid: false,
+      amount: fee,
+    };
+  }
+
+  // If there's no installation bill at all, but fee > 0 -> DUE
+  if (!hasAnyInstallationBill && fee > 0) {
+    return {
+      display: `₱${fee.toLocaleString()}`,
+      color: "text-red-600",
+      isDue: true,
+      isPaid: false,
+      amount: fee,
+    };
+  }
+
+  // If there's an installation bill and it's paid (status === "paid")
+  // OR if the flag says paid and no unpaid bills
+  const isPaid =
+    customer.installationFeePaid === true ||
+    customer.unpaidBills?.some(
+      (bill: any) => bill.isInstallationBill === true && bill.status === "paid",
+    );
+
+  if (isPaid) {
     return {
       display: `₱${fee.toLocaleString()}`,
       color: "text-green-600",
@@ -226,7 +272,7 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // Otherwise, it's due
+  // Default: due
   return {
     display: `₱${fee.toLocaleString()}`,
     color: "text-red-600",
@@ -258,7 +304,7 @@ const CustomerRow = React.memo(
       customer.billingCycle?.status === "pending_activation";
     const hasNextMonthBill = !!customer.nextMonthBill;
 
-    // FIXED: Proper installation fee status
+    // FIXED: Proper installation fee status - DYNAMIC from bills
     const installFeeStatus = getInstallationFeeStatus(customer);
     const hasUnpaidInstallationFee = installFeeStatus.isDue;
 
@@ -746,8 +792,8 @@ export default function BillingTable({
             if (c.type !== "application") return -2;
             const fee = c.installationFee || 0;
             if (fee <= 0) return -1;
-            if (c.installationFeePaid === true) return 0;
-            return fee;
+            if (isInstallationFeeDue(c)) return fee;
+            return 0; // Paid or no bill
           };
           aValue = getInstallFeeSort(a);
           bValue = getInstallFeeSort(b);
