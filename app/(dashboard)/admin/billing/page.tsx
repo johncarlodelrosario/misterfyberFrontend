@@ -844,8 +844,7 @@ function AdminBillingPageContent() {
         clearBillingCache();
         setLastPaymentUpdate(new Date());
         invalidateAll();
-        toast.success(`💳 Payment confirmed! Data updated.`, {
-          icon: "✅",
+        toast.success(`✅ Payment confirmed!`, {
           duration: 3000,
         });
       },
@@ -917,10 +916,7 @@ function AdminBillingPageContent() {
         setNewCustomerCount(payload.totalNew || 1);
         clearBillingCache();
         invalidateAll();
-        toast.success(`🆕 New customer detected! Refreshing data...`, {
-          icon: "👤",
-          duration: 5000,
-        });
+        // Removed duplicate toast notification for new customers
       },
     );
 
@@ -956,10 +952,7 @@ function AdminBillingPageContent() {
         setNewCustomerCount(data.totalNew);
         clearBillingCache();
         invalidateAll();
-        toast.success(`🆕 ${data.totalNew} new customer(s) detected!`, {
-          icon: "👤",
-          duration: 5000,
-        });
+        // Removed duplicate toast notification for new customers
       }
     }, 2000);
 
