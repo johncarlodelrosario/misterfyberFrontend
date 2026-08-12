@@ -1398,15 +1398,6 @@ function AdminBillingPageContent() {
       {(newCustomerDetected || autoGenerationRunning || lastPaymentUpdate) && (
         <div className="sticky top-0 z-50 bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {newCustomerDetected && (
-              <span className="flex items-center gap-1 text-blue-700">
-                <FiZap className="w-4 h-4 animate-pulse" />
-                <span className="font-medium">
-                  {newCustomerCount} new customer(s) detected!
-                </span>
-                <span className="text-sm text-blue-500">Updating...</span>
-              </span>
-            )}
             {autoGenerationRunning && (
               <span className="flex items-center gap-1 text-amber-700">
                 <FiClock className="w-4 h-4 animate-spin" />
@@ -1415,7 +1406,7 @@ function AdminBillingPageContent() {
                 </span>
               </span>
             )}
-            {lastPaymentUpdate && !newCustomerDetected && (
+            {lastPaymentUpdate && !autoGenerationRunning && (
               <span className="flex items-center gap-1 text-green-700">
                 <FiCheckCircle className="w-4 h-4" />
                 <span className="font-medium">Payment updated!</span>
