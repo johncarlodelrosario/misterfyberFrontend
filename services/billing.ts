@@ -1,4 +1,4 @@
-// frontend/services/billing.ts - UPDATED WITH REAL-TIME SUPPORT
+// frontend/services/billing.ts - COMPLETE FIXED VERSION
 
 import api from "./api";
 
