@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED VERSION
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED VERSION WITH WORKING PAGINATION
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -49,11 +49,6 @@ const STORAGE_KEYS = {
   LAST_KNOWN_PENDING: "misterfyber_pending",
 };
 
-// ============================================================
-// CACHE SETTINGS
-// ============================================================
-const MAX_CACHE_SIZE = 50;
-const CHECK_INTERVAL = 30000;
 const ITEMS_PER_PAGE = 50;
 
 interface StoredApplicationsData {
@@ -194,7 +189,6 @@ export default function ApplicationTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const [apiStatusFilter, setApiStatusFilter] = useState<string>("all");
   const [showLeftButton, setShowLeftButton] = useState(false);
   const [showRightButton, setShowRightButton] = useState(false);
 
@@ -270,11 +264,6 @@ export default function ApplicationTable() {
     }
   };
 
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
-
   useEffect(() => {
     persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
   }, [filter]);
@@ -318,54 +307,11 @@ export default function ApplicationTable() {
     }
   };
 
-  const checkForNewApplicants = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-
-    try {
-      const data = await getAllApplications({ page: 1, limit: 1 });
-      const currentTotal = data.total || 0;
-      const lastKnownTotal =
-        (persistentStorage.getItem(STORAGE_KEYS.LAST_KNOWN_TOTAL) as number) ||
-        totalItems;
-
-      const hasNew = currentTotal > lastKnownTotal;
-
-      if (hasNew) {
-        console.log(`🆕 New applicant detected!`);
-        setHasNewApplicant(true);
-        setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
-        await fetchApplications(currentPageRef.current, filterRef.current);
-
-        setTimeout(() => {
-          setHasNewApplicant(false);
-          setNewApplicantCount(0);
-        }, 5000);
-      }
-    } catch (error) {
-      console.error("Failed to check for new applicants:", error);
-    }
-  }, [totalItems]);
-
-  useEffect(() => {
-    if (isOnline && !initialLoading) {
-      intervalRef.current = setInterval(() => {
-        checkForNewApplicants();
-      }, CHECK_INTERVAL);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [isOnline, initialLoading, checkForNewApplicants]);
-
   // ============================================================
   // FETCH APPLICATIONS WITH API PAGINATION
   // ============================================================
   const fetchApplications = useCallback(
-    async (page: number, filterState: FilterState) => {
+    async (page: number, filterState: FilterState, append: boolean = false) => {
       if (refreshInProgressRef.current) return;
       refreshInProgressRef.current = true;
       setRefreshing(true);
@@ -396,14 +342,18 @@ export default function ApplicationTable() {
           `✅ Received ${applicationsList.length} applications, total: ${total}`,
         );
 
-        setApplications(applicationsList);
+        if (append) {
+          setApplications((prev) => [...prev, ...applicationsList]);
+        } else {
+          setApplications(applicationsList);
+        }
         setTotalItems(total);
         setTotalPages(totalPagesCalculated);
         setLastFetchTime(new Date());
 
         // Store in cache for offline use
         const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
+          applications: applicationsList.slice(0, 50),
           timestamp: Date.now(),
           version: STORAGE_KEYS.CACHE_VERSION,
           totalCount: total,
@@ -420,7 +370,6 @@ export default function ApplicationTable() {
         setHasNewApplicant(false);
       } catch (error: any) {
         console.error("Failed to fetch:", error);
-        // Try to load from cache
         const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
         if (cached?.applications?.length > 0) {
           setApplications(cached.applications);
@@ -445,7 +394,6 @@ export default function ApplicationTable() {
   // Load initial data
   useEffect(() => {
     const loadData = () => {
-      // Try cache first
       const cached = persistentStorage.getItem(
         STORAGE_KEYS.APPLICATIONS,
       ) as StoredApplicationsData | null;
@@ -461,7 +409,6 @@ export default function ApplicationTable() {
         setInitialLoading(false);
         dataLoadedRef.current = true;
 
-        // Background refresh after 1 second
         setTimeout(() => {
           if (!refreshInProgressRef.current) {
             console.log("🔄 Background refresh...");
@@ -472,7 +419,6 @@ export default function ApplicationTable() {
         return true;
       }
 
-      // No cache, fetch from API
       console.log("📡 No cache, fetching from API...");
       fetchApplications(1, {
         searchTerm: "",
@@ -485,7 +431,7 @@ export default function ApplicationTable() {
     loadData();
   }, []);
 
-  // Handle page change
+  // Handle page change - fetch from API
   const handlePageChange = useCallback(
     (newPage: number) => {
       if (newPage < 1 || newPage > totalPages) return;
@@ -671,9 +617,15 @@ export default function ApplicationTable() {
     }
   };
 
+  // Get unique buildings from ALL applications (from API total, not just current page)
   const uniqueBuildings = useMemo(() => {
     const buildingSet = new Set<string>();
-    applications.forEach((app: any) => {
+    // Also check cached data for more buildings
+    const cached = persistentStorage.getItem(
+      STORAGE_KEYS.APPLICATIONS,
+    ) as StoredApplicationsData | null;
+    const allApps = cached?.applications || applications;
+    allApps.forEach((app: any) => {
       if (app.buildingId?.buildingName) {
         buildingSet.add(app.buildingId.buildingName);
       } else if (app.buildingName) {
@@ -691,7 +643,6 @@ export default function ApplicationTable() {
     const buildingFilter = filter.buildingFilter.toLowerCase().trim();
 
     return applications.filter((app: any) => {
-      // Search filter
       const matchesSearch =
         !searchTerm ||
         app.applicationId?.toLowerCase().includes(searchTerm) ||
@@ -701,7 +652,6 @@ export default function ApplicationTable() {
         (app.tower && app.tower.toLowerCase().includes(searchTerm)) ||
         (app.macAddress && app.macAddress.toLowerCase().includes(searchTerm));
 
-      // Building filter
       const buildingName =
         app.buildingId?.buildingName || app.buildingName || "";
       const matchesBuilding =
@@ -711,12 +661,22 @@ export default function ApplicationTable() {
     });
   }, [applications, filter.searchTerm, filter.buildingFilter]);
 
+  // Calculate total pages based on filtered results
+  const filteredTotalPages = useMemo(() => {
+    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE) || 1;
+  }, [filteredApplications.length]);
+
   // Get current page items from filtered results
   const currentApplications = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return filteredApplications.slice(startIndex, endIndex);
   }, [filteredApplications, currentPage]);
+
+  // When filter changes, reset to page 1
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
 
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
@@ -753,7 +713,6 @@ export default function ApplicationTable() {
 
   // Stats from total items
   const stats = useMemo(() => {
-    // Calculate from all applications if we have them, otherwise from current page
     const allApps = applications;
     return {
       pending: allApps.filter((a) => a.status === "pending").length,
@@ -1054,11 +1013,15 @@ export default function ApplicationTable() {
   };
 
   // Calculate display info
-  const displayStart = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const displayStart = Math.min(
+    (currentPage - 1) * ITEMS_PER_PAGE + 1,
+    filteredApplications.length || 1,
+  );
   const displayEnd = Math.min(
     currentPage * ITEMS_PER_PAGE,
     filteredApplications.length,
   );
+  const totalFiltered = filteredApplications.length;
 
   if (initialLoading && applications.length === 0) {
     return (
@@ -1424,14 +1387,22 @@ export default function ApplicationTable() {
           </table>
           <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
             <span>
-              Showing {displayStart} - {displayEnd} of{" "}
-              {filteredApplications.length} applications
-              {filteredApplications.length !== totalItems &&
+              Showing {displayStart} - {displayEnd} of {totalFiltered}{" "}
+              applications
+              {totalFiltered !== totalItems &&
+                totalItems > 0 &&
                 ` (filtered from ${totalItems} total)`}
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => handlePageChange(currentPage - 1)}
+                onClick={() => {
+                  const newPage = Math.max(currentPage - 1, 1);
+                  setCurrentPage(newPage);
+                  // If we're on page 1 and there are more items, fetch from API
+                  if (newPage === 1 && applications.length < totalItems) {
+                    fetchApplications(1, filter);
+                  }
+                }}
                 disabled={currentPage === 1}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
@@ -1439,15 +1410,22 @@ export default function ApplicationTable() {
                 Prev
               </button>
               <span className="text-xs text-gray-700">
-                Page {currentPage} of{" "}
-                {Math.ceil(filteredApplications.length / ITEMS_PER_PAGE) || 1}
+                Page {currentPage} of {filteredTotalPages}
               </span>
               <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={
-                  currentPage >=
-                  Math.ceil(filteredApplications.length / ITEMS_PER_PAGE)
-                }
+                onClick={() => {
+                  const newPage = Math.min(currentPage + 1, filteredTotalPages);
+                  setCurrentPage(newPage);
+                  // If we're on a page that needs more data, fetch from API
+                  const startIndex = (newPage - 1) * ITEMS_PER_PAGE;
+                  if (
+                    startIndex >= applications.length &&
+                    applications.length < totalItems
+                  ) {
+                    fetchApplications(newPage, filter);
+                  }
+                }}
+                disabled={currentPage >= filteredTotalPages}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
                 Next

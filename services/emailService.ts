@@ -4,33 +4,34 @@ import api from "./api";
 
 export interface Customer {
   _id: string;
+  applicationId: string;
   firstName: string;
   lastName: string;
   email: string;
-  phoneNumber: string;
-  applicationId: string;
+  phoneNumber?: string;
+  buildingName?: string;
+  buildingId?: string;
   status: string;
   hasBilling: boolean;
   hasUnpaidBills: boolean;
   lastBillAmount: number;
   lastBillStatus: string | null;
-  buildingName?: string;
-  buildingId?: string;
-  location?: string;
+  location: string;
+  // FIXED: Added timestamp for debugging
+  _fetchedAt?: string;
 }
 
 export interface Bill {
   _id: string;
+  applicationId: string;
   invoiceNumber: string;
   total: number;
   dueDate: string;
   status: string;
-  isProRated: boolean;
   isInstallationBill: boolean;
-  billingPeriod: {
-    start: string;
-    end: string;
-  };
+  isProRated: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface EmailTemplate {
@@ -42,6 +43,7 @@ export interface EmailTemplate {
   includeBillingDefault: boolean;
   createdAt: string;
   updatedBy: string;
+  createdBy: string;
 }
 
 export interface EmailSentRecord {
@@ -54,95 +56,72 @@ export interface EmailSentRecord {
   sentAt: string;
   status: "sent" | "failed" | "pending";
   isBulk: boolean;
-  recipientCount?: number;
+  recipientCount: number;
   includeBilling: boolean;
   billType?: string;
+  billCount: number;
   error?: string;
-  senderType?: "admin" | "collection";
-  location?: string;
+  senderType: "admin" | "collection";
+  location: string;
   collectionEmail?: string;
 }
 
-export interface SendEmailParams {
-  applicationId: string;
-  subject: string;
-  message: string;
-  includeBilling: boolean;
-  // CHANGED: support multiple bill IDs
-  billIds?: string[];
-  sendCopyToAdmin?: boolean;
-  attachments?: any[];
-  priority?: "low" | "normal" | "high";
-  useAdminSender?: boolean;
-}
-
-export interface BulkEmailParams {
-  applicationIds: string[];
-  subject: string;
-  message: string;
-  includeBilling: boolean;
-  billType?: "unpaid" | "latest" | "installation";
-  sendCopyToAdmin?: boolean;
-  useAdminSender?: boolean;
-}
-
 class EmailService {
-  private baseUrl = "/manual-email";
-
-  // Get customers for email selection
+  // FIXED: Added forceRefresh parameter
   async getCustomers(params?: {
     search?: string;
     status?: string;
-    hasBilling?: boolean;
+    hasBilling?: string;
+    forceRefresh?: boolean;
   }): Promise<Customer[]> {
     try {
       const queryParams = new URLSearchParams();
       if (params?.search) queryParams.append("search", params.search);
       if (params?.status) queryParams.append("status", params.status);
-      if (params?.hasBilling !== undefined)
-        queryParams.append("hasBilling", String(params.hasBilling));
+      if (params?.hasBilling)
+        queryParams.append("hasBilling", params.hasBilling);
+      // FIXED: Pass forceRefresh to bypass cache
+      if (params?.forceRefresh) queryParams.append("forceRefresh", "true");
 
+      // FIXED: Add cache-busting timestamp
       queryParams.append("_t", Date.now().toString());
 
-      const url = `${this.baseUrl}/customers${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
-
-      const response = await api.get(url, {
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        },
-      });
-
-      console.log(
-        "📦 Customers fetched:",
-        response.data?.data?.length || 0,
-        "customers",
+      const response = await api.get(
+        `/manual-email/customers?${queryParams.toString()}`,
       );
       return response.data.data || [];
     } catch (error) {
-      console.error("Failed to fetch customers:", error);
-      return [];
+      console.error("Failed to get customers:", error);
+      throw error;
     }
   }
 
-  // Get bills for a specific customer
   async getCustomerBills(
     applicationId: string,
-  ): Promise<{ customer: Customer | null; bills: Bill[] }> {
+  ): Promise<{ customer: any; bills: Bill[] }> {
     try {
+      // FIXED: Add cache-busting timestamp
       const response = await api.get(
-        `${this.baseUrl}/customers/${applicationId}/bills`,
+        `/manual-email/customers/${applicationId}/bills?_t=${Date.now()}`,
       );
       return response.data.data || { customer: null, bills: [] };
     } catch (error) {
-      console.error("Failed to fetch customer bills:", error);
-      return { customer: null, bills: [] };
+      console.error("Failed to get customer bills:", error);
+      throw error;
     }
   }
 
-  // Send manual email to a single customer (supports multiple bills)
-  async sendEmail(params: SendEmailParams): Promise<any> {
+  async sendEmail(data: {
+    applicationId: string;
+    subject: string;
+    message: string;
+    includeBilling: boolean;
+    billIds?: string[];
+    sendCopyToAdmin?: boolean;
+    useAdminSender?: boolean;
+  }): Promise<any> {
     try {
-      const response = await api.post(`${this.baseUrl}/send`, params);
+      const response = await api.post("/manual-email/send", data);
       return response.data;
     } catch (error) {
       console.error("Failed to send email:", error);
@@ -150,10 +129,17 @@ class EmailService {
     }
   }
 
-  // Send bulk emails to multiple customers
-  async sendBulkEmails(params: BulkEmailParams): Promise<any> {
+  async sendBulkEmails(data: {
+    applicationIds: string[];
+    subject: string;
+    message: string;
+    includeBilling: boolean;
+    billType: "unpaid" | "latest" | "installation";
+    sendCopyToAdmin?: boolean;
+    useAdminSender?: boolean;
+  }): Promise<any> {
     try {
-      const response = await api.post(`${this.baseUrl}/send-bulk`, params);
+      const response = await api.post("/manual-email/send-bulk", data);
       return response.data;
     } catch (error) {
       console.error("Failed to send bulk emails:", error);
@@ -161,133 +147,125 @@ class EmailService {
     }
   }
 
-  // Send reminder to all customers with unpaid bills
   async sendReminderToUnpaid(
     customMessage?: string,
     includeDueDateReminder?: boolean,
     useAdminSender?: boolean,
   ): Promise<any> {
     try {
-      const response = await api.post(`${this.baseUrl}/send-reminder-unpaid`, {
+      const response = await api.post("/manual-email/send-reminder-unpaid", {
         customMessage,
-        includeDueDateReminder: includeDueDateReminder !== false,
-        useAdminSender: useAdminSender || false,
+        includeDueDateReminder,
+        useAdminSender,
       });
       return response.data;
     } catch (error) {
-      console.error("Failed to send unpaid reminders:", error);
+      console.error("Failed to send reminders:", error);
       throw error;
     }
   }
 
-  // Save email template
-  async saveTemplate(
-    template: Omit<EmailTemplate, "id" | "createdAt" | "updatedBy">,
-  ): Promise<EmailTemplate> {
+  async getTemplates(): Promise<EmailTemplate[]> {
     try {
-      const response = await api.post(`${this.baseUrl}/templates`, template);
-      return response.data.data;
+      // FIXED: Add cache-busting timestamp
+      const response = await api.get(
+        `/manual-email/templates?_t=${Date.now()}`,
+      );
+      return response.data.data || [];
+    } catch (error) {
+      console.error("Failed to get templates:", error);
+      throw error;
+    }
+  }
+
+  async saveTemplate(data: {
+    name: string;
+    subject: string;
+    message: string;
+    category: string;
+    includeBillingDefault: boolean;
+  }): Promise<any> {
+    try {
+      const response = await api.post("/manual-email/templates", data);
+      return response.data;
     } catch (error) {
       console.error("Failed to save template:", error);
       throw error;
     }
   }
 
-  // Update email template
   async updateTemplate(
     templateId: string,
-    template: Partial<Omit<EmailTemplate, "id" | "createdAt" | "updatedBy">>,
-  ): Promise<EmailTemplate> {
+    data: {
+      name?: string;
+      subject?: string;
+      message?: string;
+      category?: string;
+      includeBillingDefault?: boolean;
+    },
+  ): Promise<any> {
     try {
       const response = await api.put(
-        `${this.baseUrl}/templates/${templateId}`,
-        template,
+        `/manual-email/templates/${templateId}`,
+        data,
       );
-      return response.data.data;
+      return response.data;
     } catch (error) {
       console.error("Failed to update template:", error);
       throw error;
     }
   }
 
-  // Get all email templates
-  async getTemplates(): Promise<EmailTemplate[]> {
+  async deleteTemplate(templateId: string): Promise<any> {
     try {
-      const response = await api.get(`${this.baseUrl}/templates`);
-      return response.data.data || [];
-    } catch (error) {
-      console.error("Failed to fetch templates:", error);
-      return [];
-    }
-  }
-
-  // Delete email template
-  async deleteTemplate(templateId: string): Promise<void> {
-    try {
-      await api.delete(`${this.baseUrl}/templates/${templateId}`);
+      const response = await api.delete(
+        `/manual-email/templates/${templateId}`,
+      );
+      return response.data;
     } catch (error) {
       console.error("Failed to delete template:", error);
       throw error;
     }
   }
 
-  // Preview email before sending (supports multiple bills)
-  async previewEmail(params: {
-    subject: string;
-    message: string;
-    includeBilling: boolean;
-    applicationId?: string;
-    // CHANGED: support multiple bill IDs
-    billIds?: string[];
-    useAdminSender?: boolean;
-  }): Promise<{
-    html: string;
-    subject: string;
-    message: string;
-    location: string;
-    senderInfo: string;
-  }> {
+  async getSentRecords(): Promise<EmailSentRecord[]> {
     try {
-      const response = await api.post(`${this.baseUrl}/preview`, {
-        ...params,
-        useAdminSender: params.useAdminSender || false,
-      });
-      return response.data.data;
+      // FIXED: Add cache-busting timestamp
+      const response = await api.get(
+        `/manual-email/sent-records?_t=${Date.now()}`,
+      );
+      return response.data.data || [];
     } catch (error) {
-      console.error("Failed to preview email:", error);
+      console.error("Failed to get sent records:", error);
       throw error;
     }
   }
 
-  // Get sent email records
-  async getSentRecords(params?: {
-    applicationId?: string;
-    status?: string;
-    isBulk?: boolean;
-  }): Promise<EmailSentRecord[]> {
+  async deleteSentRecord(recordId: string): Promise<any> {
     try {
-      const queryParams = new URLSearchParams();
-      if (params?.applicationId)
-        queryParams.append("applicationId", params.applicationId);
-      if (params?.status) queryParams.append("status", params.status);
-      if (params?.isBulk !== undefined)
-        queryParams.append("isBulk", String(params.isBulk));
-
-      const url = `${this.baseUrl}/sent-records${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
-      const response = await api.get(url);
-      return response.data.data || [];
+      const response = await api.delete(
+        `/manual-email/sent-records/${recordId}`,
+      );
+      return response.data;
     } catch (error) {
-      console.error("Failed to fetch sent records:", error);
-      return [];
+      console.error("Failed to delete sent record:", error);
+      throw error;
     }
   }
 
-  // Delete a sent record
-  async deleteSentRecord(recordId: string): Promise<void> {
+  async previewEmail(data: {
+    subject: string;
+    message: string;
+    includeBilling: boolean;
+    applicationId: string;
+    billIds?: string[];
+    useAdminSender?: boolean;
+  }): Promise<any> {
     try {
-      await api.delete(`${this.baseUrl}/sent-records/${recordId}`);
+      const response = await api.post("/manual-email/preview", data);
+      return response.data.data || {};
     } catch (error) {
-      console.error("Failed to delete sent record:", error);
+      console.error("Failed to preview email:", error);
       throw error;
     }
   }

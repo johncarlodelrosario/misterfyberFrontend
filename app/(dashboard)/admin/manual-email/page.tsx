@@ -32,7 +32,6 @@ export default function ManualEmailPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [includeBilling, setIncludeBilling] = useState(false);
-  // CHANGED: Support multiple bill IDs
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [sendCopyToAdmin, setSendCopyToAdmin] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -80,6 +79,8 @@ export default function ManualEmailPage() {
 
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
+  // FIXED: Add refresh counter to force re-render
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // ==================== HELPER FUNCTIONS ====================
   const getLocationFromBuildingName = (buildingName?: string): string => {
@@ -152,50 +153,66 @@ export default function ManualEmailPage() {
   }, [sentRecords]);
 
   // ==================== LOAD FUNCTIONS - NO CACHING ====================
-  const loadCustomers = useCallback(async (search?: string) => {
-    if (!isMountedRef.current) return;
+  // FIXED: Added forceRefresh parameter to bypass cache
+  const loadCustomers = useCallback(
+    async (search?: string, forceRefresh = false) => {
+      if (!isMountedRef.current) return;
 
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await emailService.getCustomers({ search });
+      try {
+        setLoading(true);
+        setError(null);
 
-      console.log("🔄 loadCustomers called with search:", search);
-      console.log("📊 Raw data from API:", data?.length || 0, "customers");
-
-      const processedData = (data || []).map((customer) => ({
-        ...customer,
-        buildingName: customer.buildingName || "",
-      }));
-
-      setCustomers(processedData);
-      console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
-
-      if (processedData.length > 0) {
         console.log(
-          "👤 First 3 customers:",
-          processedData.slice(0, 3).map((c) => ({
-            name: `${c.firstName} ${c.lastName}`,
-            id: c.applicationId,
-            email: c.email,
-            building: c.buildingName,
-          })),
+          `🔄 loadCustomers called with search: "${search}", forceRefresh: ${forceRefresh}`,
         );
+
+        // FIXED: Pass forceRefresh parameter to API
+        const data = await emailService.getCustomers({
+          search,
+          forceRefresh: forceRefresh || false,
+        });
+
+        console.log("📊 Raw data from API:", data?.length || 0, "customers");
+        console.log(
+          "📊 API response timestamp:",
+          data?.[0]?._fetchedAt || "No timestamp",
+        );
+
+        const processedData = (data || []).map((customer) => ({
+          ...customer,
+          buildingName: customer.buildingName || "",
+        }));
+
+        setCustomers(processedData);
+        console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
+
+        if (processedData.length > 0) {
+          console.log(
+            "👤 First 3 customers:",
+            processedData.slice(0, 3).map((c) => ({
+              name: `${c.firstName} ${c.lastName}`,
+              id: c.applicationId,
+              email: c.email,
+              building: c.buildingName,
+            })),
+          );
+        }
+      } catch (error: any) {
+        console.error("Failed to load customers:", error);
+        const errorMsg =
+          error.response?.data?.message ||
+          error.message ||
+          "Failed to load customers";
+        setError(errorMsg);
+        toast.error(errorMsg);
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
-    } catch (error: any) {
-      console.error("Failed to load customers:", error);
-      const errorMsg =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to load customers";
-      setError(errorMsg);
-      toast.error(errorMsg);
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, []);
+    },
+    [],
+  );
 
   const loadTemplates = useCallback(async () => {
     if (!isMountedRef.current) return;
@@ -225,7 +242,6 @@ export default function ManualEmailPage() {
     try {
       const data = await emailService.getCustomerBills(applicationId);
       setCustomerBills(data?.bills || []);
-      // Reset selected bills when customer changes
       setSelectedBillIds([]);
     } catch (error) {
       console.error("Failed to load customer bills:", error);
@@ -240,7 +256,12 @@ export default function ManualEmailPage() {
     isMountedRef.current = true;
 
     const loadAllData = async () => {
-      await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
+      // FIXED: Force refresh on initial load
+      await Promise.all([
+        loadCustomers("", true),
+        loadTemplates(),
+        loadSentRecords(),
+      ]);
       initialLoadDone.current = true;
     };
 
@@ -272,7 +293,6 @@ export default function ManualEmailPage() {
     }
   };
 
-  // CHANGED: Toggle bill selection
   const toggleBillSelection = (billId: string) => {
     setSelectedBillIds((prev) => {
       if (prev.includes(billId)) {
@@ -283,13 +303,11 @@ export default function ManualEmailPage() {
     });
   };
 
-  // CHANGED: Select all bills
   const selectAllBills = () => {
     const allBillIds = customerBills.map((bill) => bill._id);
     setSelectedBillIds(allBillIds);
   };
 
-  // CHANGED: Deselect all bills
   const deselectAllBills = () => {
     setSelectedBillIds([]);
   };
@@ -307,7 +325,6 @@ export default function ManualEmailPage() {
         message,
         includeBilling,
         applicationId: selectedCustomer.applicationId,
-        // CHANGED: Send array of bill IDs
         billIds: includeBilling ? selectedBillIds : undefined,
         useAdminSender: useAdminSender,
       });
@@ -346,7 +363,6 @@ export default function ManualEmailPage() {
         subject,
         message,
         includeBilling,
-        // CHANGED: Send array of bill IDs
         billIds: includeBilling ? selectedBillIds : undefined,
         sendCopyToAdmin,
         useAdminSender: useAdminSender,
@@ -360,8 +376,8 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      await loadSentRecords();
-      await loadCustomers(searchTerm);
+      // FIXED: Force refresh after sending email
+      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
 
       setSubject("");
       setMessage("");
@@ -403,8 +419,8 @@ export default function ManualEmailPage() {
         `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
       );
 
-      await loadSentRecords();
-      await loadCustomers(searchTerm);
+      // FIXED: Force refresh after sending bulk emails
+      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
 
       setSelectedCustomers([]);
       setSubject("");
@@ -436,8 +452,8 @@ export default function ManualEmailPage() {
       setShowReminderDialog(false);
       setReminderMessage("");
 
-      await loadSentRecords();
-      await loadCustomers(searchTerm);
+      // FIXED: Force refresh after sending reminders
+      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
@@ -542,10 +558,16 @@ export default function ManualEmailPage() {
     }
   };
 
+  // FIXED: Enhanced refresh function with force flag
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      await Promise.all([loadCustomers(), loadTemplates(), loadSentRecords()]);
+      await Promise.all([
+        loadCustomers("", true), // Force refresh
+        loadTemplates(),
+        loadSentRecords(),
+      ]);
+      setRefreshKey((prev) => prev + 1); // Force re-render
       toast.success("✅ All data refreshed successfully!");
       console.log("🔄 Refresh completed at:", new Date().toISOString());
       console.log("📊 Total customers:", customers.length);
@@ -633,6 +655,11 @@ export default function ManualEmailPage() {
                 Send custom emails to customers based on their building location
                 (Breeze or SIL)
               </p>
+              <p className="text-xs text-gray-400 mt-1">
+                🔄 Last updated: {new Date().toLocaleTimeString()}
+                {customers.length > 0 &&
+                  ` • ${customers.length} customers loaded`}
+              </p>
             </div>
             <button
               onClick={handleRefresh}
@@ -679,7 +706,7 @@ export default function ManualEmailPage() {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - same as before */}
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex space-x-8">
             {[
@@ -709,632 +736,131 @@ export default function ManualEmailPage() {
           </nav>
         </div>
 
-        {/* Single Email Tab */}
-        {activeTab === "single" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column - Customer Selection */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Select Customer
-              </h2>
+        {/* Rest of the component remains the same */}
+        {/* ... (Single Email, Bulk Email, Templates, Sent Records tabs - unchanged) ... */}
 
-              {/* Building Filter */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Building
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setBuildingFilter("all")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "all"
-                        ? "bg-gray-800 text-white border-gray-800"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    All ({customers.length})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("breeze")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "breeze"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
-                    }`}
-                  >
-                    🌊 Breeze ({breezeCount})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("sil")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "sil"
-                        ? "bg-purple-600 text-white border-purple-600"
-                        : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
-                    }`}
-                  >
-                    🏢 SIL ({silCount})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("other")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "other"
-                        ? "bg-gray-600 text-white border-gray-600"
-                        : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    📍 Other ({otherCount})
-                  </button>
-                </div>
-              </div>
+        {/* FIXED: Add key to force re-render when customers change */}
+        <div key={`customer-list-${refreshKey}-${customers.length}`}>
+          {/* Single Email Tab */}
+          {activeTab === "single" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left Column - Customer Selection */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Select Customer
+                </h2>
 
-              <input
-                type="text"
-                placeholder="Search by name, email, or application ID..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-
-              {loading && customers.length === 0 && (
-                <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
-
-              {error && !loading && customers.length === 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                  <p className="text-red-600 text-sm">{error}</p>
-                  <button
-                    onClick={() => loadCustomers(searchTerm)}
-                    className="mt-2 text-sm text-red-700 underline"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              )}
-
-              {!loading && !error && (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {displayCustomers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p>No customers found</p>
-                      <p className="text-xs mt-1">
-                        {buildingFilter !== "all"
-                          ? `No customers found in "${buildingFilter}" building`
-                          : "Make sure there are approved applications with email addresses"}
-                      </p>
-                    </div>
-                  ) : (
-                    displayCustomers.map((customer) => {
-                      const location = getLocationFromBuildingName(
-                        customer.buildingName,
-                      );
-                      const locationDisplay = getLocationDisplay(location);
-                      const badgeColor = getLocationBadgeColor(location);
-
-                      return (
-                        <button
-                          key={customer._id || customer.applicationId}
-                          onClick={() => handleCustomerSelect(customer)}
-                          className={`w-full text-left p-4 rounded-lg border transition-all ${
-                            selectedCustomer?.applicationId ===
-                            customer.applicationId
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-gray-900">
-                                {customer.firstName || ""}{" "}
-                                {customer.lastName || ""}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {customer.email || "No email"}
-                              </p>
-                              <p className="text-xs text-gray-400 mt-1">
-                                ID: {customer.applicationId || "N/A"}
-                              </p>
-                              {customer.buildingName && (
-                                <p className="text-xs text-gray-400">
-                                  🏢 {customer.buildingName}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex flex-col items-end gap-1">
-                              {location !== "other" && (
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
-                                >
-                                  {locationDisplay}
-                                </span>
-                              )}
-                              {customer.hasUnpaidBills && (
-                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                                  ⚠️ Unpaid
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-
-              {selectedCustomer && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-700">
-                    Selected Customer
-                  </p>
-                  <p className="text-sm text-gray-900 mt-1">
-                    <strong>
-                      {selectedCustomer.firstName || ""}{" "}
-                      {selectedCustomer.lastName || ""}
-                    </strong>
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {selectedCustomer.email || "No email"}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Phone: {selectedCustomer.phoneNumber || "N/A"}
-                  </p>
-                  {selectedCustomer.buildingName && (
-                    <p className="text-sm text-gray-600">
-                      🏢 Building: {selectedCustomer.buildingName}
-                    </p>
-                  )}
-                  {customerLocation && customerLocation !== "other" && (
-                    <div className="mt-2">
-                      <span
-                        className={`px-3 py-1 text-sm font-medium rounded-full border ${getLocationBadgeColor(customerLocation)}`}
-                      >
-                        📍 {getLocationDisplay(customerLocation)}
-                      </span>
-                      <span className="ml-2 text-xs text-gray-500">
-                        Collection: {collectionEmail}
-                      </span>
-                    </div>
-                  )}
-                  {selectedCustomer.hasUnpaidBills && (
-                    <span className="inline-flex items-center mt-2 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                      ⚠️ Has Unpaid Bills
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Right Column - Compose Email */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Compose Email
-              </h2>
-
-              {/* Location Display */}
-              {selectedCustomer &&
-                customerLocation &&
-                customerLocation !== "other" && (
-                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      <strong>📍 Location Detected:</strong>{" "}
-                      {getLocationDisplay(customerLocation)}
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Collection Email: {collectionEmail}
-                    </p>
-                    <p className="text-xs text-blue-600">
-                      Building: {selectedCustomer.buildingName || "N/A"}
-                    </p>
-                  </div>
-                )}
-
-              {templates.length > 0 && (
+                {/* Building Filter */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Load Template
+                    Filter by Building
                   </label>
-                  <select
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={selectedTemplateId}
-                    onChange={(e) => handleTemplateSelect(e.target.value)}
-                  >
-                    <option value="">None</option>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name || "Unnamed"} (
-                        {template.category || "general"})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Sender Type Selector */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📧 Send From
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(false)}
-                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                      !useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Collection</span>
-                    <span className="text-xs text-gray-500 truncate">
-                      {selectedCustomer &&
-                      customerLocation &&
-                      customerLocation !== "other"
-                        ? collectionEmail
-                        : "No location detected"}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(true)}
-                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                      useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Admin</span>
-                    <span className="text-xs text-gray-500">
-                      admin@misterfyber.com
-                    </span>
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  {useAdminSender
-                    ? "📌 Email will be sent from the main admin email"
-                    : customerLocation && customerLocation !== "other"
-                      ? `📌 Email will be sent from ${customerLocation.toUpperCase()} collection email: ${collectionEmail}`
-                      : "📌 No location detected. Please select a customer with a building."}
-                </p>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Enter email subject..."
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message
-                </label>
-                <textarea
-                  rows={6}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Write your email message here..."
-                />
-              </div>
-
-              <label className="flex items-center mb-4">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  checked={includeBilling}
-                  onChange={(e) => {
-                    setIncludeBilling(e.target.checked);
-                    if (!e.target.checked) {
-                      setSelectedBillIds([]);
-                    }
-                  }}
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Include Billing Information
-                </span>
-              </label>
-
-              {includeBilling && (
-                <div className="mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Select Bills ({selectedBillIds.length} selected)
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={selectAllBills}
-                        className="text-xs text-blue-600 hover:text-blue-800"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={deselectAllBills}
-                        className="text-xs text-red-600 hover:text-red-800"
-                      >
-                        Deselect All
-                      </button>
-                    </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setBuildingFilter("all")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "all"
+                          ? "bg-gray-800 text-white border-gray-800"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      All ({customers.length})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("breeze")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "breeze"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                      }`}
+                    >
+                      🌊 Breeze ({breezeCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("sil")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "sil"
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
+                      }`}
+                    >
+                      🏢 SIL ({silCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("other")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "other"
+                          ? "bg-gray-600 text-white border-gray-600"
+                          : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      📍 Other ({otherCount})
+                    </button>
                   </div>
-
-                  {customerBills.length > 0 ? (
-                    <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                      {customerBills.map((bill) => (
-                        <label
-                          key={bill._id}
-                          className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${
-                            selectedBillIds.includes(bill._id)
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            checked={selectedBillIds.includes(bill._id)}
-                            onChange={() => toggleBillSelection(bill._id)}
-                          />
-                          <div className="ml-3 flex-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-900">
-                                {bill.invoiceNumber || "N/A"}
-                              </span>
-                              <span className="text-sm font-bold text-red-600">
-                                ₱{(bill.total || 0).toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full ${
-                                  bill.status === "paid"
-                                    ? "bg-green-100 text-green-700"
-                                    : bill.status === "overdue"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-yellow-100 text-yellow-700"
-                                }`}
-                              >
-                                {bill.status || "N/A"}
-                              </span>
-                              {bill.isInstallationBill && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-                                  Installation
-                                </span>
-                              )}
-                              {bill.isProRated && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                                  Pro-rated
-                                </span>
-                              )}
-                              <span className="text-xs text-gray-500">
-                                Due:{" "}
-                                {new Date(bill.dueDate).toLocaleDateString()}
-                              </span>
-                            </div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg">
-                      No bills found for this customer. Please create a bill
-                      first.
-                    </p>
-                  )}
-
-                  {selectedBillIds.length > 0 && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-600">
-                        Selected {selectedBillIds.length} bill(s)
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Total: ₱
-                        {customerBills
-                          .filter((b) => selectedBillIds.includes(b._id))
-                          .reduce((sum, b) => sum + (b.total || 0), 0)
-                          .toLocaleString()}
-                      </p>
-                    </div>
-                  )}
                 </div>
-              )}
 
-              <label className="flex items-center mb-6">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  checked={sendCopyToAdmin}
-                  onChange={(e) => setSendCopyToAdmin(e.target.checked)}
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Send copy to admin
-                </span>
-              </label>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handlePreview}
-                  disabled={
-                    !selectedCustomer || !subject.trim() || !message.trim()
-                  }
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  🔍 Preview
-                </button>
-                <button
-                  onClick={handleSendEmail}
-                  disabled={
-                    loading ||
-                    !selectedCustomer ||
-                    !subject.trim() ||
-                    !message.trim() ||
-                    (includeBilling && selectedBillIds.length === 0)
-                  }
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <span>✉️</span> Send Email
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bulk Email Tab */}
-        {activeTab === "bulk" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Select Customers
-              </h2>
-
-              {/* Building Filter */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Building
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setBuildingFilter("all")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "all"
-                        ? "bg-gray-800 text-white border-gray-800"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    All ({customers.length})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("breeze")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "breeze"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
-                    }`}
-                  >
-                    🌊 Breeze ({breezeCount})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("sil")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "sil"
-                        ? "bg-purple-600 text-white border-purple-600"
-                        : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
-                    }`}
-                  >
-                    🏢 SIL ({silCount})
-                  </button>
-                  <button
-                    onClick={() => setBuildingFilter("other")}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                      buildingFilter === "other"
-                        ? "bg-gray-600 text-white border-gray-600"
-                        : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    📍 Other ({otherCount})
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex gap-2 mb-4">
                 <input
                   type="text"
-                  placeholder="Search customers..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Search by name, email, or application ID..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
-                <button
-                  onClick={() => setShowUnpaidOnly(!showUnpaidOnly)}
-                  className={`px-4 py-2 rounded-lg border transition-colors ${
-                    showUnpaidOnly
-                      ? "bg-red-100 border-red-300 text-red-700"
-                      : "bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {showUnpaidOnly ? "🔴 Unpaid Only" : "Show All"}
-                </button>
-              </div>
 
-              {loading && customers.length === 0 && (
-                <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
+                {loading && customers.length === 0 && (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
 
-              {error && !loading && customers.length === 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                  <p className="text-red-600 text-sm">{error}</p>
-                </div>
-              )}
+                {error && !loading && customers.length === 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p className="text-red-600 text-sm">{error}</p>
+                    <button
+                      onClick={() => loadCustomers(searchTerm, true)}
+                      className="mt-2 text-sm text-red-700 underline"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
 
-              {!loading && !error && (
-                <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                  {displayCustomers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p>
-                        {showUnpaidOnly
-                          ? "No unpaid customers found"
-                          : "No customers found"}
-                      </p>
-                    </div>
-                  ) : (
-                    displayCustomers.map((customer) => {
-                      const location = getLocationFromBuildingName(
-                        customer.buildingName,
-                      );
-                      const locationDisplay = getLocationDisplay(location);
-                      const badgeColor = getLocationBadgeColor(location);
-
-                      return (
-                        <label
-                          key={customer._id || customer.applicationId}
-                          className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
-                            selectedCustomers.some(
-                              (c) => c.applicationId === customer.applicationId,
-                            )
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                          }`}
+                {!loading && !error && (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {displayCustomers.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No customers found</p>
+                        <p className="text-xs mt-1">
+                          {buildingFilter !== "all"
+                            ? `No customers found in "${buildingFilter}" building`
+                            : "Make sure there are approved applications with email addresses"}
+                        </p>
+                        <button
+                          onClick={() => loadCustomers("", true)}
+                          className="mt-2 text-sm text-blue-600 underline"
                         >
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            checked={selectedCustomers.some(
-                              (c) => c.applicationId === customer.applicationId,
-                            )}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedCustomers([
-                                  ...selectedCustomers,
-                                  customer,
-                                ]);
-                              } else {
-                                setSelectedCustomers(
-                                  selectedCustomers.filter(
-                                    (c) =>
-                                      c.applicationId !==
-                                      customer.applicationId,
-                                  ),
-                                );
-                              }
-                            }}
-                          />
-                          <div className="ml-3 flex-1">
+                          🔄 Refresh customer list
+                        </button>
+                      </div>
+                    ) : (
+                      displayCustomers.map((customer) => {
+                        const location = getLocationFromBuildingName(
+                          customer.buildingName,
+                        );
+                        const locationDisplay = getLocationDisplay(location);
+                        const badgeColor = getLocationBadgeColor(location);
+
+                        return (
+                          <button
+                            key={customer._id || customer.applicationId}
+                            onClick={() => handleCustomerSelect(customer)}
+                            className={`w-full text-left p-4 rounded-lg border transition-all ${
+                              selectedCustomer?.applicationId ===
+                              customer.applicationId
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
                             <div className="flex justify-between items-start">
                               <div>
                                 <p className="font-medium text-gray-900">
@@ -1344,7 +870,7 @@ export default function ManualEmailPage() {
                                 <p className="text-sm text-gray-500">
                                   {customer.email || "No email"}
                                 </p>
-                                <p className="text-xs text-gray-400">
+                                <p className="text-xs text-gray-400 mt-1">
                                   ID: {customer.applicationId || "N/A"}
                                 </p>
                                 {customer.buildingName && (
@@ -1368,446 +894,973 @@ export default function ManualEmailPage() {
                                 )}
                               </div>
                             </div>
-                            {customer.lastBillAmount > 0 && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                Last Bill: ₱
-                                {(
-                                  customer.lastBillAmount || 0
-                                ).toLocaleString()}{" "}
-                                - {customer.lastBillStatus || "N/A"}
-                              </p>
-                            )}
-                          </div>
-                        </label>
-                      );
-                    })
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {selectedCustomer && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <p className="text-sm font-medium text-gray-700">
+                      Selected Customer
+                    </p>
+                    <p className="text-sm text-gray-900 mt-1">
+                      <strong>
+                        {selectedCustomer.firstName || ""}{" "}
+                        {selectedCustomer.lastName || ""}
+                      </strong>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {selectedCustomer.email || "No email"}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Phone: {selectedCustomer.phoneNumber || "N/A"}
+                    </p>
+                    {selectedCustomer.buildingName && (
+                      <p className="text-sm text-gray-600">
+                        🏢 Building: {selectedCustomer.buildingName}
+                      </p>
+                    )}
+                    {customerLocation && customerLocation !== "other" && (
+                      <div className="mt-2">
+                        <span
+                          className={`px-3 py-1 text-sm font-medium rounded-full border ${getLocationBadgeColor(customerLocation)}`}
+                        >
+                          📍 {getLocationDisplay(customerLocation)}
+                        </span>
+                        <span className="ml-2 text-xs text-gray-500">
+                          Collection: {collectionEmail}
+                        </span>
+                      </div>
+                    )}
+                    {selectedCustomer.hasUnpaidBills && (
+                      <span className="inline-flex items-center mt-2 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                        ⚠️ Has Unpaid Bills
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column - Compose Email */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Compose Email
+                </h2>
+
+                {/* Location Display */}
+                {selectedCustomer &&
+                  customerLocation &&
+                  customerLocation !== "other" && (
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        <strong>📍 Location Detected:</strong>{" "}
+                        {getLocationDisplay(customerLocation)}
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Collection Email: {collectionEmail}
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        Building: {selectedCustomer.buildingName || "N/A"}
+                      </p>
+                    </div>
                   )}
+
+                {templates.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Load Template
+                    </label>
+                    <select
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={selectedTemplateId}
+                      onChange={(e) => handleTemplateSelect(e.target.value)}
+                    >
+                      <option value="">None</option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name || "Unnamed"} (
+                          {template.category || "general"})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Sender Type Selector */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📧 Send From
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(false)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        !useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Collection</span>
+                      <span className="text-xs text-gray-500 truncate">
+                        {selectedCustomer &&
+                        customerLocation &&
+                        customerLocation !== "other"
+                          ? collectionEmail
+                          : "No location detected"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(true)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Admin</span>
+                      <span className="text-xs text-gray-500">
+                        admin@misterfyber.com
+                      </span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {useAdminSender
+                      ? "📌 Email will be sent from the main admin email"
+                      : customerLocation && customerLocation !== "other"
+                        ? `📌 Email will be sent from ${customerLocation.toUpperCase()} collection email: ${collectionEmail}`
+                        : "📌 No location detected. Please select a customer with a building."}
+                  </p>
                 </div>
-              )}
 
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  Selected: <strong>{selectedCustomers.length}</strong>{" "}
-                  customer(s)
-                  {selectedCustomers.filter((c) => c.hasUnpaidBills).length >
-                    0 && (
-                    <span className="ml-2 text-red-600">
-                      (
-                      {selectedCustomers.filter((c) => c.hasUnpaidBills).length}{" "}
-                      unpaid)
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {
-                    selectedCustomers.filter(
-                      (c) =>
-                        getLocationFromBuildingName(c.buildingName) !== "other",
-                    ).length
-                  }{" "}
-                  customers with location detected
-                </p>
-              </div>
-
-              <button
-                onClick={() => setShowReminderDialog(true)}
-                className="w-full mt-4 px-4 py-2 border border-yellow-300 text-yellow-700 rounded-lg hover:bg-yellow-50 transition-colors"
-              >
-                ⚠️ Send Reminder to All Unpaid Customers
-              </button>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Compose Bulk Email
-              </h2>
-
-              {/* Sender Type Selector for Bulk */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📧 Send From
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(false)}
-                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                      !useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Collection</span>
-                    <span className="text-xs text-gray-500">
-                      Location-specific
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(true)}
-                    className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                      useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Admin</span>
-                    <span className="text-xs text-gray-500">
-                      admin@misterfyber.com
-                    </span>
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  {useAdminSender
-                    ? "📌 All customers will receive from the main admin email"
-                    : "📌 Each customer will receive from their location-specific collection email"}
-                </p>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Enter email subject..."
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message
-                </label>
-                <textarea
-                  rows={8}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Write your email message here... (will be sent to all selected customers)"
-                />
-              </div>
-
-              <label className="flex items-center mb-4">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  checked={includeBilling}
-                  onChange={(e) => setIncludeBilling(e.target.checked)}
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Include Billing Information
-                </span>
-              </label>
-
-              {includeBilling && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Bill Type to Include
+                    Subject
                   </label>
-                  <select
+                  <input
+                    type="text"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={bulkBillType}
-                    onChange={(e) => setBulkBillType(e.target.value as any)}
-                  >
-                    <option value="unpaid">Unpaid Bills Only</option>
-                    <option value="latest">Latest Bill</option>
-                    <option value="installation">
-                      Unpaid Installation Fee
-                    </option>
-                  </select>
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Enter email subject..."
+                  />
                 </div>
-              )}
 
-              <label className="flex items-center mb-6">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  checked={sendCopyToAdmin}
-                  onChange={(e) => setSendCopyToAdmin(e.target.checked)}
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Send summary copy to admin
-                </span>
-              </label>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Message
+                  </label>
+                  <textarea
+                    rows={6}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Write your email message here..."
+                  />
+                </div>
 
-              <button
-                onClick={handleSendBulkEmails}
-                disabled={
-                  loading ||
-                  selectedCustomers.length === 0 ||
-                  !subject.trim() ||
-                  !message.trim()
-                }
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <>
-                    <span>✉️</span> Send to {selectedCustomers.length}{" "}
-                    Customer(s)
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Templates Tab */}
-        {activeTab === "templates" && (
-          <div>
-            <div className="mb-6">
-              <button
-                onClick={() => setShowTemplateDialog(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-              >
-                <span>💾</span> Save Current as Template
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {templates.map((template) => (
-                <div
-                  key={template.id}
-                  className="bg-white rounded-xl shadow-sm border border-gray-100 p-6"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-semibold text-gray-900">
-                      {template.name || "Unnamed"}
-                    </h3>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => handleEditTemplate(template)}
-                        className="text-blue-500 hover:text-blue-700 transition-colors p-1"
-                        title="Edit template"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTemplate(template.id)}
-                        className="text-red-500 hover:text-red-700 transition-colors p-1"
-                        title="Delete template"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Category: {template.category || "general"}
-                  </p>
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    Subject: {template.subject || ""}
-                  </p>
-                  <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                    {(template.message || "").substring(0, 150)}...
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSubject(template.subject || "");
-                      setMessage(template.message || "");
-                      setIncludeBilling(
-                        template.includeBillingDefault || false,
-                      );
-                      setActiveTab("single");
+                <label className="flex items-center mb-4">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={includeBilling}
+                    onChange={(e) => {
+                      setIncludeBilling(e.target.checked);
+                      if (!e.target.checked) {
+                        setSelectedBillIds([]);
+                      }
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                  >
-                    Load & Use
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {templates.length === 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-                <p className="text-yellow-700">
-                  No templates saved yet. Create your first template using the
-                  button above.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Sent Records Tab */}
-        {activeTab === "sent" && (
-          <div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  📨 Sent Email Records
-                </h2>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-500">
-                    Total:{" "}
-                    <strong className="text-blue-600">{totalEmailsSent}</strong>{" "}
-                    emails sent
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Include Billing Information
                   </span>
+                </label>
+
+                {includeBilling && (
+                  <div className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Select Bills ({selectedBillIds.length} selected)
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={selectAllBills}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={deselectAllBills}
+                          className="text-xs text-red-600 hover:text-red-800"
+                        >
+                          Deselect All
+                        </button>
+                      </div>
+                    </div>
+
+                    {customerBills.length > 0 ? (
+                      <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                        {customerBills.map((bill) => (
+                          <label
+                            key={bill._id}
+                            className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${
+                              selectedBillIds.includes(bill._id)
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              checked={selectedBillIds.includes(bill._id)}
+                              onChange={() => toggleBillSelection(bill._id)}
+                            />
+                            <div className="ml-3 flex-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-900">
+                                  {bill.invoiceNumber || "N/A"}
+                                </span>
+                                <span className="text-sm font-bold text-red-600">
+                                  ₱{(bill.total || 0).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded-full ${
+                                    bill.status === "paid"
+                                      ? "bg-green-100 text-green-700"
+                                      : bill.status === "overdue"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-yellow-100 text-yellow-700"
+                                  }`}
+                                >
+                                  {bill.status || "N/A"}
+                                </span>
+                                {bill.isInstallationBill && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                    Installation
+                                  </span>
+                                )}
+                                {bill.isProRated && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                                    Pro-rated
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-500">
+                                  Due:{" "}
+                                  {new Date(bill.dueDate).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg">
+                        No bills found for this customer. Please create a bill
+                        first.
+                      </p>
+                    )}
+
+                    {selectedBillIds.length > 0 && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-600">
+                          Selected {selectedBillIds.length} bill(s)
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Total: ₱
+                          {customerBills
+                            .filter((b) => selectedBillIds.includes(b._id))
+                            .reduce((sum, b) => sum + (b.total || 0), 0)
+                            .toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <label className="flex items-center mb-6">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={sendCopyToAdmin}
+                    onChange={(e) => setSendCopyToAdmin(e.target.checked)}
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Send copy to admin
+                  </span>
+                </label>
+
+                <div className="flex gap-3">
                   <button
-                    onClick={async () => {
-                      await loadSentRecords();
-                    }}
-                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    onClick={handlePreview}
+                    disabled={
+                      !selectedCustomer || !subject.trim() || !message.trim()
+                    }
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    🔄 Refresh
+                    🔍 Preview
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={
+                      loading ||
+                      !selectedCustomer ||
+                      !subject.trim() ||
+                      !message.trim() ||
+                      (includeBilling && selectedBillIds.length === 0)
+                    }
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <span>✉️</span> Send Email
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
+            </div>
+          )}
 
-              {loading && sentRecords.length === 0 && (
-                <div className="flex justify-center py-12">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          {/* Bulk Email Tab */}
+          {activeTab === "bulk" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Select Customers
+                </h2>
+
+                {/* Building Filter */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Building
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setBuildingFilter("all")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "all"
+                          ? "bg-gray-800 text-white border-gray-800"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      All ({customers.length})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("breeze")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "breeze"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                      }`}
+                    >
+                      🌊 Breeze ({breezeCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("sil")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "sil"
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
+                      }`}
+                    >
+                      🏢 SIL ({silCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("other")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "other"
+                          ? "bg-gray-600 text-white border-gray-600"
+                          : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      📍 Other ({otherCount})
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              {!loading && sentRecords.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <p className="text-4xl mb-4">📭</p>
-                  <p>No sent email records found</p>
-                  <p className="text-sm mt-2">Emails sent will appear here</p>
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search customers..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <button
+                    onClick={() => setShowUnpaidOnly(!showUnpaidOnly)}
+                    className={`px-4 py-2 rounded-lg border transition-colors ${
+                      showUnpaidOnly
+                        ? "bg-red-100 border-red-300 text-red-700"
+                        : "bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {showUnpaidOnly ? "🔴 Unpaid Only" : "Show All"}
+                  </button>
                 </div>
-              )}
 
-              {!loading && sentRecords.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          To
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Subject
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Type
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Location
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Sender
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {sentRecords.map((record) => {
-                        const locationDisplay =
-                          record.location && record.location !== "unknown"
-                            ? getLocationDisplay(record.location)
-                            : "📍 Unknown";
-                        const badgeColor =
-                          record.location && record.location !== "unknown"
-                            ? getLocationBadgeColor(record.location)
-                            : "bg-gray-100 text-gray-800 border-gray-300";
+                {loading && customers.length === 0 && (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+
+                {error && !loading && customers.length === 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                )}
+
+                {!loading && !error && (
+                  <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
+                    {displayCustomers.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>
+                          {showUnpaidOnly
+                            ? "No unpaid customers found"
+                            : "No customers found"}
+                        </p>
+                        <button
+                          onClick={() => loadCustomers("", true)}
+                          className="mt-2 text-sm text-blue-600 underline"
+                        >
+                          🔄 Refresh customer list
+                        </button>
+                      </div>
+                    ) : (
+                      displayCustomers.map((customer) => {
+                        const location = getLocationFromBuildingName(
+                          customer.buildingName,
+                        );
+                        const locationDisplay = getLocationDisplay(location);
+                        const badgeColor = getLocationBadgeColor(location);
 
                         return (
-                          <tr
-                            key={record.id}
-                            className="hover:bg-gray-50 transition-colors"
+                          <label
+                            key={customer._id || customer.applicationId}
+                            className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                              selectedCustomers.some(
+                                (c) =>
+                                  c.applicationId === customer.applicationId,
+                              )
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }`}
                           >
-                            <td className="py-3 px-4 text-sm text-gray-600">
-                              {formatDate(record.sentAt)}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">
-                                  {record.customerName || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {record.customerEmail || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-400">
-                                  ID: {record.applicationId || "N/A"}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
-                              {record.subject || ""}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                  record.isBulk
-                                    ? "bg-purple-100 text-purple-700"
-                                    : "bg-blue-100 text-blue-700"
-                                }`}
-                              >
-                                {record.isBulk ? "Bulk" : "Single"}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
-                              >
-                                {locationDisplay}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                  record.senderType === "admin"
-                                    ? "bg-orange-100 text-orange-700"
-                                    : "bg-green-100 text-green-700"
-                                }`}
-                              >
-                                {record.senderType === "admin"
-                                  ? "Admin"
-                                  : "Collection"}
-                              </span>
-                              {record.collectionEmail &&
-                                record.senderType !== "admin" && (
-                                  <p className="text-xs text-gray-400 mt-1 truncate max-w-[100px]">
-                                    {record.collectionEmail}
-                                  </p>
-                                )}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                  record.status === "sent"
-                                    ? "bg-green-100 text-green-700"
-                                    : record.status === "failed"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-yellow-100 text-yellow-700"
-                                }`}
-                              >
-                                {record.status || "unknown"}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <button
-                                onClick={() =>
-                                  handleDeleteSentRecord(record.id)
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              checked={selectedCustomers.some(
+                                (c) =>
+                                  c.applicationId === customer.applicationId,
+                              )}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCustomers([
+                                    ...selectedCustomers,
+                                    customer,
+                                  ]);
+                                } else {
+                                  setSelectedCustomers(
+                                    selectedCustomers.filter(
+                                      (c) =>
+                                        c.applicationId !==
+                                        customer.applicationId,
+                                    ),
+                                  );
                                 }
-                                className="text-red-500 hover:text-red-700 transition-colors text-sm"
-                                title="Delete record"
-                              >
-                                🗑️
-                              </button>
-                            </td>
-                          </tr>
+                              }}
+                            />
+                            <div className="ml-3 flex-1">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-medium text-gray-900">
+                                    {customer.firstName || ""}{" "}
+                                    {customer.lastName || ""}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    {customer.email || "No email"}
+                                  </p>
+                                  <p className="text-xs text-gray-400">
+                                    ID: {customer.applicationId || "N/A"}
+                                  </p>
+                                  {customer.buildingName && (
+                                    <p className="text-xs text-gray-400">
+                                      🏢 {customer.buildingName}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex flex-col items-end gap-1">
+                                  {location !== "other" && (
+                                    <span
+                                      className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                                    >
+                                      {locationDisplay}
+                                    </span>
+                                  )}
+                                  {customer.hasUnpaidBills && (
+                                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                      ⚠️ Unpaid
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {customer.lastBillAmount > 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Last Bill: ₱
+                                  {(
+                                    customer.lastBillAmount || 0
+                                  ).toLocaleString()}{" "}
+                                  - {customer.lastBillStatus || "N/A"}
+                                </p>
+                              )}
+                            </div>
+                          </label>
                         );
-                      })}
-                    </tbody>
-                  </table>
+                      })
+                    )}
+                  </div>
+                )}
+
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    Selected: <strong>{selectedCustomers.length}</strong>{" "}
+                    customer(s)
+                    {selectedCustomers.filter((c) => c.hasUnpaidBills).length >
+                      0 && (
+                      <span className="ml-2 text-red-600">
+                        (
+                        {
+                          selectedCustomers.filter((c) => c.hasUnpaidBills)
+                            .length
+                        }{" "}
+                        unpaid)
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {
+                      selectedCustomers.filter(
+                        (c) =>
+                          getLocationFromBuildingName(c.buildingName) !==
+                          "other",
+                      ).length
+                    }{" "}
+                    customers with location detected
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowReminderDialog(true)}
+                  className="w-full mt-4 px-4 py-2 border border-yellow-300 text-yellow-700 rounded-lg hover:bg-yellow-50 transition-colors"
+                >
+                  ⚠️ Send Reminder to All Unpaid Customers
+                </button>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Compose Bulk Email
+                </h2>
+
+                {/* Sender Type Selector for Bulk */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📧 Send From
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(false)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        !useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Collection</span>
+                      <span className="text-xs text-gray-500">
+                        Location-specific
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(true)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Admin</span>
+                      <span className="text-xs text-gray-500">
+                        admin@misterfyber.com
+                      </span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {useAdminSender
+                      ? "📌 All customers will receive from the main admin email"
+                      : "📌 Each customer will receive from their location-specific collection email"}
+                  </p>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Enter email subject..."
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Message
+                  </label>
+                  <textarea
+                    rows={8}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Write your email message here... (will be sent to all selected customers)"
+                  />
+                </div>
+
+                <label className="flex items-center mb-4">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={includeBilling}
+                    onChange={(e) => setIncludeBilling(e.target.checked)}
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Include Billing Information
+                  </span>
+                </label>
+
+                {includeBilling && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bill Type to Include
+                    </label>
+                    <select
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={bulkBillType}
+                      onChange={(e) => setBulkBillType(e.target.value as any)}
+                    >
+                      <option value="unpaid">Unpaid Bills Only</option>
+                      <option value="latest">Latest Bill</option>
+                      <option value="installation">
+                        Unpaid Installation Fee
+                      </option>
+                    </select>
+                  </div>
+                )}
+
+                <label className="flex items-center mb-6">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={sendCopyToAdmin}
+                    onChange={(e) => setSendCopyToAdmin(e.target.checked)}
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Send summary copy to admin
+                  </span>
+                </label>
+
+                <button
+                  onClick={handleSendBulkEmails}
+                  disabled={
+                    loading ||
+                    selectedCustomers.length === 0 ||
+                    !subject.trim() ||
+                    !message.trim()
+                  }
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <span>✉️</span> Send to {selectedCustomers.length}{" "}
+                      Customer(s)
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Templates Tab */}
+          {activeTab === "templates" && (
+            <div>
+              <div className="mb-6">
+                <button
+                  onClick={() => setShowTemplateDialog(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <span>💾</span> Save Current as Template
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {templates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="bg-white rounded-xl shadow-sm border border-gray-100 p-6"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="font-semibold text-gray-900">
+                        {template.name || "Unnamed"}
+                      </h3>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleEditTemplate(template)}
+                          className="text-blue-500 hover:text-blue-700 transition-colors p-1"
+                          title="Edit template"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTemplate(template.id)}
+                          className="text-red-500 hover:text-red-700 transition-colors p-1"
+                          title="Delete template"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Category: {template.category || "general"}
+                    </p>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Subject: {template.subject || ""}
+                    </p>
+                    <p className="text-sm text-gray-600 line-clamp-3 mb-4">
+                      {(template.message || "").substring(0, 150)}...
+                    </p>
+                    <button
+                      onClick={() => {
+                        setSubject(template.subject || "");
+                        setMessage(template.message || "");
+                        setIncludeBilling(
+                          template.includeBillingDefault || false,
+                        );
+                        setActiveTab("single");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      Load & Use
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {templates.length === 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                  <p className="text-yellow-700">
+                    No templates saved yet. Create your first template using the
+                    button above.
+                  </p>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Sent Records Tab */}
+          {activeTab === "sent" && (
+            <div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    📨 Sent Email Records
+                  </h2>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-500">
+                      Total:{" "}
+                      <strong className="text-blue-600">
+                        {totalEmailsSent}
+                      </strong>{" "}
+                      emails sent
+                    </span>
+                    <button
+                      onClick={async () => {
+                        await loadSentRecords();
+                      }}
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {loading && sentRecords.length === 0 && (
+                  <div className="flex justify-center py-12">
+                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+
+                {!loading && sentRecords.length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="text-4xl mb-4">📭</p>
+                    <p>No sent email records found</p>
+                    <p className="text-sm mt-2">Emails sent will appear here</p>
+                  </div>
+                )}
+
+                {!loading && sentRecords.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Date
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            To
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Subject
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Type
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Location
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Sender
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {sentRecords.map((record) => {
+                          const locationDisplay =
+                            record.location && record.location !== "unknown"
+                              ? getLocationDisplay(record.location)
+                              : "📍 Unknown";
+                          const badgeColor =
+                            record.location && record.location !== "unknown"
+                              ? getLocationBadgeColor(record.location)
+                              : "bg-gray-100 text-gray-800 border-gray-300";
+
+                          return (
+                            <tr
+                              key={record.id}
+                              className="hover:bg-gray-50 transition-colors"
+                            >
+                              <td className="py-3 px-4 text-sm text-gray-600">
+                                {formatDate(record.sentAt)}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {record.customerName || "N/A"}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {record.customerEmail || "N/A"}
+                                  </p>
+                                  <p className="text-xs text-gray-400">
+                                    ID: {record.applicationId || "N/A"}
+                                  </p>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
+                                {record.subject || ""}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                    record.isBulk
+                                      ? "bg-purple-100 text-purple-700"
+                                      : "bg-blue-100 text-blue-700"
+                                  }`}
+                                >
+                                  {record.isBulk ? "Bulk" : "Single"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                                >
+                                  {locationDisplay}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                    record.senderType === "admin"
+                                      ? "bg-orange-100 text-orange-700"
+                                      : "bg-green-100 text-green-700"
+                                  }`}
+                                >
+                                  {record.senderType === "admin"
+                                    ? "Admin"
+                                    : "Collection"}
+                                </span>
+                                {record.collectionEmail &&
+                                  record.senderType !== "admin" && (
+                                    <p className="text-xs text-gray-400 mt-1 truncate max-w-[100px]">
+                                      {record.collectionEmail}
+                                    </p>
+                                  )}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                    record.status === "sent"
+                                      ? "bg-green-100 text-green-700"
+                                      : record.status === "failed"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-yellow-100 text-yellow-700"
+                                  }`}
+                                >
+                                  {record.status || "unknown"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <button
+                                  onClick={() =>
+                                    handleDeleteSentRecord(record.id)
+                                  }
+                                  className="text-red-500 hover:text-red-700 transition-colors text-sm"
+                                  title="Delete record"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Preview Modal */}
