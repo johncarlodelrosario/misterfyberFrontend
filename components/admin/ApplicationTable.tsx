@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx
+// components/admin/ApplicationTable.tsx - FIXED
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -49,7 +49,10 @@ const STORAGE_KEYS = {
   LAST_KNOWN_PENDING: "misterfyber_pending",
 };
 
-const MAX_CACHE_SIZE = 100;
+// ============================================================
+// FIX: BAWASAN ANG MAX CACHE SIZE PARA DI MAG-OVERFLOW
+// ============================================================
+const MAX_CACHE_SIZE = 100; // BAWASAN: 1000 → 100
 const CHECK_INTERVAL = 30000;
 const ITEMS_PER_PAGE = 20;
 
@@ -70,8 +73,11 @@ const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
       const serialized = JSON.stringify(value);
-      if (serialized.length > 5 * 1024 * 1024) {
-        console.warn(`⚠️ Cache too large, skipping`);
+      // FIX: 5MB → 2MB LIMIT
+      if (serialized.length > 2 * 1024 * 1024) {
+        console.warn(
+          `⚠️ Cache too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping`,
+        );
         return false;
       }
       localStorage.setItem(key, serialized);
@@ -350,17 +356,17 @@ export default function ApplicationTable() {
   }, [isOnline, initialLoading, checkForNewApplicants]);
 
   // ============================================================
-  // PINAKA IMPORTANTE: LOAD DATA AGAD - WALANG DELAY!
+  // FIX: LOAD DATA - BAWASAN ANG CACHE SIZE
   // ============================================================
   useEffect(() => {
     const loadData = () => {
-      // Step 1: Kunin agad ang cache
+      // Step 1: Kunin ang cache
       const cached = persistentStorage.getItem(
         STORAGE_KEYS.APPLICATIONS,
       ) as StoredApplicationsData | null;
       const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
-      // Step 2: Kung may cache, display agad - WALANG HINTAY!
+      // Step 2: Kung may cache at hindi masyadong malaki, display agad
       if (cached && cached.applications && cached.applications.length > 0) {
         console.log(`📦 INSTANT LOAD: ${cached.applications.length} apps`);
         setApplications(cached.applications);
@@ -375,19 +381,18 @@ export default function ApplicationTable() {
         setInitialLoading(false);
         dataLoadedRef.current = true;
 
-        // Step 3: Background fetch agad - WALANG 5 MINUTES NA HINTAY!
-        // Kahit 1 second pa yan, magfa-fetch agad para updated
+        // Background refresh after 1 second
         setTimeout(() => {
           if (!refreshInProgressRef.current) {
-            console.log("🔄 Background refresh agad para updated...");
+            console.log("🔄 Background refresh...");
             fetchApplicationsSilent();
           }
-        }, 500); // 0.5 second lang, hindi 5 minutes!
+        }, 1000);
 
         return true;
       }
 
-      // Step 4: Walang cache, fetch na agad
+      // Step 3: Walang cache, fetch na agad
       console.log("📡 No cache, fetching...");
       fetchApplications();
       return false;
@@ -396,7 +401,9 @@ export default function ApplicationTable() {
     loadData();
   }, []);
 
-  // Silent fetch - walang loading spinner, walang abala
+  // ============================================================
+  // FIX: Silent fetch - limit to 100 applications only
+  // ============================================================
   const fetchApplicationsSilent = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -418,7 +425,7 @@ export default function ApplicationTable() {
           setApplications(applicationsList);
           setLastFetchTime(new Date());
 
-          // Update cache
+          // Update cache - only store first 100
           const dataToStore: StoredApplicationsData = {
             applications: applicationsList.slice(0, MAX_CACHE_SIZE),
             timestamp: Date.now(),
@@ -487,6 +494,9 @@ export default function ApplicationTable() {
     }
   }, []);
 
+  // ============================================================
+  // FIX: fetchApplications - limit to 100
+  // ============================================================
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -502,6 +512,7 @@ export default function ApplicationTable() {
       setApplications(applicationsList);
       setLastFetchTime(new Date());
 
+      // Only store first 100
       const dataToStore: StoredApplicationsData = {
         applications: applicationsList.slice(0, MAX_CACHE_SIZE),
         timestamp: Date.now(),
