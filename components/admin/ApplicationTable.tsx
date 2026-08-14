@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - FIXED
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -50,11 +50,11 @@ const STORAGE_KEYS = {
 };
 
 // ============================================================
-// FIX: BAWASAN ANG MAX CACHE SIZE PARA DI MAG-OVERFLOW
+// CACHE SETTINGS
 // ============================================================
-const MAX_CACHE_SIZE = 100; // BAWASAN: 1000 → 100
+const MAX_CACHE_SIZE = 50;
 const CHECK_INTERVAL = 30000;
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 50;
 
 interface StoredApplicationsData {
   applications: any[];
@@ -73,7 +73,6 @@ const persistentStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
       const serialized = JSON.stringify(value);
-      // FIX: 5MB → 2MB LIMIT
       if (serialized.length > 2 * 1024 * 1024) {
         console.warn(
           `⚠️ Cache too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping`,
@@ -189,7 +188,13 @@ export default function ApplicationTable() {
     failed: any[];
   } | null>(null);
 
+  // ============================================================
+  // PAGINATION STATE - API BASED
+  // ============================================================
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [apiStatusFilter, setApiStatusFilter] = useState<string>("all");
   const [showLeftButton, setShowLeftButton] = useState(false);
   const [showRightButton, setShowRightButton] = useState(false);
 
@@ -214,6 +219,17 @@ export default function ApplicationTable() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const dataLoadedRef = useRef(false);
+  const currentPageRef = useRef(currentPage);
+  const filterRef = useRef(filter);
+
+  // Update refs when state changes
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -254,6 +270,7 @@ export default function ApplicationTable() {
     }
   };
 
+  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
@@ -305,30 +322,19 @@ export default function ApplicationTable() {
     if (refreshInProgressRef.current) return;
 
     try {
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-      const currentTotal = applicationsList.length;
-      const currentPending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-
+      const data = await getAllApplications({ page: 1, limit: 1 });
+      const currentTotal = data.total || 0;
       const lastKnownTotal =
         (persistentStorage.getItem(STORAGE_KEYS.LAST_KNOWN_TOTAL) as number) ||
-        applications.length;
-      const lastKnownPending =
-        (persistentStorage.getItem(
-          STORAGE_KEYS.LAST_KNOWN_PENDING,
-        ) as number) ||
-        applications.filter((a: any) => a.status === "pending").length;
+        totalItems;
 
-      const hasNew =
-        currentTotal > lastKnownTotal || currentPending > lastKnownPending;
+      const hasNew = currentTotal > lastKnownTotal;
 
       if (hasNew) {
         console.log(`🆕 New applicant detected!`);
         setHasNewApplicant(true);
         setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
-        await silentRefresh();
+        await fetchApplications(currentPageRef.current, filterRef.current);
 
         setTimeout(() => {
           setHasNewApplicant(false);
@@ -338,7 +344,7 @@ export default function ApplicationTable() {
     } catch (error) {
       console.error("Failed to check for new applicants:", error);
     }
-  }, [applications.length]);
+  }, [totalItems]);
 
   useEffect(() => {
     if (isOnline && !initialLoading) {
@@ -356,28 +362,102 @@ export default function ApplicationTable() {
   }, [isOnline, initialLoading, checkForNewApplicants]);
 
   // ============================================================
-  // FIX: LOAD DATA - BAWASAN ANG CACHE SIZE
+  // FETCH APPLICATIONS WITH API PAGINATION
   // ============================================================
+  const fetchApplications = useCallback(
+    async (page: number, filterState: FilterState) => {
+      if (refreshInProgressRef.current) return;
+      refreshInProgressRef.current = true;
+      setRefreshing(true);
+      setError(null);
+
+      try {
+        const statusParam =
+          filterState.statusFilter !== "all"
+            ? filterState.statusFilter
+            : undefined;
+
+        console.log(
+          `📊 Fetching applications page ${page} with limit ${ITEMS_PER_PAGE}`,
+        );
+
+        const data = await getAllApplications({
+          page,
+          limit: ITEMS_PER_PAGE,
+          status: statusParam,
+        });
+
+        const applicationsList = data.data || [];
+        const total = data.total || 0;
+        const totalPagesCalculated =
+          data.totalPages || Math.ceil(total / ITEMS_PER_PAGE) || 1;
+
+        console.log(
+          `✅ Received ${applicationsList.length} applications, total: ${total}`,
+        );
+
+        setApplications(applicationsList);
+        setTotalItems(total);
+        setTotalPages(totalPagesCalculated);
+        setLastFetchTime(new Date());
+
+        // Store in cache for offline use
+        const dataToStore: StoredApplicationsData = {
+          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
+          timestamp: Date.now(),
+          version: STORAGE_KEYS.CACHE_VERSION,
+          totalCount: total,
+        };
+        persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+        persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
+
+        const pending = applicationsList.filter(
+          (a: any) => a.status === "pending",
+        ).length;
+        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
+
+        setHasNewApplicant(false);
+      } catch (error: any) {
+        console.error("Failed to fetch:", error);
+        // Try to load from cache
+        const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+        if (cached?.applications?.length > 0) {
+          setApplications(cached.applications);
+          setTotalItems(cached.totalCount || cached.applications.length);
+          setError(
+            `Network error. Showing ${cached.applications.length} cached.`,
+          );
+          toast.error("Network error, using cached data");
+        } else {
+          setError("Unable to connect to server.");
+          toast.error("Failed to connect");
+        }
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
+        refreshInProgressRef.current = false;
+      }
+    },
+    [],
+  );
+
+  // Load initial data
   useEffect(() => {
     const loadData = () => {
-      // Step 1: Kunin ang cache
+      // Try cache first
       const cached = persistentStorage.getItem(
         STORAGE_KEYS.APPLICATIONS,
       ) as StoredApplicationsData | null;
       const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
 
-      // Step 2: Kung may cache at hindi masyadong malaki, display agad
       if (cached && cached.applications && cached.applications.length > 0) {
-        console.log(`📦 INSTANT LOAD: ${cached.applications.length} apps`);
+        console.log(
+          `📦 INSTANT LOAD: ${cached.applications.length} apps from cache`,
+        );
         setApplications(cached.applications);
+        setTotalItems(cached.totalCount || cached.applications.length);
         if (lastFetch) setLastFetchTime(new Date(lastFetch));
-
-        const total = cached.applications.length;
-        const pending = cached.applications.filter(
-          (a: any) => a.status === "pending",
-        ).length;
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
         setInitialLoading(false);
         dataLoadedRef.current = true;
 
@@ -385,204 +465,50 @@ export default function ApplicationTable() {
         setTimeout(() => {
           if (!refreshInProgressRef.current) {
             console.log("🔄 Background refresh...");
-            fetchApplicationsSilent();
+            fetchApplications(currentPageRef.current, filterRef.current);
           }
         }, 1000);
 
         return true;
       }
 
-      // Step 3: Walang cache, fetch na agad
-      console.log("📡 No cache, fetching...");
-      fetchApplications();
+      // No cache, fetch from API
+      console.log("📡 No cache, fetching from API...");
+      fetchApplications(1, {
+        searchTerm: "",
+        statusFilter: "all",
+        buildingFilter: "",
+      });
       return false;
     };
 
     loadData();
   }, []);
 
-  // ============================================================
-  // FIX: Silent fetch - limit to 100 applications only
-  // ============================================================
-  const fetchApplicationsSilent = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
+  // Handle page change
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      if (newPage < 1 || newPage > totalPages) return;
+      setCurrentPage(newPage);
+      fetchApplications(newPage, filter);
+    },
+    [fetchApplications, filter, totalPages],
+  );
 
-    try {
-      console.log("🔄 Silent background fetch...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      if (applicationsList.length > 0) {
-        // Check kung may bago
-        const currentIds = new Set(applications.map((a: any) => a._id));
-        const newApps = applicationsList.filter(
-          (a: any) => !currentIds.has(a._id),
-        );
-
-        if (newApps.length > 0) {
-          console.log(`🆕 ${newApps.length} new apps found in background`);
-          setApplications(applicationsList);
-          setLastFetchTime(new Date());
-
-          // Update cache - only store first 100
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-          const total = applicationsList.length;
-          const pending = applicationsList.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-          toast.success(
-            `🆕 ${newApps.length} new application${newApps.length > 1 ? "s" : ""} loaded`,
-          );
-        } else {
-          // Walang bago, update lang timestamp
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        }
-      }
-    } catch (error) {
-      console.log("Background fetch failed:", error);
-    } finally {
-      refreshInProgressRef.current = false;
-    }
-  }, [applications]);
-
-  const silentRefresh = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-
-    try {
-      console.log("🔄 Silent refresh...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      if (applicationsList.length > 0) {
-        setApplications(applicationsList);
-        setLastFetchTime(new Date());
-
-        const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-          timestamp: Date.now(),
-          version: STORAGE_KEYS.CACHE_VERSION,
-          totalCount: applicationsList.length,
-        };
-
-        persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-        const total = applicationsList.length;
-        const pending = applicationsList.filter(
-          (a: any) => a.status === "pending",
-        ).length;
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-      }
-    } catch (error) {
-      console.log("Silent refresh failed");
-    } finally {
-      refreshInProgressRef.current = false;
-    }
-  }, []);
-
-  // ============================================================
-  // FIX: fetchApplications - limit to 100
-  // ============================================================
-  const fetchApplications = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      console.log("🔄 Fetching applications...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      console.log(`✅ Received ${applicationsList.length} applications`);
-      setApplications(applicationsList);
-      setLastFetchTime(new Date());
-
-      // Only store first 100
-      const dataToStore: StoredApplicationsData = {
-        applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-        timestamp: Date.now(),
-        version: STORAGE_KEYS.CACHE_VERSION,
-        totalCount: applicationsList.length,
-      };
-
-      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-      const total = applicationsList.length;
-      const pending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-      setHasNewApplicant(false);
-    } catch (error: any) {
-      console.error("Failed to fetch:", error);
-      const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-      if (cached?.applications?.length > 0) {
-        setApplications(cached.applications);
-        setError(
-          `Network error. Showing ${cached.applications.length} cached.`,
-        );
-        toast.error("Network error, using cached data");
-      } else {
-        setError("Unable to connect to server.");
-        toast.error("Failed to connect");
-      }
-    } finally {
-      setInitialLoading(false);
-      setRefreshing(false);
-      refreshInProgressRef.current = false;
-    }
-  }, []);
+  // Handle filter change
+  const handleFilterChange = useCallback(
+    (newFilter: FilterState) => {
+      setFilter(newFilter);
+      setCurrentPage(1);
+      fetchApplications(1, newFilter);
+    },
+    [fetchApplications],
+  );
 
   const quickRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
-
-    try {
-      console.log("⚡ Quick refresh...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      setApplications(applicationsList);
-      setLastFetchTime(new Date());
-
-      setTimeout(() => {
-        const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-          timestamp: Date.now(),
-          version: STORAGE_KEYS.CACHE_VERSION,
-          totalCount: applicationsList.length,
-        };
-        persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-        const total = applicationsList.length;
-        const pending = applicationsList.filter(
-          (a: any) => a.status === "pending",
-        ).length;
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-      }, 100);
-    } catch (error) {
-      console.error("Quick refresh failed:", error);
-    }
-  }, []);
+    await fetchApplications(currentPageRef.current, filterRef.current);
+  }, [fetchApplications]);
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -757,59 +683,40 @@ export default function ApplicationTable() {
     return Array.from(buildingSet).sort();
   }, [applications]);
 
+  // Filter applications locally for search and building filter
   const filteredApplications = useMemo(() => {
     if (!applications || applications.length === 0) return [];
+
+    const searchTerm = filter.searchTerm.toLowerCase().trim();
+    const buildingFilter = filter.buildingFilter.toLowerCase().trim();
+
     return applications.filter((app: any) => {
+      // Search filter
       const matchesSearch =
-        !filter.searchTerm ||
-        app.applicationId
-          ?.toLowerCase()
-          .includes(filter.searchTerm.toLowerCase()) ||
-        app.firstName
-          ?.toLowerCase()
-          .includes(filter.searchTerm.toLowerCase()) ||
-        app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        (app.tower &&
-          app.tower.toLowerCase().includes(filter.searchTerm.toLowerCase())) ||
-        (app.macAddress &&
-          app.macAddress
-            .toLowerCase()
-            .includes(filter.searchTerm.toLowerCase()));
+        !searchTerm ||
+        app.applicationId?.toLowerCase().includes(searchTerm) ||
+        app.firstName?.toLowerCase().includes(searchTerm) ||
+        app.lastName?.toLowerCase().includes(searchTerm) ||
+        app.email?.toLowerCase().includes(searchTerm) ||
+        (app.tower && app.tower.toLowerCase().includes(searchTerm)) ||
+        (app.macAddress && app.macAddress.toLowerCase().includes(searchTerm));
 
-      const matchesStatus =
-        filter.statusFilter === "all" || app.status === filter.statusFilter;
-
+      // Building filter
       const buildingName =
         app.buildingId?.buildingName || app.buildingName || "";
       const matchesBuilding =
-        !filter.buildingFilter ||
-        buildingName
-          .toLowerCase()
-          .includes(filter.buildingFilter.toLowerCase());
+        !buildingFilter || buildingName.toLowerCase().includes(buildingFilter);
 
-      return matchesSearch && matchesStatus && matchesBuilding;
+      return matchesSearch && matchesBuilding;
     });
-  }, [
-    applications,
-    filter.searchTerm,
-    filter.statusFilter,
-    filter.buildingFilter,
-  ]);
+  }, [applications, filter.searchTerm, filter.buildingFilter]);
 
-  const totalPages = useMemo(() => {
-    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
-  }, [filteredApplications.length]);
-
+  // Get current page items from filtered results
   const currentApplications = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return filteredApplications.slice(startIndex, endIndex);
   }, [filteredApplications, currentPage]);
-
-  useEffect(() => {
-    setTimeout(checkTableScroll, 100);
-  }, [currentApplications, checkTableScroll]);
 
   const getStatusBadge = useCallback((status: string) => {
     const styles: Record<string, string> = {
@@ -825,7 +732,11 @@ export default function ApplicationTable() {
     toast.success("Cache cleared");
     setApplications([]);
     setError(null);
-    fetchApplications();
+    fetchApplications(1, {
+      searchTerm: "",
+      statusFilter: "all",
+      buildingFilter: "",
+    });
   }, [fetchApplications]);
 
   const getLastFetchDisplay = useCallback(() => {
@@ -840,15 +751,17 @@ export default function ApplicationTable() {
     return `${hours}h ago`;
   }, [lastFetchTime]);
 
-  const stats = useMemo(
-    () => ({
-      pending: applications.filter((a) => a.status === "pending").length,
-      approved: applications.filter((a) => a.status === "approved").length,
-      rejected: applications.filter((a) => a.status === "rejected").length,
-      total: applications.length,
-    }),
-    [applications],
-  );
+  // Stats from total items
+  const stats = useMemo(() => {
+    // Calculate from all applications if we have them, otherwise from current page
+    const allApps = applications;
+    return {
+      pending: allApps.filter((a) => a.status === "pending").length,
+      approved: allApps.filter((a) => a.status === "approved").length,
+      rejected: allApps.filter((a) => a.status === "rejected").length,
+      total: totalItems,
+    };
+  }, [applications, totalItems]);
 
   const resetCustomerForm = () => {
     setCustomerForm({
@@ -1140,9 +1053,13 @@ export default function ApplicationTable() {
     setShowBulkUploadModal(false);
   };
 
-  // ============================================================
-  // WALANG LOADING SPINNER KUNG MAY DATA NA!
-  // ============================================================
+  // Calculate display info
+  const displayStart = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const displayEnd = Math.min(
+    currentPage * ITEMS_PER_PAGE,
+    filteredApplications.length,
+  );
+
   if (initialLoading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1181,7 +1098,7 @@ export default function ApplicationTable() {
             Applications
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
-            {applications.length} total applications
+            {totalItems} total applications
           </p>
         </div>
 
@@ -1216,7 +1133,7 @@ export default function ApplicationTable() {
           </div>
 
           <button
-            onClick={() => fetchApplications()}
+            onClick={() => quickRefresh()}
             disabled={refreshing}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-xs sm:text-sm"
           >
@@ -1287,7 +1204,7 @@ export default function ApplicationTable() {
               placeholder="Search by ID, name, email, tower, or MAC..."
               value={filter.searchTerm}
               onChange={(e) =>
-                setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
+                handleFilterChange({ ...filter, searchTerm: e.target.value })
               }
               className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
             />
@@ -1295,7 +1212,7 @@ export default function ApplicationTable() {
           <select
             value={filter.statusFilter}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, statusFilter: e.target.value }))
+              handleFilterChange({ ...filter, statusFilter: e.target.value })
             }
             className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
           >
@@ -1307,7 +1224,7 @@ export default function ApplicationTable() {
           <select
             value={filter.buildingFilter}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, buildingFilter: e.target.value }))
+              handleFilterChange({ ...filter, buildingFilter: e.target.value })
             }
             className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 min-w-[120px]"
           >
@@ -1507,16 +1424,14 @@ export default function ApplicationTable() {
           </table>
           <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
             <span>
-              Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{" "}
-              {Math.min(
-                currentPage * ITEMS_PER_PAGE,
-                filteredApplications.length,
-              )}{" "}
-              of {filteredApplications.length} applications
+              Showing {displayStart} - {displayEnd} of{" "}
+              {filteredApplications.length} applications
+              {filteredApplications.length !== totalItems &&
+                ` (filtered from ${totalItems} total)`}
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
@@ -1524,13 +1439,15 @@ export default function ApplicationTable() {
                 Prev
               </button>
               <span className="text-xs text-gray-700">
-                Page {currentPage} of {totalPages || 1}
+                Page {currentPage} of{" "}
+                {Math.ceil(filteredApplications.length / ITEMS_PER_PAGE) || 1}
               </span>
               <button
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={
+                  currentPage >=
+                  Math.ceil(filteredApplications.length / ITEMS_PER_PAGE)
                 }
-                disabled={currentPage === totalPages || totalPages === 0}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
                 Next
