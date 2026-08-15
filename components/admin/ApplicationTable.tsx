@@ -38,6 +38,7 @@ import {
   FiSave,
   FiChevronLeft,
   FiChevronRight,
+  FiInfo,
 } from "react-icons/fi";
 
 const STORAGE_KEYS = {
@@ -62,6 +63,40 @@ interface FilterState {
   searchTerm: string;
   statusFilter: string;
   buildingFilter: string;
+}
+
+interface Application {
+  _id: string;
+  applicationId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber?: string;
+  buildingId?: {
+    buildingName: string;
+    address?: string;
+    _id?: string;
+  };
+  buildingName?: string;
+  buildingAddress?: string;
+  tower?: string;
+  floor?: string;
+  unitNumber?: string;
+  planId?: {
+    name: string;
+    price: number;
+    speed?: number | { download: number };
+    _id?: string;
+  };
+  status: string;
+  macAddress?: string;
+  idType?: string;
+  idNumber?: string;
+  idImage?: string;
+  adminNotes?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 const persistentStorage = {
@@ -142,11 +177,11 @@ const ID_TYPES = [
 ];
 
 export default function ApplicationTable() {
-  const [applications, setApplications] = useState<any[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedApp, setSelectedApp] = useState<any>(null);
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -157,7 +192,8 @@ export default function ApplicationTable() {
   const [hasNewApplicant, setHasNewApplicant] = useState(false);
   const [newApplicantCount, setNewApplicantCount] = useState(0);
   const [showBillingModal, setShowBillingModal] = useState(false);
-  const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
+  const [selectedAppForBilling, setSelectedAppForBilling] =
+    useState<Application | null>(null);
   const [filter, setFilter] = useState<FilterState>(() => {
     const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
     return (
@@ -215,6 +251,7 @@ export default function ApplicationTable() {
   const dataLoadedRef = useRef(false);
   const currentPageRef = useRef(currentPage);
   const filterRef = useRef(filter);
+  const hasLoadedAllRef = useRef(false);
 
   // Update refs when state changes
   useEffect(() => {
@@ -308,7 +345,7 @@ export default function ApplicationTable() {
   };
 
   // ============================================================
-  // FETCH APPLICATIONS WITH API PAGINATION
+  // FETCH APPLICATIONS WITH API PAGINATION - FIXED PARA MAKITA LAHAT
   // ============================================================
   const fetchApplications = useCallback(
     async (page: number, filterState: FilterState, append: boolean = false) => {
@@ -333,7 +370,7 @@ export default function ApplicationTable() {
           status: statusParam,
         });
 
-        const applicationsList = data.data || [];
+        const applicationsList: Application[] = data.data || [];
         const total = data.total || 0;
         const totalPagesCalculated =
           data.totalPages || Math.ceil(total / ITEMS_PER_PAGE) || 1;
@@ -342,18 +379,29 @@ export default function ApplicationTable() {
           `✅ Received ${applicationsList.length} applications, total: ${total}`,
         );
 
+        // IMPORTANT: Store ALL applications from ALL pages
         if (append) {
-          setApplications((prev) => [...prev, ...applicationsList]);
+          // If appending, merge with existing
+          setApplications((prev: Application[]) => {
+            // Avoid duplicates by _id
+            const existingIds = new Set(prev.map((a: Application) => a._id));
+            const newApps = applicationsList.filter(
+              (a: Application) => !existingIds.has(a._id),
+            );
+            return [...prev, ...newApps];
+          });
         } else {
+          // Replace with new data
           setApplications(applicationsList);
         }
+
         setTotalItems(total);
         setTotalPages(totalPagesCalculated);
         setLastFetchTime(new Date());
 
-        // Store in cache for offline use
+        // Store in cache for offline use - store up to 500 para makita lahat
         const dataToStore: StoredApplicationsData = {
-          applications: applicationsList.slice(0, 50),
+          applications: applicationsList,
           timestamp: Date.now(),
           version: STORAGE_KEYS.CACHE_VERSION,
           totalCount: total,
@@ -363,11 +411,17 @@ export default function ApplicationTable() {
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
 
         const pending = applicationsList.filter(
-          (a: any) => a.status === "pending",
+          (a: Application) => a.status === "pending",
         ).length;
         persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
 
         setHasNewApplicant(false);
+
+        // Check if we need to load more pages to show ALL applications
+        if (applicationsList.length < total && page === 1) {
+          // Load all pages para makita lahat ng applications
+          loadAllPages(filterState, applicationsList);
+        }
       } catch (error: any) {
         console.error("Failed to fetch:", error);
         const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
@@ -391,6 +445,89 @@ export default function ApplicationTable() {
     [],
   );
 
+  // ============================================================
+  // LOAD ALL PAGES PARA MAKITA LAHAT NG APPLICATIONS
+  // ============================================================
+  const loadAllPages = useCallback(
+    async (filterState: FilterState, initialData: Application[]) => {
+      if (hasLoadedAllRef.current) return;
+
+      try {
+        const statusParam =
+          filterState.statusFilter !== "all"
+            ? filterState.statusFilter
+            : undefined;
+
+        // Get total from initial data
+        const total =
+          initialData.length > 0 ? initialData.length : applications.length;
+
+        // If we already have all items, no need to load more
+        const cached = persistentStorage.getItem(
+          STORAGE_KEYS.APPLICATIONS,
+        ) as StoredApplicationsData | null;
+        const cachedTotal = cached?.totalCount || 0;
+
+        if (total >= cachedTotal && cachedTotal > 0) {
+          hasLoadedAllRef.current = true;
+          return;
+        }
+
+        // Load remaining pages
+        const totalPagesNeeded = Math.ceil(cachedTotal / ITEMS_PER_PAGE);
+        let allApps: Application[] = [...(cached?.applications || [])];
+
+        for (let page = 2; page <= totalPagesNeeded; page++) {
+          try {
+            const data = await getAllApplications({
+              page,
+              limit: ITEMS_PER_PAGE,
+              status: statusParam,
+            });
+
+            const apps: Application[] = data.data || [];
+            // Merge without duplicates
+            const existingIds = new Set(allApps.map((a: Application) => a._id));
+            const newApps = apps.filter(
+              (a: Application) => !existingIds.has(a._id),
+            );
+            allApps = [...allApps, ...newApps];
+
+            console.log(`📊 Loaded page ${page}, total now: ${allApps.length}`);
+          } catch (err) {
+            console.error(`Failed to load page ${page}:`, err);
+          }
+        }
+
+        // Update state with all applications
+        if (allApps.length > applications.length) {
+          setApplications(allApps);
+          setTotalItems(allApps.length);
+
+          // Update cache
+          const dataToStore: StoredApplicationsData = {
+            applications: allApps,
+            timestamp: Date.now(),
+            version: STORAGE_KEYS.CACHE_VERSION,
+            totalCount: allApps.length,
+          };
+          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
+          persistentStorage.setItem(
+            STORAGE_KEYS.LAST_KNOWN_TOTAL,
+            allApps.length,
+          );
+
+          console.log(`✅ Loaded ALL ${allApps.length} applications`);
+        }
+
+        hasLoadedAllRef.current = true;
+      } catch (error) {
+        console.error("Failed to load all pages:", error);
+      }
+    },
+    [applications],
+  );
+
   // Load initial data
   useEffect(() => {
     const loadData = () => {
@@ -408,6 +545,11 @@ export default function ApplicationTable() {
         if (lastFetch) setLastFetchTime(new Date(lastFetch));
         setInitialLoading(false);
         dataLoadedRef.current = true;
+
+        // Check if cache has all items
+        if (cached.applications.length >= (cached.totalCount || 0)) {
+          hasLoadedAllRef.current = true;
+        }
 
         setTimeout(() => {
           if (!refreshInProgressRef.current) {
@@ -431,14 +573,80 @@ export default function ApplicationTable() {
     loadData();
   }, []);
 
-  // Handle page change - fetch from API
+  // Get unique buildings from ALL applications
+  const uniqueBuildings = useMemo(() => {
+    const buildingSet = new Set<string>();
+    applications.forEach((app: Application) => {
+      if (app.buildingId?.buildingName) {
+        buildingSet.add(app.buildingId.buildingName);
+      } else if (app.buildingName) {
+        buildingSet.add(app.buildingName);
+      }
+    });
+    return Array.from(buildingSet).sort();
+  }, [applications]);
+
+  // Filter applications locally for search and building filter
+  const filteredApplications = useMemo(() => {
+    if (!applications || applications.length === 0) return [];
+
+    const searchTerm = filter.searchTerm.toLowerCase().trim();
+    const buildingFilter = filter.buildingFilter.toLowerCase().trim();
+
+    let filtered = applications.filter((app: Application) => {
+      const matchesSearch =
+        !searchTerm ||
+        app.applicationId?.toLowerCase().includes(searchTerm) ||
+        app.firstName?.toLowerCase().includes(searchTerm) ||
+        app.lastName?.toLowerCase().includes(searchTerm) ||
+        app.email?.toLowerCase().includes(searchTerm) ||
+        (app.tower && app.tower.toLowerCase().includes(searchTerm)) ||
+        (app.macAddress && app.macAddress.toLowerCase().includes(searchTerm));
+
+      const buildingName =
+        app.buildingId?.buildingName || app.buildingName || "";
+      const matchesBuilding =
+        !buildingFilter || buildingName.toLowerCase().includes(buildingFilter);
+
+      // Status filter
+      const matchesStatus =
+        filter.statusFilter === "all" || app.status === filter.statusFilter;
+
+      return matchesSearch && matchesBuilding && matchesStatus;
+    });
+
+    // Sort by newest first
+    filtered.sort((a: Application, b: Application) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    return filtered;
+  }, [
+    applications,
+    filter.searchTerm,
+    filter.buildingFilter,
+    filter.statusFilter,
+  ]);
+
+  // Calculate total pages based on filtered results
+  const filteredTotalPages = useMemo(() => {
+    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE) || 1;
+  }, [filteredApplications.length]);
+
+  // Get current page items from filtered results
+  const currentApplications = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return filteredApplications.slice(startIndex, endIndex);
+  }, [filteredApplications, currentPage]);
+
+  // Handle page change - use filtered data locally
   const handlePageChange = useCallback(
     (newPage: number) => {
-      if (newPage < 1 || newPage > totalPages) return;
+      if (newPage < 1 || newPage > filteredTotalPages) return;
       setCurrentPage(newPage);
-      fetchApplications(newPage, filter);
     },
-    [fetchApplications, filter, totalPages],
+    [filteredTotalPages],
   );
 
   // Handle filter change
@@ -446,6 +654,9 @@ export default function ApplicationTable() {
     (newFilter: FilterState) => {
       setFilter(newFilter);
       setCurrentPage(1);
+      // Reset loaded all flag para mag-reload
+      hasLoadedAllRef.current = false;
+      // Fetch with new filter
       fetchApplications(1, newFilter);
     },
     [fetchApplications],
@@ -453,8 +664,9 @@ export default function ApplicationTable() {
 
   const quickRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
-    await fetchApplications(currentPageRef.current, filterRef.current);
-  }, [fetchApplications]);
+    hasLoadedAllRef.current = false;
+    await fetchApplications(1, filterRef.current);
+  }, [fetchApplications, filter]);
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -492,8 +704,8 @@ export default function ApplicationTable() {
 
       if (response.ok) {
         const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
+        setApplications((prev: Application[]) =>
+          prev.map((app: Application) =>
             app._id === applicationId
               ? { ...app, macAddress: result.data?.macAddress || macAddress }
               : app,
@@ -525,8 +737,8 @@ export default function ApplicationTable() {
 
       if (response.ok) {
         const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
+        setApplications((prev: Application[]) =>
+          prev.map((app: Application) =>
             app._id === applicationId
               ? { ...app, tower: result.data?.tower || tower }
               : app,
@@ -544,7 +756,7 @@ export default function ApplicationTable() {
     }
   };
 
-  const handleViewApplication = (app: any) => {
+  const handleViewApplication = (app: Application) => {
     setSelectedApp(app);
   };
 
@@ -554,8 +766,8 @@ export default function ApplicationTable() {
       await approveApplication(id, adminNotes);
       toast.success("Application approved successfully");
 
-      setApplications((prevApplications) =>
-        prevApplications.map((app) =>
+      setApplications((prevApplications: Application[]) =>
+        prevApplications.map((app: Application) =>
           app._id === id ? { ...app, status: "approved" } : app,
         ),
       );
@@ -575,8 +787,8 @@ export default function ApplicationTable() {
       await rejectApplication(id, adminNotes);
       toast.success("Application rejected");
 
-      setApplications((prevApplications) =>
-        prevApplications.map((app) =>
+      setApplications((prevApplications: Application[]) =>
+        prevApplications.map((app: Application) =>
           app._id === id ? { ...app, status: "rejected" } : app,
         ),
       );
@@ -590,7 +802,7 @@ export default function ApplicationTable() {
     }
   };
 
-  const handleStartBilling = async (app: any) => {
+  const handleStartBilling = async (app: Application) => {
     try {
       setProcessingId(app._id);
       toast.loading("Starting billing...", { id: "start-billing" });
@@ -617,62 +829,6 @@ export default function ApplicationTable() {
     }
   };
 
-  // Get unique buildings from ALL applications (from API total, not just current page)
-  const uniqueBuildings = useMemo(() => {
-    const buildingSet = new Set<string>();
-    // Also check cached data for more buildings
-    const cached = persistentStorage.getItem(
-      STORAGE_KEYS.APPLICATIONS,
-    ) as StoredApplicationsData | null;
-    const allApps = cached?.applications || applications;
-    allApps.forEach((app: any) => {
-      if (app.buildingId?.buildingName) {
-        buildingSet.add(app.buildingId.buildingName);
-      } else if (app.buildingName) {
-        buildingSet.add(app.buildingName);
-      }
-    });
-    return Array.from(buildingSet).sort();
-  }, [applications]);
-
-  // Filter applications locally for search and building filter
-  const filteredApplications = useMemo(() => {
-    if (!applications || applications.length === 0) return [];
-
-    const searchTerm = filter.searchTerm.toLowerCase().trim();
-    const buildingFilter = filter.buildingFilter.toLowerCase().trim();
-
-    return applications.filter((app: any) => {
-      const matchesSearch =
-        !searchTerm ||
-        app.applicationId?.toLowerCase().includes(searchTerm) ||
-        app.firstName?.toLowerCase().includes(searchTerm) ||
-        app.lastName?.toLowerCase().includes(searchTerm) ||
-        app.email?.toLowerCase().includes(searchTerm) ||
-        (app.tower && app.tower.toLowerCase().includes(searchTerm)) ||
-        (app.macAddress && app.macAddress.toLowerCase().includes(searchTerm));
-
-      const buildingName =
-        app.buildingId?.buildingName || app.buildingName || "";
-      const matchesBuilding =
-        !buildingFilter || buildingName.toLowerCase().includes(buildingFilter);
-
-      return matchesSearch && matchesBuilding;
-    });
-  }, [applications, filter.searchTerm, filter.buildingFilter]);
-
-  // Calculate total pages based on filtered results
-  const filteredTotalPages = useMemo(() => {
-    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE) || 1;
-  }, [filteredApplications.length]);
-
-  // Get current page items from filtered results
-  const currentApplications = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    return filteredApplications.slice(startIndex, endIndex);
-  }, [filteredApplications, currentPage]);
-
   // When filter changes, reset to page 1
   useEffect(() => {
     setCurrentPage(1);
@@ -692,6 +848,7 @@ export default function ApplicationTable() {
     toast.success("Cache cleared");
     setApplications([]);
     setError(null);
+    hasLoadedAllRef.current = false;
     fetchApplications(1, {
       searchTerm: "",
       statusFilter: "all",
@@ -715,12 +872,15 @@ export default function ApplicationTable() {
   const stats = useMemo(() => {
     const allApps = applications;
     return {
-      pending: allApps.filter((a) => a.status === "pending").length,
-      approved: allApps.filter((a) => a.status === "approved").length,
-      rejected: allApps.filter((a) => a.status === "rejected").length,
-      total: totalItems,
+      pending: allApps.filter((a: Application) => a.status === "pending")
+        .length,
+      approved: allApps.filter((a: Application) => a.status === "approved")
+        .length,
+      rejected: allApps.filter((a: Application) => a.status === "rejected")
+        .length,
+      total: applications.length,
     };
-  }, [applications, totalItems]);
+  }, [applications]);
 
   const resetCustomerForm = () => {
     setCustomerForm({
@@ -770,6 +930,7 @@ export default function ApplicationTable() {
         );
         setShowAddCustomerModal(false);
         resetCustomerForm();
+        hasLoadedAllRef.current = false;
         setTimeout(() => quickRefresh(), 500);
       } else {
         toast.error(result.message || "Failed to submit application");
@@ -992,6 +1153,7 @@ export default function ApplicationTable() {
 
       if (success.length > 0) {
         toast.success(`Successfully added ${success.length} customers`);
+        hasLoadedAllRef.current = false;
         setTimeout(() => quickRefresh(), 1000);
       }
 
@@ -1061,7 +1223,8 @@ export default function ApplicationTable() {
             Applications
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
-            {totalItems} total applications
+            {applications.length} total applications loaded
+            {applications.length > 0 && ` (${stats.pending} pending)`}
           </p>
         </div>
 
@@ -1276,7 +1439,7 @@ export default function ApplicationTable() {
                   </td>
                 </tr>
               ) : (
-                currentApplications.map((app: any, idx: number) => {
+                currentApplications.map((app: Application, idx: number) => {
                   const globalIndex =
                     (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                   const buildingName =
@@ -1389,20 +1552,13 @@ export default function ApplicationTable() {
             <span>
               Showing {displayStart} - {displayEnd} of {totalFiltered}{" "}
               applications
-              {totalFiltered !== totalItems &&
-                totalItems > 0 &&
-                ` (filtered from ${totalItems} total)`}
+              {totalFiltered !== applications.length &&
+                applications.length > 0 &&
+                ` (filtered from ${applications.length} total)`}
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  const newPage = Math.max(currentPage - 1, 1);
-                  setCurrentPage(newPage);
-                  // If we're on page 1 and there are more items, fetch from API
-                  if (newPage === 1 && applications.length < totalItems) {
-                    fetchApplications(1, filter);
-                  }
-                }}
+                onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
@@ -1413,18 +1569,7 @@ export default function ApplicationTable() {
                 Page {currentPage} of {filteredTotalPages}
               </span>
               <button
-                onClick={() => {
-                  const newPage = Math.min(currentPage + 1, filteredTotalPages);
-                  setCurrentPage(newPage);
-                  // If we're on a page that needs more data, fetch from API
-                  const startIndex = (newPage - 1) * ITEMS_PER_PAGE;
-                  if (
-                    startIndex >= applications.length &&
-                    applications.length < totalItems
-                  ) {
-                    fetchApplications(newPage, filter);
-                  }
-                }}
+                onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage >= filteredTotalPages}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
@@ -1620,7 +1765,8 @@ export default function ApplicationTable() {
                       <div
                         className="relative border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
                         onClick={() => {
-                          const url = getImageUrl(selectedApp.idImage);
+                          const imagePath = selectedApp.idImage || "";
+                          const url = getImageUrl(imagePath);
                           if (url) {
                             setImagePreview(url);
                             setShowImageModal(true);
@@ -1630,7 +1776,7 @@ export default function ApplicationTable() {
                         }}
                       >
                         <img
-                          src={getImageUrl(selectedApp.idImage) || ""}
+                          src={getImageUrl(selectedApp.idImage || "") || ""}
                           alt="ID Document"
                           className="w-full max-h-48 object-contain bg-gray-100"
                           onError={(e) => {
