@@ -1,5 +1,6 @@
 // app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
-// FIXED: Installation fee status now properly reflects actual payment status
+// FIXED: Auto-detects new customers/applications and loads them in real-time
+// FIXED: Removed all new customer notifications - silent auto-load only
 
 "use client";
 
@@ -41,6 +42,8 @@ import {
   FiInfo,
   FiCheckCircle,
   FiZap,
+  FiUsers,
+  FiPlusCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -155,7 +158,7 @@ function formatBillPeriod(bill: any): string {
   return `${startStr} - ${endStr}`;
 }
 
-// FIXED: Helper to check if installation fee is truly due
+// Helper to check if installation fee is truly due
 function isInstallationFeeDue(customer: CustomerItem): boolean {
   if (customer.type !== "application") return false;
   const fee = customer.installationFee || 0;
@@ -295,9 +298,7 @@ function AdminBillingPageContent() {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
-  // Real-time states
-  const [newCustomerDetected, setNewCustomerDetected] = useState(false);
-  const [newCustomerCount, setNewCustomerCount] = useState(0);
+  // Real-time states - NO NOTIFICATIONS
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
   const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -334,6 +335,7 @@ function AdminBillingPageContent() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation" | "payments" | "installation"
   >("pro-rated");
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
@@ -403,7 +405,7 @@ function AdminBillingPageContent() {
     return dashboardData.pendingInstallationBills || [];
   }, [dashboardData, realtimeUpdate]);
 
-  // FIXED: Stats computation with proper installation fee counting
+  // Stats computation with proper installation fee counting
   const stats = useMemo(() => {
     if (!dashboardData?.stats) {
       return {
@@ -807,8 +809,8 @@ function AdminBillingPageContent() {
     generateEarlyBillMutation.mutate(customer.applicationId);
   };
 
-  // ==================== REAL-TIME AUTO-DETECTION ====================
-  const handleAutoGenerateEarlyBills = async () => {
+  // ==================== AUTO-GENERATE EARLY BILLS ====================
+  const handleAutoGenerateEarlyBills = useCallback(async () => {
     if (autoGenerationRunning) {
       toast("⏳ Auto-generation already running...", {
         icon: "⏳",
@@ -833,10 +835,42 @@ function AdminBillingPageContent() {
     }
 
     autoGenerateEarlyBillsMutation.mutate();
-  };
+  }, [autoGenerationRunning, lastAutoGenTime, autoGenerateEarlyBillsMutation]);
+
+  // ==================== AUTO-DETECT NEW CUSTOMERS (SILENT) ====================
+  const checkForNewCustomersHandler = useCallback(async () => {
+    try {
+      const result = await checkForNewCustomers(true);
+      if (result.totalNew > 0) {
+        // SILENT: Just refresh data, no notifications
+        clearBillingCache();
+        setTimeout(() => {
+          invalidateAll();
+        }, 200);
+      }
+    } catch (error) {
+      console.error("Error checking for new customers:", error);
+    }
+  }, [invalidateAll]);
 
   // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS ====================
   useEffect(() => {
+    // Listen for new customer events from WebSocket - SILENT
+    const unsubscribeNewCustomer = billingEvents.on(
+      "new_customer",
+      async (payload) => {
+        console.log(
+          "🆕 New customer detected via WebSocket (silent):",
+          payload,
+        );
+        // SILENT: Just refresh data
+        clearBillingCache();
+        setTimeout(() => {
+          invalidateAll();
+        }, 200);
+      },
+    );
+
     const unsubscribePayment = billingEvents.on(
       "payment_confirmed",
       (payload) => {
@@ -908,18 +942,6 @@ function AdminBillingPageContent() {
       },
     );
 
-    const unsubscribeNewCustomer = billingEvents.on(
-      "new_customer",
-      (payload) => {
-        console.log("🆕 New customer detected via WebSocket:", payload);
-        setNewCustomerDetected(true);
-        setNewCustomerCount(payload.totalNew || 1);
-        clearBillingCache();
-        invalidateAll();
-        // Removed duplicate toast notification for new customers
-      },
-    );
-
     const unsubscribeBillsGenerated = billingEvents.on(
       "bills_generated",
       (payload) => {
@@ -931,6 +953,7 @@ function AdminBillingPageContent() {
     );
 
     return () => {
+      unsubscribeNewCustomer();
       unsubscribePayment();
       unsubscribeBill();
       unsubscribeBilling();
@@ -938,21 +961,29 @@ function AdminBillingPageContent() {
       unsubscribeSettings();
       unsubscribeSuspension();
       unsubscribePaymentSubmitted();
-      unsubscribeNewCustomer();
       unsubscribeBillsGenerated();
       billingEvents.disconnect();
     };
   }, [invalidateAll]);
 
-  // ==================== POLLING FOR NEW CUSTOMERS ====================
+  // ==================== POLLING FOR NEW CUSTOMERS (SILENT) ====================
   useEffect(() => {
-    pollingIntervalRef.current = startRealtimePolling((data) => {
+    // Initial check for new customers on load
+    if (isInitialLoad) {
+      setIsInitialLoad(false);
+      setTimeout(() => {
+        checkForNewCustomersHandler();
+      }, 500);
+    }
+
+    // Start polling for new customers - SILENT
+    pollingIntervalRef.current = startRealtimePolling(async (data) => {
       if (data.totalNew > 0) {
-        setNewCustomerDetected(true);
-        setNewCustomerCount(data.totalNew);
+        // SILENT: Just refresh data, no notifications
         clearBillingCache();
-        invalidateAll();
-        // Removed duplicate toast notification for new customers
+        setTimeout(() => {
+          invalidateAll();
+        }, 200);
       }
     }, 2000);
 
@@ -961,17 +992,7 @@ function AdminBillingPageContent() {
         stopRealtimePolling(pollingIntervalRef.current);
       }
     };
-  }, [invalidateAll]);
-
-  useEffect(() => {
-    if (newCustomerDetected) {
-      const timer = setTimeout(() => {
-        setNewCustomerDetected(false);
-        setNewCustomerCount(0);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [newCustomerDetected]);
+  }, [invalidateAll, checkForNewCustomersHandler, isInitialLoad]);
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
@@ -1389,13 +1410,16 @@ function AdminBillingPageContent() {
 
       return () => clearInterval(autoGenInterval);
     }
-  }, []);
+  }, [
+    billingFlowSettings.earlyBillGenerationDays,
+    handleAutoGenerateEarlyBills,
+  ]);
 
   // ==================== RENDER ====================
   return (
     <div>
-      {/* Real-time status bar */}
-      {(newCustomerDetected || autoGenerationRunning || lastPaymentUpdate) && (
+      {/* Real-time status bar - NO NEW CUSTOMER NOTIFICATIONS */}
+      {(autoGenerationRunning || lastPaymentUpdate) && (
         <div className="sticky top-0 z-50 bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {autoGenerationRunning && (
@@ -1418,8 +1442,6 @@ function AdminBillingPageContent() {
           </div>
           <button
             onClick={() => {
-              setNewCustomerDetected(false);
-              setNewCustomerCount(0);
               setLastPaymentUpdate(null);
             }}
             className="text-blue-600 hover:text-blue-800 text-sm"
@@ -1454,7 +1476,9 @@ function AdminBillingPageContent() {
         onRefresh={handleRefresh}
         onOpenSettings={() => setShowSettingsModal(true)}
         onOpenBackdated={() => setShowBackdatedModal(true)}
-        onOpenExistingCustomers={() => setShowExistingCustomersModal(true)}
+        onOpenExistingCustomers={() => {
+          setShowExistingCustomersModal(true);
+        }}
         onOpenPending={() => {
           setPendingModalType("pro-rated");
           setShowPendingModal(true);
@@ -1470,7 +1494,6 @@ function AdminBillingPageContent() {
       />
 
       {/* ==================== MODALS ==================== */}
-      {/* (All modals remain the same as original) */}
       {/* Reports Modal */}
       <BillingReportsWithDownload
         isOpen={showReportsModal}
@@ -2665,7 +2688,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* Existing Customers Modal */}
+      {/* Existing Customers Modal - NO NEW CUSTOMER NOTIFICATIONS */}
       {showExistingCustomersModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -2688,6 +2711,7 @@ function AdminBillingPageContent() {
                     <th className="px-4 py-2 text-left">Customer</th>
                     <th className="px-4 py-2 text-left">Email</th>
                     <th className="px-4 py-2 text-left">Plan</th>
+                    <th className="px-4 py-2 text-left">Status</th>
                     <th className="px-4 py-2 text-left">Actions</th>
                   </tr>
                 </thead>
@@ -2699,6 +2723,11 @@ function AdminBillingPageContent() {
                       </td>
                       <td className="px-4 py-2">{c.email}</td>
                       <td className="px-4 py-2">{c.planName}</td>
+                      <td className="px-4 py-2">
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                          Existing
+                        </span>
+                      </td>
                       <td className="px-4 py-2">
                         <button
                           onClick={() => {
@@ -2718,11 +2747,26 @@ function AdminBillingPageContent() {
                       </td>
                     </tr>
                   ))}
+
+                  {customersWithoutAccounts.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-8 text-center text-gray-500 text-sm"
+                      >
+                        No customers without billing found.
+                        <p className="text-xs text-gray-400 mt-1">
+                          Customers will appear here when they are approved.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+
                   {stats.applicationsWithoutBilling > 0 && (
                     <tr>
                       <td
-                        colSpan={4}
-                        className="px-4 py-2 text-center text-yellow-700 text-sm"
+                        colSpan={5}
+                        className="px-4 py-2 text-center text-yellow-700 text-sm bg-yellow-50"
                       >
                         Plus {stats.applicationsWithoutBilling} more approved
                         applications without billing.
@@ -2733,7 +2777,20 @@ function AdminBillingPageContent() {
               </table>
             </div>
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-between items-center">
+              <div className="text-xs text-gray-500">
+                Auto-detecting new customers every 2 seconds
+              </div>
+              <button
+                onClick={() => {
+                  checkForNewCustomersHandler();
+                  toast.success("🔄 Checking for new customers...");
+                }}
+                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5"
+              >
+                <FiRefreshCw className="w-3.5 h-3.5" />
+                Check Now
+              </button>
               <button
                 onClick={() => setShowExistingCustomersModal(false)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"

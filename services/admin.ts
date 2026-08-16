@@ -1,4 +1,4 @@
-// services/admin.ts - COMPLETE WITH BULK DELETE FUNCTIONALITY
+// services/admin.ts - COMPLETE WITH getAllApplicationsUnlimited AND BULK DELETE
 
 import api from "./api";
 
@@ -274,6 +274,129 @@ export const deleteUser = async (id: string) => {
   }
 };
 
+// ==================== APPLICATION MANAGEMENT ====================
+// GET ALL APPLICATIONS (PAGINATED)
+export const getAllApplications = async (params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  search?: string;
+  buildingId?: string;
+  forceRefresh?: boolean;
+}) => {
+  try {
+    // Always skip cache for applications as they're too large
+    const response = await api.get("/applications", {
+      params: {
+        ...params,
+        limit: params?.limit || 50, // Reduce default limit
+      },
+    });
+    const result = response.data;
+
+    // Only cache if small enough
+    setCachedData(CACHE_KEYS.APPLICATIONS, result);
+    return result;
+  } catch (error: any) {
+    console.error(
+      "Error fetching applications:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: [], totalPages: 0, currentPage: 1, total: 0 };
+  }
+};
+
+// ============ GET ALL APPLICATIONS (NO LIMIT - ALL DATA) ============
+export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
+  try {
+    console.log("📡 Fetching ALL applications (no limit)...");
+    const response = await api.get("/applications/all");
+    console.log(
+      `✅ Received ${response.data.data?.length || 0} total applications`,
+    );
+    return response.data.data || [];
+  } catch (error: any) {
+    console.error(
+      "Error fetching all applications (unlimited):",
+      error.response?.data || error.message,
+    );
+    // Return empty array on error
+    return [];
+  }
+};
+
+export const approveApplication = async (id: string, adminNotes?: string) => {
+  try {
+    const response = await api.put(`/applications/${id}/approve`, {
+      adminNotes,
+    });
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error approving application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+export const rejectApplication = async (id: string, adminNotes?: string) => {
+  try {
+    const response = await api.put(`/applications/${id}/reject`, {
+      adminNotes,
+    });
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error rejecting application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+export const startBillingForApplication = async (
+  applicationId: string,
+  data?: {
+    installationDate?: string;
+    notes?: string;
+    includeInstallationFee?: boolean;
+  },
+) => {
+  try {
+    console.log(`🚀 Starting billing for application: ${applicationId}`);
+    const response = await api.post(
+      `/applications/${applicationId}/start-billing`,
+      data || {},
+    );
+    clearAdminCache();
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error starting billing for application:",
+      error.response?.data || error.message,
+    );
+    throw error;
+  }
+};
+
+export const getApplicationBillingStatus = async (applicationId: string) => {
+  try {
+    const response = await api.get(
+      `/applications/billing-status/${applicationId}`,
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Error fetching application billing status:",
+      error.response?.data || error.message,
+    );
+    return { success: true, data: null };
+  }
+};
+
 // ==================== PAYMENT MANAGEMENT ====================
 export const getAllPayments = async (params?: {
   page?: number;
@@ -352,7 +475,6 @@ export const rejectPayment = async (paymentId: string, reason: string) => {
   }
 };
 
-// ==================== DELETE PAYMENT ====================
 export const deletePayment = async (paymentId: string) => {
   try {
     const response = await api.delete(`/payments/${paymentId}`);
@@ -577,108 +699,6 @@ export const getAllBillingCycles = async (params?: {
   }
 };
 
-// ==================== APPLICATION MANAGEMENT ====================
-export const getAllApplications = async (params?: {
-  page?: number;
-  limit?: number;
-  status?: string;
-  forceRefresh?: boolean;
-}) => {
-  try {
-    // Always skip cache for applications as they're too large
-    // Instead use the dashboard-data endpoint for aggregated data
-    const response = await api.get("/applications", {
-      params: {
-        ...params,
-        limit: params?.limit || 50, // Reduce default limit
-      },
-    });
-    const result = response.data;
-
-    // Only cache if small enough
-    setCachedData(CACHE_KEYS.APPLICATIONS, result);
-    return result;
-  } catch (error: any) {
-    console.error(
-      "Error fetching applications:",
-      error.response?.data || error.message,
-    );
-    return { success: true, data: [], totalPages: 0, currentPage: 1, total: 0 };
-  }
-};
-
-export const approveApplication = async (id: string, adminNotes?: string) => {
-  try {
-    const response = await api.put(`/applications/${id}/approve`, {
-      adminNotes,
-    });
-    clearAdminCache();
-    return response.data;
-  } catch (error: any) {
-    console.error(
-      "Error approving application:",
-      error.response?.data || error.message,
-    );
-    throw error;
-  }
-};
-
-export const rejectApplication = async (id: string, adminNotes?: string) => {
-  try {
-    const response = await api.put(`/applications/${id}/reject`, {
-      adminNotes,
-    });
-    clearAdminCache();
-    return response.data;
-  } catch (error: any) {
-    console.error(
-      "Error rejecting application:",
-      error.response?.data || error.message,
-    );
-    throw error;
-  }
-};
-
-export const startBillingForApplication = async (
-  applicationId: string,
-  data?: {
-    installationDate?: string;
-    notes?: string;
-    includeInstallationFee?: boolean;
-  },
-) => {
-  try {
-    console.log(`🚀 Starting billing for application: ${applicationId}`);
-    const response = await api.post(
-      `/applications/${applicationId}/start-billing`,
-      data || {},
-    );
-    clearAdminCache();
-    return response.data;
-  } catch (error: any) {
-    console.error(
-      "Error starting billing for application:",
-      error.response?.data || error.message,
-    );
-    throw error;
-  }
-};
-
-export const getApplicationBillingStatus = async (applicationId: string) => {
-  try {
-    const response = await api.get(
-      `/applications/billing-status/${applicationId}`,
-    );
-    return response.data;
-  } catch (error: any) {
-    console.error(
-      "Error fetching application billing status:",
-      error.response?.data || error.message,
-    );
-    return { success: true, data: null };
-  }
-};
-
 // ==================== DASHBOARD DATA AGGREGATION ====================
 export const fetchDashboardData = async (forceRefresh?: boolean) => {
   try {
@@ -786,6 +806,14 @@ export default {
   suspendUser,
   deleteUser,
 
+  // Applications
+  getAllApplications,
+  getAllApplicationsUnlimited, // <-- ADDED THIS
+  approveApplication,
+  rejectApplication,
+  startBillingForApplication,
+  getApplicationBillingStatus,
+
   // Payments
   getAllPayments,
   getPendingPayments,
@@ -804,13 +832,6 @@ export default {
 
   // Reports
   generateReport,
-
-  // Applications
-  getAllApplications,
-  approveApplication,
-  rejectApplication,
-  startBillingForApplication,
-  getApplicationBillingStatus,
 
   // Billing Cycles
   getAllBillingCycles,
