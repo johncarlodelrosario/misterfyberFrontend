@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE WITH SHOW ALL FEATURE
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - NO CACHING AT ALL
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -43,80 +43,14 @@ import {
   FiGrid,
 } from "react-icons/fi";
 
-const STORAGE_KEYS = {
-  APPLICATIONS: "misterfyber_apps_cache",
-  LAST_FETCH: "misterfyber_last_fetch",
-  FILTER_STATE: "misterfyber_filter_state",
-  CACHE_VERSION: "misterfyber_cache_v5",
-  LAST_KNOWN_TOTAL: "misterfyber_total",
-  LAST_KNOWN_PENDING: "misterfyber_pending",
-  SHOW_ALL_MODE: "misterfyber_show_all_mode",
-};
-
-const MAX_CACHE_SIZE = 500;
 const CHECK_INTERVAL = 30000;
 const ITEMS_PER_PAGE = 20;
-
-interface StoredApplicationsData {
-  applications: any[];
-  timestamp: number;
-  version: string;
-  totalCount: number;
-}
 
 interface FilterState {
   searchTerm: string;
   statusFilter: string;
   buildingFilter: string;
 }
-
-const persistentStorage = {
-  setItem: (key: string, value: any): boolean => {
-    try {
-      const serialized = JSON.stringify(value);
-      if (serialized.length > 5 * 1024 * 1024) {
-        console.warn(`⚠️ Cache too large, skipping`);
-        return false;
-      }
-      localStorage.setItem(key, serialized);
-      return true;
-    } catch (e: any) {
-      if (
-        e.name === "QuotaExceededError" ||
-        e.name === "NS_ERROR_DOM_QUOTA_REACHED"
-      ) {
-        try {
-          localStorage.removeItem(key);
-          localStorage.setItem(key, JSON.stringify(value));
-          return true;
-        } catch {
-          return false;
-        }
-      }
-      return false;
-    }
-  },
-  getItem: (key: string): any => {
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-  removeItem: (key: string): void => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {}
-  },
-  clearAll: (): void => {
-    try {
-      Object.values(STORAGE_KEYS).forEach((key) =>
-        localStorage.removeItem(key),
-      );
-    } catch (e) {}
-  },
-};
 
 const formatPrice = (price: number | undefined | null): string => {
   if (price === undefined || price === null || isNaN(price)) {
@@ -130,6 +64,60 @@ const getSpeed = (plan: any): string => {
   if (plan.speed?.download) return `${plan.speed.download} Mbps`;
   if (plan.speed) return `${plan.speed} Mbps`;
   return "N/A";
+};
+
+const getPlanName = (app: any): string => {
+  if (!app) return "N/A";
+  if (app.planName && app.planName !== "N/A") return app.planName;
+  if (app.planId) {
+    if (typeof app.planId === "object" && app.planId.name)
+      return app.planId.name;
+    if (app.plan?.name) return app.plan.name;
+  }
+  if (app.plan && app.plan.name) return app.plan.name;
+  return "N/A";
+};
+
+const getPlanPrice = (app: any): number => {
+  if (!app) return 0;
+  if (
+    app.planId &&
+    typeof app.planId === "object" &&
+    app.planId.price !== undefined
+  ) {
+    return app.planId.price;
+  }
+  if (app.plan && app.plan.price !== undefined) return app.plan.price;
+  if (app.planPrice !== undefined) return app.planPrice;
+  return 0;
+};
+
+const getBuildingName = (app: any): string => {
+  if (!app) return "N/A";
+  if (
+    app.buildingId &&
+    typeof app.buildingId === "object" &&
+    app.buildingId.buildingName
+  ) {
+    return app.buildingId.buildingName;
+  }
+  if (app.buildingName) return app.buildingName;
+  if (app.building?.buildingName) return app.building.buildingName;
+  return "N/A";
+};
+
+const getBuildingAddress = (app: any): string => {
+  if (!app) return "—";
+  if (app.buildingId && typeof app.buildingId === "object") {
+    const b = app.buildingId;
+    const parts = [b.streetAddress, b.barangay, b.city, b.province].filter(
+      Boolean,
+    );
+    return parts.join(", ") || "—";
+  }
+  if (app.buildingAddress) return app.buildingAddress;
+  if (app.building?.address) return app.building.address;
+  return "—";
 };
 
 const ID_TYPES = [
@@ -147,7 +135,7 @@ const ID_TYPES = [
 
 export default function ApplicationTable() {
   const [applications, setApplications] = useState<any[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
@@ -163,17 +151,12 @@ export default function ApplicationTable() {
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
 
-  // SHOW ALL MODE - default to true para makita lahat ng data
-  const [showAllMode, setShowAllMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SHOW_ALL_MODE);
-    return saved !== null ? saved === "true" : true;
-  });
+  const [showAllMode, setShowAllMode] = useState<boolean>(true);
 
-  const [filter, setFilter] = useState<FilterState>(() => {
-    const savedFilter = persistentStorage.getItem(STORAGE_KEYS.FILTER_STATE);
-    return (
-      savedFilter || { searchTerm: "", statusFilter: "all", buildingFilter: "" }
-    );
+  const [filter, setFilter] = useState<FilterState>({
+    searchTerm: "",
+    statusFilter: "all",
+    buildingFilter: "",
   });
   const [editingMacAddress, setEditingMacAddress] = useState<string | null>(
     null,
@@ -221,11 +204,6 @@ export default function ApplicationTable() {
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const dataLoadedRef = useRef(false);
 
-  // Save showAllMode preference
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SHOW_ALL_MODE, String(showAllMode));
-  }, [showAllMode]);
-
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } =
@@ -236,9 +214,7 @@ export default function ApplicationTable() {
   }, []);
 
   useEffect(() => {
-    const checkScroll = () => {
-      checkTableScroll();
-    };
+    const checkScroll = () => checkTableScroll();
     checkScroll();
     window.addEventListener("resize", checkScroll);
     const observer = new ResizeObserver(checkScroll);
@@ -268,10 +244,6 @@ export default function ApplicationTable() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
-
-  useEffect(() => {
-    persistentStorage.setItem(STORAGE_KEYS.FILTER_STATE, filter);
-  }, [filter]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -312,6 +284,107 @@ export default function ApplicationTable() {
     }
   };
 
+  const extractApplicationsArray = useCallback((response: any): any[] => {
+    if (!response) return [];
+    if (Array.isArray(response)) return response;
+    if (response.data && Array.isArray(response.data)) return response.data;
+    if (response.applications && Array.isArray(response.applications))
+      return response.applications;
+    if (
+      response.data &&
+      response.data.data &&
+      Array.isArray(response.data.data)
+    ) {
+      return response.data.data;
+    }
+    if (response.results && Array.isArray(response.results))
+      return response.results;
+    if (response.docs && Array.isArray(response.docs)) return response.docs;
+    console.warn(
+      "⚠️ Unexpected response format, returning empty array:",
+      response,
+    );
+    return [];
+  }, []);
+
+  // ============ FETCH ALL APPLICATIONS - NO CACHE ============
+  const fetchAllApplications = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      console.log("🔄 Fetching ALL applications (no limit)...");
+      const response = await getAllApplicationsUnlimited();
+
+      let applicationsList = extractApplicationsArray(response);
+
+      if (!Array.isArray(applicationsList)) {
+        applicationsList = [];
+      }
+
+      const totalApps = applicationsList.length;
+      console.log(`✅ Received ${totalApps} total applications`);
+
+      setApplications(applicationsList);
+      setTotalCount(totalApps);
+      setLastFetchTime(new Date());
+
+      const pending = applicationsList.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+      setHasNewApplicant(false);
+    } catch (error: any) {
+      console.error("Failed to fetch all applications:", error);
+      setError("Unable to connect to server.");
+      toast.error("Failed to connect");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      refreshInProgressRef.current = false;
+    }
+  }, [extractApplicationsArray]);
+
+  // ============ FETCH PAGINATED APPLICATIONS - NO CACHE ============
+  const fetchApplications = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      console.log("🔄 Fetching applications (paginated)...");
+      const response = await getAllApplications({ page: 1, limit: 100 });
+
+      let applicationsList = extractApplicationsArray(response);
+
+      if (!Array.isArray(applicationsList)) {
+        applicationsList = [];
+      }
+
+      const totalApps = applicationsList.length;
+      console.log(`✅ Received ${totalApps} applications`);
+      setApplications(applicationsList);
+      setTotalCount(response.total || totalApps);
+      setLastFetchTime(new Date());
+
+      const pending = applicationsList.filter(
+        (a: any) => a.status === "pending",
+      ).length;
+      setHasNewApplicant(false);
+    } catch (error: any) {
+      console.error("Failed to fetch:", error);
+      setError("Unable to connect to server.");
+      toast.error("Failed to connect");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      refreshInProgressRef.current = false;
+    }
+  }, [extractApplicationsArray]);
+
+  // ============ CHECK FOR NEW APPLICANTS ============
   const checkForNewApplicants = useCallback(async () => {
     if (refreshInProgressRef.current) return;
 
@@ -319,10 +392,15 @@ export default function ApplicationTable() {
       let applicationsList: any[] = [];
 
       if (showAllMode) {
-        applicationsList = await getAllApplicationsUnlimited();
+        const response = await getAllApplicationsUnlimited();
+        applicationsList = extractApplicationsArray(response);
       } else {
-        const data = await getAllApplications({ page: 1, limit: 100 });
-        applicationsList = data.data || [];
+        const response = await getAllApplications({ page: 1, limit: 100 });
+        applicationsList = extractApplicationsArray(response);
+      }
+
+      if (!Array.isArray(applicationsList)) {
+        applicationsList = [];
       }
 
       const currentTotal = applicationsList.length;
@@ -330,14 +408,10 @@ export default function ApplicationTable() {
         (a: any) => a.status === "pending",
       ).length;
 
-      const lastKnownTotal =
-        (persistentStorage.getItem(STORAGE_KEYS.LAST_KNOWN_TOTAL) as number) ||
-        applications.length;
-      const lastKnownPending =
-        (persistentStorage.getItem(
-          STORAGE_KEYS.LAST_KNOWN_PENDING,
-        ) as number) ||
-        applications.filter((a: any) => a.status === "pending").length;
+      const lastKnownTotal = totalCount || applications.length;
+      const lastKnownPending = applications.filter(
+        (a: any) => a.status === "pending",
+      ).length;
 
       const hasNew =
         currentTotal > lastKnownTotal || currentPending > lastKnownPending;
@@ -346,7 +420,9 @@ export default function ApplicationTable() {
         console.log(`🆕 New applicant detected!`);
         setHasNewApplicant(true);
         setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
-        await silentRefresh();
+
+        setApplications(applicationsList);
+        setTotalCount(currentTotal);
 
         setTimeout(() => {
           setHasNewApplicant(false);
@@ -356,10 +432,10 @@ export default function ApplicationTable() {
     } catch (error) {
       console.error("Failed to check for new applicants:", error);
     }
-  }, [applications.length, showAllMode]);
+  }, [applications, totalCount, showAllMode, extractApplicationsArray]);
 
   useEffect(() => {
-    if (isOnline && !initialLoading) {
+    if (isOnline && !loading) {
       intervalRef.current = setInterval(() => {
         checkForNewApplicants();
       }, CHECK_INTERVAL);
@@ -371,335 +447,17 @@ export default function ApplicationTable() {
         intervalRef.current = null;
       }
     };
-  }, [isOnline, initialLoading, checkForNewApplicants]);
+  }, [isOnline, loading, checkForNewApplicants]);
 
   // ============================================================
-  // LOAD DATA - WITH SHOW ALL MODE SUPPORT
+  // LOAD DATA - NO CACHE
   // ============================================================
   useEffect(() => {
-    const loadData = () => {
-      // Step 1: Get cache
-      const cached = persistentStorage.getItem(
-        STORAGE_KEYS.APPLICATIONS,
-      ) as StoredApplicationsData | null;
-      const lastFetch = persistentStorage.getItem(STORAGE_KEYS.LAST_FETCH);
-
-      // Step 2: If cache exists, display immediately
-      if (cached && cached.applications && cached.applications.length > 0) {
-        console.log(`📦 INSTANT LOAD: ${cached.applications.length} apps`);
-        setApplications(cached.applications);
-        setTotalCount(cached.totalCount || cached.applications.length);
-        if (lastFetch) setLastFetchTime(new Date(lastFetch));
-
-        const total = cached.applications.length;
-        const pending = cached.applications.filter(
-          (a: any) => a.status === "pending",
-        ).length;
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-        persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-        setInitialLoading(false);
-        dataLoadedRef.current = true;
-
-        // Step 3: Background fetch immediately
-        setTimeout(() => {
-          if (!refreshInProgressRef.current) {
-            console.log("🔄 Background refresh agad para updated...");
-            if (showAllMode) {
-              fetchAllApplicationsSilent();
-            } else {
-              fetchApplicationsSilent();
-            }
-          }
-        }, 500);
-
-        return;
-      }
-
-      // Step 4: No cache, fetch
-      console.log("📡 No cache, fetching...");
-      if (showAllMode) {
-        fetchAllApplications();
-      } else {
-        fetchApplications();
-      }
-    };
-
-    loadData();
-  }, [showAllMode]);
-
-  // ============ FETCH ALL APPLICATIONS (NO LIMIT) ============
-  const fetchAllApplications = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      console.log("🔄 Fetching ALL applications (no limit)...");
-      const applicationsList = await getAllApplicationsUnlimited();
-
-      console.log(`✅ Received ${applicationsList.length} total applications`);
-      setApplications(applicationsList);
-      setTotalCount(applicationsList.length);
-      setLastFetchTime(new Date());
-
-      // Store in cache
-      const dataToStore: StoredApplicationsData = {
-        applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-        timestamp: Date.now(),
-        version: STORAGE_KEYS.CACHE_VERSION,
-        totalCount: applicationsList.length,
-      };
-
-      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-      const total = applicationsList.length;
-      const pending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-      setHasNewApplicant(false);
-    } catch (error: any) {
-      console.error("Failed to fetch all applications:", error);
-      const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-      if (cached?.applications?.length > 0) {
-        setApplications(cached.applications);
-        setTotalCount(cached.totalCount || cached.applications.length);
-        setError(
-          `Network error. Showing ${cached.applications.length} cached.`,
-        );
-        toast.error("Network error, using cached data");
-      } else {
-        setError("Unable to connect to server.");
-        toast.error("Failed to connect");
-      }
-    } finally {
-      setInitialLoading(false);
-      setRefreshing(false);
-      refreshInProgressRef.current = false;
-    }
-  }, []);
-
-  // ============ FETCH PAGINATED APPLICATIONS ============
-  const fetchApplications = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      console.log("🔄 Fetching applications (paginated)...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      console.log(`✅ Received ${applicationsList.length} applications`);
-      setApplications(applicationsList);
-      setTotalCount(data.total || applicationsList.length);
-      setLastFetchTime(new Date());
-
-      const dataToStore: StoredApplicationsData = {
-        applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-        timestamp: Date.now(),
-        version: STORAGE_KEYS.CACHE_VERSION,
-        totalCount: data.total || applicationsList.length,
-      };
-
-      persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-      const total = applicationsList.length;
-      const pending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-      persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-      setHasNewApplicant(false);
-    } catch (error: any) {
-      console.error("Failed to fetch:", error);
-      const cached = persistentStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-      if (cached?.applications?.length > 0) {
-        setApplications(cached.applications);
-        setTotalCount(cached.totalCount || cached.applications.length);
-        setError(
-          `Network error. Showing ${cached.applications.length} cached.`,
-        );
-        toast.error("Network error, using cached data");
-      } else {
-        setError("Unable to connect to server.");
-        toast.error("Failed to connect");
-      }
-    } finally {
-      setInitialLoading(false);
-      setRefreshing(false);
-      refreshInProgressRef.current = false;
-    }
-  }, []);
-
-  // ============ SILENT FETCH (PAGINATED) ============
-  const fetchApplicationsSilent = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-
-    try {
-      console.log("🔄 Silent background fetch (paginated)...");
-      const data = await getAllApplications({ page: 1, limit: 100 });
-      const applicationsList = data.data || [];
-
-      if (applicationsList.length > 0) {
-        const currentIds = new Set(applications.map((a: any) => a._id));
-        const newApps = applicationsList.filter(
-          (a: any) => !currentIds.has(a._id),
-        );
-
-        if (newApps.length > 0) {
-          console.log(`🆕 ${newApps.length} new apps found in background`);
-          setApplications(applicationsList);
-          setTotalCount(data.total || applicationsList.length);
-          setLastFetchTime(new Date());
-
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: data.total || applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-          const total = applicationsList.length;
-          const pending = applicationsList.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-          toast.success(
-            `🆕 ${newApps.length} new application${newApps.length > 1 ? "s" : ""} loaded`,
-          );
-        } else {
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        }
-      }
-    } catch (error) {
-      console.log("Background fetch failed:", error);
-    } finally {
-      refreshInProgressRef.current = false;
-    }
-  }, [applications]);
-
-  // ============ SILENT FETCH (ALL DATA) ============
-  const fetchAllApplicationsSilent = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-
-    try {
-      console.log("🔄 Silent background fetch (ALL data)...");
-      const applicationsList = await getAllApplicationsUnlimited();
-
-      if (applicationsList.length > 0) {
-        const currentIds = new Set(applications.map((a: any) => a._id));
-        const newApps = applicationsList.filter(
-          (a: any) => !currentIds.has(a._id),
-        );
-
-        if (newApps.length > 0) {
-          console.log(`🆕 ${newApps.length} new apps found in background`);
-          setApplications(applicationsList);
-          setTotalCount(applicationsList.length);
-          setLastFetchTime(new Date());
-
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-          const total = applicationsList.length;
-          const pending = applicationsList.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-
-          toast.success(
-            `🆕 ${newApps.length} new application${newApps.length > 1 ? "s" : ""} loaded`,
-          );
-        } else {
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        }
-      }
-    } catch (error) {
-      console.log("Background fetch failed:", error);
-    } finally {
-      refreshInProgressRef.current = false;
-    }
-  }, [applications]);
-
-  const silentRefresh = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-
-    try {
-      console.log("🔄 Silent refresh...");
-      if (showAllMode) {
-        const applicationsList = await getAllApplicationsUnlimited();
-        if (applicationsList.length > 0) {
-          setApplications(applicationsList);
-          setTotalCount(applicationsList.length);
-          setLastFetchTime(new Date());
-
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-          const total = applicationsList.length;
-          const pending = applicationsList.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-        }
-      } else {
-        const data = await getAllApplications({ page: 1, limit: 100 });
-        const applicationsList = data.data || [];
-        if (applicationsList.length > 0) {
-          setApplications(applicationsList);
-          setTotalCount(data.total || applicationsList.length);
-          setLastFetchTime(new Date());
-
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: data.total || applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-
-          const total = applicationsList.length;
-          const pending = applicationsList.filter(
-            (a: any) => a.status === "pending",
-          ).length;
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_TOTAL, total);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_KNOWN_PENDING, pending);
-        }
-      }
-    } catch (error) {
-      console.log("Silent refresh failed");
-    } finally {
-      refreshInProgressRef.current = false;
+    console.log("📡 Fetching applications...");
+    if (showAllMode) {
+      fetchAllApplications();
+    } else {
+      fetchApplications();
     }
   }, [showAllMode]);
 
@@ -709,43 +467,26 @@ export default function ApplicationTable() {
     try {
       console.log("⚡ Quick refresh...");
       if (showAllMode) {
-        const applicationsList = await getAllApplicationsUnlimited();
+        const response = await getAllApplicationsUnlimited();
+        let applicationsList = extractApplicationsArray(response);
+        if (!Array.isArray(applicationsList)) applicationsList = [];
+
         setApplications(applicationsList);
         setTotalCount(applicationsList.length);
         setLastFetchTime(new Date());
-
-        setTimeout(() => {
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        }, 100);
       } else {
-        const data = await getAllApplications({ page: 1, limit: 100 });
-        const applicationsList = data.data || [];
-        setApplications(applicationsList);
-        setTotalCount(data.total || applicationsList.length);
-        setLastFetchTime(new Date());
+        const response = await getAllApplications({ page: 1, limit: 100 });
+        let applicationsList = extractApplicationsArray(response);
+        if (!Array.isArray(applicationsList)) applicationsList = [];
 
-        setTimeout(() => {
-          const dataToStore: StoredApplicationsData = {
-            applications: applicationsList.slice(0, MAX_CACHE_SIZE),
-            timestamp: Date.now(),
-            version: STORAGE_KEYS.CACHE_VERSION,
-            totalCount: data.total || applicationsList.length,
-          };
-          persistentStorage.setItem(STORAGE_KEYS.APPLICATIONS, dataToStore);
-          persistentStorage.setItem(STORAGE_KEYS.LAST_FETCH, Date.now());
-        }, 100);
+        setApplications(applicationsList);
+        setTotalCount(response.total || applicationsList.length);
+        setLastFetchTime(new Date());
       }
     } catch (error) {
       console.error("Quick refresh failed:", error);
     }
-  }, [showAllMode]);
+  }, [showAllMode, extractApplicationsArray]);
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -827,8 +568,6 @@ export default function ApplicationTable() {
       } else {
         toast.error("Failed to update tower");
       }
-    } catch (error) {
-      toast.error("Error updating tower");
     } finally {
       setEditingTower(null);
       setTempTower("");
@@ -909,19 +648,19 @@ export default function ApplicationTable() {
   };
 
   const uniqueBuildings = useMemo(() => {
+    if (!Array.isArray(applications) || applications.length === 0) return [];
     const buildingSet = new Set<string>();
     applications.forEach((app: any) => {
-      if (app.buildingId?.buildingName) {
-        buildingSet.add(app.buildingId.buildingName);
-      } else if (app.buildingName) {
-        buildingSet.add(app.buildingName);
+      const name = getBuildingName(app);
+      if (name && name !== "N/A") {
+        buildingSet.add(name);
       }
     });
     return Array.from(buildingSet).sort();
   }, [applications]);
 
   const filteredApplications = useMemo(() => {
-    if (!applications || applications.length === 0) return [];
+    if (!Array.isArray(applications) || applications.length === 0) return [];
     return applications.filter((app: any) => {
       const matchesSearch =
         !filter.searchTerm ||
@@ -943,8 +682,7 @@ export default function ApplicationTable() {
       const matchesStatus =
         filter.statusFilter === "all" || app.status === filter.statusFilter;
 
-      const buildingName =
-        app.buildingId?.buildingName || app.buildingName || "";
+      const buildingName = getBuildingName(app);
       const matchesBuilding =
         !filter.buildingFilter ||
         buildingName
@@ -979,21 +717,10 @@ export default function ApplicationTable() {
       pending: "bg-yellow-100 text-yellow-800",
       approved: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
+      suspended: "bg-gray-100 text-gray-800",
     };
     return styles[status] || "bg-gray-100 text-gray-800";
   }, []);
-
-  const clearCache = useCallback(() => {
-    persistentStorage.clearAll();
-    toast.success("Cache cleared");
-    setApplications([]);
-    setError(null);
-    if (showAllMode) {
-      fetchAllApplications();
-    } else {
-      fetchApplications();
-    }
-  }, [fetchApplications, fetchAllApplications, showAllMode]);
 
   const getLastFetchDisplay = useCallback(() => {
     if (!lastFetchTime) return "Never";
@@ -1007,15 +734,18 @@ export default function ApplicationTable() {
     return `${hours}h ago`;
   }, [lastFetchTime]);
 
-  const stats = useMemo(
-    () => ({
+  const stats = useMemo(() => {
+    if (!Array.isArray(applications) || applications.length === 0) {
+      return { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
+    }
+    return {
       pending: applications.filter((a) => a.status === "pending").length,
       approved: applications.filter((a) => a.status === "approved").length,
       rejected: applications.filter((a) => a.status === "rejected").length,
+      suspended: applications.filter((a) => a.status === "suspended").length,
       total: applications.length,
-    }),
-    [applications],
-  );
+    };
+  }, [applications]);
 
   const resetCustomerForm = () => {
     setCustomerForm({
@@ -1036,32 +766,80 @@ export default function ApplicationTable() {
     });
   };
 
+  // ============================================================
+  // FIXED: Submit Application Handler
+  // ============================================================
   const handleAddCustomerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !customerForm.firstName ||
-      !customerForm.lastName ||
-      !customerForm.email ||
-      !customerForm.phoneNumber ||
-      !customerForm.buildingId ||
-      !customerForm.tower ||
-      !customerForm.planId ||
-      !customerForm.idType ||
-      !customerForm.idNumber
-    ) {
-      toast.error("Please fill in all required fields");
+    if (!customerForm.firstName.trim()) {
+      toast.error("First name is required");
+      return;
+    }
+    if (!customerForm.lastName.trim()) {
+      toast.error("Last name is required");
+      return;
+    }
+    if (!customerForm.email.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+    if (!customerForm.phoneNumber.trim()) {
+      toast.error("Phone number is required");
+      return;
+    }
+    if (!customerForm.buildingId) {
+      toast.error("Building is required");
+      return;
+    }
+    if (!customerForm.tower.trim()) {
+      toast.error("Tower is required");
+      return;
+    }
+    if (!customerForm.unitNumber.trim()) {
+      toast.error("Unit number is required");
+      return;
+    }
+    if (!customerForm.planId) {
+      toast.error("Plan is required");
+      return;
+    }
+    if (!customerForm.idType) {
+      toast.error("ID type is required");
+      return;
+    }
+    if (!customerForm.idNumber.trim()) {
+      toast.error("ID number is required");
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const result = await submitApplication(customerForm as any);
+      const submissionData = {
+        firstName: customerForm.firstName.trim(),
+        lastName: customerForm.lastName.trim(),
+        email: customerForm.email.trim(),
+        phoneNumber: customerForm.phoneNumber.trim(),
+        buildingId: customerForm.buildingId,
+        tower: customerForm.tower.trim(),
+        floor: customerForm.floor.trim() || "",
+        unitNumber: customerForm.unitNumber.trim(),
+        notes: customerForm.notes.trim() || "",
+        planId: customerForm.planId,
+        idType: customerForm.idType,
+        idNumber: customerForm.idNumber.trim(),
+        macAddress: customerForm.macAddress.trim() || "",
+        idImage: customerForm.idImage || undefined,
+      };
 
-      if (result.success && result.data) {
+      console.log("📝 Submitting application:", submissionData);
+
+      const result = await submitApplication(submissionData);
+
+      if (result.success || result.data) {
         toast.success(
-          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added!`,
+          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added successfully!`,
         );
         setShowAddCustomerModal(false);
         resetCustomerForm();
@@ -1071,9 +849,12 @@ export default function ApplicationTable() {
       }
     } catch (error: any) {
       console.error("Failed to submit application:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to submit application",
-      );
+      const errorMessage =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to submit application";
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -1310,7 +1091,7 @@ export default function ApplicationTable() {
   // ============================================================
   // RENDER
   // ============================================================
-  if (initialLoading && applications.length === 0) {
+  if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -1355,7 +1136,6 @@ export default function ApplicationTable() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {/* Toggle Show All / Paginated */}
           <button
             onClick={() => {
               const newMode = !showAllMode;
@@ -1433,14 +1213,6 @@ export default function ApplicationTable() {
               {refreshing ? "Refreshing..." : "Refresh"}
             </span>
           </button>
-
-          <button
-            onClick={clearCache}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-xs sm:text-sm"
-          >
-            <FiDatabase className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Clear Cache</span>
-          </button>
         </div>
       </div>
 
@@ -1461,7 +1233,7 @@ export default function ApplicationTable() {
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4">
+      <div className="grid grid-cols-5 gap-2 sm:gap-3 mb-4">
         <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
           <div className="text-xs text-gray-500">Total</div>
           <div className="text-lg font-bold text-gray-900">
@@ -1483,6 +1255,12 @@ export default function ApplicationTable() {
         <div className="bg-red-50 rounded-md p-2 border border-red-200">
           <div className="text-xs text-red-600">Rejected</div>
           <div className="text-lg font-bold text-red-700">{stats.rejected}</div>
+        </div>
+        <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
+          <div className="text-xs text-gray-500">Suspended</div>
+          <div className="text-lg font-bold text-gray-700">
+            {stats.suspended || 0}
+          </div>
         </div>
       </div>
 
@@ -1511,6 +1289,9 @@ export default function ApplicationTable() {
             <option value="pending">Pending ({stats.pending})</option>
             <option value="approved">Approved ({stats.approved})</option>
             <option value="rejected">Rejected ({stats.rejected})</option>
+            <option value="suspended">
+              Suspended ({stats.suspended || 0})
+            </option>
           </select>
           <select
             value={filter.buildingFilter}
@@ -1607,10 +1388,15 @@ export default function ApplicationTable() {
                 currentApplications.map((app: any, idx: number) => {
                   const globalIndex =
                     (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
-                  const buildingName =
-                    app.buildingId?.buildingName || app.buildingName || "N/A";
-                  const buildingAddress =
-                    app.buildingId?.address || app.buildingAddress || "";
+                  const buildingName = getBuildingName(app);
+                  const buildingAddress = getBuildingAddress(app);
+                  const planName = getPlanName(app);
+                  const planPrice = getPlanPrice(app);
+                  const planDisplay =
+                    planName !== "N/A"
+                      ? `${planName} (₱${formatPrice(planPrice)})`
+                      : "N/A";
+
                   return (
                     <tr
                       key={app._id}
@@ -1632,10 +1418,10 @@ export default function ApplicationTable() {
                         {buildingName}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100 max-w-[150px] truncate">
-                        {buildingAddress || "—"}
+                        {buildingAddress}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                        {app.planId?.name || "N/A"}
+                        {planDisplay}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs font-mono border-r border-gray-100">
                         {editingMacAddress === app._id ? (
@@ -1705,6 +1491,19 @@ export default function ApplicationTable() {
                             <FiEye className="w-3.5 h-3.5" />
                             <span className="hidden xs:inline">View</span>
                           </button>
+                          {app.status === "approved" && !app.billingStarted && (
+                            <button
+                              onClick={() => {
+                                setSelectedAppForBilling(app);
+                                setShowBillingModal(true);
+                              }}
+                              className="text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
+                              title="Start Billing"
+                            >
+                              <FiPlay className="w-3.5 h-3.5" />
+                              <span className="hidden xs:inline">Bill</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1750,7 +1549,7 @@ export default function ApplicationTable() {
         </div>
       </div>
 
-      {/* MODAL - Application Details */}
+      {/* MODALS - Same as before, keeping them short for brevity */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1772,12 +1571,11 @@ export default function ApplicationTable() {
                 <FiX className="w-5 h-5" />
               </button>
             </div>
-
             <div className="p-4 space-y-4">
+              {/* Personal Info */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2 text-sm">
-                  <FiUser className="w-4 h-4" />
-                  Personal Information
+                  <FiUser className="w-4 h-4" /> Personal Information
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div>
@@ -1805,6 +1603,7 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
+              {/* Building Info */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Building & Unit Information
@@ -1813,9 +1612,7 @@ export default function ApplicationTable() {
                   <div>
                     <span className="text-gray-500">Building:</span>{" "}
                     <span className="font-medium">
-                      {selectedApp.buildingId?.buildingName ||
-                        selectedApp.buildingName ||
-                        "Not specified"}
+                      {getBuildingName(selectedApp)}
                     </span>
                   </div>
                   <div>
@@ -1879,6 +1676,7 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
+              {/* Plan Details */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Plan Details
@@ -1886,11 +1684,11 @@ export default function ApplicationTable() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-gray-500">Plan:</span>{" "}
-                    {selectedApp.planId?.name || "N/A"}
+                    {getPlanName(selectedApp)}
                   </div>
                   <div>
                     <span className="text-gray-500">Price:</span> ₱
-                    {formatPrice(selectedApp.planId?.price)}/month
+                    {formatPrice(getPlanPrice(selectedApp))}/month
                   </div>
                   <div>
                     <span className="text-gray-500">Speed:</span>{" "}
@@ -1899,11 +1697,11 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
+              {/* ID Verification */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
                   <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                    <FiCreditCard className="w-4 h-4" />
-                    ID Verification
+                    <FiCreditCard className="w-4 h-4" /> ID Verification
                   </h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -1953,8 +1751,7 @@ export default function ApplicationTable() {
                           }}
                         />
                         <div className="absolute bottom-1 right-1 bg-black bg-opacity-50 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
-                          <FiImage className="w-3 h-3" />
-                          Enlarge
+                          <FiImage className="w-3 h-3" /> Enlarge
                         </div>
                       </div>
                     </div>
@@ -2076,9 +1873,8 @@ export default function ApplicationTable() {
                   <strong>App ID:</strong> {selectedAppForBilling.applicationId}
                 </p>
                 <p className="text-xs text-blue-800">
-                  <strong>Plan:</strong>{" "}
-                  {selectedAppForBilling.planId?.name || "N/A"} - ₱
-                  {selectedAppForBilling.planId?.price || 0}/month
+                  <strong>Plan:</strong> {getPlanName(selectedAppForBilling)} -
+                  ₱{formatPrice(getPlanPrice(selectedAppForBilling))}/month
                 </p>
                 {selectedAppForBilling.tower && (
                   <p className="text-xs text-blue-800">
@@ -2206,7 +2002,7 @@ export default function ApplicationTable() {
                           firstName: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
@@ -2223,7 +2019,7 @@ export default function ApplicationTable() {
                           lastName: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
@@ -2240,7 +2036,7 @@ export default function ApplicationTable() {
                           email: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
@@ -2257,12 +2053,13 @@ export default function ApplicationTable() {
                           phoneNumber: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
                 </div>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Building & Unit
@@ -2280,7 +2077,7 @@ export default function ApplicationTable() {
                           buildingId: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     >
                       <option value="">Select Building</option>
@@ -2305,7 +2102,7 @@ export default function ApplicationTable() {
                         })
                       }
                       placeholder="e.g., A"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
@@ -2323,7 +2120,7 @@ export default function ApplicationTable() {
                         })
                       }
                       placeholder="e.g., 5th Floor"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                   <div>
@@ -2340,12 +2137,13 @@ export default function ApplicationTable() {
                         })
                       }
                       placeholder="e.g., Unit 501"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
                 </div>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Internet Plan
@@ -2355,7 +2153,7 @@ export default function ApplicationTable() {
                   onChange={(e) =>
                     setCustomerForm({ ...customerForm, planId: e.target.value })
                   }
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   required
                 >
                   <option value="">Select Plan</option>
@@ -2366,6 +2164,7 @@ export default function ApplicationTable() {
                   ))}
                 </select>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-1.5 text-sm">
                   <FiWifi className="w-4 h-4" /> Network Config
@@ -2380,9 +2179,10 @@ export default function ApplicationTable() {
                     })
                   }
                   placeholder="MAC Address (optional)"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md font-mono"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md font-mono focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-1.5 text-sm">
                   <FiCreditCard className="w-4 h-4" /> ID Verification
@@ -2400,7 +2200,7 @@ export default function ApplicationTable() {
                           idType: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     >
                       <option value="">Select ID Type</option>
@@ -2424,7 +2224,7 @@ export default function ApplicationTable() {
                           idNumber: e.target.value,
                         })
                       }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
                   </div>
@@ -2442,11 +2242,17 @@ export default function ApplicationTable() {
                             idImage: e.target.files[0],
                           });
                       }}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     />
+                    {customerForm.idImage && (
+                      <p className="text-xs text-green-600 mt-1">
+                        ✓ {customerForm.idImage.name} selected
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Additional Notes
@@ -2457,10 +2263,11 @@ export default function ApplicationTable() {
                     setCustomerForm({ ...customerForm, notes: e.target.value })
                   }
                   rows={2}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Any additional information..."
                 />
               </div>
+
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-200">
                 <button
                   type="button"
@@ -2517,14 +2324,12 @@ export default function ApplicationTable() {
                   <FiFileText className="w-4 h-4" /> Instructions
                 </h3>
                 <ul className="text-xs text-blue-700 space-y-0.5 list-disc list-inside">
-                  <li>
-                    Download template, fill data (building/plan names must
-                    match)
-                  </li>
+                  <li>Download template, fill data</li>
                   <li>MAC address optional</li>
                   <li>Upload completed CSV</li>
                 </ul>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold mb-2 text-sm">
                   1. Download Template
@@ -2536,6 +2341,7 @@ export default function ApplicationTable() {
                   <FiDownload className="w-3.5 h-3.5" /> Download Template
                 </button>
               </div>
+
               <div className="bg-gray-50 p-3 rounded-md">
                 <h3 className="font-semibold mb-2 text-sm">2. Upload CSV</h3>
                 <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
@@ -2558,6 +2364,7 @@ export default function ApplicationTable() {
                   </label>
                 </div>
               </div>
+
               {bulkResults && (
                 <div className="bg-gray-50 p-3 rounded-md">
                   <h3 className="font-semibold mb-2 text-sm">Results</h3>
@@ -2603,6 +2410,7 @@ export default function ApplicationTable() {
                   </div>
                 </div>
               )}
+
               <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
                   onClick={() => {

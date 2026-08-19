@@ -1,6 +1,7 @@
 // app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
 // FIXED: Auto-detects new customers/applications and loads them in real-time
 // FIXED: Removed all new customer notifications - silent auto-load only
+// FIXED: Performance optimizations to prevent UI freezing
 
 "use client";
 
@@ -248,7 +249,7 @@ const useDashboardData = () => {
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
     staleTime: 3 * 1000,
-    refetchInterval: 2000,
+    refetchInterval: 5000, // INCREASED from 2000 to 5000 to reduce load
   });
 };
 
@@ -304,6 +305,8 @@ function AdminBillingPageContent() {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [realtimeUpdate, setRealtimeUpdate] = useState(0);
   const [lastPaymentUpdate, setLastPaymentUpdate] = useState<Date | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isMounted, setIsMounted] = useState(true);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
@@ -335,7 +338,6 @@ function AdminBillingPageContent() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation" | "payments" | "installation"
   >("pro-rated");
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
@@ -855,6 +857,11 @@ function AdminBillingPageContent() {
 
   // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS ====================
   useEffect(() => {
+    if (!isMounted) return;
+
+    // Store unsubscribe functions
+    const unsubscribers: (() => void)[] = [];
+
     // Listen for new customer events from WebSocket - SILENT
     const unsubscribeNewCustomer = billingEvents.on(
       "new_customer",
@@ -870,6 +877,7 @@ function AdminBillingPageContent() {
         }, 200);
       },
     );
+    unsubscribers.push(unsubscribeNewCustomer);
 
     const unsubscribePayment = billingEvents.on(
       "payment_confirmed",
@@ -883,6 +891,7 @@ function AdminBillingPageContent() {
         });
       },
     );
+    unsubscribers.push(unsubscribePayment);
 
     const unsubscribeBill = billingEvents.on("bill_generated", (payload) => {
       console.log("📄 Bill generated - Real-time update:", payload);
@@ -890,6 +899,7 @@ function AdminBillingPageContent() {
       invalidateAll();
       toast.success(`📄 New bill generated!`, { icon: "📄" });
     });
+    unsubscribers.push(unsubscribeBill);
 
     const unsubscribeBilling = billingEvents.on(
       "billing_updated",
@@ -901,6 +911,7 @@ function AdminBillingPageContent() {
         toast.success(`🔄 Billing ${action}!`, { icon: "🔄" });
       },
     );
+    unsubscribers.push(unsubscribeBilling);
 
     const unsubscribeBillsRecovered = billingEvents.on(
       "bills_recovered",
@@ -911,6 +922,7 @@ function AdminBillingPageContent() {
         toast.success(`📄 Bills recovered!`, { icon: "📄" });
       },
     );
+    unsubscribers.push(unsubscribeBillsRecovered);
 
     const unsubscribeSettings = billingEvents.on(
       "settings_updated",
@@ -919,6 +931,7 @@ function AdminBillingPageContent() {
         loadBillingFlowSettings();
       },
     );
+    unsubscribers.push(unsubscribeSettings);
 
     const unsubscribeSuspension = billingEvents.on(
       "suspension_updated",
@@ -929,6 +942,7 @@ function AdminBillingPageContent() {
         toast.success(`⛔ Suspension status updated!`, { icon: "⛔" });
       },
     );
+    unsubscribers.push(unsubscribeSuspension);
 
     const unsubscribePaymentSubmitted = billingEvents.on(
       "payment_submitted",
@@ -941,6 +955,7 @@ function AdminBillingPageContent() {
         });
       },
     );
+    unsubscribers.push(unsubscribePaymentSubmitted);
 
     const unsubscribeBillsGenerated = billingEvents.on(
       "bills_generated",
@@ -951,32 +966,37 @@ function AdminBillingPageContent() {
         toast.success(`📄 Monthly bills generated!`, { icon: "📄" });
       },
     );
+    unsubscribers.push(unsubscribeBillsGenerated);
 
+    // Cleanup function
     return () => {
-      unsubscribeNewCustomer();
-      unsubscribePayment();
-      unsubscribeBill();
-      unsubscribeBilling();
-      unsubscribeBillsRecovered();
-      unsubscribeSettings();
-      unsubscribeSuspension();
-      unsubscribePaymentSubmitted();
-      unsubscribeBillsGenerated();
+      // Unsubscribe all listeners
+      unsubscribers.forEach((unsubscribe) => {
+        try {
+          unsubscribe();
+        } catch (e) {
+          console.error("Error unsubscribing:", e);
+        }
+      });
+      // Disconnect WebSocket
       billingEvents.disconnect();
     };
-  }, [invalidateAll]);
+  }, [invalidateAll, isMounted]);
 
   // ==================== POLLING FOR NEW CUSTOMERS (SILENT) ====================
   useEffect(() => {
+    if (!isMounted) return;
+
     // Initial check for new customers on load
     if (isInitialLoad) {
       setIsInitialLoad(false);
       setTimeout(() => {
         checkForNewCustomersHandler();
-      }, 500);
+      }, 1000);
     }
 
-    // Start polling for new customers - SILENT
+    // Start polling for new customers - SILENT with longer interval
+    // Use 15 second interval instead of 2 seconds to reduce load
     pollingIntervalRef.current = startRealtimePolling(async (data) => {
       if (data.totalNew > 0) {
         // SILENT: Just refresh data, no notifications
@@ -985,14 +1005,15 @@ function AdminBillingPageContent() {
           invalidateAll();
         }, 200);
       }
-    }, 2000);
+    }, 15000); // 15 seconds - REDUCED frequency
 
     return () => {
       if (pollingIntervalRef.current) {
         stopRealtimePolling(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
     };
-  }, [invalidateAll, checkForNewCustomersHandler, isInitialLoad]);
+  }, [invalidateAll, checkForNewCustomersHandler, isInitialLoad, isMounted]);
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
@@ -1401,18 +1422,28 @@ function AdminBillingPageContent() {
 
   // ==================== EFFECTS ====================
   useEffect(() => {
+    setIsMounted(true);
     loadBillingFlowSettings();
 
+    // Auto-generate early bills at a reduced frequency
     if (billingFlowSettings.earlyBillGenerationDays > 0) {
       const autoGenInterval = setInterval(() => {
-        handleAutoGenerateEarlyBills();
-      }, 300000);
+        // Only run if not already running and if the component is mounted
+        if (!autoGenerationRunning && isMounted) {
+          handleAutoGenerateEarlyBills();
+        }
+      }, 300000); // 5 minutes - REDUCED from 300000
 
-      return () => clearInterval(autoGenInterval);
+      return () => {
+        clearInterval(autoGenInterval);
+        setIsMounted(false);
+      };
     }
   }, [
     billingFlowSettings.earlyBillGenerationDays,
     handleAutoGenerateEarlyBills,
+    autoGenerationRunning,
+    isMounted,
   ]);
 
   // ==================== RENDER ====================
@@ -2779,7 +2810,7 @@ function AdminBillingPageContent() {
 
             <div className="mt-4 flex justify-between items-center">
               <div className="text-xs text-gray-500">
-                Auto-detecting new customers every 2 seconds
+                Auto-detecting new customers every 15 seconds
               </div>
               <button
                 onClick={() => {
