@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - NO CACHING AT ALL
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - ADDRESS & PLAN SHOWING
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -66,57 +66,123 @@ const getSpeed = (plan: any): string => {
   return "N/A";
 };
 
+// FIXED: Get plan name from nested planId object
 const getPlanName = (app: any): string => {
   if (!app) return "N/A";
-  if (app.planName && app.planName !== "N/A") return app.planName;
-  if (app.planId) {
-    if (typeof app.planId === "object" && app.planId.name)
-      return app.planId.name;
-    if (app.plan?.name) return app.plan.name;
+
+  // Check if planId is populated (object with name)
+  if (app.planId && typeof app.planId === "object") {
+    if (app.planId.name) return app.planId.name;
   }
-  if (app.plan && app.plan.name) return app.plan.name;
+
+  // Check if plan is populated
+  if (app.plan && typeof app.plan === "object") {
+    if (app.plan.name) return app.plan.name;
+  }
+
+  // Check for planName field
+  if (app.planName && app.planName !== "N/A") return app.planName;
+
+  // Check if planId is a string ID
+  if (app.planId && typeof app.planId === "string") {
+    return "Plan ID: " + app.planId.substring(0, 8);
+  }
+
   return "N/A";
 };
 
+// FIXED: Get plan price from nested planId object
 const getPlanPrice = (app: any): number => {
   if (!app) return 0;
-  if (
-    app.planId &&
-    typeof app.planId === "object" &&
-    app.planId.price !== undefined
-  ) {
-    return app.planId.price;
+
+  // Check if planId is populated (object with price)
+  if (app.planId && typeof app.planId === "object") {
+    if (app.planId.price !== undefined && app.planId.price !== null) {
+      return Number(app.planId.price);
+    }
   }
-  if (app.plan && app.plan.price !== undefined) return app.plan.price;
-  if (app.planPrice !== undefined) return app.planPrice;
+
+  // Check if plan is populated
+  if (app.plan && typeof app.plan === "object") {
+    if (app.plan.price !== undefined && app.plan.price !== null) {
+      return Number(app.plan.price);
+    }
+  }
+
+  // Check for planPrice field
+  if (app.planPrice !== undefined && app.planPrice !== null) {
+    return Number(app.planPrice);
+  }
+
   return 0;
 };
 
+// FIXED: Get building name from nested buildingId object
 const getBuildingName = (app: any): string => {
   if (!app) return "N/A";
-  if (
-    app.buildingId &&
-    typeof app.buildingId === "object" &&
-    app.buildingId.buildingName
-  ) {
-    return app.buildingId.buildingName;
+
+  // Check if buildingId is populated (object with buildingName)
+  if (app.buildingId && typeof app.buildingId === "object") {
+    if (app.buildingId.buildingName) return app.buildingId.buildingName;
   }
+
+  // Check if building is populated
+  if (app.building && typeof app.building === "object") {
+    if (app.building.buildingName) return app.building.buildingName;
+  }
+
+  // Check for buildingName field
   if (app.buildingName) return app.buildingName;
-  if (app.building?.buildingName) return app.building.buildingName;
+
+  // Check if buildingId is a string ID
+  if (app.buildingId && typeof app.buildingId === "string") {
+    return "Building ID: " + app.buildingId.substring(0, 8);
+  }
+
   return "N/A";
 };
 
+// FIXED: Get building address from nested buildingId object
 const getBuildingAddress = (app: any): string => {
   if (!app) return "—";
+
+  // Check if buildingId is populated (object with address fields)
   if (app.buildingId && typeof app.buildingId === "object") {
     const b = app.buildingId;
-    const parts = [b.streetAddress, b.barangay, b.city, b.province].filter(
-      Boolean,
-    );
-    return parts.join(", ") || "—";
+    const parts = [
+      b.streetAddress || b.street || b.address,
+      b.barangay || b.barangay || b.district,
+      b.city || b.city || b.municipality,
+      b.province || b.province || b.state,
+      b.zipCode || b.zipCode || b.zip,
+    ].filter((part) => part && typeof part === "string" && part.trim() !== "");
+
+    if (parts.length > 0) {
+      return parts.join(", ");
+    }
   }
-  if (app.buildingAddress) return app.buildingAddress;
-  if (app.building?.address) return app.building.address;
+
+  // Check if building is populated
+  if (app.building && typeof app.building === "object") {
+    const b = app.building;
+    const parts = [
+      b.streetAddress || b.street || b.address,
+      b.barangay || b.barangay || b.district,
+      b.city || b.city || b.municipality,
+      b.province || b.province || b.state,
+      b.zipCode || b.zipCode || b.zip,
+    ].filter((part) => part && typeof part === "string" && part.trim() !== "");
+
+    if (parts.length > 0) {
+      return parts.join(", ");
+    }
+  }
+
+  // Check for buildingAddress field
+  if (app.buildingAddress && typeof app.buildingAddress === "string") {
+    return app.buildingAddress;
+  }
+
   return "—";
 };
 
@@ -324,6 +390,13 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
+      // Log sample data for debugging
+      if (applicationsList.length > 0) {
+        console.log("📊 Sample application data:", applicationsList[0]);
+        console.log("📊 Plan data:", applicationsList[0].planId);
+        console.log("📊 Building data:", applicationsList[0].buildingId);
+      }
+
       const totalApps = applicationsList.length;
       console.log(`✅ Received ${totalApps} total applications`);
 
@@ -361,6 +434,13 @@ export default function ApplicationTable() {
 
       if (!Array.isArray(applicationsList)) {
         applicationsList = [];
+      }
+
+      // Log sample data for debugging
+      if (applicationsList.length > 0) {
+        console.log("📊 Sample application data:", applicationsList[0]);
+        console.log("📊 Plan data:", applicationsList[0].planId);
+        console.log("📊 Building data:", applicationsList[0].buildingId);
       }
 
       const totalApps = applicationsList.length;
@@ -652,7 +732,7 @@ export default function ApplicationTable() {
     const buildingSet = new Set<string>();
     applications.forEach((app: any) => {
       const name = getBuildingName(app);
-      if (name && name !== "N/A") {
+      if (name && name !== "N/A" && name !== "Building ID: ") {
         buildingSet.add(name);
       }
     });
@@ -1392,10 +1472,16 @@ export default function ApplicationTable() {
                   const buildingAddress = getBuildingAddress(app);
                   const planName = getPlanName(app);
                   const planPrice = getPlanPrice(app);
-                  const planDisplay =
-                    planName !== "N/A"
-                      ? `${planName} (₱${formatPrice(planPrice)})`
-                      : "N/A";
+
+                  // Build plan display string
+                  let planDisplay = "N/A";
+                  if (planName !== "N/A") {
+                    const speed = getSpeed(app.planId);
+                    planDisplay =
+                      speed !== "N/A"
+                        ? `${planName} (${speed})`
+                        : `${planName}`;
+                  }
 
                   return (
                     <tr
@@ -1549,7 +1635,7 @@ export default function ApplicationTable() {
         </div>
       </div>
 
-      {/* MODALS - Same as before, keeping them short for brevity */}
+      {/* View Application Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1613,6 +1699,12 @@ export default function ApplicationTable() {
                     <span className="text-gray-500">Building:</span>{" "}
                     <span className="font-medium">
                       {getBuildingName(selectedApp)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Address:</span>{" "}
+                    <span className="font-medium">
+                      {getBuildingAddress(selectedApp)}
                     </span>
                   </div>
                   <div>
@@ -1684,15 +1776,21 @@ export default function ApplicationTable() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-gray-500">Plan:</span>{" "}
-                    {getPlanName(selectedApp)}
+                    <span className="font-medium">
+                      {getPlanName(selectedApp)}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Price:</span> ₱
-                    {formatPrice(getPlanPrice(selectedApp))}/month
+                    <span className="text-gray-500">Price:</span>{" "}
+                    <span className="font-medium">
+                      ₱{formatPrice(getPlanPrice(selectedApp))}/month
+                    </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Speed:</span>{" "}
-                    {getSpeed(selectedApp.planId)}
+                    <span className="font-medium">
+                      {getSpeed(selectedApp.planId)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1875,6 +1973,10 @@ export default function ApplicationTable() {
                 <p className="text-xs text-blue-800">
                   <strong>Plan:</strong> {getPlanName(selectedAppForBilling)} -
                   ₱{formatPrice(getPlanPrice(selectedAppForBilling))}/month
+                </p>
+                <p className="text-xs text-blue-800">
+                  <strong>Building:</strong>{" "}
+                  {getBuildingName(selectedAppForBilling)}
                 </p>
                 {selectedAppForBilling.tower && (
                   <p className="text-xs text-blue-800">
@@ -2083,7 +2185,7 @@ export default function ApplicationTable() {
                       <option value="">Select Building</option>
                       {buildings.map((b) => (
                         <option key={b._id} value={b._id}>
-                          {b.buildingName}
+                          {b.buildingName} - {b.barangay}, {b.city}
                         </option>
                       ))}
                     </select>
