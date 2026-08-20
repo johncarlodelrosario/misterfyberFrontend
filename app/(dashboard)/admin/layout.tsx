@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,7 +30,13 @@ import {
   FiCheckCircle,
   FiAlertCircle,
   FiLoader,
+  FiBarChart2,
+  FiUserPlus,
+  FiDollarSign,
+  FiClock,
+  FiArrowRight,
 } from "react-icons/fi";
+import { HiOutlineSparkles } from "react-icons/hi";
 import toast from "react-hot-toast";
 import { getAllApplications } from "@/services/admin";
 import {
@@ -39,16 +45,15 @@ import {
 } from "@/services/admin";
 import invoiceService from "@/services/invoiceService";
 
-// ==================== PRELOAD CACHE CONFIGURATION ====================
+// ==================== CONSTANTS & CONFIGURATION ====================
 const PRELOAD_CACHE_KEY = "misterfyber_preload_applications";
 const PRELOAD_TIMESTAMP_KEY = "misterfyber_preload_timestamp";
 const SIDEBAR_STATE_KEY = "misterfyber_sidebar_collapsed";
 const PRELOAD_DURATION = 10 * 60 * 1000; // 10 minutes
+const MAX_APPS_TO_STORE = 50;
+const MAX_DATA_SIZE = 4 * 1024 * 1024; // 4MB
 
-// LIMIT DATA SIZE TO PREVENT QUOTA EXCEEDED
-const MAX_APPS_TO_STORE = 50; // Only store 50 applications max
-const MAX_DATA_SIZE = 4 * 1024 * 1024; // 4MB limit
-
+// ==================== TYPES ====================
 interface PreloadData {
   applications: any[];
   timestamp: number;
@@ -60,6 +65,7 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   badge?: number;
+  section?: "main" | "management" | "financial" | "system";
 }
 
 interface Notification {
@@ -70,21 +76,62 @@ interface Notification {
   time: string;
   read: boolean;
   link: string;
+  icon?: string;
 }
 
+// ==================== NAVIGATION CONFIGURATION ====================
 const navItems: NavItem[] = [
-  { name: "Dashboard", href: "/admin", icon: FiHome },
-  { name: "Applications", href: "/admin/applications", icon: FiUserCheck },
-  { name: "Billing", href: "/admin/billing", icon: FiClipboard },
-  { name: "Payments", href: "/admin/payments", icon: FiCreditCard },
-  { name: "Invoices", href: "/admin/invoice", icon: FiFileText },
-  { name: "Manual Email", href: "/admin/manual-email", icon: FiMail },
-  { name: "Buildings", href: "/admin/buildings", icon: FiBuilding },
-  { name: "Plans", href: "/admin/plans", icon: FiPackage },
-  { name: "Users", href: "/admin/users", icon: FiUsers },
+  // Main
+  { name: "Dashboard", href: "/admin", icon: FiHome, section: "main" },
+  // Management
+  {
+    name: "Applications",
+    href: "/admin/applications",
+    icon: FiUserCheck,
+    section: "management",
+  },
+  { name: "Users", href: "/admin/users", icon: FiUsers, section: "management" },
+  {
+    name: "Buildings",
+    href: "/admin/buildings",
+    icon: FiBuilding,
+    section: "management",
+  },
+  {
+    name: "Plans",
+    href: "/admin/plans",
+    icon: FiPackage,
+    section: "management",
+  },
+  // Financial
+  {
+    name: "Billing",
+    href: "/admin/billing",
+    icon: FiClipboard,
+    section: "financial",
+  },
+  {
+    name: "Payments",
+    href: "/admin/payments",
+    icon: FiCreditCard,
+    section: "financial",
+  },
+  {
+    name: "Invoices",
+    href: "/admin/invoice",
+    icon: FiFileText,
+    section: "financial",
+  },
+  // System
+  {
+    name: "Manual Email",
+    href: "/admin/manual-email",
+    icon: FiMail,
+    section: "system",
+  },
 ];
 
-// Optimized storage wrapper with size checking
+// ==================== STORAGE UTILITIES ====================
 const preloadStorage = {
   setItem: (key: string, value: any): boolean => {
     try {
@@ -148,7 +195,6 @@ const preloadStorage = {
               version: "minimal",
             };
             localStorage.setItem(key, JSON.stringify(minimalData));
-            console.log("Stored minimal data (25 items only)");
             return true;
           }
         } catch (retryError) {
@@ -179,6 +225,7 @@ const preloadStorage = {
   },
 };
 
+// ==================== MAIN COMPONENT ====================
 export default function AdminLayout({
   children,
 }: {
@@ -187,6 +234,8 @@ export default function AdminLayout({
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+
+  // ==================== STATE ====================
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -196,17 +245,16 @@ export default function AdminLayout({
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const notificationRef = useRef<HTMLDivElement>(null);
-  const preloadedRef = useRef(false);
-
-  // ==================== EMAIL ALERT TOGGLE STATE ====================
-  // CRITICAL FIX: Start with undefined to represent "not loaded" state
   const [emailEnabled, setEmailEnabled] = useState<boolean | undefined>(
     undefined,
   );
   const [togglingEmail, setTogglingEmail] = useState(false);
   const [emailLoaded, setEmailLoaded] = useState(false);
+  const [hoveredNavItem, setHoveredNavItem] = useState<string | null>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const preloadedRef = useRef(false);
 
+  // ==================== SIDEBAR PERSISTENCE ====================
   useEffect(() => {
     const savedState = localStorage.getItem(SIDEBAR_STATE_KEY);
     if (savedState !== null) {
@@ -221,6 +269,7 @@ export default function AdminLayout({
     localStorage.setItem(SIDEBAR_STATE_KEY, String(newState));
   };
 
+  // ==================== NOTIFICATION CLICK OUTSIDE ====================
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -234,34 +283,24 @@ export default function AdminLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ==================== FETCH EMAIL PREFERENCE ====================
+  // ==================== EMAIL PREFERENCE ====================
   const fetchEmailStatus = useCallback(async () => {
     try {
       const result = await getCustomerEmailAlertsPreference();
-      // Get the EXACT value from server - could be undefined, true, or false
       const value = result.data?.customerEmailAlertsEnabled;
-
-      // Set the state to whatever the server returns (even if undefined)
       setEmailEnabled(value);
       setEmailLoaded(true);
-
-      console.log(
-        `📧 Email alert status loaded: ${value === undefined ? "NOT SET (undefined)" : value}`,
-      );
     } catch (error) {
       console.error("Failed to fetch email status:", error);
       setEmailLoaded(true);
-      // Leave emailEnabled as undefined on error
     }
   }, []);
 
-  // ==================== TOGGLE EMAIL ====================
   const handleToggleEmail = useCallback(async () => {
     if (togglingEmail) return;
 
     setTogglingEmail(true);
     try {
-      // Toggle: if currently undefined, default to true for the toggle action
       const currentState = emailEnabled === undefined ? true : emailEnabled;
       const newState = !currentState;
 
@@ -273,19 +312,18 @@ export default function AdminLayout({
         );
       } else {
         toast.error(result.message || "Failed to toggle email settings");
-        // Refresh to get actual state
         await fetchEmailStatus();
       }
     } catch (error) {
       console.error("Failed to toggle email:", error);
       toast.error("Failed to toggle email settings");
-      // Refresh to get actual state
       await fetchEmailStatus();
     } finally {
       setTogglingEmail(false);
     }
   }, [emailEnabled, togglingEmail, fetchEmailStatus]);
 
+  // ==================== PRELOAD APPLICATIONS ====================
   useEffect(() => {
     const preloadApplications = async () => {
       if (!isAuthenticated || !user?.role || preloadedRef.current) return;
@@ -310,9 +348,6 @@ export default function AdminLayout({
         now - cachedTimestamp < PRELOAD_DURATION;
 
       if (hasValidCache) {
-        console.log(
-          `✅ Using cached preload data: ${cachedData.applications.length} applications`,
-        );
         const pending = cachedData.applications.filter(
           (app: any) => app.status === "pending",
         ).length;
@@ -324,7 +359,6 @@ export default function AdminLayout({
       preloadedRef.current = true;
 
       try {
-        console.log("🔄 Preloading applications data once...");
         const data = await getAllApplications({ page: 1, limit: 100 });
         const applicationsList = data.data || [];
 
@@ -339,10 +373,6 @@ export default function AdminLayout({
           (app: any) => app.status === "pending",
         ).length;
         setPendingCount(pending);
-
-        console.log(
-          `✅ Preloaded ${applicationsList.length} applications (${pending} pending)`,
-        );
       } catch (error) {
         console.error("Failed to preload applications:", error);
       }
@@ -351,7 +381,7 @@ export default function AdminLayout({
     preloadApplications();
   }, [isAuthenticated, user]);
 
-  // Fetch overdue invoices count
+  // ==================== FETCH OVERDUE INVOICES ====================
   useEffect(() => {
     const fetchOverdueInvoices = async () => {
       if (!isAuthenticated || !user?.role) return;
@@ -371,6 +401,7 @@ export default function AdminLayout({
     fetchOverdueInvoices();
   }, [isAuthenticated, user]);
 
+  // ==================== GENERATE NOTIFICATIONS ====================
   const generateNotifications = useCallback(() => {
     const newNotifications: Notification[] = [];
 
@@ -383,6 +414,7 @@ export default function AdminLayout({
         time: "Now",
         read: false,
         link: "/admin/applications",
+        icon: "📝",
       });
     }
 
@@ -395,6 +427,7 @@ export default function AdminLayout({
         time: "Now",
         read: false,
         link: "/admin/billing",
+        icon: "🔄",
       });
     }
 
@@ -407,6 +440,7 @@ export default function AdminLayout({
         time: "Now",
         read: false,
         link: "/admin/invoice",
+        icon: "⚠️",
       });
     }
 
@@ -418,13 +452,14 @@ export default function AdminLayout({
     generateNotifications();
   }, [generateNotifications]);
 
-  // Fetch email status on mount - ONLY after auth is ready
+  // ==================== FETCH EMAIL ON AUTH ====================
   useEffect(() => {
     if (isAuthenticated && user?.role && !emailLoaded) {
       fetchEmailStatus();
     }
   }, [isAuthenticated, user, fetchEmailStatus, emailLoaded]);
 
+  // ==================== AUTH GUARD ====================
   useEffect(() => {
     if (!isLoading && mounted) {
       const isAdminUser =
@@ -441,6 +476,7 @@ export default function AdminLayout({
     }
   }, [isAuthenticated, isLoading, user, router, mounted]);
 
+  // ==================== FETCH PENDING PLAN CHANGES ====================
   useEffect(() => {
     const fetchPendingPlanChanges = async () => {
       if (!isAuthenticated || !user?.role) return;
@@ -464,6 +500,7 @@ export default function AdminLayout({
     fetchPendingPlanChanges();
   }, [isAuthenticated, user]);
 
+  // ==================== HANDLERS ====================
   const handleLogout = async () => {
     try {
       await logout();
@@ -481,56 +518,81 @@ export default function AdminLayout({
     toast.success("All notifications marked as read");
   };
 
+  // ==================== COMPUTED ====================
+  const isAdminUser =
+    user !== null &&
+    (user.role === "super_admin" ||
+      user.role === "admin" ||
+      user.role === "staff");
+
+  const isEmailEnabled = emailEnabled === true;
+  const isEmailDisabled = emailEnabled === false;
+  const isEmailNotSet = emailEnabled === undefined;
+
+  // Group nav items by section
+  const groupedNavItems = useMemo(() => {
+    const groups: Record<string, NavItem[]> = {
+      main: [],
+      management: [],
+      financial: [],
+      system: [],
+    };
+    navItems.forEach((item) => {
+      const section = item.section || "main";
+      if (groups[section]) {
+        groups[section].push(item);
+      }
+    });
+    return groups;
+  }, []);
+
+  const sectionLabels: Record<string, string> = {
+    main: "Main",
+    management: "Management",
+    financial: "Financial",
+    system: "System",
+  };
+
+  // ==================== RENDER: LOADING ====================
   if (!mounted || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
         <div className="text-center">
           <div className="relative">
-            <div className="w-20 h-20 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin mx-auto mb-6"></div>
+            <div className="w-20 h-20 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-6"></div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-8 h-8 bg-gray-600 rounded-full animate-pulse"></div>
+              <div className="w-8 h-8 bg-indigo-600 rounded-full animate-pulse"></div>
             </div>
           </div>
-          <p className="text-gray-500 font-medium text-lg">
+          <p className="text-slate-600 font-medium text-lg">
             Loading dashboard...
           </p>
-          <p className="text-gray-400 text-sm mt-2">
-            Please wait while we prepare your workspace
+          <p className="text-slate-400 text-sm mt-2">
+            Preparing your workspace
           </p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) return null;
+  if (!isAuthenticated || !isAdminUser) return null;
 
-  const isAdminUser =
-    user !== null &&
-    (user.role === "super_admin" ||
-      user.role === "admin" ||
-      user.role === "staff");
-  if (!isAdminUser) return null;
-
-  // Determine email display state
-  const isEmailEnabled = emailEnabled === true;
-  const isEmailDisabled = emailEnabled === false;
-  const isEmailNotSet = emailEnabled === undefined;
-
+  // ==================== RENDER: MAIN ====================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
-      {/* Mobile Sidebar Toggle */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+      {/* ==================== MOBILE SIDEBAR TOGGLE ==================== */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-5 left-5 z-50 p-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 backdrop-blur-sm"
+        className="lg:hidden fixed top-5 left-5 z-50 p-3 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-slate-100 backdrop-blur-sm"
       >
         {sidebarOpen ? (
-          <FiX size={22} className="text-gray-500" />
+          <FiX size={22} className="text-slate-500" />
         ) : (
-          <FiMenu size={22} className="text-gray-500" />
+          <FiMenu size={22} className="text-slate-500" />
         )}
       </button>
 
-      {/* Mobile Overlay */}
+      {/* ==================== MOBILE OVERLAY ==================== */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/30 backdrop-blur-sm z-30 lg:hidden transition-all duration-300"
@@ -538,27 +600,37 @@ export default function AdminLayout({
         />
       )}
 
-      {/* Sidebar */}
+      {/* ==================== SIDEBAR ==================== */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white/95 backdrop-blur-md border-r border-gray-100 shadow-xl ${
+        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white backdrop-blur-xl border-r border-slate-100 shadow-2xl shadow-slate-200/50 ${
           sidebarCollapsed ? "w-24" : "w-80"
         } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
       >
         <div className="flex flex-col h-full">
-          {/* Logo Area */}
+          {/* ===== LOGO ===== */}
           <div
-            className={`flex items-center ${sidebarCollapsed ? "justify-center py-6" : "justify-between px-6"} h-28 border-b border-gray-100 bg-gradient-to-r from-white to-gray-50/50`}
+            className={`flex items-center ${sidebarCollapsed ? "justify-center py-6" : "justify-between px-6"} h-28 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50/50`}
           >
             {!sidebarCollapsed && (
-              <div className="flex justify-center w-full">
-                <Image
-                  src="/Logo.png"
-                  alt="Logo"
-                  width={80}
-                  height={80}
-                  className="object-contain"
-                  priority
-                />
+              <div className="flex items-center gap-3">
+                <div className="relative w-12 h-12">
+                  <Image
+                    src="/Logo.png"
+                    alt="MisterFyber"
+                    width={48}
+                    height={48}
+                    className="object-contain"
+                    priority
+                  />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
+                    MisterFyber
+                  </h1>
+                  <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">
+                    Admin Panel
+                  </p>
+                </div>
               </div>
             )}
             {sidebarCollapsed && (
@@ -566,8 +638,8 @@ export default function AdminLayout({
                 <Image
                   src="/Logo.png"
                   alt="Logo"
-                  width={80}
-                  height={80}
+                  width={56}
+                  height={56}
                   className="object-contain"
                   priority
                 />
@@ -575,7 +647,7 @@ export default function AdminLayout({
             )}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg bg-white hover:bg-gray-100 transition-all duration-200 text-gray-400 hover:text-gray-600 shadow-sm border border-gray-200"
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-white hover:bg-slate-50 transition-all duration-200 text-slate-400 hover:text-slate-600 shadow-sm border border-slate-200 hover:border-slate-300"
             >
               {sidebarCollapsed ? (
                 <FiChevronRight size={18} />
@@ -585,26 +657,29 @@ export default function AdminLayout({
             </button>
           </div>
 
-          {/* User Info */}
+          {/* ===== USER PROFILE ===== */}
           <div
-            className={`px-5 py-6 border-b border-gray-100 bg-white ${sidebarCollapsed ? "text-center" : ""}`}
+            className={`px-5 py-6 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50/30 ${
+              sidebarCollapsed ? "text-center" : ""
+            }`}
           >
             <div
               className={`flex ${sidebarCollapsed ? "flex-col items-center" : "items-center"} gap-4`}
             >
               <div className="relative">
-                <div className="w-14 h-14 bg-gradient-to-br from-gray-500 to-gray-700 rounded-2xl flex items-center justify-center shadow-md">
+                <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
                   <span className="text-white font-bold text-2xl">
                     {user?.firstName?.[0] || user?.username?.[0] || "A"}
                   </span>
                 </div>
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-2 border-white"></div>
               </div>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-base font-semibold text-gray-800 truncate">
+                  <p className="text-base font-semibold text-slate-800 truncate">
                     {user?.firstName} {user?.lastName}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5 font-medium">
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
                     {user?.role === "super_admin"
                       ? "Super Administrator"
                       : user?.role === "admin"
@@ -612,62 +687,91 @@ export default function AdminLayout({
                         : "Staff Member"}
                   </p>
                   <div className="flex items-center gap-2 mt-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    <span className="text-xs text-gray-500">Active Now</span>
+                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-slate-500">Online</span>
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 overflow-y-auto">
-            <div className="space-y-1.5">
-              {navItems.map((item) => {
-                const isActive =
-                  pathname === item.href ||
-                  pathname?.startsWith(`${item.href}/`);
-                const showBadge =
-                  (item.name === "Applications" && pendingCount > 0) ||
-                  (item.name === "Billing" && pendingPlanChanges > 0) ||
-                  (item.name === "Invoices" && overdueInvoices > 0);
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 py-3 rounded-xl transition-all duration-200 group ${
-                      isActive
-                        ? "bg-gradient-to-r from-gray-100 to-gray-50 text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <item.icon
-                        className={`${sidebarCollapsed ? "w-6 h-6" : "w-5 h-5 mr-3"} transition-all ${isActive ? "text-gray-700" : "text-gray-400 group-hover:text-gray-600"}`}
-                      />
-                      {!sidebarCollapsed && (
-                        <span className="text-sm font-medium">{item.name}</span>
-                      )}
-                    </div>
-                    {!sidebarCollapsed && showBadge && (
-                      <span className="bg-amber-100 text-amber-700 text-xs px-2.5 py-1 rounded-full font-semibold">
-                        {item.name === "Applications"
-                          ? pendingCount
-                          : item.name === "Invoices"
-                            ? overdueInvoices
-                            : pendingPlanChanges}
-                      </span>
+          {/* ===== NAVIGATION ===== */}
+          <nav className="flex-1 px-4 py-6 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+            {Object.entries(groupedNavItems).map(
+              ([section, items]) =>
+                items.length > 0 && (
+                  <div key={section} className="mb-6">
+                    {!sidebarCollapsed && (
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
+                        {sectionLabels[section] || section}
+                      </p>
                     )}
-                  </Link>
-                );
-              })}
-            </div>
+                    <div className="space-y-1.5">
+                      {items.map((item) => {
+                        const isActive =
+                          pathname === item.href ||
+                          pathname?.startsWith(`${item.href}/`);
+                        const showBadge =
+                          (item.name === "Applications" && pendingCount > 0) ||
+                          (item.name === "Billing" && pendingPlanChanges > 0) ||
+                          (item.name === "Invoices" && overdueInvoices > 0);
+                        const badgeCount =
+                          item.name === "Applications"
+                            ? pendingCount
+                            : item.name === "Invoices"
+                              ? overdueInvoices
+                              : pendingPlanChanges;
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setSidebarOpen(false)}
+                            onMouseEnter={() => setHoveredNavItem(item.name)}
+                            onMouseLeave={() => setHoveredNavItem(null)}
+                            className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+                              isActive
+                                ? "bg-gradient-to-r from-indigo-50 to-indigo-100/50 text-indigo-700 shadow-sm"
+                                : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <item.icon
+                                className={`${sidebarCollapsed ? "w-6 h-6" : "w-5 h-5 mr-3"} transition-all ${
+                                  isActive
+                                    ? "text-indigo-600"
+                                    : "text-slate-400 group-hover:text-slate-600"
+                                }`}
+                              />
+                              {!sidebarCollapsed && (
+                                <span
+                                  className={`text-sm font-medium ${isActive ? "text-indigo-700" : ""}`}
+                                >
+                                  {item.name}
+                                </span>
+                              )}
+                            </div>
+                            {!sidebarCollapsed && showBadge && (
+                              <span className="bg-amber-100 text-amber-700 text-xs px-2.5 py-1 rounded-full font-semibold">
+                                {badgeCount}
+                              </span>
+                            )}
+                            {sidebarCollapsed && showBadge && (
+                              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-amber-100 text-amber-700 text-[10px] rounded-full flex items-center justify-center font-semibold">
+                                {badgeCount}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ),
+            )}
           </nav>
 
-          {/* Bottom Section */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50/30">
+          {/* ===== BOTTOM ACTIONS ===== */}
+          <div className="p-4 border-t border-slate-100 bg-gradient-to-r from-white to-slate-50/50">
             <button
               onClick={handleLogout}
               className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 group`}
@@ -682,37 +786,37 @@ export default function AdminLayout({
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* ==================== MAIN CONTENT ==================== */}
       <div
         className={`transition-all duration-300 ${sidebarCollapsed ? "lg:ml-24" : "lg:ml-80"} min-h-screen`}
       >
-        {/* Top Header */}
-        <header className="bg-white/70 backdrop-blur-md sticky top-0 z-20 border-b border-gray-100 shadow-sm">
+        {/* ===== TOP HEADER ===== */}
+        <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-20 border-b border-slate-100 shadow-sm">
           <div className="flex items-center justify-between px-6 py-4 lg:px-8">
             <div className="flex items-center lg:hidden">
               <div className="w-8"></div>
             </div>
 
             <div className="flex-1 flex justify-end items-center space-x-4">
-              {/* System Status & Email Toggle */}
+              {/* ===== SYSTEM STATUS & EMAIL TOGGLE ===== */}
               <div className="hidden md:flex items-center space-x-3">
-                {/* System Online Status */}
-                <div className="flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100">
-                  <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-gray-600 font-medium">
+                {/* System Status */}
+                <div className="flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100">
+                  <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-slate-600 font-medium">
                     System Online
                   </span>
                 </div>
 
-                {/* Email Alert Toggle Switch - FIXED: No auto toggle */}
-                <div className="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-sm border border-gray-100">
+                {/* Email Toggle */}
+                <div className="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-sm border border-slate-100">
                   <FiEmailIcon
                     className={`w-4 h-4 ${
                       isEmailEnabled
                         ? "text-emerald-600"
                         : isEmailDisabled
-                          ? "text-gray-400"
-                          : "text-yellow-500"
+                          ? "text-slate-400"
+                          : "text-amber-500"
                     }`}
                   />
                   <button
@@ -726,8 +830,8 @@ export default function AdminLayout({
                       isEmailEnabled
                         ? "bg-emerald-500"
                         : isEmailDisabled
-                          ? "bg-gray-300"
-                          : "bg-yellow-400"
+                          ? "bg-slate-300"
+                          : "bg-amber-400"
                     }`}
                     title={
                       !emailLoaded
@@ -754,8 +858,8 @@ export default function AdminLayout({
                       isEmailEnabled
                         ? "text-emerald-600"
                         : isEmailDisabled
-                          ? "text-gray-500"
-                          : "text-yellow-600"
+                          ? "text-slate-500"
+                          : "text-amber-600"
                     }`}
                   >
                     {!emailLoaded
@@ -769,15 +873,15 @@ export default function AdminLayout({
                 </div>
               </div>
 
-              {/* Notifications Dropdown */}
+              {/* ===== NOTIFICATIONS ===== */}
               <div className="relative" ref={notificationRef}>
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                  className="relative p-2.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all duration-200"
                 >
                   <FiBell className="w-5 h-5" />
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-400 text-white text-xs rounded-full flex items-center justify-center shadow-md px-1">
+                    <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-rose-400 text-white text-xs rounded-full flex items-center justify-center shadow-md px-1">
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                   )}
@@ -785,15 +889,15 @@ export default function AdminLayout({
 
                 {/* Notification Panel */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-3 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fadeInDown">
-                    <div className="flex justify-between items-center px-6 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                      <h3 className="font-semibold text-gray-800">
+                  <div className="absolute right-0 mt-3 w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-fadeInDown">
+                    <div className="flex justify-between items-center px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+                      <h3 className="font-semibold text-slate-800">
                         Notifications
                       </h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
-                          className="text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors"
+                          className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors"
                         >
                           Mark all read
                         </button>
@@ -803,14 +907,14 @@ export default function AdminLayout({
                     <div className="max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
                         <div className="px-6 py-12 text-center">
-                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <FiBell className="w-8 h-8 text-gray-300" />
+                          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <FiBell className="w-8 h-8 text-slate-300" />
                           </div>
-                          <p className="text-gray-500 font-medium">
+                          <p className="text-slate-500 font-medium">
                             No new notifications
                           </p>
-                          <p className="text-gray-400 text-sm mt-1">
-                            You're all caught up!
+                          <p className="text-slate-400 text-sm mt-1">
+                            You&apos;re all caught up!
                           </p>
                         </div>
                       ) : (
@@ -831,45 +935,29 @@ export default function AdminLayout({
                                 setUnreadCount((prev) => Math.max(0, prev - 1));
                               }
                             }}
-                            className={`block px-6 py-4 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 ${
-                              !notification.read ? "bg-gray-50/50" : ""
+                            className={`block px-6 py-4 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${
+                              !notification.read ? "bg-slate-50/50" : ""
                             }`}
                           >
                             <div className="flex items-start gap-3">
                               <div
-                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-gray-600" : "bg-gray-300"}`}
+                                className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-indigo-600" : "bg-slate-300"}`}
                               ></div>
                               <div className="flex-1">
-                                <p className="font-semibold text-gray-800 text-sm">
+                                <p className="font-semibold text-slate-800 text-sm">
                                   {notification.title}
                                 </p>
-                                <p className="text-gray-500 text-xs mt-1">
+                                <p className="text-slate-500 text-xs mt-1">
                                   {notification.description}
                                 </p>
-                                <p className="text-gray-400 text-xs mt-2 flex items-center gap-1">
-                                  <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                <p className="text-slate-400 text-xs mt-2 flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                                   {notification.time}
                                 </p>
                               </div>
-                              {notification.type === "application" && (
-                                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                                  <span className="text-amber-600 text-sm">
-                                    📝
-                                  </span>
-                                </div>
-                              )}
-                              {notification.type === "billing" && (
-                                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                                  <span className="text-blue-600 text-sm font-bold">
-                                    ₱
-                                  </span>
-                                </div>
-                              )}
-                              {notification.type === "invoice" && (
-                                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                                  <span className="text-red-600 text-sm">
-                                    📄
-                                  </span>
+                              {notification.icon && (
+                                <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg">
+                                  {notification.icon}
                                 </div>
                               )}
                             </div>
@@ -878,10 +966,10 @@ export default function AdminLayout({
                       )}
                     </div>
 
-                    <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 text-center">
+                    <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center">
                       <button
                         onClick={() => setShowNotifications(false)}
-                        className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                        className="text-xs text-slate-500 hover:text-slate-700 font-medium"
                       >
                         Close
                       </button>
@@ -890,10 +978,10 @@ export default function AdminLayout({
                 )}
               </div>
 
-              {/* Admin Badge */}
-              <div className="flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100">
-                <FiActivity className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-600 font-medium">
+              {/* ===== ADMIN BADGE ===== */}
+              <div className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100">
+                <FiActivity className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-600 font-medium">
                   {user?.role === "super_admin"
                     ? "Super Admin"
                     : user?.role === "admin"
@@ -905,10 +993,11 @@ export default function AdminLayout({
           </div>
         </header>
 
-        {/* Page Content */}
+        {/* ===== PAGE CONTENT ===== */}
         <main className="p-6 lg:p-8">{children}</main>
       </div>
 
+      {/* ==================== GLOBAL STYLES ==================== */}
       <style jsx>{`
         @keyframes fadeInDown {
           from {
@@ -922,6 +1011,21 @@ export default function AdminLayout({
         }
         .animate-fadeInDown {
           animation: fadeInDown 0.25s ease-out;
+        }
+
+        /* Custom scrollbar */
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 4px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: #e2e8f0;
+          border-radius: 9999px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+          background: #cbd5e1;
         }
       `}</style>
     </div>
