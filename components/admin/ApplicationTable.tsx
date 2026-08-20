@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - ADDRESS & PLAN SHOWING
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - PLANS LOADING CORRECTLY
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -59,53 +59,89 @@ const formatPrice = (price: number | undefined | null): string => {
   return price.toFixed(2);
 };
 
+// FIXED: Get speed from plan - handles both populated object and string ID
 const getSpeed = (plan: any): string => {
   if (!plan) return "N/A";
-  if (plan.speed?.download) return `${plan.speed.download} Mbps`;
-  if (plan.speed) return `${plan.speed} Mbps`;
+
+  // If plan is an object with speed
+  if (typeof plan === "object") {
+    if (plan.speed) {
+      if (typeof plan.speed === "object") {
+        if (plan.speed.download) return `${plan.speed.download} Mbps`;
+        if (plan.speed.downloadSpeed) return `${plan.speed.downloadSpeed} Mbps`;
+      }
+      if (typeof plan.speed === "string" || typeof plan.speed === "number") {
+        return `${plan.speed} Mbps`;
+      }
+    }
+    // Check for speed directly on plan
+    if (plan.downloadSpeed) return `${plan.downloadSpeed} Mbps`;
+    if (plan.download) return `${plan.download} Mbps`;
+  }
+
   return "N/A";
 };
 
-// FIXED: Get plan name from nested planId object
-const getPlanName = (app: any): string => {
+// FIXED: Get plan name - uses plansMap for lookup
+const getPlanName = (app: any, plansMap: Map<string, Plan>): string => {
   if (!app) return "N/A";
 
-  // Check if planId is populated (object with name)
+  // If planId is a populated object with name
   if (app.planId && typeof app.planId === "object") {
     if (app.planId.name) return app.planId.name;
+    if (app.planId.planName) return app.planId.planName;
   }
 
-  // Check if plan is populated
+  // If plan is populated
   if (app.plan && typeof app.plan === "object") {
     if (app.plan.name) return app.plan.name;
+    if (app.plan.planName) return app.plan.planName;
   }
 
-  // Check for planName field
-  if (app.planName && app.planName !== "N/A") return app.planName;
+  // Check for planName field directly
+  if (app.planName && app.planName !== "N/A" && app.planName !== "undefined") {
+    return app.planName;
+  }
 
-  // Check if planId is a string ID
+  // Check for plan field
+  if (app.plan && typeof app.plan === "string" && app.plan !== "N/A") {
+    return app.plan;
+  }
+
+  // If planId is a string ID, look it up in the plans map
   if (app.planId && typeof app.planId === "string") {
-    return "Plan ID: " + app.planId.substring(0, 8);
+    const plan = plansMap.get(app.planId);
+    if (plan) return plan.name;
+    return "Loading...";
   }
 
   return "N/A";
 };
 
-// FIXED: Get plan price from nested planId object
-const getPlanPrice = (app: any): number => {
+// FIXED: Get plan price - uses plansMap for lookup
+const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
   if (!app) return 0;
 
-  // Check if planId is populated (object with price)
+  // If planId is a populated object with price
   if (app.planId && typeof app.planId === "object") {
     if (app.planId.price !== undefined && app.planId.price !== null) {
       return Number(app.planId.price);
     }
+    if (
+      app.planId.monthlyPrice !== undefined &&
+      app.planId.monthlyPrice !== null
+    ) {
+      return Number(app.planId.monthlyPrice);
+    }
   }
 
-  // Check if plan is populated
+  // If plan is populated
   if (app.plan && typeof app.plan === "object") {
     if (app.plan.price !== undefined && app.plan.price !== null) {
       return Number(app.plan.price);
+    }
+    if (app.plan.monthlyPrice !== undefined && app.plan.monthlyPrice !== null) {
+      return Number(app.plan.monthlyPrice);
     }
   }
 
@@ -114,39 +150,75 @@ const getPlanPrice = (app: any): number => {
     return Number(app.planPrice);
   }
 
+  // Check for price field
+  if (app.price !== undefined && app.price !== null) {
+    return Number(app.price);
+  }
+
+  // If planId is a string ID, look it up in the plans map
+  if (app.planId && typeof app.planId === "string") {
+    const plan = plansMap.get(app.planId);
+    if (plan) return Number(plan.price);
+  }
+
   return 0;
 };
 
-// FIXED: Get building name from nested buildingId object
-const getBuildingName = (app: any): string => {
+// FIXED: Get plan speed - uses plansMap for lookup
+const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
   if (!app) return "N/A";
 
-  // Check if buildingId is populated (object with buildingName)
-  if (app.buildingId && typeof app.buildingId === "object") {
-    if (app.buildingId.buildingName) return app.buildingId.buildingName;
+  // If planId is a populated object with speed
+  if (app.planId && typeof app.planId === "object") {
+    return getSpeed(app.planId);
   }
 
-  // Check if building is populated
-  if (app.building && typeof app.building === "object") {
-    if (app.building.buildingName) return app.building.buildingName;
+  // If plan is populated
+  if (app.plan && typeof app.plan === "object") {
+    return getSpeed(app.plan);
   }
 
-  // Check for buildingName field
-  if (app.buildingName) return app.buildingName;
-
-  // Check if buildingId is a string ID
-  if (app.buildingId && typeof app.buildingId === "string") {
-    return "Building ID: " + app.buildingId.substring(0, 8);
+  // If planId is a string ID, look it up in the plans map
+  if (app.planId && typeof app.planId === "string") {
+    const plan = plansMap.get(app.planId);
+    if (plan) return getSpeed(plan);
   }
 
   return "N/A";
 };
 
-// FIXED: Get building address from nested buildingId object
+// FIXED: Get building name - handles both populated object and string ID
+const getBuildingName = (app: any): string => {
+  if (!app) return "N/A";
+
+  // If buildingId is a populated object with buildingName
+  if (app.buildingId && typeof app.buildingId === "object") {
+    if (app.buildingId.buildingName) return app.buildingId.buildingName;
+    if (app.buildingId.name) return app.buildingId.name;
+  }
+
+  // If building is populated
+  if (app.building && typeof app.building === "object") {
+    if (app.building.buildingName) return app.building.buildingName;
+    if (app.building.name) return app.building.name;
+  }
+
+  // Check for buildingName field
+  if (app.buildingName && app.buildingName !== "N/A") return app.buildingName;
+
+  // If buildingId is a string ID
+  if (app.buildingId && typeof app.buildingId === "string") {
+    return "Loading...";
+  }
+
+  return "N/A";
+};
+
+// FIXED: Get building address - handles both populated object and string ID
 const getBuildingAddress = (app: any): string => {
   if (!app) return "—";
 
-  // Check if buildingId is populated (object with address fields)
+  // If buildingId is a populated object with address fields
   if (app.buildingId && typeof app.buildingId === "object") {
     const b = app.buildingId;
     const parts = [
@@ -162,7 +234,7 @@ const getBuildingAddress = (app: any): string => {
     }
   }
 
-  // Check if building is populated
+  // If building is populated
   if (app.building && typeof app.building === "object") {
     const b = app.building;
     const parts = [
@@ -235,6 +307,7 @@ export default function ApplicationTable() {
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -269,6 +342,16 @@ export default function ApplicationTable() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const dataLoadedRef = useRef(false);
+  const plansLoadedRef = useRef(false);
+
+  // Create a map of plans for quick lookup
+  const plansMap = useMemo(() => {
+    const map = new Map<string, Plan>();
+    plans.forEach((plan) => {
+      map.set(plan._id, plan);
+    });
+    return map;
+  }, [plans]);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -330,11 +413,36 @@ export default function ApplicationTable() {
     };
   }, []);
 
+  // Load plans when component mounts
+  useEffect(() => {
+    loadPlans();
+  }, []);
+
   useEffect(() => {
     if (showAddCustomerModal) {
       loadBuildingsAndPlans();
     }
   }, [showAddCustomerModal]);
+
+  const loadPlans = async () => {
+    if (plansLoadedRef.current) return;
+    try {
+      console.log("📡 Loading plans...");
+      const plansData = await getAllPlans();
+      console.log(`✅ Loaded ${plansData.length} plans`);
+      setPlans(plansData);
+      setPlansLoaded(true);
+      plansLoadedRef.current = true;
+    } catch (error) {
+      console.error("Failed to load plans:", error);
+      // Retry after 3 seconds
+      setTimeout(() => {
+        if (!plansLoadedRef.current) {
+          loadPlans();
+        }
+      }, 3000);
+    }
+  };
 
   const loadBuildingsAndPlans = async () => {
     try {
@@ -344,6 +452,8 @@ export default function ApplicationTable() {
       ]);
       setBuildings(buildingsData);
       setPlans(plansData);
+      setPlansLoaded(true);
+      plansLoadedRef.current = true;
     } catch (error) {
       console.error("Failed to load buildings/plans:", error);
       toast.error("Failed to load buildings and plans");
@@ -393,8 +503,9 @@ export default function ApplicationTable() {
       // Log sample data for debugging
       if (applicationsList.length > 0) {
         console.log("📊 Sample application data:", applicationsList[0]);
-        console.log("📊 Plan data:", applicationsList[0].planId);
-        console.log("📊 Building data:", applicationsList[0].buildingId);
+        console.log("📊 Plan ID:", applicationsList[0].planId);
+        console.log("📊 Building ID:", applicationsList[0].buildingId);
+        console.log("📊 Plans available:", plans.length);
       }
 
       const totalApps = applicationsList.length;
@@ -417,7 +528,7 @@ export default function ApplicationTable() {
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
-  }, [extractApplicationsArray]);
+  }, [extractApplicationsArray, plans.length]);
 
   // ============ FETCH PAGINATED APPLICATIONS - NO CACHE ============
   const fetchApplications = useCallback(async () => {
@@ -439,8 +550,9 @@ export default function ApplicationTable() {
       // Log sample data for debugging
       if (applicationsList.length > 0) {
         console.log("📊 Sample application data:", applicationsList[0]);
-        console.log("📊 Plan data:", applicationsList[0].planId);
-        console.log("📊 Building data:", applicationsList[0].buildingId);
+        console.log("📊 Plan ID:", applicationsList[0].planId);
+        console.log("📊 Building ID:", applicationsList[0].buildingId);
+        console.log("📊 Plans available:", plans.length);
       }
 
       const totalApps = applicationsList.length;
@@ -462,7 +574,7 @@ export default function ApplicationTable() {
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
-  }, [extractApplicationsArray]);
+  }, [extractApplicationsArray, plans.length]);
 
   // ============ CHECK FOR NEW APPLICANTS ============
   const checkForNewApplicants = useCallback(async () => {
@@ -533,12 +645,14 @@ export default function ApplicationTable() {
   // LOAD DATA - NO CACHE
   // ============================================================
   useEffect(() => {
+    // Only fetch applications if plans are loaded or we have no plans yet
     console.log("📡 Fetching applications...");
     if (showAllMode) {
       fetchAllApplications();
     } else {
       fetchApplications();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAllMode]);
 
   const quickRefresh = useCallback(async () => {
@@ -732,7 +846,7 @@ export default function ApplicationTable() {
     const buildingSet = new Set<string>();
     applications.forEach((app: any) => {
       const name = getBuildingName(app);
-      if (name && name !== "N/A" && name !== "Building ID: ") {
+      if (name && name !== "N/A" && name !== "Loading...") {
         buildingSet.add(name);
       }
     });
@@ -1470,17 +1584,19 @@ export default function ApplicationTable() {
                     (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                   const buildingName = getBuildingName(app);
                   const buildingAddress = getBuildingAddress(app);
-                  const planName = getPlanName(app);
-                  const planPrice = getPlanPrice(app);
+                  const planName = getPlanName(app, plansMap);
+                  const planPrice = getPlanPrice(app, plansMap);
+                  const planSpeed = getPlanSpeed(app, plansMap);
 
-                  // Build plan display string
+                  // Build plan display string with speed
                   let planDisplay = "N/A";
-                  if (planName !== "N/A") {
-                    const speed = getSpeed(app.planId);
+                  if (planName !== "N/A" && planName !== "Loading...") {
                     planDisplay =
-                      speed !== "N/A"
-                        ? `${planName} (${speed})`
+                      planSpeed !== "N/A"
+                        ? `${planName} (${planSpeed})`
                         : `${planName}`;
+                  } else if (planName === "Loading...") {
+                    planDisplay = "Loading plan...";
                   }
 
                   return (
@@ -1777,19 +1893,19 @@ export default function ApplicationTable() {
                   <div>
                     <span className="text-gray-500">Plan:</span>{" "}
                     <span className="font-medium">
-                      {getPlanName(selectedApp)}
+                      {getPlanName(selectedApp, plansMap)}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Price:</span>{" "}
                     <span className="font-medium">
-                      ₱{formatPrice(getPlanPrice(selectedApp))}/month
+                      ₱{formatPrice(getPlanPrice(selectedApp, plansMap))}/month
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Speed:</span>{" "}
                     <span className="font-medium">
-                      {getSpeed(selectedApp.planId)}
+                      {getPlanSpeed(selectedApp, plansMap)}
                     </span>
                   </div>
                 </div>
@@ -1971,8 +2087,10 @@ export default function ApplicationTable() {
                   <strong>App ID:</strong> {selectedAppForBilling.applicationId}
                 </p>
                 <p className="text-xs text-blue-800">
-                  <strong>Plan:</strong> {getPlanName(selectedAppForBilling)} -
-                  ₱{formatPrice(getPlanPrice(selectedAppForBilling))}/month
+                  <strong>Plan:</strong>{" "}
+                  {getPlanName(selectedAppForBilling, plansMap)} - ₱
+                  {formatPrice(getPlanPrice(selectedAppForBilling, plansMap))}
+                  /month
                 </p>
                 <p className="text-xs text-blue-800">
                   <strong>Building:</strong>{" "}
