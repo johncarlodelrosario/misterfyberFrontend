@@ -586,9 +586,9 @@ export default function AdminLayout({
         className="lg:hidden fixed top-5 left-5 z-50 p-3 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-slate-100 backdrop-blur-sm"
       >
         {sidebarOpen ? (
-          <FiX size={22} className="text-slate-500" />
+          <FiX size={22} className="text-black" />
         ) : (
-          <FiMenu size={22} className="text-slate-500" />
+          <FiMenu size={22} className="text-black" />
         )}
       </button>
 
@@ -647,12 +647,12 @@ export default function AdminLayout({
             )}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-white hover:bg-slate-50 transition-all duration-200 text-slate-400 hover:text-slate-600 shadow-sm border border-slate-200 hover:border-slate-300"
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-white hover:bg-slate-50 transition-all duration-200 text-black hover:text-black shadow-sm border border-slate-200 hover:border-slate-300"
             >
               {sidebarCollapsed ? (
-                <FiChevronRight size={18} />
+                <FiChevronRight size={18} className="text-black" />
               ) : (
-                <FiChevronLeft size={18} />
+                <FiChevronLeft size={18} className="text-black" />
               )}
             </button>
           </div>
@@ -676,10 +676,10 @@ export default function AdminLayout({
               </div>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-base font-semibold text-slate-800 truncate">
+                  <p className="text-base font-semibold text-black truncate">
                     {user?.firstName} {user?.lastName}
                   </p>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  <p className="text-xs text-black mt-0.5 font-medium">
                     {user?.role === "super_admin"
                       ? "Super Administrator"
                       : user?.role === "admin"
@@ -688,7 +688,7 @@ export default function AdminLayout({
                   </p>
                   <div className="flex items-center gap-2 mt-2">
                     <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-slate-500">Online</span>
+                    <span className="text-xs text-black">Online</span>
                   </div>
                 </div>
               )}
@@ -702,7 +702,7 @@ export default function AdminLayout({
                 items.length > 0 && (
                   <div key={section} className="mb-6">
                     {!sidebarCollapsed && (
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
+                      <p className="text-[10px] font-semibold text-black uppercase tracking-wider px-3 mb-3">
                         {sectionLabels[section] || section}
                       </p>
                     )}
@@ -731,33 +731,33 @@ export default function AdminLayout({
                             onMouseLeave={() => setHoveredNavItem(null)}
                             className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"} px-4 py-3 rounded-xl transition-all duration-200 group relative ${
                               isActive
-                                ? "bg-gradient-to-r from-indigo-50 to-indigo-100/50 text-indigo-700 shadow-sm"
-                                : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                                ? "bg-gradient-to-r from-indigo-50 to-indigo-100/50 text-black shadow-sm"
+                                : "text-black hover:bg-slate-50 hover:text-black"
                             }`}
                           >
                             <div className="flex items-center">
                               <item.icon
                                 className={`${sidebarCollapsed ? "w-6 h-6" : "w-5 h-5 mr-3"} transition-all ${
                                   isActive
-                                    ? "text-indigo-600"
-                                    : "text-slate-400 group-hover:text-slate-600"
+                                    ? "text-black"
+                                    : "text-black group-hover:text-black"
                                 }`}
                               />
                               {!sidebarCollapsed && (
                                 <span
-                                  className={`text-sm font-medium ${isActive ? "text-indigo-700" : ""}`}
+                                  className={`text-sm font-medium ${isActive ? "text-black" : "text-black"}`}
                                 >
                                   {item.name}
                                 </span>
                               )}
                             </div>
                             {!sidebarCollapsed && showBadge && (
-                              <span className="bg-amber-100 text-amber-700 text-xs px-2.5 py-1 rounded-full font-semibold">
+                              <span className="bg-amber-100 text-black text-xs px-2.5 py-1 rounded-full font-semibold">
                                 {badgeCount}
                               </span>
                             )}
                             {sidebarCollapsed && showBadge && (
-                              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-amber-100 text-amber-700 text-[10px] rounded-full flex items-center justify-center font-semibold">
+                              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-amber-100 text-black text-[10px] rounded-full flex items-center justify-center font-semibold">
                                 {badgeCount}
                               </span>
                             )}
@@ -774,13 +774,15 @@ export default function AdminLayout({
           <div className="p-4 border-t border-slate-100 bg-gradient-to-r from-white to-slate-50/50">
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 group`}
+              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm text-black hover:text-black hover:bg-red-50 rounded-xl transition-all duration-200 group`}
               title="Logout"
             >
               <FiLogOut
-                className={`${sidebarCollapsed ? "w-5 h-5" : "w-5 h-5 mr-3"} group-hover:scale-110 transition-transform duration-300`}
+                className={`${sidebarCollapsed ? "w-5 h-5" : "w-5 h-5 mr-3"} text-black group-hover:scale-110 transition-transform duration-300`}
               />
-              {!sidebarCollapsed && <span className="font-medium">Logout</span>}
+              {!sidebarCollapsed && (
+                <span className="font-medium text-black">Logout</span>
+              )}
             </button>
           </div>
         </div>
@@ -803,22 +805,14 @@ export default function AdminLayout({
                 {/* System Status */}
                 <div className="flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100">
                   <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-slate-600 font-medium">
+                  <span className="text-sm text-black font-medium">
                     System Online
                   </span>
                 </div>
 
                 {/* Email Toggle */}
                 <div className="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-sm border border-slate-100">
-                  <FiEmailIcon
-                    className={`w-4 h-4 ${
-                      isEmailEnabled
-                        ? "text-emerald-600"
-                        : isEmailDisabled
-                          ? "text-slate-400"
-                          : "text-amber-500"
-                    }`}
-                  />
+                  <FiEmailIcon className={`w-4 h-4 text-black`} />
                   <button
                     onClick={handleToggleEmail}
                     disabled={togglingEmail || !emailLoaded}
@@ -853,15 +847,7 @@ export default function AdminLayout({
                       />
                     )}
                   </button>
-                  <span
-                    className={`text-xs font-medium ${
-                      isEmailEnabled
-                        ? "text-emerald-600"
-                        : isEmailDisabled
-                          ? "text-slate-500"
-                          : "text-amber-600"
-                    }`}
-                  >
+                  <span className={`text-xs font-medium text-black`}>
                     {!emailLoaded
                       ? "..."
                       : isEmailEnabled
@@ -877,9 +863,9 @@ export default function AdminLayout({
               <div className="relative" ref={notificationRef}>
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all duration-200"
+                  className="relative p-2.5 text-black hover:text-black hover:bg-slate-100 rounded-xl transition-all duration-200"
                 >
-                  <FiBell className="w-5 h-5" />
+                  <FiBell className="w-5 h-5 text-black" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-rose-400 text-white text-xs rounded-full flex items-center justify-center shadow-md px-1">
                       {unreadCount > 9 ? "9+" : unreadCount}
@@ -891,13 +877,13 @@ export default function AdminLayout({
                 {showNotifications && (
                   <div className="absolute right-0 mt-3 w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-fadeInDown">
                     <div className="flex justify-between items-center px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                      <h3 className="font-semibold text-slate-800">
+                      <h3 className="font-semibold text-black">
                         Notifications
                       </h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
-                          className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors"
+                          className="text-xs text-black hover:text-black font-medium transition-colors"
                         >
                           Mark all read
                         </button>
@@ -908,12 +894,12 @@ export default function AdminLayout({
                       {notifications.length === 0 ? (
                         <div className="px-6 py-12 text-center">
                           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <FiBell className="w-8 h-8 text-slate-300" />
+                            <FiBell className="w-8 h-8 text-black" />
                           </div>
-                          <p className="text-slate-500 font-medium">
+                          <p className="text-black font-medium">
                             No new notifications
                           </p>
-                          <p className="text-slate-400 text-sm mt-1">
+                          <p className="text-black text-sm mt-1">
                             You&apos;re all caught up!
                           </p>
                         </div>
@@ -944,13 +930,13 @@ export default function AdminLayout({
                                 className={`w-2 h-2 rounded-full mt-2 ${!notification.read ? "bg-indigo-600" : "bg-slate-300"}`}
                               ></div>
                               <div className="flex-1">
-                                <p className="font-semibold text-slate-800 text-sm">
+                                <p className="font-semibold text-black text-sm">
                                   {notification.title}
                                 </p>
-                                <p className="text-slate-500 text-xs mt-1">
+                                <p className="text-black text-xs mt-1">
                                   {notification.description}
                                 </p>
-                                <p className="text-slate-400 text-xs mt-2 flex items-center gap-1">
+                                <p className="text-black text-xs mt-2 flex items-center gap-1">
                                   <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                                   {notification.time}
                                 </p>
@@ -969,7 +955,7 @@ export default function AdminLayout({
                     <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center">
                       <button
                         onClick={() => setShowNotifications(false)}
-                        className="text-xs text-slate-500 hover:text-slate-700 font-medium"
+                        className="text-xs text-black hover:text-black font-medium"
                       >
                         Close
                       </button>
@@ -980,8 +966,8 @@ export default function AdminLayout({
 
               {/* ===== ADMIN BADGE ===== */}
               <div className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100">
-                <FiActivity className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-600 font-medium">
+                <FiActivity className="w-4 h-4 text-black" />
+                <span className="text-sm text-black font-medium">
                   {user?.role === "super_admin"
                     ? "Super Admin"
                     : user?.role === "admin"
