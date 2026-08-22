@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - PLANS LOADING CORRECTLY
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - SHOWS ALL DATA (NO LIMIT)
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -59,11 +59,9 @@ const formatPrice = (price: number | undefined | null): string => {
   return price.toFixed(2);
 };
 
-// FIXED: Get speed from plan - handles both populated object and string ID
 const getSpeed = (plan: any): string => {
   if (!plan) return "N/A";
 
-  // If plan is an object with speed
   if (typeof plan === "object") {
     if (plan.speed) {
       if (typeof plan.speed === "object") {
@@ -74,7 +72,6 @@ const getSpeed = (plan: any): string => {
         return `${plan.speed} Mbps`;
       }
     }
-    // Check for speed directly on plan
     if (plan.downloadSpeed) return `${plan.downloadSpeed} Mbps`;
     if (plan.download) return `${plan.download} Mbps`;
   }
@@ -82,33 +79,27 @@ const getSpeed = (plan: any): string => {
   return "N/A";
 };
 
-// FIXED: Get plan name - uses plansMap for lookup
 const getPlanName = (app: any, plansMap: Map<string, Plan>): string => {
   if (!app) return "N/A";
 
-  // If planId is a populated object with name
   if (app.planId && typeof app.planId === "object") {
     if (app.planId.name) return app.planId.name;
     if (app.planId.planName) return app.planId.planName;
   }
 
-  // If plan is populated
   if (app.plan && typeof app.plan === "object") {
     if (app.plan.name) return app.plan.name;
     if (app.plan.planName) return app.plan.planName;
   }
 
-  // Check for planName field directly
   if (app.planName && app.planName !== "N/A" && app.planName !== "undefined") {
     return app.planName;
   }
 
-  // Check for plan field
   if (app.plan && typeof app.plan === "string" && app.plan !== "N/A") {
     return app.plan;
   }
 
-  // If planId is a string ID, look it up in the plans map
   if (app.planId && typeof app.planId === "string") {
     const plan = plansMap.get(app.planId);
     if (plan) return plan.name;
@@ -118,11 +109,9 @@ const getPlanName = (app: any, plansMap: Map<string, Plan>): string => {
   return "N/A";
 };
 
-// FIXED: Get plan price - uses plansMap for lookup
 const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
   if (!app) return 0;
 
-  // If planId is a populated object with price
   if (app.planId && typeof app.planId === "object") {
     if (app.planId.price !== undefined && app.planId.price !== null) {
       return Number(app.planId.price);
@@ -135,7 +124,6 @@ const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
     }
   }
 
-  // If plan is populated
   if (app.plan && typeof app.plan === "object") {
     if (app.plan.price !== undefined && app.plan.price !== null) {
       return Number(app.plan.price);
@@ -145,17 +133,14 @@ const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
     }
   }
 
-  // Check for planPrice field
   if (app.planPrice !== undefined && app.planPrice !== null) {
     return Number(app.planPrice);
   }
 
-  // Check for price field
   if (app.price !== undefined && app.price !== null) {
     return Number(app.price);
   }
 
-  // If planId is a string ID, look it up in the plans map
   if (app.planId && typeof app.planId === "string") {
     const plan = plansMap.get(app.planId);
     if (plan) return Number(plan.price);
@@ -164,21 +149,17 @@ const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
   return 0;
 };
 
-// FIXED: Get plan speed - uses plansMap for lookup
 const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
   if (!app) return "N/A";
 
-  // If planId is a populated object with speed
   if (app.planId && typeof app.planId === "object") {
     return getSpeed(app.planId);
   }
 
-  // If plan is populated
   if (app.plan && typeof app.plan === "object") {
     return getSpeed(app.plan);
   }
 
-  // If planId is a string ID, look it up in the plans map
   if (app.planId && typeof app.planId === "string") {
     const plan = plansMap.get(app.planId);
     if (plan) return getSpeed(plan);
@@ -187,26 +168,21 @@ const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
   return "N/A";
 };
 
-// FIXED: Get building name - handles both populated object and string ID
 const getBuildingName = (app: any): string => {
   if (!app) return "N/A";
 
-  // If buildingId is a populated object with buildingName
   if (app.buildingId && typeof app.buildingId === "object") {
     if (app.buildingId.buildingName) return app.buildingId.buildingName;
     if (app.buildingId.name) return app.buildingId.name;
   }
 
-  // If building is populated
   if (app.building && typeof app.building === "object") {
     if (app.building.buildingName) return app.building.buildingName;
     if (app.building.name) return app.building.name;
   }
 
-  // Check for buildingName field
   if (app.buildingName && app.buildingName !== "N/A") return app.buildingName;
 
-  // If buildingId is a string ID
   if (app.buildingId && typeof app.buildingId === "string") {
     return "Loading...";
   }
@@ -214,11 +190,9 @@ const getBuildingName = (app: any): string => {
   return "N/A";
 };
 
-// FIXED: Get building address - handles both populated object and string ID
 const getBuildingAddress = (app: any): string => {
   if (!app) return "—";
 
-  // If buildingId is a populated object with address fields
   if (app.buildingId && typeof app.buildingId === "object") {
     const b = app.buildingId;
     const parts = [
@@ -234,7 +208,6 @@ const getBuildingAddress = (app: any): string => {
     }
   }
 
-  // If building is populated
   if (app.building && typeof app.building === "object") {
     const b = app.building;
     const parts = [
@@ -250,7 +223,6 @@ const getBuildingAddress = (app: any): string => {
     }
   }
 
-  // Check for buildingAddress field
   if (app.buildingAddress && typeof app.buildingAddress === "string") {
     return app.buildingAddress;
   }
@@ -344,7 +316,6 @@ export default function ApplicationTable() {
   const dataLoadedRef = useRef(false);
   const plansLoadedRef = useRef(false);
 
-  // Create a map of plans for quick lookup
   const plansMap = useMemo(() => {
     const map = new Map<string, Plan>();
     plans.forEach((plan) => {
@@ -413,7 +384,6 @@ export default function ApplicationTable() {
     };
   }, []);
 
-  // Load plans when component mounts
   useEffect(() => {
     loadPlans();
   }, []);
@@ -435,7 +405,6 @@ export default function ApplicationTable() {
       plansLoadedRef.current = true;
     } catch (error) {
       console.error("Failed to load plans:", error);
-      // Retry after 3 seconds
       setTimeout(() => {
         if (!plansLoadedRef.current) {
           loadPlans();
@@ -483,7 +452,7 @@ export default function ApplicationTable() {
     return [];
   }, []);
 
-  // ============ FETCH ALL APPLICATIONS - NO CACHE ============
+  // ============ FETCH ALL APPLICATIONS - NO LIMIT ============
   const fetchAllApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -500,24 +469,12 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
-      // Log sample data for debugging
-      if (applicationsList.length > 0) {
-        console.log("📊 Sample application data:", applicationsList[0]);
-        console.log("📊 Plan ID:", applicationsList[0].planId);
-        console.log("📊 Building ID:", applicationsList[0].buildingId);
-        console.log("📊 Plans available:", plans.length);
-      }
-
-      const totalApps = applicationsList.length;
-      console.log(`✅ Received ${totalApps} total applications`);
+      console.log(`✅ Received ${applicationsList.length} total applications`);
 
       setApplications(applicationsList);
-      setTotalCount(totalApps);
+      setTotalCount(applicationsList.length);
       setLastFetchTime(new Date());
 
-      const pending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
       setHasNewApplicant(false);
     } catch (error: any) {
       console.error("Failed to fetch all applications:", error);
@@ -528,9 +485,9 @@ export default function ApplicationTable() {
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
-  }, [extractApplicationsArray, plans.length]);
+  }, [extractApplicationsArray]);
 
-  // ============ FETCH PAGINATED APPLICATIONS - NO CACHE ============
+  // ============ FETCH PAGINATED APPLICATIONS ============
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -547,23 +504,11 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
-      // Log sample data for debugging
-      if (applicationsList.length > 0) {
-        console.log("📊 Sample application data:", applicationsList[0]);
-        console.log("📊 Plan ID:", applicationsList[0].planId);
-        console.log("📊 Building ID:", applicationsList[0].buildingId);
-        console.log("📊 Plans available:", plans.length);
-      }
-
-      const totalApps = applicationsList.length;
-      console.log(`✅ Received ${totalApps} applications`);
+      console.log(`✅ Received ${applicationsList.length} applications`);
       setApplications(applicationsList);
-      setTotalCount(response.total || totalApps);
+      setTotalCount(response.total || applicationsList.length);
       setLastFetchTime(new Date());
 
-      const pending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
       setHasNewApplicant(false);
     } catch (error: any) {
       console.error("Failed to fetch:", error);
@@ -574,7 +519,7 @@ export default function ApplicationTable() {
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
-  }, [extractApplicationsArray, plans.length]);
+  }, [extractApplicationsArray]);
 
   // ============ CHECK FOR NEW APPLICANTS ============
   const checkForNewApplicants = useCallback(async () => {
@@ -596,17 +541,9 @@ export default function ApplicationTable() {
       }
 
       const currentTotal = applicationsList.length;
-      const currentPending = applicationsList.filter(
-        (a: any) => a.status === "pending",
-      ).length;
-
       const lastKnownTotal = totalCount || applications.length;
-      const lastKnownPending = applications.filter(
-        (a: any) => a.status === "pending",
-      ).length;
 
-      const hasNew =
-        currentTotal > lastKnownTotal || currentPending > lastKnownPending;
+      const hasNew = currentTotal > lastKnownTotal;
 
       if (hasNew) {
         console.log(`🆕 New applicant detected!`);
@@ -642,10 +579,9 @@ export default function ApplicationTable() {
   }, [isOnline, loading, checkForNewApplicants]);
 
   // ============================================================
-  // LOAD DATA - NO CACHE
+  // LOAD DATA
   // ============================================================
   useEffect(() => {
-    // Only fetch applications if plans are loaded or we have no plans yet
     console.log("📡 Fetching applications...");
     if (showAllMode) {
       fetchAllApplications();
@@ -892,15 +828,24 @@ export default function ApplicationTable() {
     filter.buildingFilter,
   ]);
 
+  // ============ FIXED: SHOW ALL DATA IN SHOW ALL MODE ============
   const totalPages = useMemo(() => {
+    if (showAllMode) {
+      return 1;
+    }
     return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
-  }, [filteredApplications.length]);
+  }, [filteredApplications.length, showAllMode]);
 
+  // ============ FIXED: RETURN ALL DATA WHEN SHOW ALL MODE ============
   const currentApplications = useMemo(() => {
+    if (showAllMode) {
+      // Return ALL filtered applications - NO SLICING!
+      return filteredApplications;
+    }
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return filteredApplications.slice(startIndex, endIndex);
-  }, [filteredApplications, currentPage]);
+  }, [filteredApplications, currentPage, showAllMode]);
 
   useEffect(() => {
     setTimeout(checkTableScroll, 100);
@@ -960,9 +905,6 @@ export default function ApplicationTable() {
     });
   };
 
-  // ============================================================
-  // FIXED: Submit Application Handler
-  // ============================================================
   const handleAddCustomerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1324,8 +1266,8 @@ export default function ApplicationTable() {
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
             {totalCount || applications.length} total applications
-            {showAllMode && " (All Data)"}
-            {!showAllMode && " (Paginated)"}
+            {showAllMode && " (All Data Mode - No Pagination)"}
+            {!showAllMode && " (Paginated Mode)"}
           </p>
         </div>
 
@@ -1580,15 +1522,15 @@ export default function ApplicationTable() {
                 </tr>
               ) : (
                 currentApplications.map((app: any, idx: number) => {
-                  const globalIndex =
-                    (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  const globalIndex = showAllMode
+                    ? idx + 1
+                    : (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                   const buildingName = getBuildingName(app);
                   const buildingAddress = getBuildingAddress(app);
                   const planName = getPlanName(app, plansMap);
                   const planPrice = getPlanPrice(app, plansMap);
                   const planSpeed = getPlanSpeed(app, plansMap);
 
-                  // Build plan display string with speed
                   let planDisplay = "N/A";
                   if (planName !== "N/A" && planName !== "Loading...") {
                     planDisplay =
@@ -1716,37 +1658,40 @@ export default function ApplicationTable() {
           </table>
           <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
             <span>
-              Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{" "}
-              {Math.min(
-                currentPage * ITEMS_PER_PAGE,
-                filteredApplications.length,
-              )}{" "}
-              of {filteredApplications.length} applications
-              {showAllMode && " (All Data Mode)"}
+              {showAllMode
+                ? `Showing all ${filteredApplications.length} applications (All Data Mode - No Pagination)`
+                : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(
+                    currentPage * ITEMS_PER_PAGE,
+                    filteredApplications.length,
+                  )} of ${filteredApplications.length} applications`}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-              >
-                <FiChevronLeft className="w-3.5 h-3.5" />
-                Prev
-              </button>
-              <span className="text-xs text-gray-700">
-                Page {currentPage} of {totalPages || 1}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                }
-                disabled={currentPage === totalPages || totalPages === 0}
-                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-              >
-                Next
-                <FiChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {!showAllMode && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(prev - 1, 1))
+                  }
+                  disabled={currentPage === 1}
+                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+                >
+                  <FiChevronLeft className="w-3.5 h-3.5" />
+                  Prev
+                </button>
+                <span className="text-xs text-gray-700">
+                  Page {currentPage} of {totalPages || 1}
+                </span>
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+                >
+                  Next
+                  <FiChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
