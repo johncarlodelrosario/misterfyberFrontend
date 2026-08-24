@@ -1,4 +1,4 @@
-// app/admin/applications/page.tsx
+// app/admin/applications/page.tsx - COMPLETE
 import ApplicationTable from "@/components/admin/ApplicationTable";
 
 export const metadata = {

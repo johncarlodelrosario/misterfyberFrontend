@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - SHOWS ALL DATA (NO LIMIT)
+// components/admin/ApplicationTable.tsx - OPTIMIZED HYBRID VERSION
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -24,7 +24,6 @@ import {
   FiSearch,
   FiImage,
   FiWifiOff,
-  FiDatabase,
   FiClock,
   FiBell,
   FiPlay,
@@ -261,7 +260,8 @@ export default function ApplicationTable() {
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
 
-  const [showAllMode, setShowAllMode] = useState<boolean>(true);
+  // ✅ DEFAULT: PAGINATED MODE (MAS MABILIS)
+  const [showAllMode, setShowAllMode] = useState<boolean>(false);
 
   const [filter, setFilter] = useState<FilterState>({
     searchTerm: "",
@@ -452,16 +452,18 @@ export default function ApplicationTable() {
     return [];
   }, []);
 
-  // ============ FETCH ALL APPLICATIONS - NO LIMIT ============
-  const fetchAllApplications = useCallback(async () => {
+  // ============ FETCH APPLICATIONS - PAGINATED (DEFAULT - MAS MABILIS) ============
+  const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
     setRefreshing(true);
     setError(null);
 
     try {
-      console.log("🔄 Fetching ALL applications (no limit)...");
-      const response = await getAllApplicationsUnlimited();
+      console.log("🔄 Fetching applications (paginated - FAST)...");
+      const startTime = Date.now();
+
+      const response = await getAllApplications({ page: 1, limit: 100 });
 
       let applicationsList = extractApplicationsArray(response);
 
@@ -469,15 +471,18 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
-      console.log(`✅ Received ${applicationsList.length} total applications`);
+      const elapsed = Date.now() - startTime;
+      console.log(
+        `✅ Received ${applicationsList.length} applications in ${elapsed}ms`,
+      );
 
       setApplications(applicationsList);
-      setTotalCount(applicationsList.length);
+      setTotalCount(response.total || applicationsList.length);
       setLastFetchTime(new Date());
 
       setHasNewApplicant(false);
     } catch (error: any) {
-      console.error("Failed to fetch all applications:", error);
+      console.error("Failed to fetch:", error);
       setError("Unable to connect to server.");
       toast.error("Failed to connect");
     } finally {
@@ -487,16 +492,18 @@ export default function ApplicationTable() {
     }
   }, [extractApplicationsArray]);
 
-  // ============ FETCH PAGINATED APPLICATIONS ============
-  const fetchApplications = useCallback(async () => {
+  // ============ FETCH ALL APPLICATIONS - NO LIMIT (MAS MABAGAL PERO COMPLETE) ============
+  const fetchAllApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
     setRefreshing(true);
     setError(null);
 
     try {
-      console.log("🔄 Fetching applications (paginated)...");
-      const response = await getAllApplications({ page: 1, limit: 100 });
+      console.log("🔄 Fetching ALL applications (no limit - SLOWER)...");
+      const startTime = Date.now();
+
+      const response = await getAllApplicationsUnlimited();
 
       let applicationsList = extractApplicationsArray(response);
 
@@ -504,14 +511,18 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
-      console.log(`✅ Received ${applicationsList.length} applications`);
+      const elapsed = Date.now() - startTime;
+      console.log(
+        `✅ Received ${applicationsList.length} total applications in ${elapsed}ms`,
+      );
+
       setApplications(applicationsList);
-      setTotalCount(response.total || applicationsList.length);
+      setTotalCount(applicationsList.length);
       setLastFetchTime(new Date());
 
       setHasNewApplicant(false);
     } catch (error: any) {
-      console.error("Failed to fetch:", error);
+      console.error("Failed to fetch all applications:", error);
       setError("Unable to connect to server.");
       toast.error("Failed to connect");
     } finally {
@@ -579,23 +590,22 @@ export default function ApplicationTable() {
   }, [isOnline, loading, checkForNewApplicants]);
 
   // ============================================================
-  // LOAD DATA
+  // LOAD DATA - DEFAULT PAGINATED MODE
   // ============================================================
   useEffect(() => {
     console.log("📡 Fetching applications...");
-    if (showAllMode) {
-      fetchAllApplications();
-    } else {
-      fetchApplications();
-    }
+    // ✅ DEFAULT: PAGINATED MODE (MAS MABILIS)
+    fetchApplications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAllMode]);
+  }, []);
 
   const quickRefresh = useCallback(async () => {
     if (refreshInProgressRef.current) return;
 
     try {
       console.log("⚡ Quick refresh...");
+      const startTime = Date.now();
+
       if (showAllMode) {
         const response = await getAllApplicationsUnlimited();
         let applicationsList = extractApplicationsArray(response);
@@ -604,6 +614,9 @@ export default function ApplicationTable() {
         setApplications(applicationsList);
         setTotalCount(applicationsList.length);
         setLastFetchTime(new Date());
+        console.log(
+          `✅ Quick refresh (all) completed in ${Date.now() - startTime}ms`,
+        );
       } else {
         const response = await getAllApplications({ page: 1, limit: 100 });
         let applicationsList = extractApplicationsArray(response);
@@ -612,6 +625,9 @@ export default function ApplicationTable() {
         setApplications(applicationsList);
         setTotalCount(response.total || applicationsList.length);
         setLastFetchTime(new Date());
+        console.log(
+          `✅ Quick refresh (paginated) completed in ${Date.now() - startTime}ms`,
+        );
       }
     } catch (error) {
       console.error("Quick refresh failed:", error);
@@ -828,7 +844,6 @@ export default function ApplicationTable() {
     filter.buildingFilter,
   ]);
 
-  // ============ FIXED: SHOW ALL DATA IN SHOW ALL MODE ============
   const totalPages = useMemo(() => {
     if (showAllMode) {
       return 1;
@@ -836,10 +851,8 @@ export default function ApplicationTable() {
     return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
   }, [filteredApplications.length, showAllMode]);
 
-  // ============ FIXED: RETURN ALL DATA WHEN SHOW ALL MODE ============
   const currentApplications = useMemo(() => {
     if (showAllMode) {
-      // Return ALL filtered applications - NO SLICING!
       return filteredApplications;
     }
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -1267,7 +1280,7 @@ export default function ApplicationTable() {
           <p className="text-xs sm:text-sm text-gray-600">
             {totalCount || applications.length} total applications
             {showAllMode && " (All Data Mode - No Pagination)"}
-            {!showAllMode && " (Paginated Mode)"}
+            {!showAllMode && " (Paginated Mode - FAST)"}
           </p>
         </div>
 
@@ -1293,11 +1306,13 @@ export default function ApplicationTable() {
               <>
                 <FiGrid className="w-3.5 h-3.5" />
                 <span className="hidden xs:inline">Show All</span>
+                <span className="xs:hidden">All</span>
               </>
             ) : (
               <>
                 <FiList className="w-3.5 h-3.5" />
                 <span className="hidden xs:inline">Paginated</span>
+                <span className="xs:hidden">Page</span>
               </>
             )}
           </button>
