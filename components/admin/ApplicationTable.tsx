@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - OPTIMIZED HYBRID VERSION
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - INSTANT UPDATE!
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -260,7 +260,6 @@ export default function ApplicationTable() {
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
 
-  // ✅ DEFAULT: PAGINATED MODE (MAS MABILIS)
   const [showAllMode, setShowAllMode] = useState<boolean>(false);
 
   const [filter, setFilter] = useState<FilterState>({
@@ -452,7 +451,6 @@ export default function ApplicationTable() {
     return [];
   }, []);
 
-  // ============ FETCH APPLICATIONS - PAGINATED (DEFAULT - MAS MABILIS) ============
   const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -492,7 +490,6 @@ export default function ApplicationTable() {
     }
   }, [extractApplicationsArray]);
 
-  // ============ FETCH ALL APPLICATIONS - NO LIMIT (MAS MABAGAL PERO COMPLETE) ============
   const fetchAllApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
@@ -532,7 +529,6 @@ export default function ApplicationTable() {
     }
   }, [extractApplicationsArray]);
 
-  // ============ CHECK FOR NEW APPLICANTS ============
   const checkForNewApplicants = useCallback(async () => {
     if (refreshInProgressRef.current) return;
 
@@ -589,14 +585,9 @@ export default function ApplicationTable() {
     };
   }, [isOnline, loading, checkForNewApplicants]);
 
-  // ============================================================
-  // LOAD DATA - DEFAULT PAGINATED MODE
-  // ============================================================
   useEffect(() => {
     console.log("📡 Fetching applications...");
-    // ✅ DEFAULT: PAGINATED MODE (MAS MABILIS)
     fetchApplications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const quickRefresh = useCallback(async () => {
@@ -724,43 +715,93 @@ export default function ApplicationTable() {
     setSelectedApp(app);
   };
 
+  // ============================================================
+  // ✅ FIXED: INSTANT STATUS UPDATE - APPROVE
+  // ============================================================
   const handleApprove = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
-      await approveApplication(id, adminNotes);
-      toast.success("Application approved successfully");
 
+      // ✅ Call API
+      await approveApplication(id, adminNotes);
+
+      // ✅ AGAD NA MAG-TOAST NG SUCCESS
+      toast.success("✅ Application approved successfully!");
+
+      // ✅ AGAD NA I-UPDATE ANG STATUS SA UI
       setApplications((prevApplications) =>
         prevApplications.map((app) =>
-          app._id === id ? { ...app, status: "approved" } : app,
+          app._id === id
+            ? {
+                ...app,
+                status: "approved",
+                billingStarted: app.billingStarted || false,
+                serviceStatus: app.serviceStatus || "pending",
+                reviewedAt: new Date().toISOString(),
+                adminNotes: adminNotes || app.adminNotes || "",
+              }
+            : app,
         ),
       );
 
+      // ✅ AGAD NA I-CLOSE ANG MODAL (PINAKAIMPORTANTE!)
       setSelectedApp(null);
-      setTimeout(() => quickRefresh(), 500);
+
+      // ✅ Background refresh - 100ms lang para smooth
+      setTimeout(() => {
+        quickRefresh();
+      }, 100);
     } catch (error: any) {
+      console.error("❌ Approve error:", error);
       toast.error(error.response?.data?.message || "Failed to approve");
+      // ✅ Kahit may error, i-close ang modal
+      setSelectedApp(null);
     } finally {
       setProcessingId(null);
     }
   };
 
+  // ============================================================
+  // ✅ FIXED: INSTANT STATUS UPDATE - REJECT
+  // ============================================================
   const handleReject = async (id: string, adminNotes?: string) => {
     try {
       setProcessingId(id);
-      await rejectApplication(id, adminNotes);
-      toast.success("Application rejected");
 
+      // ✅ Call API
+      await rejectApplication(id, adminNotes);
+
+      // ✅ AGAD NA MAG-TOAST NG SUCCESS
+      toast.success("❌ Application rejected");
+
+      // ✅ AGAD NA I-UPDATE ANG STATUS SA UI
       setApplications((prevApplications) =>
         prevApplications.map((app) =>
-          app._id === id ? { ...app, status: "rejected" } : app,
+          app._id === id
+            ? {
+                ...app,
+                status: "rejected",
+                billingStarted: app.billingStarted || false,
+                serviceStatus: app.serviceStatus || "pending",
+                reviewedAt: new Date().toISOString(),
+                adminNotes: adminNotes || app.adminNotes || "",
+              }
+            : app,
         ),
       );
 
+      // ✅ AGAD NA I-CLOSE ANG MODAL (PINAKAIMPORTANTE!)
       setSelectedApp(null);
-      setTimeout(() => quickRefresh(), 500);
+
+      // ✅ Background refresh - 100ms lang para smooth
+      setTimeout(() => {
+        quickRefresh();
+      }, 100);
     } catch (error: any) {
+      console.error("❌ Reject error:", error);
       toast.error(error.response?.data?.message || "Failed to reject");
+      // ✅ Kahit may error, i-close ang modal
+      setSelectedApp(null);
     } finally {
       setProcessingId(null);
     }
@@ -779,6 +820,13 @@ export default function ApplicationTable() {
         toast.success(
           `✅ Billing started for ${app.firstName} ${app.lastName}!`,
         );
+
+        setApplications((prevApplications) =>
+          prevApplications.map((a) =>
+            a._id === app._id ? { ...a, billingStarted: true } : a,
+          ),
+        );
+
         setTimeout(() => quickRefresh(), 500);
         setSelectedAppForBilling(null);
         setShowBillingModal(false);
@@ -1237,9 +1285,6 @@ export default function ApplicationTable() {
     setShowBulkUploadModal(false);
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
