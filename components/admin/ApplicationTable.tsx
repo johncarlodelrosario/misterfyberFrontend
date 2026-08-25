@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - INSTANT UPDATE!
+// components/admin/ApplicationTable.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -38,8 +38,6 @@ import {
   FiSave,
   FiChevronLeft,
   FiChevronRight,
-  FiList,
-  FiGrid,
 } from "react-icons/fi";
 
 const CHECK_INTERVAL = 30000;
@@ -49,6 +47,16 @@ interface FilterState {
   searchTerm: string;
   statusFilter: string;
   buildingFilter: string;
+}
+
+interface ApplicationTableProps {
+  onStatsUpdate?: (stats: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    suspended: number;
+  }) => void;
 }
 
 const formatPrice = (price: number | undefined | null): string => {
@@ -101,8 +109,15 @@ const getPlanName = (app: any, plansMap: Map<string, Plan>): string => {
 
   if (app.planId && typeof app.planId === "string") {
     const plan = plansMap.get(app.planId);
-    if (plan) return plan.name;
+    if (plan) {
+      return plan.name;
+    }
     return "Loading...";
+  }
+
+  if (app.planId && app.planId._id) {
+    const plan = plansMap.get(app.planId._id);
+    if (plan) return plan.name;
   }
 
   return "N/A";
@@ -145,6 +160,11 @@ const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
     if (plan) return Number(plan.price);
   }
 
+  if (app.planId && app.planId._id) {
+    const plan = plansMap.get(app.planId._id);
+    if (plan) return Number(plan.price);
+  }
+
   return 0;
 };
 
@@ -152,7 +172,8 @@ const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
   if (!app) return "N/A";
 
   if (app.planId && typeof app.planId === "object") {
-    return getSpeed(app.planId);
+    const speed = getSpeed(app.planId);
+    if (speed !== "N/A") return speed;
   }
 
   if (app.plan && typeof app.plan === "object") {
@@ -161,6 +182,11 @@ const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
 
   if (app.planId && typeof app.planId === "string") {
     const plan = plansMap.get(app.planId);
+    if (plan) return getSpeed(plan);
+  }
+
+  if (app.planId && app.planId._id) {
+    const plan = plansMap.get(app.planId._id);
     if (plan) return getSpeed(plan);
   }
 
@@ -242,7 +268,12 @@ const ID_TYPES = [
   "Other",
 ];
 
-export default function ApplicationTable() {
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+export default function ApplicationTable({
+  onStatsUpdate,
+}: ApplicationTableProps) {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -259,8 +290,6 @@ export default function ApplicationTable() {
   const [newApplicantCount, setNewApplicantCount] = useState(0);
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
-
-  const [showAllMode, setShowAllMode] = useState<boolean>(false);
 
   const [filter, setFilter] = useState<FilterState>({
     searchTerm: "",
@@ -311,17 +340,49 @@ export default function ApplicationTable() {
 
   const refreshInProgressRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const silentRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const dataLoadedRef = useRef(false);
   const plansLoadedRef = useRef(false);
+  const dataLoadedRef = useRef(false);
+  const buildingsLoadedRef = useRef(false);
+
+  // ✅ STATIC OVERRIDE - FOREVER NA!
+  const overrideStatusRef = useRef<Map<string, string>>(new Map());
 
   const plansMap = useMemo(() => {
     const map = new Map<string, Plan>();
-    plans.forEach((plan) => {
-      map.set(plan._id, plan);
-    });
+    if (plans && plans.length > 0) {
+      plans.forEach((plan) => {
+        if (plan && plan._id) {
+          map.set(plan._id, plan);
+        }
+      });
+    }
     return map;
   }, [plans]);
+
+  // ============================================================
+  // STATS CALCULATION
+  // ============================================================
+  const stats = useMemo(() => {
+    if (!Array.isArray(applications) || applications.length === 0) {
+      return { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
+    }
+    return {
+      pending: applications.filter((a) => a.status === "pending").length,
+      approved: applications.filter((a) => a.status === "approved").length,
+      rejected: applications.filter((a) => a.status === "rejected").length,
+      suspended: applications.filter((a) => a.status === "suspended").length,
+      total: applications.length,
+    };
+  }, [applications]);
+
+  // Update stats whenever applications change
+  useEffect(() => {
+    if (onStatsUpdate) {
+      onStatsUpdate(stats);
+    }
+  }, [stats, onStatsUpdate]);
 
   const checkTableScroll = useCallback(() => {
     if (tableContainerRef.current) {
@@ -383,50 +444,48 @@ export default function ApplicationTable() {
     };
   }, []);
 
-  useEffect(() => {
-    loadPlans();
+  const loadPlans = useCallback(async () => {
+    if (plansLoadedRef.current) return;
+    try {
+      const plansData = await getAllPlans();
+      if (Array.isArray(plansData)) {
+        setPlans(plansData);
+        setPlansLoaded(true);
+        plansLoadedRef.current = true;
+      } else {
+        console.error("Invalid plans data received:", plansData);
+      }
+    } catch (error) {
+      console.error("Failed to load plans:", error);
+    }
   }, []);
+
+  const loadBuildings = useCallback(async () => {
+    if (buildingsLoadedRef.current) return;
+    try {
+      const buildingsData = await getActiveBuildings();
+      if (Array.isArray(buildingsData)) {
+        setBuildings(buildingsData);
+        buildingsLoadedRef.current = true;
+      }
+    } catch (error) {
+      console.error("Failed to load buildings:", error);
+    }
+  }, []);
+
+  const loadBuildingsAndPlans = useCallback(async () => {
+    try {
+      await Promise.all([loadBuildings(), loadPlans()]);
+    } catch (error) {
+      console.error("Failed to load buildings/plans:", error);
+    }
+  }, [loadBuildings, loadPlans]);
 
   useEffect(() => {
     if (showAddCustomerModal) {
       loadBuildingsAndPlans();
     }
-  }, [showAddCustomerModal]);
-
-  const loadPlans = async () => {
-    if (plansLoadedRef.current) return;
-    try {
-      console.log("📡 Loading plans...");
-      const plansData = await getAllPlans();
-      console.log(`✅ Loaded ${plansData.length} plans`);
-      setPlans(plansData);
-      setPlansLoaded(true);
-      plansLoadedRef.current = true;
-    } catch (error) {
-      console.error("Failed to load plans:", error);
-      setTimeout(() => {
-        if (!plansLoadedRef.current) {
-          loadPlans();
-        }
-      }, 3000);
-    }
-  };
-
-  const loadBuildingsAndPlans = async () => {
-    try {
-      const [buildingsData, plansData] = await Promise.all([
-        getActiveBuildings(),
-        getAllPlans(),
-      ]);
-      setBuildings(buildingsData);
-      setPlans(plansData);
-      setPlansLoaded(true);
-      plansLoadedRef.current = true;
-    } catch (error) {
-      console.error("Failed to load buildings/plans:", error);
-      toast.error("Failed to load buildings and plans");
-    }
-  };
+  }, [showAddCustomerModal, loadBuildingsAndPlans]);
 
   const extractApplicationsArray = useCallback((response: any): any[] => {
     if (!response) return [];
@@ -444,51 +503,8 @@ export default function ApplicationTable() {
     if (response.results && Array.isArray(response.results))
       return response.results;
     if (response.docs && Array.isArray(response.docs)) return response.docs;
-    console.warn(
-      "⚠️ Unexpected response format, returning empty array:",
-      response,
-    );
     return [];
   }, []);
-
-  const fetchApplications = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      console.log("🔄 Fetching applications (paginated - FAST)...");
-      const startTime = Date.now();
-
-      const response = await getAllApplications({ page: 1, limit: 100 });
-
-      let applicationsList = extractApplicationsArray(response);
-
-      if (!Array.isArray(applicationsList)) {
-        applicationsList = [];
-      }
-
-      const elapsed = Date.now() - startTime;
-      console.log(
-        `✅ Received ${applicationsList.length} applications in ${elapsed}ms`,
-      );
-
-      setApplications(applicationsList);
-      setTotalCount(response.total || applicationsList.length);
-      setLastFetchTime(new Date());
-
-      setHasNewApplicant(false);
-    } catch (error: any) {
-      console.error("Failed to fetch:", error);
-      setError("Unable to connect to server.");
-      toast.error("Failed to connect");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      refreshInProgressRef.current = false;
-    }
-  }, [extractApplicationsArray]);
 
   const fetchAllApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
@@ -497,9 +513,6 @@ export default function ApplicationTable() {
     setError(null);
 
     try {
-      console.log("🔄 Fetching ALL applications (no limit - SLOWER)...");
-      const startTime = Date.now();
-
       const response = await getAllApplicationsUnlimited();
 
       let applicationsList = extractApplicationsArray(response);
@@ -508,70 +521,177 @@ export default function ApplicationTable() {
         applicationsList = [];
       }
 
-      const elapsed = Date.now() - startTime;
-      console.log(
-        `✅ Received ${applicationsList.length} total applications in ${elapsed}ms`,
-      );
-
       setApplications(applicationsList);
       setTotalCount(applicationsList.length);
       setLastFetchTime(new Date());
+      dataLoadedRef.current = true;
+      setLoading(false);
 
       setHasNewApplicant(false);
     } catch (error: any) {
       console.error("Failed to fetch all applications:", error);
       setError("Unable to connect to server.");
-      toast.error("Failed to connect");
-    } finally {
       setLoading(false);
+
+      if (!dataLoadedRef.current) {
+        toast.error("Failed to connect");
+      }
+    } finally {
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
   }, [extractApplicationsArray]);
 
-  const checkForNewApplicants = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
+  // ============================================================
+  // ✅ MERGE FUNCTION - STATIC OVERRIDE!
+  // ============================================================
+  const mergeWithOverrides = useCallback(
+    (newApps: any[]) => {
+      const overrideMap = overrideStatusRef.current;
+
+      // Apply static overrides - FOREVER!
+      const mergedApplications = newApps.map((app) => {
+        const overrideStatus = overrideMap.get(app._id);
+        if (overrideStatus) {
+          return {
+            ...app,
+            status: overrideStatus, // STATIC - HINDI NA BABAGO!
+          };
+        }
+        return app;
+      });
+
+      // Check for new applicants (not in our list)
+      const existingIds = new Set(applications.map((a) => a._id));
+      const newAppsList = newApps.filter((a) => !existingIds.has(a._id));
+
+      // Add new apps to merged list
+      const finalApplications = [...mergedApplications];
+      newAppsList.forEach((app) => {
+        if (!finalApplications.find((a) => a._id === app._id)) {
+          finalApplications.push(app);
+        }
+      });
+
+      return finalApplications;
+    },
+    [applications],
+  );
+
+  // ============================================================
+  // ✅ SILENT REFRESH - STATIC OVERRIDE!
+  // ============================================================
+  const silentRefresh = useCallback(async () => {
+    if (refreshInProgressRef.current || !dataLoadedRef.current) return;
 
     try {
-      let applicationsList: any[] = [];
+      const response = await getAllApplicationsUnlimited();
+      let applicationsList = extractApplicationsArray(response);
+      if (!Array.isArray(applicationsList)) applicationsList = [];
 
-      if (showAllMode) {
-        const response = await getAllApplicationsUnlimited();
-        applicationsList = extractApplicationsArray(response);
-      } else {
-        const response = await getAllApplications({ page: 1, limit: 100 });
-        applicationsList = extractApplicationsArray(response);
+      // ✅ APPLY STATIC OVERRIDES
+      const finalApplications = mergeWithOverrides(applicationsList);
+
+      const hasChanges =
+        JSON.stringify(applications) !== JSON.stringify(finalApplications);
+
+      if (hasChanges) {
+        console.log(
+          "🔄 Silent refresh: Data changed, updating with overrides...",
+        );
+        setApplications(finalApplications);
+        setTotalCount(finalApplications.length);
+        setLastFetchTime(new Date());
+
+        if (finalApplications.length > applications.length) {
+          setHasNewApplicant(true);
+          setNewApplicantCount(finalApplications.length - applications.length);
+          setTimeout(() => {
+            setHasNewApplicant(false);
+            setNewApplicantCount(0);
+          }, 5000);
+        }
       }
+    } catch (error) {
+      console.error("Silent refresh failed:", error);
+    }
+  }, [applications, extractApplicationsArray, mergeWithOverrides]);
+
+  // ============================================================
+  // LOAD DATA - Load plans first, then applications
+  // ============================================================
+  useEffect(() => {
+    const init = async () => {
+      await loadPlans();
+      await fetchAllApplications();
+    };
+    init();
+  }, [loadPlans, fetchAllApplications]);
+
+  // ============================================================
+  // SILENT REFRESH EVERY 5 SECONDS
+  // ============================================================
+  useEffect(() => {
+    if (isOnline && !loading && dataLoadedRef.current) {
+      silentRefreshRef.current = setInterval(() => {
+        silentRefresh();
+      }, 5000);
+    }
+
+    return () => {
+      if (silentRefreshRef.current) {
+        clearInterval(silentRefreshRef.current);
+        silentRefreshRef.current = null;
+      }
+    };
+  }, [isOnline, loading, silentRefresh]);
+
+  // ============================================================
+  // CHECK FOR NEW APPLICANTS - WITH OVERRIDES!
+  // ============================================================
+  const checkForNewApplicants = useCallback(async () => {
+    if (refreshInProgressRef.current || !dataLoadedRef.current) return;
+
+    try {
+      const response = await getAllApplicationsUnlimited();
+      let applicationsList = extractApplicationsArray(response);
 
       if (!Array.isArray(applicationsList)) {
         applicationsList = [];
       }
 
-      const currentTotal = applicationsList.length;
+      // ✅ APPLY STATIC OVERRIDES
+      const finalApplications = mergeWithOverrides(applicationsList);
+
+      const currentTotal = finalApplications.length;
       const lastKnownTotal = totalCount || applications.length;
 
       const hasNew = currentTotal > lastKnownTotal;
 
       if (hasNew) {
-        console.log(`🆕 New applicant detected!`);
         setHasNewApplicant(true);
         setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
 
-        setApplications(applicationsList);
+        setApplications(finalApplications);
         setTotalCount(currentTotal);
 
         setTimeout(() => {
           setHasNewApplicant(false);
           setNewApplicantCount(0);
         }, 5000);
+      } else if (
+        JSON.stringify(applications) !== JSON.stringify(finalApplications)
+      ) {
+        setApplications(finalApplications);
+        setTotalCount(currentTotal);
       }
     } catch (error) {
       console.error("Failed to check for new applicants:", error);
     }
-  }, [applications, totalCount, showAllMode, extractApplicationsArray]);
+  }, [applications, totalCount, extractApplicationsArray, mergeWithOverrides]);
 
   useEffect(() => {
-    if (isOnline && !loading) {
+    if (isOnline && !loading && dataLoadedRef.current) {
       intervalRef.current = setInterval(() => {
         checkForNewApplicants();
       }, CHECK_INTERVAL);
@@ -584,46 +704,6 @@ export default function ApplicationTable() {
       }
     };
   }, [isOnline, loading, checkForNewApplicants]);
-
-  useEffect(() => {
-    console.log("📡 Fetching applications...");
-    fetchApplications();
-  }, []);
-
-  const quickRefresh = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-
-    try {
-      console.log("⚡ Quick refresh...");
-      const startTime = Date.now();
-
-      if (showAllMode) {
-        const response = await getAllApplicationsUnlimited();
-        let applicationsList = extractApplicationsArray(response);
-        if (!Array.isArray(applicationsList)) applicationsList = [];
-
-        setApplications(applicationsList);
-        setTotalCount(applicationsList.length);
-        setLastFetchTime(new Date());
-        console.log(
-          `✅ Quick refresh (all) completed in ${Date.now() - startTime}ms`,
-        );
-      } else {
-        const response = await getAllApplications({ page: 1, limit: 100 });
-        let applicationsList = extractApplicationsArray(response);
-        if (!Array.isArray(applicationsList)) applicationsList = [];
-
-        setApplications(applicationsList);
-        setTotalCount(response.total || applicationsList.length);
-        setLastFetchTime(new Date());
-        console.log(
-          `✅ Quick refresh (paginated) completed in ${Date.now() - startTime}ms`,
-        );
-      }
-    } catch (error) {
-      console.error("Quick refresh failed:", error);
-    }
-  }, [showAllMode, extractApplicationsArray]);
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -716,45 +796,58 @@ export default function ApplicationTable() {
   };
 
   // ============================================================
-  // ✅ FIXED: INSTANT STATUS UPDATE - APPROVE
+  // ✅ APPROVE - STATIC! FOREVER NA APPROVED!
   // ============================================================
   const handleApprove = async (id: string, adminNotes?: string) => {
+    const previousApplications = applications;
+
     try {
       setProcessingId(id);
 
-      // ✅ Call API
-      await approveApplication(id, adminNotes);
+      // ✅ STATIC OVERRIDE - APPROVED FOREVER!
+      overrideStatusRef.current.set(id, "approved");
 
-      // ✅ AGAD NA MAG-TOAST NG SUCCESS
-      toast.success("✅ Application approved successfully!");
-
-      // ✅ AGAD NA I-UPDATE ANG STATUS SA UI
-      setApplications((prevApplications) =>
-        prevApplications.map((app) =>
-          app._id === id
-            ? {
-                ...app,
-                status: "approved",
-                billingStarted: app.billingStarted || false,
-                serviceStatus: app.serviceStatus || "pending",
-                reviewedAt: new Date().toISOString(),
-                adminNotes: adminNotes || app.adminNotes || "",
-              }
-            : app,
-        ),
+      // ✅ OPTIMISTIC UPDATE - AGAD MAGBAGO ANG UI!
+      const updatedApps = applications.map((app) =>
+        app._id === id
+          ? {
+              ...app,
+              status: "approved",
+              billingStarted: app.billingStarted || false,
+              serviceStatus: app.serviceStatus || "pending",
+              reviewedAt: new Date().toISOString(),
+              adminNotes: adminNotes || app.adminNotes || "",
+            }
+          : app,
       );
+      setApplications(updatedApps);
 
-      // ✅ AGAD NA I-CLOSE ANG MODAL (PINAKAIMPORTANTE!)
+      // ✅ CLEAR CACHE SA BACKEND
+      try {
+        const token = localStorage.getItem("token");
+        await fetch("/api/applications/cache/clear", {
+          method: "POST",
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+        });
+        console.log("🗑️ Cache cleared");
+      } catch (cacheError) {
+        console.warn("Cache clear failed");
+      }
+
+      // ✅ SEND APPROVE REQUEST
+      await approveApplication(id, adminNotes);
+      toast.success("✅ Application approved!");
+
       setSelectedApp(null);
-
-      // ✅ Background refresh - 100ms lang para smooth
-      setTimeout(() => {
-        quickRefresh();
-      }, 100);
     } catch (error: any) {
       console.error("❌ Approve error:", error);
       toast.error(error.response?.data?.message || "Failed to approve");
-      // ✅ Kahit may error, i-close ang modal
+
+      // ✅ REVERT ON ERROR
+      overrideStatusRef.current.delete(id);
+      setApplications(previousApplications);
       setSelectedApp(null);
     } finally {
       setProcessingId(null);
@@ -762,55 +855,78 @@ export default function ApplicationTable() {
   };
 
   // ============================================================
-  // ✅ FIXED: INSTANT STATUS UPDATE - REJECT
+  // ✅ REJECT - STATIC! FOREVER NA REJECTED!
   // ============================================================
   const handleReject = async (id: string, adminNotes?: string) => {
+    const previousApplications = applications;
+
     try {
       setProcessingId(id);
 
-      // ✅ Call API
-      await rejectApplication(id, adminNotes);
+      // ✅ STATIC OVERRIDE - REJECTED FOREVER!
+      overrideStatusRef.current.set(id, "rejected");
 
-      // ✅ AGAD NA MAG-TOAST NG SUCCESS
-      toast.success("❌ Application rejected");
-
-      // ✅ AGAD NA I-UPDATE ANG STATUS SA UI
-      setApplications((prevApplications) =>
-        prevApplications.map((app) =>
-          app._id === id
-            ? {
-                ...app,
-                status: "rejected",
-                billingStarted: app.billingStarted || false,
-                serviceStatus: app.serviceStatus || "pending",
-                reviewedAt: new Date().toISOString(),
-                adminNotes: adminNotes || app.adminNotes || "",
-              }
-            : app,
-        ),
+      // ✅ OPTIMISTIC UPDATE - AGAD MAGBAGO ANG UI!
+      const updatedApps = applications.map((app) =>
+        app._id === id
+          ? {
+              ...app,
+              status: "rejected",
+              billingStarted: app.billingStarted || false,
+              serviceStatus: app.serviceStatus || "pending",
+              reviewedAt: new Date().toISOString(),
+              adminNotes: adminNotes || app.adminNotes || "",
+            }
+          : app,
       );
+      setApplications(updatedApps);
 
-      // ✅ AGAD NA I-CLOSE ANG MODAL (PINAKAIMPORTANTE!)
+      // ✅ CLEAR CACHE SA BACKEND
+      try {
+        const token = localStorage.getItem("token");
+        await fetch("/api/applications/cache/clear", {
+          method: "POST",
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+        });
+        console.log("🗑️ Cache cleared");
+      } catch (cacheError) {
+        console.warn("Cache clear failed");
+      }
+
+      // ✅ SEND REJECT REQUEST
+      await rejectApplication(id, adminNotes);
+      toast.success("❌ Application rejected!");
+
       setSelectedApp(null);
-
-      // ✅ Background refresh - 100ms lang para smooth
-      setTimeout(() => {
-        quickRefresh();
-      }, 100);
     } catch (error: any) {
       console.error("❌ Reject error:", error);
       toast.error(error.response?.data?.message || "Failed to reject");
-      // ✅ Kahit may error, i-close ang modal
+
+      // ✅ REVERT ON ERROR
+      overrideStatusRef.current.delete(id);
+      setApplications(previousApplications);
       setSelectedApp(null);
     } finally {
       setProcessingId(null);
     }
   };
 
+  // ============================================================
+  // START BILLING - OPTIMISTIC UPDATE
+  // ============================================================
   const handleStartBilling = async (app: any) => {
     try {
       setProcessingId(app._id);
       toast.loading("Starting billing...", { id: "start-billing" });
+
+      // ✅ OPTIMISTIC UPDATE
+      setApplications((prevApplications) =>
+        prevApplications.map((a) =>
+          a._id === app._id ? { ...a, billingStarted: true } : a,
+        ),
+      );
 
       const result = await startBillingForApplication(app.applicationId, {});
 
@@ -821,21 +937,36 @@ export default function ApplicationTable() {
           `✅ Billing started for ${app.firstName} ${app.lastName}!`,
         );
 
-        setApplications((prevApplications) =>
-          prevApplications.map((a) =>
-            a._id === app._id ? { ...a, billingStarted: true } : a,
-          ),
-        );
+        try {
+          const token = localStorage.getItem("token");
+          await fetch("/api/applications/cache/clear", {
+            method: "POST",
+            headers: {
+              Authorization: token ? `Bearer ${token}` : "",
+            },
+          });
+        } catch (cacheError) {
+          console.warn("Cache clear failed");
+        }
 
-        setTimeout(() => quickRefresh(), 500);
         setSelectedAppForBilling(null);
         setShowBillingModal(false);
       } else {
         toast.error(result.message || "Failed to start billing");
+        setApplications((prevApplications) =>
+          prevApplications.map((a) =>
+            a._id === app._id ? { ...a, billingStarted: false } : a,
+          ),
+        );
       }
     } catch (error: any) {
       toast.dismiss("start-billing");
       toast.error(error.response?.data?.message || "Failed to start billing");
+      setApplications((prevApplications) =>
+        prevApplications.map((a) =>
+          a._id === app._id ? { ...a, billingStarted: false } : a,
+        ),
+      );
     } finally {
       setProcessingId(null);
     }
@@ -893,20 +1024,14 @@ export default function ApplicationTable() {
   ]);
 
   const totalPages = useMemo(() => {
-    if (showAllMode) {
-      return 1;
-    }
     return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
-  }, [filteredApplications.length, showAllMode]);
+  }, [filteredApplications.length]);
 
   const currentApplications = useMemo(() => {
-    if (showAllMode) {
-      return filteredApplications;
-    }
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return filteredApplications.slice(startIndex, endIndex);
-  }, [filteredApplications, currentPage, showAllMode]);
+  }, [filteredApplications, currentPage]);
 
   useEffect(() => {
     setTimeout(checkTableScroll, 100);
@@ -933,19 +1058,6 @@ export default function ApplicationTable() {
     const hours = Math.floor(minutes / 60);
     return `${hours}h ago`;
   }, [lastFetchTime]);
-
-  const stats = useMemo(() => {
-    if (!Array.isArray(applications) || applications.length === 0) {
-      return { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
-    }
-    return {
-      pending: applications.filter((a) => a.status === "pending").length,
-      approved: applications.filter((a) => a.status === "approved").length,
-      rejected: applications.filter((a) => a.status === "rejected").length,
-      suspended: applications.filter((a) => a.status === "suspended").length,
-      total: applications.length,
-    };
-  }, [applications]);
 
   const resetCustomerForm = () => {
     setCustomerForm({
@@ -1030,8 +1142,6 @@ export default function ApplicationTable() {
         idImage: customerForm.idImage || undefined,
       };
 
-      console.log("📝 Submitting application:", submissionData);
-
       const result = await submitApplication(submissionData);
 
       if (result.success || result.data) {
@@ -1040,7 +1150,6 @@ export default function ApplicationTable() {
         );
         setShowAddCustomerModal(false);
         resetCustomerForm();
-        setTimeout(() => quickRefresh(), 500);
       } else {
         toast.error(result.message || "Failed to submit application");
       }
@@ -1153,14 +1262,18 @@ export default function ApplicationTable() {
           ]);
 
           const buildingMap = new Map();
-          buildingsData.forEach((b: Building) => {
-            buildingMap.set(b.buildingName.toLowerCase().trim(), b._id);
-          });
+          if (Array.isArray(buildingsData)) {
+            buildingsData.forEach((b: Building) => {
+              buildingMap.set(b.buildingName.toLowerCase().trim(), b._id);
+            });
+          }
 
           const planMap = new Map();
-          plansData.forEach((p: Plan) => {
-            planMap.set(p.name.toLowerCase().trim(), p._id);
-          });
+          if (Array.isArray(plansData)) {
+            plansData.forEach((p: Plan) => {
+              planMap.set(p.name.toLowerCase().trim(), p._id);
+            });
+          }
 
           const applicationsList: any[] = [];
 
@@ -1265,7 +1378,6 @@ export default function ApplicationTable() {
 
       if (success.length > 0) {
         toast.success(`Successfully added ${success.length} customers`);
-        setTimeout(() => quickRefresh(), 1000);
       }
 
       if (failed.length > 0) {
@@ -1285,6 +1397,9 @@ export default function ApplicationTable() {
     setShowBulkUploadModal(false);
   };
 
+  // ============================================================
+  // LOADING STATE
+  // ============================================================
   if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1296,6 +1411,9 @@ export default function ApplicationTable() {
     );
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden relative">
       {hasNewApplicant && (
@@ -1324,48 +1442,15 @@ export default function ApplicationTable() {
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
             {totalCount || applications.length} total applications
-            {showAllMode && " (All Data Mode - No Pagination)"}
-            {!showAllMode && " (Paginated Mode - FAST)"}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => {
-              const newMode = !showAllMode;
-              setShowAllMode(newMode);
-              setCurrentPage(1);
-              if (newMode) {
-                fetchAllApplications();
-              } else {
-                fetchApplications();
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm transition-colors ${
-              showAllMode
-                ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            {showAllMode ? (
-              <>
-                <FiGrid className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Show All</span>
-                <span className="xs:hidden">All</span>
-              </>
-            ) : (
-              <>
-                <FiList className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Paginated</span>
-                <span className="xs:hidden">Page</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={() => {
               resetCustomerForm();
               setShowAddCustomerModal(true);
+              loadBuildingsAndPlans();
             }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm"
           >
@@ -1392,13 +1477,7 @@ export default function ApplicationTable() {
           </div>
 
           <button
-            onClick={() => {
-              if (showAllMode) {
-                fetchAllApplications();
-              } else {
-                fetchApplications();
-              }
-            }}
+            onClick={() => fetchAllApplications()}
             disabled={refreshing}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-xs sm:text-sm"
           >
@@ -1429,37 +1508,6 @@ export default function ApplicationTable() {
         </div>
       )}
 
-      <div className="grid grid-cols-5 gap-2 sm:gap-3 mb-4">
-        <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
-          <div className="text-xs text-gray-500">Total</div>
-          <div className="text-lg font-bold text-gray-900">
-            {totalCount || applications.length}
-          </div>
-        </div>
-        <div className="bg-yellow-50 rounded-md p-2 border border-yellow-200">
-          <div className="text-xs text-yellow-600">Pending</div>
-          <div className="text-lg font-bold text-yellow-700">
-            {stats.pending}
-          </div>
-        </div>
-        <div className="bg-green-50 rounded-md p-2 border border-green-200">
-          <div className="text-xs text-green-600">Approved</div>
-          <div className="text-lg font-bold text-green-700">
-            {stats.approved}
-          </div>
-        </div>
-        <div className="bg-red-50 rounded-md p-2 border border-red-200">
-          <div className="text-xs text-red-600">Rejected</div>
-          <div className="text-lg font-bold text-red-700">{stats.rejected}</div>
-        </div>
-        <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
-          <div className="text-xs text-gray-500">Suspended</div>
-          <div className="text-lg font-bold text-gray-700">
-            {stats.suspended || 0}
-          </div>
-        </div>
-      </div>
-
       <div className="bg-white rounded-lg border border-gray-200 p-2 mb-4">
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex-1 relative">
@@ -1481,13 +1529,11 @@ export default function ApplicationTable() {
             }
             className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
           >
-            <option value="all">All Status ({stats.total})</option>
-            <option value="pending">Pending ({stats.pending})</option>
-            <option value="approved">Approved ({stats.approved})</option>
-            <option value="rejected">Rejected ({stats.rejected})</option>
-            <option value="suspended">
-              Suspended ({stats.suspended || 0})
-            </option>
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="suspended">Suspended</option>
           </select>
           <select
             value={filter.buildingFilter}
@@ -1506,6 +1552,7 @@ export default function ApplicationTable() {
         </div>
       </div>
 
+      {/* TABLE */}
       <div className="relative">
         {showLeftButton && (
           <button
@@ -1582,9 +1629,8 @@ export default function ApplicationTable() {
                 </tr>
               ) : (
                 currentApplications.map((app: any, idx: number) => {
-                  const globalIndex = showAllMode
-                    ? idx + 1
-                    : (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  const globalIndex =
+                    (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                   const buildingName = getBuildingName(app);
                   const buildingAddress = getBuildingAddress(app);
                   const planName = getPlanName(app, plansMap);
@@ -1718,40 +1764,34 @@ export default function ApplicationTable() {
           </table>
           <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
             <span>
-              {showAllMode
-                ? `Showing all ${filteredApplications.length} applications (All Data Mode - No Pagination)`
-                : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(
-                    currentPage * ITEMS_PER_PAGE,
-                    filteredApplications.length,
-                  )} of ${filteredApplications.length} applications`}
+              {`Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(
+                currentPage * ITEMS_PER_PAGE,
+                filteredApplications.length,
+              )} of ${filteredApplications.length} applications`}
             </span>
-            {!showAllMode && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(prev - 1, 1))
-                  }
-                  disabled={currentPage === 1}
-                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-                >
-                  <FiChevronLeft className="w-3.5 h-3.5" />
-                  Prev
-                </button>
-                <span className="text-xs text-gray-700">
-                  Page {currentPage} of {totalPages || 1}
-                </span>
-                <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                  }
-                  disabled={currentPage === totalPages || totalPages === 0}
-                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-                >
-                  Next
-                  <FiChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+              >
+                <FiChevronLeft className="w-3.5 h-3.5" />
+                Prev
+              </button>
+              <span className="text-xs text-gray-700">
+                Page {currentPage} of {totalPages || 1}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                }
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
+              >
+                Next
+                <FiChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1779,7 +1819,6 @@ export default function ApplicationTable() {
               </button>
             </div>
             <div className="p-4 space-y-4">
-              {/* Personal Info */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2 text-sm">
                   <FiUser className="w-4 h-4" /> Personal Information
@@ -1810,7 +1849,6 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
-              {/* Building Info */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Building & Unit Information
@@ -1889,7 +1927,6 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
-              {/* Plan Details */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">
                   Plan Details
@@ -1916,7 +1953,6 @@ export default function ApplicationTable() {
                 </div>
               </div>
 
-              {/* ID Verification */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
                   <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
