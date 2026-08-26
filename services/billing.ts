@@ -106,7 +106,7 @@ export interface Bill {
 
 // ==================== ULTRA-FAST CACHE WITH REAL-TIME ====================
 const BILLING_CACHE = new Map();
-const CACHE_TTL = 30 * 1000; // 30 seconds - REDUCED for real-time
+const CACHE_TTL = 30 * 1000; // 30 seconds
 const MAX_CACHE_ITEMS = 50;
 
 // LRU cache manager
@@ -137,7 +137,6 @@ const cacheManager = {
     BILLING_CACHE.delete(key);
   },
 
-  // NEW: Force refresh a specific key
   forceRefresh(key: string): void {
     BILLING_CACHE.delete(key);
   },
@@ -178,7 +177,6 @@ class BillingEventManager {
       const data = JSON.parse(event.data);
       const { eventType, payload } = data;
 
-      // Emit to all listeners of this event type
       if (this.listeners.has(eventType)) {
         this.listeners.get(eventType)?.forEach((listener) => {
           try {
@@ -189,7 +187,6 @@ class BillingEventManager {
         });
       }
 
-      // Also emit to wildcard listeners
       if (this.listeners.has("*")) {
         this.listeners.get("*")?.forEach((listener) => {
           try {
@@ -200,7 +197,6 @@ class BillingEventManager {
         });
       }
 
-      // Auto-invalidate cache on certain events
       if (
         [
           "billing_updated",
@@ -237,7 +233,6 @@ class BillingEventManager {
     }
     this.listeners.get(eventType)!.add(listener);
 
-    // Return unsubscribe function
     return () => {
       this.listeners.get(eventType)?.delete(listener);
     };
@@ -248,7 +243,6 @@ class BillingEventManager {
   }
 
   emit(eventType: string, data: any): void {
-    // For local events when WebSocket is not available
     if (this.listeners.has(eventType)) {
       this.listeners.get(eventType)?.forEach((listener) => {
         try {
@@ -501,7 +495,6 @@ export const updateBillingSettingsAdmin = async (
   try {
     const response = await api.put("/billing/settings/admin", data);
     cacheManager.clear();
-    // Emit event for real-time update
     billingEvents.emit("settings_updated", response.data);
     return response.data;
   } catch (error) {
@@ -529,7 +522,6 @@ export const startBillingForApplication = async (
       includeInstallationFee: data?.includeInstallationFee,
     });
     cacheManager.clear();
-    // Emit real-time event
     billingEvents.emit("billing_updated", {
       type: "started",
       applicationId,
@@ -1168,7 +1160,6 @@ export const startRealtimePolling = (
       const result = await checkForNewCustomers(true);
       if (result.totalNew > 0) {
         callback(result);
-        // Clear cache to refresh data
         cacheManager.clear();
       }
     } catch (error) {
@@ -1176,7 +1167,6 @@ export const startRealtimePolling = (
     }
   };
 
-  // Initial check
   poll();
   return setInterval(poll, interval);
 };

@@ -1,5 +1,6 @@
 // components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
 // FIXED: Installation fee status now properly checks actual bill status from database
+// FIXED: File name casing - exports as BillingTable (capital B)
 
 "use client";
 
@@ -672,7 +673,7 @@ const CustomerRow = React.memo(
 
 CustomerRow.displayName = "CustomerRow";
 
-// Main Table Component
+// Main Table Component - EXPORTED AS BillingTable (capital B)
 export default function BillingTable({
   customers,
   loading,

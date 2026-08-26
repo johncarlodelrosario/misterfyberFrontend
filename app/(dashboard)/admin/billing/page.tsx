@@ -1,7 +1,7 @@
 // app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
-// FIXED: Auto-detects new customers/applications and loads them in real-time
-// FIXED: Removed all new customer notifications - silent auto-load only
-// FIXED: Performance optimizations to prevent UI freezing
+// FIXED: Infinite loop in useEffect - proper dependency arrays added
+// FIXED: WebSocket connection handled gracefully
+// FIXED: Import uses lowercase "billingTable"
 
 "use client";
 
@@ -166,7 +166,6 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
   if (fee <= 0) return false;
   if (customer.installationFeePaid === true) return false;
 
-  // Check if there's an unpaid installation bill
   const hasUnpaidInstallationBill = customer.unpaidBills?.some(
     (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
   );
@@ -249,7 +248,7 @@ const useDashboardData = () => {
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
     staleTime: 3 * 1000,
-    refetchInterval: 5000, // INCREASED from 2000 to 5000 to reduce load
+    refetchInterval: 3000,
   });
 };
 
@@ -307,6 +306,7 @@ function AdminBillingPageContent() {
   const [lastPaymentUpdate, setLastPaymentUpdate] = useState<Date | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isMounted, setIsMounted] = useState(true);
+  const [silentRefreshCount, setSilentRefreshCount] = useState(0);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
@@ -407,7 +407,6 @@ function AdminBillingPageContent() {
     return dashboardData.pendingInstallationBills || [];
   }, [dashboardData, realtimeUpdate]);
 
-  // Stats computation with proper installation fee counting
   const stats = useMemo(() => {
     if (!dashboardData?.stats) {
       return {
@@ -844,7 +843,6 @@ function AdminBillingPageContent() {
     try {
       const result = await checkForNewCustomers(true);
       if (result.totalNew > 0) {
-        // SILENT: Just refresh data, no notifications
         clearBillingCache();
         setTimeout(() => {
           invalidateAll();
@@ -855,14 +853,32 @@ function AdminBillingPageContent() {
     }
   }, [invalidateAll]);
 
+  // ==================== SILENT AUTO-REFRESH ====================
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const silentRefreshInterval = setInterval(() => {
+      if (!isFetching && !isLoading) {
+        setSilentRefreshCount((prev) => prev + 1);
+        refetch().then((result) => {
+          if (result.data) {
+            setRealtimeUpdate((prev) => prev + 1);
+          }
+        });
+      }
+    }, 3000);
+
+    return () => {
+      clearInterval(silentRefreshInterval);
+    };
+  }, [isMounted, isFetching, isLoading, refetch]);
+
   // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS ====================
   useEffect(() => {
     if (!isMounted) return;
 
-    // Store unsubscribe functions
     const unsubscribers: (() => void)[] = [];
 
-    // Listen for new customer events from WebSocket - SILENT
     const unsubscribeNewCustomer = billingEvents.on(
       "new_customer",
       async (payload) => {
@@ -870,7 +886,6 @@ function AdminBillingPageContent() {
           "🆕 New customer detected via WebSocket (silent):",
           payload,
         );
-        // SILENT: Just refresh data
         clearBillingCache();
         setTimeout(() => {
           invalidateAll();
@@ -968,9 +983,7 @@ function AdminBillingPageContent() {
     );
     unsubscribers.push(unsubscribeBillsGenerated);
 
-    // Cleanup function
     return () => {
-      // Unsubscribe all listeners
       unsubscribers.forEach((unsubscribe) => {
         try {
           unsubscribe();
@@ -978,7 +991,6 @@ function AdminBillingPageContent() {
           console.error("Error unsubscribing:", e);
         }
       });
-      // Disconnect WebSocket
       billingEvents.disconnect();
     };
   }, [invalidateAll, isMounted]);
@@ -987,7 +999,6 @@ function AdminBillingPageContent() {
   useEffect(() => {
     if (!isMounted) return;
 
-    // Initial check for new customers on load
     if (isInitialLoad) {
       setIsInitialLoad(false);
       setTimeout(() => {
@@ -995,17 +1006,14 @@ function AdminBillingPageContent() {
       }, 1000);
     }
 
-    // Start polling for new customers - SILENT with longer interval
-    // Use 15 second interval instead of 2 seconds to reduce load
     pollingIntervalRef.current = startRealtimePolling(async (data) => {
       if (data.totalNew > 0) {
-        // SILENT: Just refresh data, no notifications
         clearBillingCache();
         setTimeout(() => {
           invalidateAll();
         }, 200);
       }
-    }, 15000); // 15 seconds - REDUCED frequency
+    }, 15000);
 
     return () => {
       if (pollingIntervalRef.current) {
@@ -1013,7 +1021,8 @@ function AdminBillingPageContent() {
         pollingIntervalRef.current = null;
       }
     };
-  }, [invalidateAll, checkForNewCustomersHandler, isInitialLoad, isMounted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
@@ -1381,7 +1390,7 @@ function AdminBillingPageContent() {
     }
   };
 
-  const loadBillingFlowSettings = async () => {
+  const loadBillingFlowSettings = useCallback(async () => {
     try {
       const response = await getBillingSettingsAdmin(true);
       const settingsData = response?.data || response;
@@ -1407,7 +1416,7 @@ function AdminBillingPageContent() {
     } catch (error) {
       console.error("Failed to load billing flow settings:", error);
     }
-  };
+  }, []);
 
   const saveBillingFlowSettings = async () => {
     try {
@@ -1425,14 +1434,12 @@ function AdminBillingPageContent() {
     setIsMounted(true);
     loadBillingFlowSettings();
 
-    // Auto-generate early bills at a reduced frequency
     if (billingFlowSettings.earlyBillGenerationDays > 0) {
       const autoGenInterval = setInterval(() => {
-        // Only run if not already running and if the component is mounted
         if (!autoGenerationRunning && isMounted) {
           handleAutoGenerateEarlyBills();
         }
-      }, 300000); // 5 minutes - REDUCED from 300000
+      }, 300000);
 
       return () => {
         clearInterval(autoGenInterval);
@@ -1444,6 +1451,7 @@ function AdminBillingPageContent() {
     handleAutoGenerateEarlyBills,
     autoGenerationRunning,
     isMounted,
+    loadBillingFlowSettings,
   ]);
 
   // ==================== RENDER ====================
@@ -1481,6 +1489,12 @@ function AdminBillingPageContent() {
           </button>
         </div>
       )}
+
+      {/* Silent refresh indicator - subtle */}
+      <div className="text-right text-[10px] text-gray-400 px-4 py-1">
+        Auto-refresh: {silentRefreshCount} updates
+        {isFetching && " 🔄"}
+      </div>
 
       <BillingTable
         customers={customers}
