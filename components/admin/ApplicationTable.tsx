@@ -1,13 +1,14 @@
-// components/admin/ApplicationTable.tsx - FIXED EXPORT
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { ApplicationDetails } from "./ApplicationDetails";
 import { AddApplicationModal } from "./AddApplicationModal";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { getActiveBuildings, Building } from "@/services/building";
 
-// Interface definitions
+// Interface definitions - SIMPLIFIED
 export interface Application {
   _id: string;
   firstName: string;
@@ -38,6 +39,7 @@ export interface ApplicationTableProps {
   onPageChange: (page: number) => void;
   onRefresh: () => void;
   onStatusFilterChange: (status: string) => void;
+  onBuildingFilterChange: (buildingId: string) => void;
   onSearch: (query: string) => void;
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
@@ -45,7 +47,6 @@ export interface ApplicationTableProps {
   onApplicationAdded: () => void;
 }
 
-// Export the component as default
 export default function ApplicationTable({
   applications,
   total,
@@ -55,6 +56,7 @@ export default function ApplicationTable({
   onPageChange,
   onRefresh,
   onStatusFilterChange,
+  onBuildingFilterChange,
   onSearch,
   onApprove,
   onReject,
@@ -63,11 +65,26 @@ export default function ApplicationTable({
 }: ApplicationTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [buildingFilter, setBuildingFilter] = useState("all");
+  const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Load buildings for filter
+  useEffect(() => {
+    const loadBuildings = async () => {
+      try {
+        const data = await getActiveBuildings();
+        setBuildings(data || []);
+      } catch (error) {
+        console.error("Error loading buildings:", error);
+      }
+    };
+    loadBuildings();
+  }, []);
 
   const handleSearch = useCallback(() => {
     onSearch(searchQuery);
@@ -79,6 +96,14 @@ export default function ApplicationTable({
       onStatusFilterChange(value);
     },
     [onStatusFilterChange],
+  );
+
+  const handleBuildingFilter = useCallback(
+    (value: string) => {
+      setBuildingFilter(value);
+      onBuildingFilterChange(value);
+    },
+    [onBuildingFilterChange],
   );
 
   const getStatusBadge = (status: string) => {
@@ -136,8 +161,11 @@ export default function ApplicationTable({
     try {
       await onApprove(id);
       toast.success("Application approved successfully");
-    } catch (error) {
-      toast.error("Failed to approve application");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.message || "Failed to approve application",
+      );
     } finally {
       setActionLoading(null);
     }
@@ -148,8 +176,11 @@ export default function ApplicationTable({
     try {
       await onReject(id);
       toast.success("Application rejected");
-    } catch (error) {
-      toast.error("Failed to reject application");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.message || "Failed to reject application",
+      );
     } finally {
       setActionLoading(null);
     }
@@ -160,8 +191,9 @@ export default function ApplicationTable({
     try {
       await onStartBilling(id);
       toast.success("Billing started successfully");
-    } catch (error) {
-      toast.error("Failed to start billing");
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Failed to start billing");
     } finally {
       setActionLoading(null);
     }
@@ -249,16 +281,29 @@ export default function ApplicationTable({
           </button>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
           <select
             value={statusFilter}
             onChange={(e) => handleStatusFilter(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="all">All</option>
+            <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
+          </select>
+
+          <select
+            value={buildingFilter}
+            onChange={(e) => handleBuildingFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+          >
+            <option value="all">All Buildings</option>
+            {buildings.map((building) => (
+              <option key={building._id} value={building._id}>
+                {building.buildingName}
+              </option>
+            ))}
           </select>
 
           <button
@@ -407,14 +452,14 @@ export default function ApplicationTable({
                           <button
                             onClick={() => handleApprove(app._id)}
                             disabled={actionLoading === app._id}
-                            className="px-3 py-1 text-sm text-green-600 hover:text-green-800"
+                            className="px-3 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
                           >
                             Approve
                           </button>
                           <button
                             onClick={() => handleReject(app._id)}
                             disabled={actionLoading === app._id}
-                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800"
+                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
                             Reject
                           </button>
@@ -424,7 +469,7 @@ export default function ApplicationTable({
                         <button
                           onClick={() => handleStartBilling(app._id)}
                           disabled={actionLoading === app._id}
-                          className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800"
+                          className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
                         >
                           Start Billing
                         </button>
@@ -491,7 +536,7 @@ export default function ApplicationTable({
         </div>
       )}
 
-      {/* Details Modal - Simple version */}
+      {/* Details Modal */}
       {showDetailsModal && selectedApplication && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
