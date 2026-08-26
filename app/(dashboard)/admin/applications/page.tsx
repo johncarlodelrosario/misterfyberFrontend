@@ -1,326 +1,425 @@
-// app/(dashboard)/admin/applications/page.tsx - ULTRA FAST
+// app/(dashboard)/admin/applications/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import ApplicationTable from "@/components/admin/ApplicationTable";
-import { getAllApplications } from "@/services/application";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
-  approveApplication,
-  rejectApplication,
-  startBillingForApplication,
-} from "@/services/admin";
+  MagnifyingGlassIcon,
+  FunnelIcon,
+  ArrowPathIcon,
+  PlusIcon,
+  DocumentArrowDownIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
-// Super fast LRU cache
-const applicationCache = new Map();
-const CACHE_TTL = 30 * 1000; // 30 seconds
-const MAX_CACHE_ITEMS = 20;
+import ApplicationTable from "@/components/admin/ApplicationTable";
+import { getAllApplications } from "@/services/application";
+import { getActiveBuildings } from "@/services/building";
+import { getPlans } from "@/services/plan";
 
-function getCachedApplications(key: string): any | null {
-  const cached = applicationCache.get(key);
-  if (!cached) return null;
-  if (Date.now() - cached.timestamp > CACHE_TTL) {
-    applicationCache.delete(key);
-    return null;
-  }
-  return cached.data;
+// Types
+interface Application {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  buildingId: {
+    _id: string;
+    buildingName: string;
+  };
+  tower: string;
+  floor: string;
+  unitNumber: string;
+  planId: {
+    _id: string;
+    name: string;
+    price: number;
+  };
+  status: "pending" | "approved" | "rejected" | "billing_started";
+  idType: string;
+  idNumber: string;
+  macAddress?: string;
+  adminNotes?: string;
+  submittedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-function setCachedApplications(key: string, data: any): void {
-  if (applicationCache.size >= MAX_CACHE_ITEMS) {
-    const firstKey = applicationCache.keys().next().value;
-    if (firstKey) applicationCache.delete(firstKey);
-  }
-  applicationCache.set(key, { data, timestamp: Date.now() });
+interface Filters {
+  status: string;
+  search: string;
+  buildingId: string;
+  page: number;
+  limit: number;
 }
 
 export default function AdminApplicationsPage() {
-  const [applications, setApplications] = useState<any[]>([]);
+  const router = useRouter();
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [buildingFilter, setBuildingFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const isMounted = useRef(true);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [buildings, setBuildings] = useState<
+    { _id: string; buildingName: string }[]
+  >([]);
+  const [plans, setPlans] = useState<
+    { _id: string; name: string; price: number }[]
+  >([]);
+  const [filters, setFilters] = useState<Filters>({
+    status: "all",
+    search: "",
+    buildingId: "",
+    page: 1,
+    limit: 20,
+  });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Fetch applications with filters
   const fetchApplications = useCallback(
-    async (
-      page: number,
-      status: string,
-      building: string,
-      search: string,
-      forceRefresh = false,
-    ) => {
-      if (!isMounted.current) return;
-
-      // Clear any pending timeout
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
-
-      setIsLoading(true);
-
-      // Cancel previous request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-
-      const cacheKey = `apps_${page}_${status}_${building}_${search}`;
-
-      // Try cache first (super fast!)
-      if (!forceRefresh) {
-        const cached = getCachedApplications(cacheKey);
-        if (cached) {
-          setApplications(cached.data || []);
-          setTotal(cached.total || 0);
-          setTotalPages(cached.totalPages || 1);
-          setIsLoading(false);
-          return;
-        }
-      }
-
+    async (refresh = false) => {
       try {
-        const response = await getAllApplications({
-          page,
-          limit: 20,
-          status: status === "all" ? undefined : status,
-          buildingId: building === "all" ? undefined : building,
-          search: search || undefined,
-        });
+        if (refresh) setIsRefreshing(true);
+        else setLoading(true);
+        setError(null);
 
-        if (!isMounted.current) return;
+        const params: any = {
+          page: filters.page,
+          limit: filters.limit,
+        };
 
+        if (filters.status && filters.status !== "all") {
+          params.status = filters.status;
+        }
+        if (filters.search) {
+          params.search = filters.search;
+        }
+        if (filters.buildingId) {
+          params.buildingId = filters.buildingId;
+        }
+
+        // Add forceRefresh to bypass cache if needed
+        if (refresh) {
+          params.forceRefresh = true;
+        }
+
+        const response = await getAllApplications(params);
         const data = response.data || [];
-        const totalCount = response.total || 0;
-        const pages = response.totalPages || 1;
 
         setApplications(data);
-        setTotal(totalCount);
-        setTotalPages(pages);
-
-        // Cache the result
-        setCachedApplications(cacheKey, {
-          data,
-          total: totalCount,
-          totalPages: pages,
-        });
-      } catch (error: any) {
-        if (error.name === "AbortError" || error.code === "ERR_CANCELED") {
-          return;
-        }
-        console.error("Error fetching applications:", error);
+        setTotal(response.total || 0);
+        setTotalPages(response.totalPages || 0);
+        setCurrentPage(response.currentPage || 1);
+      } catch (err: any) {
+        console.error("Error fetching applications:", err);
+        setError(err.message || "Failed to load applications");
         toast.error("Failed to load applications");
-        setApplications([]);
-        setTotal(0);
-        setTotalPages(1);
       } finally {
-        if (isMounted.current) {
-          setIsLoading(false);
-        }
+        setLoading(false);
+        setIsRefreshing(false);
       }
     },
-    [],
+    [filters],
   );
 
-  // Initial load with debounce
+  // Fetch buildings and plans for dropdowns
+  const fetchMetadata = useCallback(async () => {
+    try {
+      const [buildingsRes, plansRes] = await Promise.all([
+        getActiveBuildings(),
+        getPlans(),
+      ]);
+
+      setBuildings(
+        buildingsRes.map((b: any) => ({
+          _id: b._id,
+          buildingName: b.buildingName,
+        })),
+      );
+
+      setPlans(
+        plansRes.map((p: any) => ({
+          _id: p._id,
+          name: p.name,
+          price: p.price,
+        })),
+      );
+    } catch (err) {
+      console.error("Error fetching metadata:", err);
+    }
+  }, []);
+
+  // Initial load
   useEffect(() => {
-    isMounted.current = true;
-
-    // Debounce initial load
-    const timeoutId = setTimeout(() => {
-      fetchApplications(currentPage, statusFilter, buildingFilter, searchQuery);
-    }, 100);
-
-    return () => {
-      isMounted.current = false;
-      clearTimeout(timeoutId);
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
-    };
-  }, [
-    currentPage,
-    statusFilter,
-    buildingFilter,
-    searchQuery,
-    fetchApplications,
-  ]);
-
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(page);
+    fetchApplications();
+    fetchMetadata();
   }, []);
 
-  const handleRefresh = useCallback(() => {
-    fetchApplications(
-      currentPage,
-      statusFilter,
-      buildingFilter,
-      searchQuery,
-      true,
+  // Refresh when filters change
+  useEffect(() => {
+    if (
+      filters.page > 1 ||
+      filters.search ||
+      filters.status !== "all" ||
+      filters.buildingId
+    ) {
+      fetchApplications();
+    }
+  }, [filters.page, filters.status, filters.buildingId]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      if (filters.search) {
+        fetchApplications();
+      }
+    }, 500);
+
+    return () => clearTimeout(debounceTimer);
+  }, [filters.search]);
+
+  // Handlers
+  const handleFilterChange = (key: keyof Filters, value: any) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+      ...(key !== "page" && { page: 1 }),
+    }));
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchApplications();
+  };
+
+  const handleRefresh = () => {
+    fetchApplications(true);
+  };
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setFilters((prev) => ({ ...prev, page }));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(applications.map((app) => app._id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedIds((prev) => [...prev, id]);
+    } else {
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
+    }
+  };
+
+  const handleViewApplication = (id: string) => {
+    router.push(`/admin/applications/${id}`);
+  };
+
+  const handleEditApplication = (id: string) => {
+    router.push(`/admin/applications/${id}/edit`);
+  };
+
+  // Status options for filter
+  const statusOptions = [
+    { value: "all", label: "All Status" },
+    { value: "pending", label: "Pending" },
+    { value: "approved", label: "Approved" },
+    { value: "rejected", label: "Rejected" },
+    { value: "billing_started", label: "Billing Started" },
+  ];
+
+  // Memoized stats
+  const stats = useMemo(() => {
+    const total = applications.length;
+    const pending = applications.filter((a) => a.status === "pending").length;
+    const approved = applications.filter((a) => a.status === "approved").length;
+    const rejected = applications.filter((a) => a.status === "rejected").length;
+    const billingStarted = applications.filter(
+      (a) => a.status === "billing_started",
+    ).length;
+
+    return { total, pending, approved, rejected, billingStarted };
+  }, [applications]);
+
+  if (error && !loading) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <p className="text-red-600 font-medium">Error loading applications</p>
+          <p className="text-red-500 text-sm mt-2">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
     );
-  }, [
-    currentPage,
-    statusFilter,
-    buildingFilter,
-    searchQuery,
-    fetchApplications,
-  ]);
-
-  const handleStatusFilterChange = useCallback((status: string) => {
-    setStatusFilter(status);
-    setCurrentPage(1);
-  }, []);
-
-  const handleBuildingFilterChange = useCallback((building: string) => {
-    setBuildingFilter(building);
-    setCurrentPage(1);
-  }, []);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    setCurrentPage(1);
-  }, []);
-
-  const handleApprove = useCallback(
-    async (id: string) => {
-      try {
-        await approveApplication(id);
-        // Silent refresh in background
-        fetchApplications(
-          currentPage,
-          statusFilter,
-          buildingFilter,
-          searchQuery,
-          true,
-        );
-      } catch (error: any) {
-        toast.error(
-          error?.response?.data?.message || "Failed to approve application",
-        );
-        throw error;
-      }
-    },
-    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
-  );
-
-  const handleReject = useCallback(
-    async (id: string) => {
-      try {
-        await rejectApplication(id);
-        fetchApplications(
-          currentPage,
-          statusFilter,
-          buildingFilter,
-          searchQuery,
-          true,
-        );
-      } catch (error: any) {
-        toast.error(
-          error?.response?.data?.message || "Failed to reject application",
-        );
-        throw error;
-      }
-    },
-    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
-  );
-
-  const handleStartBilling = useCallback(
-    async (id: string) => {
-      try {
-        await startBillingForApplication(id);
-        fetchApplications(
-          currentPage,
-          statusFilter,
-          buildingFilter,
-          searchQuery,
-          true,
-        );
-      } catch (error: any) {
-        toast.error(
-          error?.response?.data?.message || "Failed to start billing",
-        );
-        throw error;
-      }
-    },
-    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
-  );
-
-  const handleApplicationAdded = useCallback(() => {
-    fetchApplications(
-      currentPage,
-      statusFilter,
-      buildingFilter,
-      searchQuery,
-      true,
-    );
-  }, [
-    currentPage,
-    statusFilter,
-    buildingFilter,
-    searchQuery,
-    fetchApplications,
-  ]);
+  }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Applications</h1>
-          <p className="text-gray-500">
-            Manage customer applications and subscriptions
+          <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage all customer applications
           </p>
         </div>
-        {isLoading && applications.length === 0 && (
-          <div className="flex items-center gap-2 text-gray-500">
-            <svg
-              className="animate-spin h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span className="text-sm">Loading...</span>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition disabled:opacity-50"
+          >
+            <ArrowPathIcon
+              className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+          </button>
+
+          <button
+            onClick={() => router.push("/admin/applications/new")}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span className="hidden sm:inline">New Application</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
+          <p className="text-sm text-gray-500">Total</p>
+          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+        </div>
+        <div className="bg-yellow-50 rounded-lg shadow p-4 border border-yellow-100">
+          <p className="text-sm text-yellow-700">Pending</p>
+          <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+        </div>
+        <div className="bg-green-50 rounded-lg shadow p-4 border border-green-100">
+          <p className="text-sm text-green-700">Approved</p>
+          <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+        </div>
+        <div className="bg-purple-50 rounded-lg shadow p-4 border border-purple-100">
+          <p className="text-sm text-purple-700">Billing Started</p>
+          <p className="text-2xl font-bold text-purple-600">
+            {stats.billingStarted}
+          </p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
+        <form
+          onSubmit={handleSearch}
+          className="flex flex-col sm:flex-row gap-4"
+        >
+          {/* Search */}
+          <div className="flex-1 relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or ID..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange("search", e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <select
+            value={filters.status}
+            onChange={(e) => handleFilterChange("status", e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            {statusOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Building Filter */}
+          <select
+            value={filters.buildingId}
+            onChange={(e) => handleFilterChange("buildingId", e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px]"
+          >
+            <option value="">All Buildings</option>
+            {buildings.map((b) => (
+              <option key={b._id} value={b._id}>
+                {b.buildingName}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="submit"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            Search
+          </button>
+        </form>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
+        <ApplicationTable
+          applications={applications}
+          loading={loading}
+          selectedIds={selectedIds}
+          onSelectAll={handleSelectAll}
+          onSelectOne={handleSelectOne}
+          onView={handleViewApplication}
+          onEdit={handleEditApplication}
+          onRefresh={handleRefresh}
+        />
+
+        {/* Pagination */}
+        {totalPages > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
+            <p className="text-sm text-gray-500">
+              Showing {applications.length} of {total} applications
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+
+              <span className="px-3 py-1 text-sm">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
-
-      <ApplicationTable
-        applications={applications}
-        total={total}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        isLoading={isLoading}
-        onPageChange={handlePageChange}
-        onRefresh={handleRefresh}
-        onStatusFilterChange={handleStatusFilterChange}
-        onBuildingFilterChange={handleBuildingFilterChange}
-        onSearch={handleSearch}
-        onApprove={handleApprove}
-        onReject={handleReject}
-        onStartBilling={handleStartBilling}
-        onApplicationAdded={handleApplicationAdded}
-      />
     </div>
   );
 }

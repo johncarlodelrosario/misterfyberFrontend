@@ -1,4 +1,4 @@
-// components/admin/ApplicationDetails.tsx - COMPLETE
+// components/admin/ApplicationDetails.tsx - FIXED
 "use client";
 
 import React, { useState } from "react";
@@ -62,6 +62,12 @@ export function ApplicationDetails({
             Rejected
           </span>
         );
+      case "billing_started":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+            Billing Started
+          </span>
+        );
       default:
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
@@ -123,8 +129,9 @@ export function ApplicationDetails({
           <span className="font-medium">Status:</span>
           {getStatusBadge(application.status)}
         </div>
-        <div className="text-sm text-gray-500">
-          ID: {application._id.slice(-8).toUpperCase()}
+        <div className="text-sm text-gray-500 font-mono">
+          ID:{" "}
+          {application.applicationId || application._id.slice(-8).toUpperCase()}
         </div>
       </div>
 
@@ -135,6 +142,12 @@ export function ApplicationDetails({
             Personal Information
           </h3>
           <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Application ID:</span>
+              <span className="font-medium font-mono text-sm">
+                {application.applicationId || "N/A"}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Name:</span>
               <span className="font-medium">
