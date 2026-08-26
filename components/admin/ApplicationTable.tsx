@@ -4,7 +4,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   getAllApplications,
-  getAllApplicationsUnlimited,
   approveApplication,
   rejectApplication,
 } from "@/services/admin";
@@ -40,7 +39,6 @@ import {
   FiChevronRight,
 } from "react-icons/fi";
 
-const CHECK_INTERVAL = 30000;
 const ITEMS_PER_PAGE = 20;
 
 interface FilterState {
@@ -268,9 +266,6 @@ const ID_TYPES = [
   "Other",
 ];
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 export default function ApplicationTable({
   onStatsUpdate,
 }: ApplicationTableProps) {
@@ -286,8 +281,6 @@ export default function ApplicationTable({
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
-  const [hasNewApplicant, setHasNewApplicant] = useState(false);
-  const [newApplicantCount, setNewApplicantCount] = useState(0);
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
 
@@ -339,14 +332,11 @@ export default function ApplicationTable({
   });
 
   const refreshInProgressRef = useRef(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const silentRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const plansLoadedRef = useRef(false);
   const dataLoadedRef = useRef(false);
   const buildingsLoadedRef = useRef(false);
 
-  // ✅ STATIC OVERRIDE - FOREVER NA!
   const overrideStatusRef = useRef<Map<string, string>>(new Map());
 
   const plansMap = useMemo(() => {
@@ -361,9 +351,6 @@ export default function ApplicationTable({
     return map;
   }, [plans]);
 
-  // ============================================================
-  // STATS CALCULATION
-  // ============================================================
   const stats = useMemo(() => {
     if (!Array.isArray(applications) || applications.length === 0) {
       return { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
@@ -377,7 +364,6 @@ export default function ApplicationTable({
     };
   }, [applications]);
 
-  // Update stats whenever applications change
   useEffect(() => {
     if (onStatsUpdate) {
       onStatsUpdate(stats);
@@ -506,14 +492,18 @@ export default function ApplicationTable({
     return [];
   }, []);
 
-  const fetchAllApplications = useCallback(async () => {
+  const fetchApplications = useCallback(async () => {
     if (refreshInProgressRef.current) return;
     refreshInProgressRef.current = true;
     setRefreshing(true);
     setError(null);
 
     try {
-      const response = await getAllApplicationsUnlimited();
+      // Pass page and limit as object
+      const response = await getAllApplications({
+        page: currentPage,
+        limit: ITEMS_PER_PAGE,
+      });
 
       let applicationsList = extractApplicationsArray(response);
 
@@ -521,15 +511,30 @@ export default function ApplicationTable({
         applicationsList = [];
       }
 
-      setApplications(applicationsList);
-      setTotalCount(applicationsList.length);
+      // Get total count from response
+      const total =
+        response?.total || response?.data?.total || applicationsList.length;
+      setTotalCount(total);
+
+      // Apply overrides
+      const overrideMap = overrideStatusRef.current;
+      const mergedApplications = applicationsList.map((app) => {
+        const overrideStatus = overrideMap.get(app._id);
+        if (overrideStatus) {
+          return {
+            ...app,
+            status: overrideStatus,
+          };
+        }
+        return app;
+      });
+
+      setApplications(mergedApplications);
       setLastFetchTime(new Date());
       dataLoadedRef.current = true;
       setLoading(false);
-
-      setHasNewApplicant(false);
     } catch (error: any) {
-      console.error("Failed to fetch all applications:", error);
+      console.error("Failed to fetch applications:", error);
       setError("Unable to connect to server.");
       setLoading(false);
 
@@ -540,170 +545,62 @@ export default function ApplicationTable({
       setRefreshing(false);
       refreshInProgressRef.current = false;
     }
-  }, [extractApplicationsArray]);
+  }, [currentPage, extractApplicationsArray]);
 
-  // ============================================================
-  // ✅ MERGE FUNCTION - STATIC OVERRIDE!
-  // ============================================================
-  const mergeWithOverrides = useCallback(
-    (newApps: any[]) => {
-      const overrideMap = overrideStatusRef.current;
-
-      // Apply static overrides - FOREVER!
-      const mergedApplications = newApps.map((app) => {
-        const overrideStatus = overrideMap.get(app._id);
-        if (overrideStatus) {
-          return {
-            ...app,
-            status: overrideStatus, // STATIC - HINDI NA BABAGO!
-          };
-        }
-        return app;
-      });
-
-      // Check for new applicants (not in our list)
-      const existingIds = new Set(applications.map((a) => a._id));
-      const newAppsList = newApps.filter((a) => !existingIds.has(a._id));
-
-      // Add new apps to merged list
-      const finalApplications = [...mergedApplications];
-      newAppsList.forEach((app) => {
-        if (!finalApplications.find((a) => a._id === app._id)) {
-          finalApplications.push(app);
-        }
-      });
-
-      return finalApplications;
-    },
-    [applications],
-  );
-
-  // ============================================================
-  // ✅ SILENT REFRESH - STATIC OVERRIDE!
-  // ============================================================
-  const silentRefresh = useCallback(async () => {
-    if (refreshInProgressRef.current || !dataLoadedRef.current) return;
-
-    try {
-      const response = await getAllApplicationsUnlimited();
-      let applicationsList = extractApplicationsArray(response);
-      if (!Array.isArray(applicationsList)) applicationsList = [];
-
-      // ✅ APPLY STATIC OVERRIDES
-      const finalApplications = mergeWithOverrides(applicationsList);
-
-      const hasChanges =
-        JSON.stringify(applications) !== JSON.stringify(finalApplications);
-
-      if (hasChanges) {
-        console.log(
-          "🔄 Silent refresh: Data changed, updating with overrides...",
-        );
-        setApplications(finalApplications);
-        setTotalCount(finalApplications.length);
-        setLastFetchTime(new Date());
-
-        if (finalApplications.length > applications.length) {
-          setHasNewApplicant(true);
-          setNewApplicantCount(finalApplications.length - applications.length);
-          setTimeout(() => {
-            setHasNewApplicant(false);
-            setNewApplicantCount(0);
-          }, 5000);
-        }
-      }
-    } catch (error) {
-      console.error("Silent refresh failed:", error);
-    }
-  }, [applications, extractApplicationsArray, mergeWithOverrides]);
-
-  // ============================================================
-  // LOAD DATA - Load plans first, then applications
-  // ============================================================
+  // Load data on mount
   useEffect(() => {
     const init = async () => {
       await loadPlans();
-      await fetchAllApplications();
+      await fetchApplications();
     };
     init();
-  }, [loadPlans, fetchAllApplications]);
+  }, [loadPlans, fetchApplications]);
 
-  // ============================================================
-  // SILENT REFRESH EVERY 5 SECONDS
-  // ============================================================
-  useEffect(() => {
-    if (isOnline && !loading && dataLoadedRef.current) {
-      silentRefreshRef.current = setInterval(() => {
-        silentRefresh();
-      }, 5000);
-    }
+  // Handle page change
+  const handlePageChange = useCallback(
+    async (page: number) => {
+      if (refreshInProgressRef.current) return;
+      setCurrentPage(page);
+      setRefreshing(true);
 
-    return () => {
-      if (silentRefreshRef.current) {
-        clearInterval(silentRefreshRef.current);
-        silentRefreshRef.current = null;
+      try {
+        const response = await getAllApplications({
+          page: page,
+          limit: ITEMS_PER_PAGE,
+        });
+        let applicationsList = extractApplicationsArray(response);
+
+        if (!Array.isArray(applicationsList)) {
+          applicationsList = [];
+        }
+
+        const total =
+          response?.total || response?.data?.total || applicationsList.length;
+        setTotalCount(total);
+
+        const overrideMap = overrideStatusRef.current;
+        const mergedApplications = applicationsList.map((app) => {
+          const overrideStatus = overrideMap.get(app._id);
+          if (overrideStatus) {
+            return {
+              ...app,
+              status: overrideStatus,
+            };
+          }
+          return app;
+        });
+
+        setApplications(mergedApplications);
+        setLastFetchTime(new Date());
+      } catch (error: any) {
+        console.error("Failed to fetch applications:", error);
+        toast.error("Failed to load page");
+      } finally {
+        setRefreshing(false);
       }
-    };
-  }, [isOnline, loading, silentRefresh]);
-
-  // ============================================================
-  // CHECK FOR NEW APPLICANTS - WITH OVERRIDES!
-  // ============================================================
-  const checkForNewApplicants = useCallback(async () => {
-    if (refreshInProgressRef.current || !dataLoadedRef.current) return;
-
-    try {
-      const response = await getAllApplicationsUnlimited();
-      let applicationsList = extractApplicationsArray(response);
-
-      if (!Array.isArray(applicationsList)) {
-        applicationsList = [];
-      }
-
-      // ✅ APPLY STATIC OVERRIDES
-      const finalApplications = mergeWithOverrides(applicationsList);
-
-      const currentTotal = finalApplications.length;
-      const lastKnownTotal = totalCount || applications.length;
-
-      const hasNew = currentTotal > lastKnownTotal;
-
-      if (hasNew) {
-        setHasNewApplicant(true);
-        setNewApplicantCount(Math.max(currentTotal - lastKnownTotal, 1));
-
-        setApplications(finalApplications);
-        setTotalCount(currentTotal);
-
-        setTimeout(() => {
-          setHasNewApplicant(false);
-          setNewApplicantCount(0);
-        }, 5000);
-      } else if (
-        JSON.stringify(applications) !== JSON.stringify(finalApplications)
-      ) {
-        setApplications(finalApplications);
-        setTotalCount(currentTotal);
-      }
-    } catch (error) {
-      console.error("Failed to check for new applicants:", error);
-    }
-  }, [applications, totalCount, extractApplicationsArray, mergeWithOverrides]);
-
-  useEffect(() => {
-    if (isOnline && !loading && dataLoadedRef.current) {
-      intervalRef.current = setInterval(() => {
-        checkForNewApplicants();
-      }, CHECK_INTERVAL);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [isOnline, loading, checkForNewApplicants]);
+    },
+    [extractApplicationsArray],
+  );
 
   const getImageUrl = useCallback((imagePath: string) => {
     if (!imagePath) return null;
@@ -795,19 +692,14 @@ export default function ApplicationTable({
     setSelectedApp(app);
   };
 
-  // ============================================================
-  // ✅ APPROVE - STATIC! FOREVER NA APPROVED!
-  // ============================================================
   const handleApprove = async (id: string, adminNotes?: string) => {
     const previousApplications = applications;
 
     try {
       setProcessingId(id);
 
-      // ✅ STATIC OVERRIDE - APPROVED FOREVER!
       overrideStatusRef.current.set(id, "approved");
 
-      // ✅ OPTIMISTIC UPDATE - AGAD MAGBAGO ANG UI!
       const updatedApps = applications.map((app) =>
         app._id === id
           ? {
@@ -822,7 +714,6 @@ export default function ApplicationTable({
       );
       setApplications(updatedApps);
 
-      // ✅ CLEAR CACHE SA BACKEND
       try {
         const token = localStorage.getItem("token");
         await fetch("/api/applications/cache/clear", {
@@ -831,12 +722,10 @@ export default function ApplicationTable({
             Authorization: token ? `Bearer ${token}` : "",
           },
         });
-        console.log("🗑️ Cache cleared");
       } catch (cacheError) {
         console.warn("Cache clear failed");
       }
 
-      // ✅ SEND APPROVE REQUEST
       await approveApplication(id, adminNotes);
       toast.success("✅ Application approved!");
 
@@ -845,7 +734,6 @@ export default function ApplicationTable({
       console.error("❌ Approve error:", error);
       toast.error(error.response?.data?.message || "Failed to approve");
 
-      // ✅ REVERT ON ERROR
       overrideStatusRef.current.delete(id);
       setApplications(previousApplications);
       setSelectedApp(null);
@@ -854,19 +742,14 @@ export default function ApplicationTable({
     }
   };
 
-  // ============================================================
-  // ✅ REJECT - STATIC! FOREVER NA REJECTED!
-  // ============================================================
   const handleReject = async (id: string, adminNotes?: string) => {
     const previousApplications = applications;
 
     try {
       setProcessingId(id);
 
-      // ✅ STATIC OVERRIDE - REJECTED FOREVER!
       overrideStatusRef.current.set(id, "rejected");
 
-      // ✅ OPTIMISTIC UPDATE - AGAD MAGBAGO ANG UI!
       const updatedApps = applications.map((app) =>
         app._id === id
           ? {
@@ -881,7 +764,6 @@ export default function ApplicationTable({
       );
       setApplications(updatedApps);
 
-      // ✅ CLEAR CACHE SA BACKEND
       try {
         const token = localStorage.getItem("token");
         await fetch("/api/applications/cache/clear", {
@@ -890,12 +772,10 @@ export default function ApplicationTable({
             Authorization: token ? `Bearer ${token}` : "",
           },
         });
-        console.log("🗑️ Cache cleared");
       } catch (cacheError) {
         console.warn("Cache clear failed");
       }
 
-      // ✅ SEND REJECT REQUEST
       await rejectApplication(id, adminNotes);
       toast.success("❌ Application rejected!");
 
@@ -904,7 +784,6 @@ export default function ApplicationTable({
       console.error("❌ Reject error:", error);
       toast.error(error.response?.data?.message || "Failed to reject");
 
-      // ✅ REVERT ON ERROR
       overrideStatusRef.current.delete(id);
       setApplications(previousApplications);
       setSelectedApp(null);
@@ -913,15 +792,11 @@ export default function ApplicationTable({
     }
   };
 
-  // ============================================================
-  // START BILLING - OPTIMISTIC UPDATE
-  // ============================================================
   const handleStartBilling = async (app: any) => {
     try {
       setProcessingId(app._id);
       toast.loading("Starting billing...", { id: "start-billing" });
 
-      // ✅ OPTIMISTIC UPDATE
       setApplications((prevApplications) =>
         prevApplications.map((a) =>
           a._id === app._id ? { ...a, billingStarted: true } : a,
@@ -1024,14 +899,12 @@ export default function ApplicationTable({
   ]);
 
   const totalPages = useMemo(() => {
-    return Math.ceil(filteredApplications.length / ITEMS_PER_PAGE);
-  }, [filteredApplications.length]);
+    return Math.ceil(totalCount / ITEMS_PER_PAGE);
+  }, [totalCount]);
 
   const currentApplications = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    return filteredApplications.slice(startIndex, endIndex);
-  }, [filteredApplications, currentPage]);
+    return filteredApplications;
+  }, [filteredApplications]);
 
   useEffect(() => {
     setTimeout(checkTableScroll, 100);
@@ -1150,6 +1023,7 @@ export default function ApplicationTable({
         );
         setShowAddCustomerModal(false);
         resetCustomerForm();
+        await fetchApplications();
       } else {
         toast.error(result.message || "Failed to submit application");
       }
@@ -1378,6 +1252,7 @@ export default function ApplicationTable({
 
       if (success.length > 0) {
         toast.success(`Successfully added ${success.length} customers`);
+        await fetchApplications();
       }
 
       if (failed.length > 0) {
@@ -1397,9 +1272,11 @@ export default function ApplicationTable({
     setShowBulkUploadModal(false);
   };
 
-  // ============================================================
-  // LOADING STATE
-  // ============================================================
+  const handleRefresh = async () => {
+    await fetchApplications();
+    toast.success("Applications refreshed");
+  };
+
   if (loading && applications.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1411,37 +1288,15 @@ export default function ApplicationTable({
     );
   }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden relative">
-      {hasNewApplicant && (
-        <div className="mb-3 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-3 rounded-lg shadow-md">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <FiBell className="w-4 h-4 text-white" />
-            </div>
-            <div className="flex-1 min-w-[180px]">
-              <p className="font-bold text-green-800 text-xs sm:text-sm">
-                🆕 New Applicant{newApplicantCount > 1 ? "s" : ""} Detected!
-              </p>
-              <p className="text-xs text-green-700">
-                {newApplicantCount} new applicant
-                {newApplicantCount > 1 ? "s have" : " has"} been added.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-lg sm:text-xl font-bold text-gray-900">
             Applications
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
-            {totalCount || applications.length} total applications
+            {totalCount} total applications
           </p>
         </div>
 
@@ -1477,7 +1332,7 @@ export default function ApplicationTable({
           </div>
 
           <button
-            onClick={() => fetchAllApplications()}
+            onClick={handleRefresh}
             disabled={refreshing}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-xs sm:text-sm"
           >
@@ -1766,13 +1621,13 @@ export default function ApplicationTable({
             <span>
               {`Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(
                 currentPage * ITEMS_PER_PAGE,
-                filteredApplications.length,
-              )} of ${filteredApplications.length} applications`}
+                totalCount,
+              )} of ${totalCount} applications`}
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
+                onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
+                disabled={currentPage === 1 || refreshing}
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
                 <FiChevronLeft className="w-3.5 h-3.5" />
@@ -1783,9 +1638,11 @@ export default function ApplicationTable({
               </span>
               <button
                 onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  handlePageChange(Math.min(currentPage + 1, totalPages))
                 }
-                disabled={currentPage === totalPages || totalPages === 0}
+                disabled={
+                  currentPage === totalPages || totalPages === 0 || refreshing
+                }
                 className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
               >
                 Next
