@@ -1,2561 +1,475 @@
 // components/admin/ApplicationTable.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import {
-  getAllApplications,
-  approveApplication,
-  rejectApplication,
-} from "@/services/admin";
+  EyeIcon,
+  PencilIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ClockIcon,
+  PlayCircleIcon,
+} from "@heroicons/react/24/outline";
+import { toast } from "sonner";
+import Image from "next/image";
+
+import { approveApplication, rejectApplication } from "@/services/application";
 import { startBillingForApplication } from "@/services/billing";
-import {
-  submitApplication,
-  getActiveBuildings,
-  Building,
-} from "@/services/application";
-import { getPlans as getAllPlans, Plan } from "@/services/plan";
-import toast from "react-hot-toast";
-import {
-  FiEye,
-  FiCheck,
-  FiX,
-  FiRefreshCw,
-  FiSearch,
-  FiImage,
-  FiWifiOff,
-  FiClock,
-  FiBell,
-  FiPlay,
-  FiUser,
-  FiCreditCard,
-  FiPlus,
-  FiUpload,
-  FiDownload,
-  FiFileText,
-  FiWifi,
-  FiEdit2,
-  FiSave,
-  FiChevronLeft,
-  FiChevronRight,
-} from "react-icons/fi";
 
-const ITEMS_PER_PAGE = 20;
-
-interface FilterState {
-  searchTerm: string;
-  statusFilter: string;
-  buildingFilter: string;
+interface Application {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  buildingId: {
+    _id: string;
+    buildingName: string;
+  };
+  tower: string;
+  floor: string;
+  unitNumber: string;
+  planId: {
+    _id: string;
+    name: string;
+    price: number;
+  };
+  status: "pending" | "approved" | "rejected" | "billing_started";
+  idType: string;
+  idNumber: string;
+  macAddress?: string;
+  adminNotes?: string;
+  submittedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ApplicationTableProps {
-  onStatsUpdate?: (stats: {
-    total: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-    suspended: number;
-  }) => void;
+  applications: Application[];
+  loading: boolean;
+  selectedIds: string[];
+  onSelectAll: (checked: boolean) => void;
+  onSelectOne: (id: string, checked: boolean) => void;
+  onView: (id: string) => void;
+  onEdit: (id: string) => void;
+  onRefresh: () => void;
 }
 
-const formatPrice = (price: number | undefined | null): string => {
-  if (price === undefined || price === null || isNaN(price)) {
-    return "0.00";
-  }
-  return price.toFixed(2);
-};
-
-const getSpeed = (plan: any): string => {
-  if (!plan) return "N/A";
-
-  if (typeof plan === "object") {
-    if (plan.speed) {
-      if (typeof plan.speed === "object") {
-        if (plan.speed.download) return `${plan.speed.download} Mbps`;
-        if (plan.speed.downloadSpeed) return `${plan.speed.downloadSpeed} Mbps`;
-      }
-      if (typeof plan.speed === "string" || typeof plan.speed === "number") {
-        return `${plan.speed} Mbps`;
-      }
-    }
-    if (plan.downloadSpeed) return `${plan.downloadSpeed} Mbps`;
-    if (plan.download) return `${plan.download} Mbps`;
-  }
-
-  return "N/A";
-};
-
-const getPlanName = (app: any, plansMap: Map<string, Plan>): string => {
-  if (!app) return "N/A";
-
-  if (app.planId && typeof app.planId === "object") {
-    if (app.planId.name) return app.planId.name;
-    if (app.planId.planName) return app.planId.planName;
-  }
-
-  if (app.plan && typeof app.plan === "object") {
-    if (app.plan.name) return app.plan.name;
-    if (app.plan.planName) return app.plan.planName;
-  }
-
-  if (app.planName && app.planName !== "N/A" && app.planName !== "undefined") {
-    return app.planName;
-  }
-
-  if (app.plan && typeof app.plan === "string" && app.plan !== "N/A") {
-    return app.plan;
-  }
-
-  if (app.planId && typeof app.planId === "string") {
-    const plan = plansMap.get(app.planId);
-    if (plan) {
-      return plan.name;
-    }
-    return "Loading...";
-  }
-
-  if (app.planId && app.planId._id) {
-    const plan = plansMap.get(app.planId._id);
-    if (plan) return plan.name;
-  }
-
-  return "N/A";
-};
-
-const getPlanPrice = (app: any, plansMap: Map<string, Plan>): number => {
-  if (!app) return 0;
-
-  if (app.planId && typeof app.planId === "object") {
-    if (app.planId.price !== undefined && app.planId.price !== null) {
-      return Number(app.planId.price);
-    }
-    if (
-      app.planId.monthlyPrice !== undefined &&
-      app.planId.monthlyPrice !== null
-    ) {
-      return Number(app.planId.monthlyPrice);
-    }
-  }
-
-  if (app.plan && typeof app.plan === "object") {
-    if (app.plan.price !== undefined && app.plan.price !== null) {
-      return Number(app.plan.price);
-    }
-    if (app.plan.monthlyPrice !== undefined && app.plan.monthlyPrice !== null) {
-      return Number(app.plan.monthlyPrice);
-    }
-  }
-
-  if (app.planPrice !== undefined && app.planPrice !== null) {
-    return Number(app.planPrice);
-  }
-
-  if (app.price !== undefined && app.price !== null) {
-    return Number(app.price);
-  }
-
-  if (app.planId && typeof app.planId === "string") {
-    const plan = plansMap.get(app.planId);
-    if (plan) return Number(plan.price);
-  }
-
-  if (app.planId && app.planId._id) {
-    const plan = plansMap.get(app.planId._id);
-    if (plan) return Number(plan.price);
-  }
-
-  return 0;
-};
-
-const getPlanSpeed = (app: any, plansMap: Map<string, Plan>): string => {
-  if (!app) return "N/A";
-
-  if (app.planId && typeof app.planId === "object") {
-    const speed = getSpeed(app.planId);
-    if (speed !== "N/A") return speed;
-  }
-
-  if (app.plan && typeof app.plan === "object") {
-    return getSpeed(app.plan);
-  }
-
-  if (app.planId && typeof app.planId === "string") {
-    const plan = plansMap.get(app.planId);
-    if (plan) return getSpeed(plan);
-  }
-
-  if (app.planId && app.planId._id) {
-    const plan = plansMap.get(app.planId._id);
-    if (plan) return getSpeed(plan);
-  }
-
-  return "N/A";
-};
-
-const getBuildingName = (app: any): string => {
-  if (!app) return "N/A";
-
-  if (app.buildingId && typeof app.buildingId === "object") {
-    if (app.buildingId.buildingName) return app.buildingId.buildingName;
-    if (app.buildingId.name) return app.buildingId.name;
-  }
-
-  if (app.building && typeof app.building === "object") {
-    if (app.building.buildingName) return app.building.buildingName;
-    if (app.building.name) return app.building.name;
-  }
-
-  if (app.buildingName && app.buildingName !== "N/A") return app.buildingName;
-
-  if (app.buildingId && typeof app.buildingId === "string") {
-    return "Loading...";
-  }
-
-  return "N/A";
-};
-
-const getBuildingAddress = (app: any): string => {
-  if (!app) return "—";
-
-  if (app.buildingId && typeof app.buildingId === "object") {
-    const b = app.buildingId;
-    const parts = [
-      b.streetAddress || b.street || b.address,
-      b.barangay || b.barangay || b.district,
-      b.city || b.city || b.municipality,
-      b.province || b.province || b.state,
-      b.zipCode || b.zipCode || b.zip,
-    ].filter((part) => part && typeof part === "string" && part.trim() !== "");
-
-    if (parts.length > 0) {
-      return parts.join(", ");
-    }
-  }
-
-  if (app.building && typeof app.building === "object") {
-    const b = app.building;
-    const parts = [
-      b.streetAddress || b.street || b.address,
-      b.barangay || b.barangay || b.district,
-      b.city || b.city || b.municipality,
-      b.province || b.province || b.state,
-      b.zipCode || b.zipCode || b.zip,
-    ].filter((part) => part && typeof part === "string" && part.trim() !== "");
-
-    if (parts.length > 0) {
-      return parts.join(", ");
-    }
-  }
-
-  if (app.buildingAddress && typeof app.buildingAddress === "string") {
-    return app.buildingAddress;
-  }
-
-  return "—";
-};
-
-const ID_TYPES = [
-  "Philippine National ID",
-  "Driver's License",
-  "Passport",
-  "UMID",
-  "Postal ID",
-  "Voter's ID",
-  "PRC ID",
-  "GSIS ID",
-  "SSS ID",
-  "Other",
-];
+type SortField =
+  | "fullName"
+  | "email"
+  | "building"
+  | "plan"
+  | "status"
+  | "submittedAt";
+type SortDirection = "asc" | "desc";
 
 export default function ApplicationTable({
-  onStatsUpdate,
+  applications,
+  loading,
+  selectedIds,
+  onSelectAll,
+  onSelectOne,
+  onView,
+  onEdit,
+  onRefresh,
 }: ApplicationTableProps) {
-  const [applications, setApplications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedApp, setSelectedApp] = useState<any>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [showImageModal, setShowImageModal] = useState(false);
-  const [processingId, setProcessingId] = useState<string | null>(null);
-  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true,
-  );
-  const [showBillingModal, setShowBillingModal] = useState(false);
-  const [selectedAppForBilling, setSelectedAppForBilling] = useState<any>(null);
+  const [sortField, setSortField] = useState<SortField>("submittedAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const [filter, setFilter] = useState<FilterState>({
-    searchTerm: "",
-    statusFilter: "all",
-    buildingFilter: "",
-  });
-  const [editingMacAddress, setEditingMacAddress] = useState<string | null>(
-    null,
-  );
-  const [tempMacAddress, setTempMacAddress] = useState("");
-  const [editingTower, setEditingTower] = useState<string | null>(null);
-  const [tempTower, setTempTower] = useState("");
+  // Sort applications
+  const sortedApplications = useMemo(() => {
+    const sorted = [...applications];
 
-  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
-  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [plansLoaded, setPlansLoaded] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [bulkResults, setBulkResults] = useState<{
-    success: any[];
-    failed: any[];
-  } | null>(null);
+    sorted.sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [showLeftButton, setShowLeftButton] = useState(false);
-  const [showRightButton, setShowRightButton] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
-
-  const [customerForm, setCustomerForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phoneNumber: "",
-    buildingId: "",
-    tower: "",
-    floor: "",
-    unitNumber: "",
-    notes: "",
-    planId: "",
-    idType: "",
-    idNumber: "",
-    macAddress: "",
-    idImage: null as File | null,
-  });
-
-  const refreshInProgressRef = useRef(false);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-  const plansLoadedRef = useRef(false);
-  const dataLoadedRef = useRef(false);
-  const buildingsLoadedRef = useRef(false);
-
-  const overrideStatusRef = useRef<Map<string, string>>(new Map());
-
-  const plansMap = useMemo(() => {
-    const map = new Map<string, Plan>();
-    if (plans && plans.length > 0) {
-      plans.forEach((plan) => {
-        if (plan && plan._id) {
-          map.set(plan._id, plan);
-        }
-      });
-    }
-    return map;
-  }, [plans]);
-
-  const stats = useMemo(() => {
-    if (!Array.isArray(applications) || applications.length === 0) {
-      return { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
-    }
-    return {
-      pending: applications.filter((a) => a.status === "pending").length,
-      approved: applications.filter((a) => a.status === "approved").length,
-      rejected: applications.filter((a) => a.status === "rejected").length,
-      suspended: applications.filter((a) => a.status === "suspended").length,
-      total: applications.length,
-    };
-  }, [applications]);
-
-  useEffect(() => {
-    if (onStatsUpdate) {
-      onStatsUpdate(stats);
-    }
-  }, [stats, onStatsUpdate]);
-
-  const checkTableScroll = useCallback(() => {
-    if (tableContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } =
-        tableContainerRef.current;
-      setShowLeftButton(scrollLeft > 10);
-      setShowRightButton(scrollLeft < scrollWidth - clientWidth - 10);
-    }
-  }, []);
-
-  useEffect(() => {
-    const checkScroll = () => checkTableScroll();
-    checkScroll();
-    window.addEventListener("resize", checkScroll);
-    const observer = new ResizeObserver(checkScroll);
-    if (tableContainerRef.current) {
-      observer.observe(tableContainerRef.current);
-    }
-    return () => {
-      window.removeEventListener("resize", checkScroll);
-      observer.disconnect();
-    };
-  }, [checkTableScroll]);
-
-  const scrollTableLeft = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
-      setTimeout(checkTableScroll, 300);
-    }
-  };
-
-  const scrollTableRight = () => {
-    if (tableContainerRef.current) {
-      tableContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
-      setTimeout(checkTableScroll, 300);
-    }
-  };
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filter.searchTerm, filter.statusFilter, filter.buildingFilter]);
-
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      toast.success("Network connected");
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      toast.error("Network disconnected");
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  const loadPlans = useCallback(async () => {
-    if (plansLoadedRef.current) return;
-    try {
-      const plansData = await getAllPlans();
-      if (Array.isArray(plansData)) {
-        setPlans(plansData);
-        setPlansLoaded(true);
-        plansLoadedRef.current = true;
-      } else {
-        console.error("Invalid plans data received:", plansData);
-      }
-    } catch (error) {
-      console.error("Failed to load plans:", error);
-    }
-  }, []);
-
-  const loadBuildings = useCallback(async () => {
-    if (buildingsLoadedRef.current) return;
-    try {
-      const buildingsData = await getActiveBuildings();
-      if (Array.isArray(buildingsData)) {
-        setBuildings(buildingsData);
-        buildingsLoadedRef.current = true;
-      }
-    } catch (error) {
-      console.error("Failed to load buildings:", error);
-    }
-  }, []);
-
-  const loadBuildingsAndPlans = useCallback(async () => {
-    try {
-      await Promise.all([loadBuildings(), loadPlans()]);
-    } catch (error) {
-      console.error("Failed to load buildings/plans:", error);
-    }
-  }, [loadBuildings, loadPlans]);
-
-  useEffect(() => {
-    if (showAddCustomerModal) {
-      loadBuildingsAndPlans();
-    }
-  }, [showAddCustomerModal, loadBuildingsAndPlans]);
-
-  const extractApplicationsArray = useCallback((response: any): any[] => {
-    if (!response) return [];
-    if (Array.isArray(response)) return response;
-    if (response.data && Array.isArray(response.data)) return response.data;
-    if (response.applications && Array.isArray(response.applications))
-      return response.applications;
-    if (
-      response.data &&
-      response.data.data &&
-      Array.isArray(response.data.data)
-    ) {
-      return response.data.data;
-    }
-    if (response.results && Array.isArray(response.results))
-      return response.results;
-    if (response.docs && Array.isArray(response.docs)) return response.docs;
-    return [];
-  }, []);
-
-  const fetchApplications = useCallback(async () => {
-    if (refreshInProgressRef.current) return;
-    refreshInProgressRef.current = true;
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      // Pass page and limit as object
-      const response = await getAllApplications({
-        page: currentPage,
-        limit: ITEMS_PER_PAGE,
-      });
-
-      let applicationsList = extractApplicationsArray(response);
-
-      if (!Array.isArray(applicationsList)) {
-        applicationsList = [];
+      switch (sortField) {
+        case "fullName":
+          aVal = `${a.firstName} ${a.lastName}`.toLowerCase();
+          bVal = `${b.firstName} ${b.lastName}`.toLowerCase();
+          break;
+        case "email":
+          aVal = a.email.toLowerCase();
+          bVal = b.email.toLowerCase();
+          break;
+        case "building":
+          aVal = a.buildingId?.buildingName?.toLowerCase() || "";
+          bVal = b.buildingId?.buildingName?.toLowerCase() || "";
+          break;
+        case "plan":
+          aVal = a.planId?.name?.toLowerCase() || "";
+          bVal = b.planId?.name?.toLowerCase() || "";
+          break;
+        case "status":
+          aVal = a.status;
+          bVal = b.status;
+          break;
+        case "submittedAt":
+          aVal = new Date(a.submittedAt || a.createdAt).getTime();
+          bVal = new Date(b.submittedAt || b.createdAt).getTime();
+          break;
+        default:
+          return 0;
       }
 
-      // Get total count from response
-      const total =
-        response?.total || response?.data?.total || applicationsList.length;
-      setTotalCount(total);
-
-      // Apply overrides
-      const overrideMap = overrideStatusRef.current;
-      const mergedApplications = applicationsList.map((app) => {
-        const overrideStatus = overrideMap.get(app._id);
-        if (overrideStatus) {
-          return {
-            ...app,
-            status: overrideStatus,
-          };
-        }
-        return app;
-      });
-
-      setApplications(mergedApplications);
-      setLastFetchTime(new Date());
-      dataLoadedRef.current = true;
-      setLoading(false);
-    } catch (error: any) {
-      console.error("Failed to fetch applications:", error);
-      setError("Unable to connect to server.");
-      setLoading(false);
-
-      if (!dataLoadedRef.current) {
-        toast.error("Failed to connect");
-      }
-    } finally {
-      setRefreshing(false);
-      refreshInProgressRef.current = false;
-    }
-  }, [currentPage, extractApplicationsArray]);
-
-  // Load data on mount
-  useEffect(() => {
-    const init = async () => {
-      await loadPlans();
-      await fetchApplications();
-    };
-    init();
-  }, [loadPlans, fetchApplications]);
-
-  // Handle page change
-  const handlePageChange = useCallback(
-    async (page: number) => {
-      if (refreshInProgressRef.current) return;
-      setCurrentPage(page);
-      setRefreshing(true);
-
-      try {
-        const response = await getAllApplications({
-          page: page,
-          limit: ITEMS_PER_PAGE,
-        });
-        let applicationsList = extractApplicationsArray(response);
-
-        if (!Array.isArray(applicationsList)) {
-          applicationsList = [];
-        }
-
-        const total =
-          response?.total || response?.data?.total || applicationsList.length;
-        setTotalCount(total);
-
-        const overrideMap = overrideStatusRef.current;
-        const mergedApplications = applicationsList.map((app) => {
-          const overrideStatus = overrideMap.get(app._id);
-          if (overrideStatus) {
-            return {
-              ...app,
-              status: overrideStatus,
-            };
-          }
-          return app;
-        });
-
-        setApplications(mergedApplications);
-        setLastFetchTime(new Date());
-      } catch (error: any) {
-        console.error("Failed to fetch applications:", error);
-        toast.error("Failed to load page");
-      } finally {
-        setRefreshing(false);
-      }
-    },
-    [extractApplicationsArray],
-  );
-
-  const getImageUrl = useCallback((imagePath: string) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
-      return imagePath;
-    if (imagePath.startsWith("data:image")) return imagePath;
-    let cleanPath = imagePath.replace(/^\/+/, "");
-    if (
-      !cleanPath.startsWith("uploads/") &&
-      !cleanPath.startsWith("uploads\\")
-    ) {
-      cleanPath = `uploads/${cleanPath}`;
-    }
-    cleanPath = cleanPath.replace(/\\/g, "/");
-    return `/${cleanPath}`;
-  }, []);
-
-  const handleUpdateMacAddress = async (
-    applicationId: string,
-    macAddress: string,
-  ) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(
-        `/api/applications/${applicationId}/mac-address`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({ macAddress }),
-        },
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
-            app._id === applicationId
-              ? { ...app, macAddress: result.data?.macAddress || macAddress }
-              : app,
-          ),
-        );
-        toast.success("MAC address updated successfully");
-      } else {
-        toast.error("Failed to update MAC address");
-      }
-    } catch (error) {
-      toast.error("Error updating MAC address");
-    } finally {
-      setEditingMacAddress(null);
-      setTempMacAddress("");
-    }
-  };
-
-  const handleUpdateTower = async (applicationId: string, tower: string) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`/api/applications/${applicationId}/tower`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify({ tower }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setApplications((prev) =>
-          prev.map((app) =>
-            app._id === applicationId
-              ? { ...app, tower: result.data?.tower || tower }
-              : app,
-          ),
-        );
-        toast.success("Tower updated successfully");
-      } else {
-        toast.error("Failed to update tower");
-      }
-    } finally {
-      setEditingTower(null);
-      setTempTower("");
-    }
-  };
-
-  const handleViewApplication = (app: any) => {
-    setSelectedApp(app);
-  };
-
-  const handleApprove = async (id: string, adminNotes?: string) => {
-    const previousApplications = applications;
-
-    try {
-      setProcessingId(id);
-
-      overrideStatusRef.current.set(id, "approved");
-
-      const updatedApps = applications.map((app) =>
-        app._id === id
-          ? {
-              ...app,
-              status: "approved",
-              billingStarted: app.billingStarted || false,
-              serviceStatus: app.serviceStatus || "pending",
-              reviewedAt: new Date().toISOString(),
-              adminNotes: adminNotes || app.adminNotes || "",
-            }
-          : app,
-      );
-      setApplications(updatedApps);
-
-      try {
-        const token = localStorage.getItem("token");
-        await fetch("/api/applications/cache/clear", {
-          method: "POST",
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        });
-      } catch (cacheError) {
-        console.warn("Cache clear failed");
-      }
-
-      await approveApplication(id, adminNotes);
-      toast.success("✅ Application approved!");
-
-      setSelectedApp(null);
-    } catch (error: any) {
-      console.error("❌ Approve error:", error);
-      toast.error(error.response?.data?.message || "Failed to approve");
-
-      overrideStatusRef.current.delete(id);
-      setApplications(previousApplications);
-      setSelectedApp(null);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  const handleReject = async (id: string, adminNotes?: string) => {
-    const previousApplications = applications;
-
-    try {
-      setProcessingId(id);
-
-      overrideStatusRef.current.set(id, "rejected");
-
-      const updatedApps = applications.map((app) =>
-        app._id === id
-          ? {
-              ...app,
-              status: "rejected",
-              billingStarted: app.billingStarted || false,
-              serviceStatus: app.serviceStatus || "pending",
-              reviewedAt: new Date().toISOString(),
-              adminNotes: adminNotes || app.adminNotes || "",
-            }
-          : app,
-      );
-      setApplications(updatedApps);
-
-      try {
-        const token = localStorage.getItem("token");
-        await fetch("/api/applications/cache/clear", {
-          method: "POST",
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        });
-      } catch (cacheError) {
-        console.warn("Cache clear failed");
-      }
-
-      await rejectApplication(id, adminNotes);
-      toast.success("❌ Application rejected!");
-
-      setSelectedApp(null);
-    } catch (error: any) {
-      console.error("❌ Reject error:", error);
-      toast.error(error.response?.data?.message || "Failed to reject");
-
-      overrideStatusRef.current.delete(id);
-      setApplications(previousApplications);
-      setSelectedApp(null);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  const handleStartBilling = async (app: any) => {
-    try {
-      setProcessingId(app._id);
-      toast.loading("Starting billing...", { id: "start-billing" });
-
-      setApplications((prevApplications) =>
-        prevApplications.map((a) =>
-          a._id === app._id ? { ...a, billingStarted: true } : a,
-        ),
-      );
-
-      const result = await startBillingForApplication(app.applicationId, {});
-
-      toast.dismiss("start-billing");
-
-      if (result.success) {
-        toast.success(
-          `✅ Billing started for ${app.firstName} ${app.lastName}!`,
-        );
-
-        try {
-          const token = localStorage.getItem("token");
-          await fetch("/api/applications/cache/clear", {
-            method: "POST",
-            headers: {
-              Authorization: token ? `Bearer ${token}` : "",
-            },
-          });
-        } catch (cacheError) {
-          console.warn("Cache clear failed");
-        }
-
-        setSelectedAppForBilling(null);
-        setShowBillingModal(false);
-      } else {
-        toast.error(result.message || "Failed to start billing");
-        setApplications((prevApplications) =>
-          prevApplications.map((a) =>
-            a._id === app._id ? { ...a, billingStarted: false } : a,
-          ),
-        );
-      }
-    } catch (error: any) {
-      toast.dismiss("start-billing");
-      toast.error(error.response?.data?.message || "Failed to start billing");
-      setApplications((prevApplications) =>
-        prevApplications.map((a) =>
-          a._id === app._id ? { ...a, billingStarted: false } : a,
-        ),
-      );
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  const uniqueBuildings = useMemo(() => {
-    if (!Array.isArray(applications) || applications.length === 0) return [];
-    const buildingSet = new Set<string>();
-    applications.forEach((app: any) => {
-      const name = getBuildingName(app);
-      if (name && name !== "N/A" && name !== "Loading...") {
-        buildingSet.add(name);
-      }
+      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+      return 0;
     });
-    return Array.from(buildingSet).sort();
-  }, [applications]);
 
-  const filteredApplications = useMemo(() => {
-    if (!Array.isArray(applications) || applications.length === 0) return [];
-    return applications.filter((app: any) => {
-      const matchesSearch =
-        !filter.searchTerm ||
-        app.applicationId
-          ?.toLowerCase()
-          .includes(filter.searchTerm.toLowerCase()) ||
-        app.firstName
-          ?.toLowerCase()
-          .includes(filter.searchTerm.toLowerCase()) ||
-        app.lastName?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        app.email?.toLowerCase().includes(filter.searchTerm.toLowerCase()) ||
-        (app.tower &&
-          app.tower.toLowerCase().includes(filter.searchTerm.toLowerCase())) ||
-        (app.macAddress &&
-          app.macAddress
-            .toLowerCase()
-            .includes(filter.searchTerm.toLowerCase()));
+    return sorted;
+  }, [applications, sortField, sortDirection]);
 
-      const matchesStatus =
-        filter.statusFilter === "all" || app.status === filter.statusFilter;
-
-      const buildingName = getBuildingName(app);
-      const matchesBuilding =
-        !filter.buildingFilter ||
-        buildingName
-          .toLowerCase()
-          .includes(filter.buildingFilter.toLowerCase());
-
-      return matchesSearch && matchesStatus && matchesBuilding;
-    });
-  }, [
-    applications,
-    filter.searchTerm,
-    filter.statusFilter,
-    filter.buildingFilter,
-  ]);
-
-  const totalPages = useMemo(() => {
-    return Math.ceil(totalCount / ITEMS_PER_PAGE);
-  }, [totalCount]);
-
-  const currentApplications = useMemo(() => {
-    return filteredApplications;
-  }, [filteredApplications]);
-
-  useEffect(() => {
-    setTimeout(checkTableScroll, 100);
-  }, [currentApplications, checkTableScroll]);
-
-  const getStatusBadge = useCallback((status: string) => {
-    const styles: Record<string, string> = {
-      pending: "bg-yellow-100 text-yellow-800",
-      approved: "bg-green-100 text-green-800",
-      rejected: "bg-red-100 text-red-800",
-      suspended: "bg-gray-100 text-gray-800",
-    };
-    return styles[status] || "bg-gray-100 text-gray-800";
-  }, []);
-
-  const getLastFetchDisplay = useCallback(() => {
-    if (!lastFetchTime) return "Never";
-    const now = new Date();
-    const diff = now.getTime() - lastFetchTime.getTime();
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
-  }, [lastFetchTime]);
-
-  const resetCustomerForm = () => {
-    setCustomerForm({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phoneNumber: "",
-      buildingId: "",
-      tower: "",
-      floor: "",
-      unitNumber: "",
-      notes: "",
-      planId: "",
-      idType: "",
-      idNumber: "",
-      macAddress: "",
-      idImage: null,
-    });
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
   };
 
-  const handleAddCustomerSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!customerForm.firstName.trim()) {
-      toast.error("First name is required");
-      return;
-    }
-    if (!customerForm.lastName.trim()) {
-      toast.error("Last name is required");
-      return;
-    }
-    if (!customerForm.email.trim()) {
-      toast.error("Email is required");
-      return;
-    }
-    if (!customerForm.phoneNumber.trim()) {
-      toast.error("Phone number is required");
-      return;
-    }
-    if (!customerForm.buildingId) {
-      toast.error("Building is required");
-      return;
-    }
-    if (!customerForm.tower.trim()) {
-      toast.error("Tower is required");
-      return;
-    }
-    if (!customerForm.unitNumber.trim()) {
-      toast.error("Unit number is required");
-      return;
-    }
-    if (!customerForm.planId) {
-      toast.error("Plan is required");
-      return;
-    }
-    if (!customerForm.idType) {
-      toast.error("ID type is required");
-      return;
-    }
-    if (!customerForm.idNumber.trim()) {
-      toast.error("ID number is required");
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const submissionData = {
-        firstName: customerForm.firstName.trim(),
-        lastName: customerForm.lastName.trim(),
-        email: customerForm.email.trim(),
-        phoneNumber: customerForm.phoneNumber.trim(),
-        buildingId: customerForm.buildingId,
-        tower: customerForm.tower.trim(),
-        floor: customerForm.floor.trim() || "",
-        unitNumber: customerForm.unitNumber.trim(),
-        notes: customerForm.notes.trim() || "",
-        planId: customerForm.planId,
-        idType: customerForm.idType,
-        idNumber: customerForm.idNumber.trim(),
-        macAddress: customerForm.macAddress.trim() || "",
-        idImage: customerForm.idImage || undefined,
-      };
-
-      const result = await submitApplication(submissionData);
-
-      if (result.success || result.data) {
-        toast.success(
-          `✅ Customer ${customerForm.firstName} ${customerForm.lastName} added successfully!`,
+  const getStatusBadge = (status: Application["status"]) => {
+    switch (status) {
+      case "pending":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <ClockIcon className="h-3.5 w-3.5" />
+            Pending
+          </span>
         );
-        setShowAddCustomerModal(false);
-        resetCustomerForm();
-        await fetchApplications();
-      } else {
-        toast.error(result.message || "Failed to submit application");
-      }
+      case "approved":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircleIcon className="h-3.5 w-3.5" />
+            Approved
+          </span>
+        );
+      case "rejected":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircleIcon className="h-3.5 w-3.5" />
+            Rejected
+          </span>
+        );
+      case "billing_started":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+            <PlayCircleIcon className="h-3.5 w-3.5" />
+            Billing Started
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const handleApprove = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionLoading(id);
+
+    try {
+      const result = await approveApplication(id);
+      toast.success("Application approved successfully");
+      onRefresh();
     } catch (error: any) {
-      console.error("Failed to submit application:", error);
-      const errorMessage =
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        error.message ||
-        "Failed to submit application";
-      toast.error(errorMessage);
+      console.error("Error approving application:", error);
+      toast.error(error.message || "Failed to approve application");
     } finally {
-      setSubmitting(false);
+      setActionLoading(null);
     }
   };
 
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
-        setCsvFile(file);
-        setBulkResults(null);
-      } else {
-        toast.error("Please upload a valid CSV file");
-        setCsvFile(null);
-      }
-    }
-  };
+  const handleReject = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionLoading(id);
 
-  const downloadCsvTemplate = () => {
-    const headers = [
-      "firstName",
-      "lastName",
-      "email",
-      "phoneNumber",
-      "buildingName",
-      "tower",
-      "floor",
-      "unitNumber",
-      "planName",
-      "idType",
-      "idNumber",
-      "macAddress",
-      "notes",
-    ];
-
-    const exampleRow = [
-      "John",
-      "Doe",
-      "john.doe@example.com",
-      "09123456789",
-      "Tower 1",
-      "A",
-      "5th Floor",
-      "Unit 501",
-      "Fiber 100 Mbps",
-      "Philippine National ID",
-      "1234-5678-9012",
-      "AA:BB:CC:DD:EE:FF",
-      "Interested in installation",
-    ];
-
-    const csvContent = [headers.join(","), exampleRow.join(",")].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "customer_applications_template.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Template downloaded");
-  };
-
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === "," && !inQuotes) {
-        result.push(current);
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    result.push(current);
-    return result;
-  };
-
-  const parseCsvAndPrepareData = async (file: File): Promise<any[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const text = e.target?.result as string;
-          const lines = text.split("\n");
-          const headers = lines[0]
-            .split(",")
-            .map((h) => h.trim().replace(/\r/g, ""));
-
-          const [buildingsData, plansData] = await Promise.all([
-            getActiveBuildings(),
-            getAllPlans(),
-          ]);
-
-          const buildingMap = new Map();
-          if (Array.isArray(buildingsData)) {
-            buildingsData.forEach((b: Building) => {
-              buildingMap.set(b.buildingName.toLowerCase().trim(), b._id);
-            });
-          }
-
-          const planMap = new Map();
-          if (Array.isArray(plansData)) {
-            plansData.forEach((p: Plan) => {
-              planMap.set(p.name.toLowerCase().trim(), p._id);
-            });
-          }
-
-          const applicationsList: any[] = [];
-
-          for (let i = 1; i < lines.length; i++) {
-            if (!lines[i].trim()) continue;
-
-            const values = parseCSVLine(lines[i]);
-            const row: any = {};
-            headers.forEach((header, index) => {
-              row[header] = values[index]?.trim() || "";
-            });
-
-            const buildingId = buildingMap.get(
-              row.buildingName?.toLowerCase().trim(),
-            );
-            if (!buildingId) {
-              console.warn(`Building not found: ${row.buildingName}`);
-              continue;
-            }
-
-            const planId = planMap.get(row.planName?.toLowerCase().trim());
-            if (!planId) {
-              console.warn(`Plan not found: ${row.planName}`);
-              continue;
-            }
-
-            if (
-              !row.firstName ||
-              !row.lastName ||
-              !row.email ||
-              !row.phoneNumber
-            ) {
-              console.warn(`Missing required fields for row ${i}`);
-              continue;
-            }
-
-            applicationsList.push({
-              firstName: row.firstName,
-              lastName: row.lastName,
-              email: row.email,
-              phoneNumber: row.phoneNumber,
-              buildingId: buildingId,
-              tower: row.tower || "",
-              floor: row.floor || "",
-              unitNumber: row.unitNumber || "",
-              notes: row.notes || "",
-              planId: planId,
-              idType: row.idType || ID_TYPES[0],
-              idNumber: row.idNumber || "N/A",
-              macAddress: row.macAddress || "",
-            });
-          }
-
-          resolve(applicationsList);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
-
-  const handleBulkUpload = async () => {
-    if (!csvFile) {
-      toast.error("Please select a CSV file");
+    const reason = prompt("Please enter a reason for rejection:");
+    if (reason === null) {
+      setActionLoading(null);
       return;
     }
 
-    setBulkSubmitting(true);
-    setBulkResults(null);
-
     try {
-      const applicationsList = await parseCsvAndPrepareData(csvFile);
-
-      if (applicationsList.length === 0) {
-        toast.error("No valid applications found in CSV");
-        setBulkSubmitting(false);
-        return;
-      }
-
-      const success: any[] = [];
-      const failed: any[] = [];
-
-      for (let i = 0; i < applicationsList.length; i++) {
-        const app = applicationsList[i];
-        try {
-          const result = await submitApplication(app);
-          success.push({ ...app, result: result.data });
-          toast.success(`✓ ${app.firstName} ${app.lastName} added`);
-        } catch (error: any) {
-          failed.push({
-            ...app,
-            error:
-              error.response?.data?.message || error.message || "Unknown error",
-          });
-          toast.error(`✗ Failed: ${app.firstName} ${app.lastName}`);
-        }
-      }
-
-      setBulkResults({ success, failed });
-
-      if (success.length > 0) {
-        toast.success(`Successfully added ${success.length} customers`);
-        await fetchApplications();
-      }
-
-      if (failed.length > 0) {
-        toast.error(`Failed to add ${failed.length} customers`);
-      }
+      await rejectApplication(id, reason || undefined);
+      toast.success("Application rejected");
+      onRefresh();
     } catch (error: any) {
-      console.error("Bulk upload failed:", error);
-      toast.error(error.message || "Bulk upload failed");
+      console.error("Error rejecting application:", error);
+      toast.error(error.message || "Failed to reject application");
     } finally {
-      setBulkSubmitting(false);
+      setActionLoading(null);
     }
   };
 
-  const resetBulkUpload = () => {
-    setCsvFile(null);
-    setBulkResults(null);
-    setShowBulkUploadModal(false);
+  const handleStartBilling = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionLoading(id);
+
+    try {
+      await startBillingForApplication(id);
+      toast.success("Billing started successfully");
+      onRefresh();
+    } catch (error: any) {
+      console.error("Error starting billing:", error);
+      toast.error(error.message || "Failed to start billing");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const handleRefresh = async () => {
-    await fetchApplications();
-    toast.success("Applications refreshed");
-  };
+  const isAllSelected =
+    applications.length > 0 && selectedIds.length === applications.length;
 
   if (loading && applications.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading applications...</p>
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="mt-4 text-sm text-gray-500">Loading applications...</p>
+      </div>
+    );
+  }
+
+  if (applications.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="flex flex-col items-center">
+          <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+            <svg
+              className="h-8 w-8 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900">
+            No applications found
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Try adjusting your filters or search criteria
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 max-w-full overflow-x-hidden relative">
-      <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl font-bold text-gray-900">
-            Applications
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-600">
-            {totalCount} total applications
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => {
-              resetCustomerForm();
-              setShowAddCustomerModal(true);
-              loadBuildingsAndPlans();
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm"
-          >
-            <FiPlus className="w-3.5 h-3.5" />
-            <span className="hidden xs:inline">Add Customer</span>
-            <span className="xs:hidden">Add</span>
-          </button>
-
-          <button
-            onClick={() => {
-              resetBulkUpload();
-              setShowBulkUploadModal(true);
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs sm:text-sm"
-          >
-            <FiUpload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Bulk Upload</span>
-            <span className="sm:hidden">Bulk</span>
-          </button>
-
-          <div className="hidden lg:flex text-xs text-gray-500 items-center gap-1">
-            <FiClock className="w-3 h-3" />
-            <span>{getLastFetchDisplay()}</span>
-          </div>
-
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-xs sm:text-sm"
-          >
-            <FiRefreshCw
-              className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-            />
-            <span className="hidden xs:inline">
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {!isOnline && (
-        <div className="mb-3 bg-yellow-50 border-l-4 border-yellow-400 p-2 rounded">
-          <div className="flex items-center gap-2">
-            <FiWifiOff className="w-3.5 h-3.5 text-yellow-400" />
-            <p className="text-xs text-yellow-700">
-              Offline mode - showing cached data
-            </p>
-          </div>
-        </div>
-      )}
-
-      {error && applications.length > 0 && (
-        <div className="mb-3 bg-blue-50 border-l-4 border-blue-400 p-2 rounded">
-          <p className="text-xs text-blue-700">{error}</p>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg border border-gray-200 p-2 mb-4">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex-1 relative">
-            <FiSearch className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
-            <input
-              type="text"
-              placeholder="Search by ID, name, email, tower, or MAC..."
-              value={filter.searchTerm}
-              onChange={(e) =>
-                setFilter((prev) => ({ ...prev, searchTerm: e.target.value }))
-              }
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-          <select
-            value={filter.statusFilter}
-            onChange={(e) =>
-              setFilter((prev) => ({ ...prev, statusFilter: e.target.value }))
-            }
-            className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-          >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="suspended">Suspended</option>
-          </select>
-          <select
-            value={filter.buildingFilter}
-            onChange={(e) =>
-              setFilter((prev) => ({ ...prev, buildingFilter: e.target.value }))
-            }
-            className="px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 min-w-[120px]"
-          >
-            <option value="">All Buildings</option>
-            {uniqueBuildings.map((building) => (
-              <option key={building} value={building}>
-                {building}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* TABLE */}
-      <div className="relative">
-        {showLeftButton && (
-          <button
-            onClick={scrollTableLeft}
-            className="hidden sm:flex absolute left-0 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200"
-          >
-            <FiChevronLeft className="w-4 h-4" />
-          </button>
-        )}
-
-        {showRightButton && (
-          <button
-            onClick={scrollTableRight}
-            className="absolute right-0 top-1/2 transform -translate-y-1/2 z-40 bg-white/90 hover:bg-white text-gray-700 p-2 rounded-full shadow-md border border-gray-200"
-          >
-            <FiChevronRight className="w-4 h-4" />
-          </button>
-        )}
-
-        <div
-          ref={tableContainerRef}
-          className="bg-white rounded-md border border-gray-200 overflow-x-auto shadow-sm"
-          onScroll={checkTableScroll}
-        >
-          <table className="min-w-[1050px] w-full border-collapse">
-            <thead>
-              <tr className="bg-[#f0f0f0] border-b border-gray-300">
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300 w-[50px]">
-                  #
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  ID
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Name
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Email
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Building
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Address
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Plan
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  MAC Address
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Status
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">
-                  Date
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {currentApplications.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="px-4 py-8 text-center text-gray-500 text-sm"
-                  >
-                    {applications.length === 0
-                      ? "No applications found"
-                      : "No applications match your filters"}
-                  </td>
-                </tr>
-              ) : (
-                currentApplications.map((app: any, idx: number) => {
-                  const globalIndex =
-                    (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
-                  const buildingName = getBuildingName(app);
-                  const buildingAddress = getBuildingAddress(app);
-                  const planName = getPlanName(app, plansMap);
-                  const planPrice = getPlanPrice(app, plansMap);
-                  const planSpeed = getPlanSpeed(app, plansMap);
-
-                  let planDisplay = "N/A";
-                  if (planName !== "N/A" && planName !== "Loading...") {
-                    planDisplay =
-                      planSpeed !== "N/A"
-                        ? `${planName} (${planSpeed})`
-                        : `${planName}`;
-                  } else if (planName === "Loading...") {
-                    planDisplay = "Loading plan...";
-                  }
-
-                  return (
-                    <tr
-                      key={app._id}
-                      className={`hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}`}
-                    >
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100 text-center">
-                        {globalIndex}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs font-mono text-gray-900 border-r border-gray-100">
-                        {app.applicationId}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 border-r border-gray-100">
-                        {app.firstName} {app.lastName}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                        {app.email}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                        {buildingName}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100 max-w-[150px] truncate">
-                        {buildingAddress}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600 border-r border-gray-100">
-                        {planDisplay}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs font-mono border-r border-gray-100">
-                        {editingMacAddress === app._id ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={tempMacAddress}
-                              onChange={(e) =>
-                                setTempMacAddress(e.target.value)
-                              }
-                              className="w-28 px-1.5 py-0.5 text-xs border border-gray-300 rounded font-mono"
-                              placeholder="AA:BB:CC:DD:EE:FF"
-                              autoFocus
-                            />
-                            <button
-                              onClick={() =>
-                                handleUpdateMacAddress(app._id, tempMacAddress)
-                              }
-                              className="text-green-600 hover:text-green-800"
-                            >
-                              <FiSave className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingMacAddress(null);
-                                setTempMacAddress("");
-                              }}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              <FiX className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-gray-500">
-                              {app.macAddress || "—"}
-                            </span>
-                            <button
-                              onClick={() => {
-                                setEditingMacAddress(app._id);
-                                setTempMacAddress(app.macAddress || "");
-                              }}
-                              className="text-gray-400 hover:text-blue-600"
-                              title="Edit MAC Address"
-                            >
-                              <FiEdit2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap border-r border-gray-100">
-                        <span
-                          className={`px-1.5 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(app.status)}`}
-                        >
-                          {app.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 border-r border-gray-100">
-                        {new Date(app.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleViewApplication(app)}
-                            className="text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium"
-                          >
-                            <FiEye className="w-3.5 h-3.5" />
-                            <span className="hidden xs:inline">View</span>
-                          </button>
-                          {app.status === "approved" && !app.billingStarted && (
-                            <button
-                              onClick={() => {
-                                setSelectedAppForBilling(app);
-                                setShowBillingModal(true);
-                              }}
-                              className="text-green-600 hover:text-green-800 flex items-center gap-1 font-medium"
-                              title="Start Billing"
-                            >
-                              <FiPlay className="w-3.5 h-3.5" />
-                              <span className="hidden xs:inline">Bill</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-          <div className="px-3 py-1.5 bg-[#f0f0f0] border-t border-gray-300 text-xs text-gray-600 flex flex-col sm:flex-row justify-between items-center gap-2">
-            <span>
-              {`Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(
-                currentPage * ITEMS_PER_PAGE,
-                totalCount,
-              )} of ${totalCount} applications`}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
-                disabled={currentPage === 1 || refreshing}
-                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-              >
-                <FiChevronLeft className="w-3.5 h-3.5" />
-                Prev
-              </button>
-              <span className="text-xs text-gray-700">
-                Page {currentPage} of {totalPages || 1}
-              </span>
-              <button
-                onClick={() =>
-                  handlePageChange(Math.min(currentPage + 1, totalPages))
-                }
-                disabled={
-                  currentPage === totalPages || totalPages === 0 || refreshing
-                }
-                className="px-2.5 py-1 bg-white border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-1"
-              >
-                Next
-                <FiChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* View Application Modal */}
-      {selectedApp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <div>
-                <h2 className="text-lg font-bold">
-                  {selectedApp.status === "pending"
-                    ? "Review Application"
-                    : "Application Details"}
-                </h2>
-                <p className="text-xs text-gray-500 font-mono">
-                  {selectedApp.applicationId}
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedApp(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2 text-sm">
-                  <FiUser className="w-4 h-4" /> Personal Information
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-gray-500">Name:</span>{" "}
-                    <span className="font-medium">
-                      {selectedApp.firstName} {selectedApp.lastName}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Email:</span>{" "}
-                    <span className="font-medium">{selectedApp.email}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Phone:</span>{" "}
-                    <span className="font-medium">
-                      {selectedApp.phoneNumber || "Not provided"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">MAC Address:</span>{" "}
-                    <span className="font-mono font-medium">
-                      {selectedApp.macAddress || "Not provided"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">
-                  Building & Unit Information
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-gray-500">Building:</span>{" "}
-                    <span className="font-medium">
-                      {getBuildingName(selectedApp)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Address:</span>{" "}
-                    <span className="font-medium">
-                      {getBuildingAddress(selectedApp)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Tower:</span>{" "}
-                    {editingTower === selectedApp._id ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={tempTower}
-                          onChange={(e) => setTempTower(e.target.value)}
-                          className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 rounded"
-                          placeholder="Tower"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() =>
-                            handleUpdateTower(selectedApp._id, tempTower)
-                          }
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          <FiSave className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingTower(null);
-                            setTempTower("");
-                          }}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          <FiX className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="font-medium">
-                        {selectedApp.tower || "Not provided"}
-                        <button
-                          onClick={() => {
-                            setEditingTower(selectedApp._id);
-                            setTempTower(selectedApp.tower || "");
-                          }}
-                          className="ml-1.5 text-gray-400 hover:text-blue-600"
-                          title="Edit Tower"
-                        >
-                          <FiEdit2 className="w-3 h-3 inline" />
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Floor:</span>{" "}
-                    <span className="font-medium">
-                      {selectedApp.floor || "Not provided"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Unit Number:</span>{" "}
-                    <span className="font-medium">
-                      {selectedApp.unitNumber || "Not provided"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">
-                  Plan Details
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-gray-500">Plan:</span>{" "}
-                    <span className="font-medium">
-                      {getPlanName(selectedApp, plansMap)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Price:</span>{" "}
-                    <span className="font-medium">
-                      ₱{formatPrice(getPlanPrice(selectedApp, plansMap))}/month
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Speed:</span>{" "}
-                    <span className="font-medium">
-                      {getPlanSpeed(selectedApp, plansMap)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                  <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                    <FiCreditCard className="w-4 h-4" /> ID Verification
-                  </h3>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-gray-500">ID Type:</span>{" "}
-                    {selectedApp.idType &&
-                    selectedApp.idType !== "undefined" &&
-                    selectedApp.idType !== "Not Provided"
-                      ? selectedApp.idType
-                      : "Not provided"}
-                  </div>
-                  <div>
-                    <span className="text-gray-500">ID Number:</span>{" "}
-                    {selectedApp.idNumber &&
-                    selectedApp.idNumber !== "undefined" &&
-                    selectedApp.idNumber !== "Not Provided"
-                      ? selectedApp.idNumber
-                      : "Not provided"}
-                  </div>
-                </div>
-                {selectedApp.idImage &&
-                  selectedApp.idImage !== "uploads/id-cards/placeholder.jpg" &&
-                  selectedApp.idImage !== "" && (
-                    <div className="mt-2">
-                      <div className="text-xs text-gray-500 mb-1">
-                        ID Image:
-                      </div>
-                      <div
-                        className="relative border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => {
-                          const url = getImageUrl(selectedApp.idImage);
-                          if (url) {
-                            setImagePreview(url);
-                            setShowImageModal(true);
-                          } else {
-                            toast.error("Could not load image URL");
-                          }
-                        }}
-                      >
-                        <img
-                          src={getImageUrl(selectedApp.idImage) || ""}
-                          alt="ID Document"
-                          className="w-full max-h-48 object-contain bg-gray-100"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display =
-                              "none";
-                          }}
-                        />
-                        <div className="absolute bottom-1 right-1 bg-black bg-opacity-50 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
-                          <FiImage className="w-3 h-3" /> Enlarge
-                        </div>
-                      </div>
-                    </div>
-                  )}
-              </div>
-
-              {selectedApp.adminNotes && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">
-                    Admin Notes
-                  </h3>
-                  <p className="text-xs text-gray-700">
-                    {selectedApp.adminNotes}
-                  </p>
-                </div>
-              )}
-
-              {selectedApp.notes && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">
-                    Customer Notes
-                  </h3>
-                  <p className="text-xs text-gray-700">{selectedApp.notes}</p>
-                </div>
-              )}
-
-              {selectedApp.status === "pending" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Admin Notes
-                    </label>
-                    <textarea
-                      id="adminNotes"
-                      rows={2}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                      placeholder="Add notes about this application..."
-                    />
-                  </div>
-                  <div className="flex flex-col sm:flex-row justify-end gap-2 pt-3 border-t border-gray-200">
-                    <button
-                      onClick={() => setSelectedApp(null)}
-                      className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-xs"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        const notes = (
-                          document.getElementById(
-                            "adminNotes",
-                          ) as HTMLTextAreaElement
-                        )?.value;
-                        handleReject(selectedApp._id, notes);
-                      }}
-                      disabled={processingId === selectedApp._id}
-                      className="px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50 text-xs"
-                    >
-                      {processingId === selectedApp._id ? (
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <FiX className="w-3.5 h-3.5" />
-                      )}
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => {
-                        const notes = (
-                          document.getElementById(
-                            "adminNotes",
-                          ) as HTMLTextAreaElement
-                        )?.value;
-                        handleApprove(selectedApp._id, notes);
-                      }}
-                      disabled={processingId === selectedApp._id}
-                      className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-1.5 disabled:opacity-50 text-xs"
-                    >
-                      {processingId === selectedApp._id ? (
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <FiCheck className="w-3.5 h-3.5" />
-                      )}
-                      Approve
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Billing Modal */}
-      {showBillingModal && selectedAppForBilling && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
-          <div className="bg-white rounded-lg max-w-md w-full p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-bold text-gray-900">Start Billing</h2>
-              <button
-                onClick={() => {
-                  setShowBillingModal(false);
-                  setSelectedAppForBilling(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div className="bg-blue-50 p-2 rounded-md">
-                <p className="text-xs text-blue-800">
-                  <strong>Customer:</strong> {selectedAppForBilling.firstName}{" "}
-                  {selectedAppForBilling.lastName}
-                </p>
-                <p className="text-xs text-blue-800">
-                  <strong>Email:</strong> {selectedAppForBilling.email}
-                </p>
-                <p className="text-xs text-blue-800 font-mono">
-                  <strong>App ID:</strong> {selectedAppForBilling.applicationId}
-                </p>
-                <p className="text-xs text-blue-800">
-                  <strong>Plan:</strong>{" "}
-                  {getPlanName(selectedAppForBilling, plansMap)} - ₱
-                  {formatPrice(getPlanPrice(selectedAppForBilling, plansMap))}
-                  /month
-                </p>
-                <p className="text-xs text-blue-800">
-                  <strong>Building:</strong>{" "}
-                  {getBuildingName(selectedAppForBilling)}
-                </p>
-                {selectedAppForBilling.tower && (
-                  <p className="text-xs text-blue-800">
-                    <strong>Tower:</strong> {selectedAppForBilling.tower}
-                  </p>
-                )}
-                {selectedAppForBilling.macAddress && (
-                  <p className="text-xs text-blue-800 font-mono">
-                    <strong>MAC:</strong> {selectedAppForBilling.macAddress}
-                  </p>
-                )}
-              </div>
-              <div className="bg-yellow-50 p-2 rounded-md">
-                <p className="text-xs text-yellow-800">
-                  ⚠️ Starting billing will:
-                </p>
-                <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
-                  <li>Generate pro-rated bill</li>
-                  <li>Send invoice to customer</li>
-                  <li>Create billing cycle</li>
-                </ul>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 pt-3">
-                <button
-                  onClick={() => {
-                    setShowBillingModal(false);
-                    setSelectedAppForBilling(null);
-                  }}
-                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleStartBilling(selectedAppForBilling)}
-                  disabled={processingId === selectedAppForBilling._id}
-                  className="flex-1 px-3 py-1.5 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1.5 text-xs"
-                >
-                  {processingId === selectedAppForBilling._id ? (
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <FiPlay className="w-3.5 h-3.5" />
-                  )}
-                  Start Billing
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Image Modal */}
-      {showImageModal && imagePreview && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
-          onClick={() => {
-            setShowImageModal(false);
-            setImagePreview(null);
-          }}
-        >
-          <div className="relative max-w-4xl w-full">
-            <button
-              onClick={() => {
-                setShowImageModal(false);
-                setImagePreview(null);
-              }}
-              className="absolute -top-8 right-0 text-white hover:text-gray-300"
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm text-left">
+        <thead className="bg-gray-50 text-xs uppercase text-gray-500 border-b border-gray-200">
+          <tr>
+            <th className="px-4 py-3 w-10">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={(e) => onSelectAll(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700"
+              onClick={() => handleSort("fullName")}
             >
-              <FiX className="w-6 h-6" />
-            </button>
-            <img
-              src={imagePreview}
-              alt="ID Document"
-              className="w-full h-auto rounded-lg shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-              loading="lazy"
-              onError={() => {
-                toast.error("Failed to load image.");
-                setShowImageModal(false);
-                setImagePreview(null);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Add Customer Modal */}
-      {showAddCustomerModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  Add New Customer
-                </h2>
-                <p className="text-xs text-gray-500">
-                  Create a new fiber internet application
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAddCustomerModal(false);
-                  resetCustomerForm();
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleAddCustomerSubmit} className="p-4 space-y-4">
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-1.5 text-sm">
-                  <FiUser className="w-4 h-4" /> Personal Information
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      First Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.firstName}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          firstName: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Last Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.lastName}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          lastName: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Email *
-                    </label>
-                    <input
-                      type="email"
-                      value={customerForm.email}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          email: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      value={customerForm.phoneNumber}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          phoneNumber: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">
-                  Building & Unit
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Building *
-                    </label>
-                    <select
-                      value={customerForm.buildingId}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          buildingId: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    >
-                      <option value="">Select Building</option>
-                      {buildings.map((b) => (
-                        <option key={b._id} value={b._id}>
-                          {b.buildingName} - {b.barangay}, {b.city}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Tower *
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.tower}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          tower: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., A"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Floor
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.floor}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          floor: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., 5th Floor"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Unit Number *
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.unitNumber}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          unitNumber: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., Unit 501"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">
-                  Internet Plan
-                </h3>
-                <select
-                  value={customerForm.planId}
-                  onChange={(e) =>
-                    setCustomerForm({ ...customerForm, planId: e.target.value })
-                  }
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
-                >
-                  <option value="">Select Plan</option>
-                  {plans.map((p) => (
-                    <option key={p._id} value={p._id}>
-                      {p.name} - ₱{formatPrice(p.price)}/month
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-1.5 text-sm">
-                  <FiWifi className="w-4 h-4" /> Network Config
-                </h3>
+              <span className="flex items-center gap-1">
+                Applicant
+                {sortField === "fullName" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden sm:table-cell"
+              onClick={() => handleSort("email")}
+            >
+              <span className="flex items-center gap-1">
+                Email
+                {sortField === "email" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden md:table-cell"
+              onClick={() => handleSort("building")}
+            >
+              <span className="flex items-center gap-1">
+                Building
+                {sortField === "building" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden lg:table-cell"
+              onClick={() => handleSort("plan")}
+            >
+              <span className="flex items-center gap-1">
+                Plan
+                {sortField === "plan" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700"
+              onClick={() => handleSort("status")}
+            >
+              <span className="flex items-center gap-1">
+                Status
+                {sortField === "status" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th
+              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden md:table-cell"
+              onClick={() => handleSort("submittedAt")}
+            >
+              <span className="flex items-center gap-1">
+                Submitted
+                {sortField === "submittedAt" && (
+                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                )}
+              </span>
+            </th>
+            <th className="px-4 py-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {sortedApplications.map((app) => (
+            <tr
+              key={app._id}
+              className="hover:bg-gray-50 transition cursor-pointer"
+              onClick={() => onView(app._id)}
+            >
+              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                 <input
-                  type="text"
-                  value={customerForm.macAddress}
-                  onChange={(e) =>
-                    setCustomerForm({
-                      ...customerForm,
-                      macAddress: e.target.value,
-                    })
-                  }
-                  placeholder="MAC Address (optional)"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md font-mono focus:ring-blue-500 focus:border-blue-500"
+                  type="checkbox"
+                  checked={selectedIds.includes(app._id)}
+                  onChange={(e) => onSelectOne(app._id, e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-1.5 text-sm">
-                  <FiCreditCard className="w-4 h-4" /> ID Verification
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      ID Type *
-                    </label>
-                    <select
-                      value={customerForm.idType}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          idType: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    >
-                      <option value="">Select ID Type</option>
-                      {ID_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm flex-shrink-0">
+                    {app.firstName.charAt(0)}
+                    {app.lastName.charAt(0)}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      ID Number *
-                    </label>
-                    <input
-                      type="text"
-                      value={customerForm.idNumber}
-                      onChange={(e) =>
-                        setCustomerForm({
-                          ...customerForm,
-                          idNumber: e.target.value,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      ID Image (Optional)
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        if (e.target.files?.[0])
-                          setCustomerForm({
-                            ...customerForm,
-                            idImage: e.target.files[0],
-                          });
-                      }}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {customerForm.idImage && (
-                      <p className="text-xs text-green-600 mt-1">
-                        ✓ {customerForm.idImage.name} selected
-                      </p>
-                    )}
+                    <p className="font-medium text-gray-900">
+                      {app.firstName} {app.lastName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      #{app._id.slice(-6)}
+                    </p>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">
-                  Additional Notes
-                </h3>
-                <textarea
-                  value={customerForm.notes}
-                  onChange={(e) =>
-                    setCustomerForm({ ...customerForm, notes: e.target.value })
-                  }
-                  rows={2}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Any additional information..."
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddCustomerModal(false);
-                    resetCustomerForm();
-                  }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-1.5 disabled:opacity-50 text-xs"
-                >
-                  {submitting ? (
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <FiPlus className="w-3.5 h-3.5" />
-                  )}{" "}
-                  Submit
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Upload Modal */}
-      {showBulkUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold">Bulk Upload Customers</h2>
-                <p className="text-xs text-gray-500">
-                  Upload multiple applications via CSV
+              </td>
+              <td className="px-4 py-3 hidden sm:table-cell">
+                <p className="text-gray-600 truncate max-w-[150px]">
+                  {app.email}
                 </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowBulkUploadModal(false);
-                  resetBulkUpload();
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="bg-blue-50 p-3 rounded-md">
-                <h3 className="font-semibold text-blue-800 mb-1 flex items-center gap-1 text-sm">
-                  <FiFileText className="w-4 h-4" /> Instructions
-                </h3>
-                <ul className="text-xs text-blue-700 space-y-0.5 list-disc list-inside">
-                  <li>Download template, fill data</li>
-                  <li>MAC address optional</li>
-                  <li>Upload completed CSV</li>
-                </ul>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold mb-2 text-sm">
-                  1. Download Template
-                </h3>
-                <button
-                  onClick={downloadCsvTemplate}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-md text-xs"
-                >
-                  <FiDownload className="w-3.5 h-3.5" /> Download Template
-                </button>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-md">
-                <h3 className="font-semibold mb-2 text-sm">2. Upload CSV</h3>
-                <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
-                  <FiUpload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                  <p className="text-xs text-gray-600 mb-1">
-                    {csvFile ? csvFile.name : "Click or drag CSV"}
-                  </p>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleCsvFileChange}
-                    className="hidden"
-                    id="csv-upload-bulk"
-                  />
-                  <label
-                    htmlFor="csv-upload-bulk"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md cursor-pointer text-xs"
+                <p className="text-xs text-gray-400">{app.phoneNumber}</p>
+              </td>
+              <td className="px-4 py-3 hidden md:table-cell">
+                <p className="text-gray-600">
+                  {app.buildingId?.buildingName || "N/A"}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {app.tower} • Floor {app.floor} • Unit {app.unitNumber}
+                </p>
+              </td>
+              <td className="px-4 py-3 hidden lg:table-cell">
+                <p className="text-gray-600 font-medium">
+                  {app.planId?.name || "N/A"}
+                </p>
+                <p className="text-xs text-gray-400">
+                  ₱{app.planId?.price?.toLocaleString() || 0}
+                </p>
+              </td>
+              <td className="px-4 py-3">{getStatusBadge(app.status)}</td>
+              <td className="px-4 py-3 hidden md:table-cell">
+                <p className="text-gray-500 text-sm">
+                  {new Date(
+                    app.submittedAt || app.createdAt,
+                  ).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {new Date(
+                    app.submittedAt || app.createdAt,
+                  ).toLocaleTimeString()}
+                </p>
+              </td>
+              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    onClick={() => onView(app._id)}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                    title="View"
                   >
-                    <FiUpload className="w-3.5 h-3.5" /> Select File
-                  </label>
-                </div>
-              </div>
+                    <EyeIcon className="h-4 w-4" />
+                  </button>
 
-              {bulkResults && (
-                <div className="bg-gray-50 p-3 rounded-md">
-                  <h3 className="font-semibold mb-2 text-sm">Results</h3>
-                  <div className="space-y-2">
-                    <div className="bg-green-50 p-2 rounded">
-                      <p className="text-green-800 font-medium text-xs">
-                        ✓ Success: {bulkResults.success.length}
-                      </p>
-                      {bulkResults.success.length > 0 && (
-                        <details>
-                          <summary className="text-xs text-green-700 cursor-pointer">
-                            Details
-                          </summary>
-                          <ul className="mt-1 text-xs">
-                            {bulkResults.success.map((a, i) => (
-                              <li key={i}>
-                                {a.firstName} {a.lastName}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                    {bulkResults.failed.length > 0 && (
-                      <div className="bg-red-50 p-2 rounded">
-                        <p className="text-red-800 font-medium text-xs">
-                          ✗ Failed: {bulkResults.failed.length}
-                        </p>
-                        <details>
-                          <summary className="text-xs text-red-700 cursor-pointer">
-                            Details
-                          </summary>
-                          <ul className="mt-1 text-xs">
-                            {bulkResults.failed.map((a, i) => (
-                              <li key={i}>
-                                {a.firstName} {a.lastName} - {a.error}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                  <button
+                    onClick={() => onEdit(app._id)}
+                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                    title="Edit"
+                  >
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
 
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  onClick={() => {
-                    setShowBulkUploadModal(false);
-                    resetBulkUpload();
-                  }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 text-xs"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={handleBulkUpload}
-                  disabled={!csvFile || bulkSubmitting}
-                  className="px-3 py-1.5 bg-purple-600 text-white rounded-md flex items-center gap-1.5 disabled:opacity-50 text-xs"
-                >
-                  {bulkSubmitting ? (
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <FiUpload className="w-3.5 h-3.5" />
-                  )}{" "}
-                  Process
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                  {app.status === "pending" && (
+                    <>
+                      <button
+                        onClick={(e) => handleApprove(app._id, e)}
+                        disabled={actionLoading === app._id}
+                        className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition disabled:opacity-50"
+                        title="Approve"
+                      >
+                        <CheckCircleIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={(e) => handleReject(app._id, e)}
+                        disabled={actionLoading === app._id}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
+                        title="Reject"
+                      >
+                        <XCircleIcon className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
+
+                  {app.status === "approved" && (
+                    <button
+                      onClick={(e) => handleStartBilling(app._id, e)}
+                      disabled={actionLoading === app._id}
+                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition disabled:opacity-50"
+                      title="Start Billing"
+                    >
+                      <PlayCircleIcon className="h-4 w-4" />
+                    </button>
+                  )}
+
+                  {actionLoading === app._id && (
+                    <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
