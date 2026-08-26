@@ -1,12 +1,9 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE
+// app/(dashboard)/admin/applications/page.tsx - ULTRA FAST
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import ApplicationTable from "@/components/admin/ApplicationTable";
-import {
-  getAllApplications,
-  getAllApplicationsUnlimited,
-} from "@/services/application";
+import { getAllApplications } from "@/services/application";
 import {
   approveApplication,
   rejectApplication,
@@ -14,10 +11,10 @@ import {
 } from "@/services/admin";
 import { toast } from "sonner";
 
-// Fast LRU cache for applications
+// Super fast LRU cache
 const applicationCache = new Map();
 const CACHE_TTL = 30 * 1000; // 30 seconds
-const MAX_CACHE_ITEMS = 10;
+const MAX_CACHE_ITEMS = 20;
 
 function getCachedApplications(key: string): any | null {
   const cached = applicationCache.get(key);
@@ -48,6 +45,7 @@ export default function AdminApplicationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const isMounted = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchApplications = useCallback(
     async (
@@ -59,6 +57,11 @@ export default function AdminApplicationsPage() {
     ) => {
       if (!isMounted.current) return;
 
+      // Clear any pending timeout
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+
       setIsLoading(true);
 
       // Cancel previous request
@@ -67,9 +70,9 @@ export default function AdminApplicationsPage() {
       }
       abortControllerRef.current = new AbortController();
 
-      const cacheKey = `applications_${page}_${status}_${building}_${search}`;
+      const cacheKey = `apps_${page}_${status}_${building}_${search}`;
 
-      // Try cache first
+      // Try cache first (super fast!)
       if (!forceRefresh) {
         const cached = getCachedApplications(cacheKey);
         if (cached) {
@@ -124,15 +127,23 @@ export default function AdminApplicationsPage() {
     [],
   );
 
-  // Initial load
+  // Initial load with debounce
   useEffect(() => {
     isMounted.current = true;
-    fetchApplications(currentPage, statusFilter, buildingFilter, searchQuery);
+
+    // Debounce initial load
+    const timeoutId = setTimeout(() => {
+      fetchApplications(currentPage, statusFilter, buildingFilter, searchQuery);
+    }, 100);
 
     return () => {
       isMounted.current = false;
+      clearTimeout(timeoutId);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
       }
     };
   }, [
@@ -182,8 +193,8 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await approveApplication(id);
-        // Force refresh to get latest data
-        await fetchApplications(
+        // Silent refresh in background
+        fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -204,7 +215,7 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await rejectApplication(id);
-        await fetchApplications(
+        fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -225,7 +236,7 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await startBillingForApplication(id);
-        await fetchApplications(
+        fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -267,7 +278,7 @@ export default function AdminApplicationsPage() {
             Manage customer applications and subscriptions
           </p>
         </div>
-        {isLoading && (
+        {isLoading && applications.length === 0 && (
           <div className="flex items-center gap-2 text-gray-500">
             <svg
               className="animate-spin h-4 w-4"

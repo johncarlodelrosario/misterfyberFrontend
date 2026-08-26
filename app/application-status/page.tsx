@@ -1,3 +1,4 @@
+// app/application-status/page.tsx - COMPLETE
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
@@ -100,7 +101,7 @@ function StatusContent() {
                 onChange={(e) => setApplicationId(e.target.value)}
                 placeholder="e.g., SLK2603123456"
                 className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 text-sm sm:text-base"
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     handleCheckStatus();
                   }

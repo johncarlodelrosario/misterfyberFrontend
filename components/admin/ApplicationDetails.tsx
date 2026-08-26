@@ -271,14 +271,14 @@ export function ApplicationDetails({
               disabled={actionLoading}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
             >
-              {actionLoading ? "Processing..." : "Approve"}
+              {actionLoading ? "⏳ Processing..." : "✅ Approve"}
             </button>
             <button
               onClick={handleReject}
               disabled={actionLoading}
               className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
             >
-              {actionLoading ? "Processing..." : "Reject"}
+              {actionLoading ? "⏳ Processing..." : "❌ Reject"}
             </button>
           </>
         )}
@@ -288,7 +288,7 @@ export function ApplicationDetails({
             disabled={actionLoading}
             className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
           >
-            {actionLoading ? "Processing..." : "Start Billing"}
+            {actionLoading ? "⏳ Processing..." : "💰 Start Billing"}
           </button>
         )}
       </div>
