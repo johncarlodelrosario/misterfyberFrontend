@@ -1,4 +1,4 @@
-// services/application.ts - UPDATED WITH getAllApplications
+// services/application.ts
 import api from "./api";
 
 export interface Building {
@@ -66,41 +66,93 @@ export interface PaginatedResponse {
   limit: number;
 }
 
+// Fast cache
+const appCache = new Map();
+const CACHE_TTL = 30 * 1000;
+
+function getCachedApp<T>(key: string): T | null {
+  const cached = appCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL) {
+    appCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedApp<T>(key: string, data: T): void {
+  if (appCache.size > 20) {
+    const firstKey = appCache.keys().next().value;
+    if (firstKey) appCache.delete(firstKey);
+  }
+  appCache.set(key, { data, timestamp: Date.now() });
+}
+
 // ============ ADDRESS ENDPOINTS ============
 export const getRegions = async (): Promise<Region[]> => {
+  const cacheKey = "regions";
+  const cached = getCachedApp<Region[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get("/applications/address/regions");
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 export const getProvincesByRegion = async (
   regionCode: string,
 ): Promise<Province[]> => {
+  const cacheKey = `provinces_${regionCode}`;
+  const cached = getCachedApp<Province[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get(
     `/applications/address/provinces/${regionCode}`,
   );
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 export const getCitiesByProvince = async (
   provinceCode: string,
 ): Promise<City[]> => {
+  const cacheKey = `cities_${provinceCode}`;
+  const cached = getCachedApp<City[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get(
     `/applications/address/cities/${provinceCode}`,
   );
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 export const getBarangaysByCity = async (
   cityCode: string,
 ): Promise<Barangay[]> => {
+  const cacheKey = `barangays_${cityCode}`;
+  const cached = getCachedApp<Barangay[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get(`/applications/address/barangays/${cityCode}`);
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 // ============ BUILDINGS ============
 export const getActiveBuildings = async (): Promise<Building[]> => {
+  const cacheKey = "active_buildings";
+  const cached = getCachedApp<Building[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get("/buildings/active");
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 // ============ GET ALL APPLICATIONS (PAGINATED) ============
@@ -108,6 +160,12 @@ export const getAllApplications = async (
   filters: ApplicationFilters = {},
 ): Promise<PaginatedResponse> => {
   const { page = 1, limit = 20, status, search, buildingId } = filters;
+  const cacheKey = `apps_${page}_${limit}_${status || "all"}_${search || "none"}_${buildingId || "none"}`;
+
+  if (!filters.forceRefresh) {
+    const cached = getCachedApp<PaginatedResponse>(cacheKey);
+    if (cached) return cached;
+  }
 
   const params: any = { page, limit };
   if (status && status !== "all") params.status = status;
@@ -115,13 +173,21 @@ export const getAllApplications = async (
   if (buildingId) params.buildingId = buildingId;
 
   const response = await api.get("/applications", { params });
-  return response.data;
+  const result = response.data;
+  setCachedApp(cacheKey, result);
+  return result;
 };
 
 // ============ GET ALL APPLICATIONS (NO LIMIT - ALL DATA) ============
 export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
+  const cacheKey = "apps_all";
+  const cached = getCachedApp<any[]>(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get("/applications/all");
-  return response.data.data;
+  const data = response.data.data || [];
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 // ============ SUBMIT APPLICATION ============
@@ -154,6 +220,9 @@ export const submitApplication = async (data: ApplicationData) => {
   const response = await api.post("/applications", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+
+  // Clear cache on new submission
+  appCache.clear();
   return response.data;
 };
 
@@ -165,18 +234,26 @@ export const checkApplicationStatus = async (applicationId: string) => {
 
 // ============ GET SINGLE APPLICATION ============
 export const getApplication = async (id: string) => {
+  const cacheKey = `app_${id}`;
+  const cached = getCachedApp(cacheKey);
+  if (cached) return cached;
+
   const response = await api.get(`/applications/${id}`);
-  return response.data;
+  const data = response.data;
+  setCachedApp(cacheKey, data);
+  return data;
 };
 
 // ============ APPROVE / REJECT ============
 export const approveApplication = async (id: string, adminNotes?: string) => {
   const response = await api.put(`/applications/${id}/approve`, { adminNotes });
+  appCache.clear();
   return response.data;
 };
 
 export const rejectApplication = async (id: string, adminNotes?: string) => {
   const response = await api.put(`/applications/${id}/reject`, { adminNotes });
+  appCache.clear();
   return response.data;
 };
 
@@ -189,6 +266,7 @@ export const startBillingForApplication = async (
     `/applications/${applicationId}/start-billing`,
     data,
   );
+  appCache.clear();
   return response.data;
 };
 
@@ -197,17 +275,18 @@ export const updateMacAddress = async (id: string, macAddress: string) => {
   const response = await api.patch(`/applications/${id}/mac-address`, {
     macAddress,
   });
+  appCache.clear();
   return response.data;
 };
 
 // ============ UPDATE TOWER ============
 export const updateTower = async (id: string, tower: string) => {
   const response = await api.patch(`/applications/${id}/tower`, { tower });
+  appCache.clear();
   return response.data;
 };
 
 // ============ CLEAR CACHE ============
-export const clearApplicationCache = async () => {
-  const response = await api.post("/applications/cache/clear");
-  return response.data;
+export const clearApplicationCache = () => {
+  appCache.clear();
 };

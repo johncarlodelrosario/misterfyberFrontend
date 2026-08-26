@@ -1,20 +1,7 @@
-// components/admin/ApplicationTable.tsx
+// components/admin/ApplicationDetails.tsx
 "use client";
 
-import { useState, useMemo } from "react";
-import {
-  EyeIcon,
-  PencilIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ClockIcon,
-  PlayCircleIcon,
-} from "@heroicons/react/24/outline";
-import { toast } from "sonner";
-import Image from "next/image";
-
-import { approveApplication, rejectApplication } from "@/services/application";
-import { startBillingForApplication } from "@/services/billing";
+import React, { useState } from "react";
 
 interface Application {
   _id: string;
@@ -22,454 +9,300 @@ interface Application {
   lastName: string;
   email: string;
   phoneNumber: string;
-  buildingId: {
-    _id: string;
-    buildingName: string;
-  };
+  buildingId: string | { _id: string; buildingName: string };
   tower: string;
   floor: string;
   unitNumber: string;
-  planId: {
-    _id: string;
-    name: string;
-    price: number;
-  };
-  status: "pending" | "approved" | "rejected" | "billing_started";
+  planId: string | { _id: string; name: string; price: number };
+  status: "pending" | "approved" | "rejected";
   idType: string;
   idNumber: string;
   macAddress?: string;
+  notes?: string;
   adminNotes?: string;
-  submittedAt: string;
   createdAt: string;
   updatedAt: string;
 }
 
-interface ApplicationTableProps {
-  applications: Application[];
-  loading: boolean;
-  selectedIds: string[];
-  onSelectAll: (checked: boolean) => void;
-  onSelectOne: (id: string, checked: boolean) => void;
-  onView: (id: string) => void;
-  onEdit: (id: string) => void;
-  onRefresh: () => void;
+interface ApplicationDetailsProps {
+  application: Application;
+  onApprove: (id: string) => Promise<void>;
+  onReject: (id: string) => Promise<void>;
+  onStartBilling: (id: string) => Promise<void>;
+  onClose: () => void;
 }
 
-type SortField =
-  | "fullName"
-  | "email"
-  | "building"
-  | "plan"
-  | "status"
-  | "submittedAt";
-type SortDirection = "asc" | "desc";
+export function ApplicationDetails({
+  application,
+  onApprove,
+  onReject,
+  onStartBilling,
+  onClose,
+}: ApplicationDetailsProps) {
+  const [actionLoading, setActionLoading] = useState(false);
 
-export default function ApplicationTable({
-  applications,
-  loading,
-  selectedIds,
-  onSelectAll,
-  onSelectOne,
-  onView,
-  onEdit,
-  onRefresh,
-}: ApplicationTableProps) {
-  const [sortField, setSortField] = useState<SortField>("submittedAt");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  // Sort applications
-  const sortedApplications = useMemo(() => {
-    const sorted = [...applications];
-
-    sorted.sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
-
-      switch (sortField) {
-        case "fullName":
-          aVal = `${a.firstName} ${a.lastName}`.toLowerCase();
-          bVal = `${b.firstName} ${b.lastName}`.toLowerCase();
-          break;
-        case "email":
-          aVal = a.email.toLowerCase();
-          bVal = b.email.toLowerCase();
-          break;
-        case "building":
-          aVal = a.buildingId?.buildingName?.toLowerCase() || "";
-          bVal = b.buildingId?.buildingName?.toLowerCase() || "";
-          break;
-        case "plan":
-          aVal = a.planId?.name?.toLowerCase() || "";
-          bVal = b.planId?.name?.toLowerCase() || "";
-          break;
-        case "status":
-          aVal = a.status;
-          bVal = b.status;
-          break;
-        case "submittedAt":
-          aVal = new Date(a.submittedAt || a.createdAt).getTime();
-          bVal = new Date(b.submittedAt || b.createdAt).getTime();
-          break;
-        default:
-          return 0;
-      }
-
-      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-      return 0;
-    });
-
-    return sorted;
-  }, [applications, sortField, sortDirection]);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
+  const getBuildingName = (
+    building: string | { _id: string; buildingName: string },
+  ) => {
+    if (typeof building === "string") return building;
+    return building?.buildingName || "N/A";
   };
 
-  const getStatusBadge = (status: Application["status"]) => {
+  const getPlanName = (
+    plan: string | { _id: string; name: string; price: number },
+  ) => {
+    if (typeof plan === "string") return plan;
+    return plan?.name || "N/A";
+  };
+
+  const getPlanPrice = (
+    plan: string | { _id: string; name: string; price: number },
+  ) => {
+    if (typeof plan === "string") return 0;
+    return plan?.price || 0;
+  };
+
+  const getStatusBadge = (status: string) => {
     switch (status) {
-      case "pending":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <ClockIcon className="h-3.5 w-3.5" />
-            Pending
-          </span>
-        );
       case "approved":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <CheckCircleIcon className="h-3.5 w-3.5" />
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
             Approved
+          </span>
+        );
+      case "pending":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+            Pending
           </span>
         );
       case "rejected":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <XCircleIcon className="h-3.5 w-3.5" />
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
             Rejected
           </span>
         );
-      case "billing_started":
+      default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-            <PlayCircleIcon className="h-3.5 w-3.5" />
-            Billing Started
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+            {status}
           </span>
         );
-      default:
-        return null;
     }
   };
 
-  const handleApprove = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setActionLoading(id);
-
+  const formatDate = (date: string) => {
     try {
-      const result = await approveApplication(id);
-      toast.success("Application approved successfully");
-      onRefresh();
-    } catch (error: any) {
-      console.error("Error approving application:", error);
-      toast.error(error.message || "Failed to approve application");
-    } finally {
-      setActionLoading(null);
+      return new Date(date).toLocaleString();
+    } catch {
+      return date;
     }
   };
 
-  const handleReject = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setActionLoading(id);
-
-    const reason = prompt("Please enter a reason for rejection:");
-    if (reason === null) {
-      setActionLoading(null);
-      return;
-    }
-
+  const handleApprove = async () => {
+    setActionLoading(true);
     try {
-      await rejectApplication(id, reason || undefined);
-      toast.success("Application rejected");
-      onRefresh();
-    } catch (error: any) {
-      console.error("Error rejecting application:", error);
-      toast.error(error.message || "Failed to reject application");
+      await onApprove(application._id);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
-  const handleStartBilling = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setActionLoading(id);
-
+  const handleReject = async () => {
+    setActionLoading(true);
     try {
-      await startBillingForApplication(id);
-      toast.success("Billing started successfully");
-      onRefresh();
-    } catch (error: any) {
-      console.error("Error starting billing:", error);
-      toast.error(error.message || "Failed to start billing");
+      await onReject(application._id);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
-  const isAllSelected =
-    applications.length > 0 && selectedIds.length === applications.length;
-
-  if (loading && applications.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        <p className="mt-4 text-sm text-gray-500">Loading applications...</p>
-      </div>
-    );
-  }
-
-  if (applications.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="flex flex-col items-center">
-          <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-            <svg
-              className="h-8 w-8 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-gray-900">
-            No applications found
-          </h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Try adjusting your filters or search criteria
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const handleStartBilling = async () => {
+    setActionLoading(true);
+    try {
+      await onStartBilling(application._id);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-gray-50 text-xs uppercase text-gray-500 border-b border-gray-200">
-          <tr>
-            <th className="px-4 py-3 w-10">
-              <input
-                type="checkbox"
-                checked={isAllSelected}
-                onChange={(e) => onSelectAll(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700"
-              onClick={() => handleSort("fullName")}
-            >
-              <span className="flex items-center gap-1">
-                Applicant
-                {sortField === "fullName" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden sm:table-cell"
-              onClick={() => handleSort("email")}
-            >
-              <span className="flex items-center gap-1">
-                Email
-                {sortField === "email" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden md:table-cell"
-              onClick={() => handleSort("building")}
-            >
-              <span className="flex items-center gap-1">
-                Building
-                {sortField === "building" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden lg:table-cell"
-              onClick={() => handleSort("plan")}
-            >
-              <span className="flex items-center gap-1">
-                Plan
-                {sortField === "plan" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700"
-              onClick={() => handleSort("status")}
-            >
-              <span className="flex items-center gap-1">
-                Status
-                {sortField === "status" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th
-              className="px-4 py-3 cursor-pointer hover:text-gray-700 hidden md:table-cell"
-              onClick={() => handleSort("submittedAt")}
-            >
-              <span className="flex items-center gap-1">
-                Submitted
-                {sortField === "submittedAt" && (
-                  <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
-                )}
-              </span>
-            </th>
-            <th className="px-4 py-3 text-center">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {sortedApplications.map((app) => (
-            <tr
-              key={app._id}
-              className="hover:bg-gray-50 transition cursor-pointer"
-              onClick={() => onView(app._id)}
-            >
-              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(app._id)}
-                  onChange={(e) => onSelectOne(app._id, e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm flex-shrink-0">
-                    {app.firstName.charAt(0)}
-                    {app.lastName.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {app.firstName} {app.lastName}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      #{app._id.slice(-6)}
-                    </p>
-                  </div>
-                </div>
-              </td>
-              <td className="px-4 py-3 hidden sm:table-cell">
-                <p className="text-gray-600 truncate max-w-[150px]">
-                  {app.email}
-                </p>
-                <p className="text-xs text-gray-400">{app.phoneNumber}</p>
-              </td>
-              <td className="px-4 py-3 hidden md:table-cell">
-                <p className="text-gray-600">
-                  {app.buildingId?.buildingName || "N/A"}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {app.tower} • Floor {app.floor} • Unit {app.unitNumber}
-                </p>
-              </td>
-              <td className="px-4 py-3 hidden lg:table-cell">
-                <p className="text-gray-600 font-medium">
-                  {app.planId?.name || "N/A"}
-                </p>
-                <p className="text-xs text-gray-400">
-                  ₱{app.planId?.price?.toLocaleString() || 0}
-                </p>
-              </td>
-              <td className="px-4 py-3">{getStatusBadge(app.status)}</td>
-              <td className="px-4 py-3 hidden md:table-cell">
-                <p className="text-gray-500 text-sm">
-                  {new Date(
-                    app.submittedAt || app.createdAt,
-                  ).toLocaleDateString()}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {new Date(
-                    app.submittedAt || app.createdAt,
-                  ).toLocaleTimeString()}
-                </p>
-              </td>
-              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-center gap-1">
-                  <button
-                    onClick={() => onView(app._id)}
-                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                    title="View"
-                  >
-                    <EyeIcon className="h-4 w-4" />
-                  </button>
+    <div className="space-y-6">
+      {/* Status Header */}
+      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">Status:</span>
+          {getStatusBadge(application.status)}
+        </div>
+        <div className="text-sm text-gray-500">
+          ID: {application._id.slice(-8).toUpperCase()}
+        </div>
+      </div>
 
-                  <button
-                    onClick={() => onEdit(app._id)}
-                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition"
-                    title="Edit"
-                  >
-                    <PencilIcon className="h-4 w-4" />
-                  </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Personal Information */}
+        <div className="border rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Personal Information
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Name:</span>
+              <span className="font-medium">
+                {application.firstName} {application.lastName}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Email:</span>
+              <span className="font-medium">{application.email}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Phone:</span>
+              <span className="font-medium">{application.phoneNumber}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">ID Type:</span>
+              <span className="font-medium">{application.idType}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">ID Number:</span>
+              <span className="font-medium">{application.idNumber}</span>
+            </div>
+            {application.macAddress && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">MAC Address:</span>
+                <span className="font-medium font-mono text-xs">
+                  {application.macAddress}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
 
-                  {app.status === "pending" && (
-                    <>
-                      <button
-                        onClick={(e) => handleApprove(app._id, e)}
-                        disabled={actionLoading === app._id}
-                        className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition disabled:opacity-50"
-                        title="Approve"
-                      >
-                        <CheckCircleIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={(e) => handleReject(app._id, e)}
-                        disabled={actionLoading === app._id}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
-                        title="Reject"
-                      >
-                        <XCircleIcon className="h-4 w-4" />
-                      </button>
-                    </>
-                  )}
+        {/* Address Information */}
+        <div className="border rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Address Information
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Building:</span>
+              <span className="font-medium">
+                {getBuildingName(application.buildingId)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Tower:</span>
+              <span className="font-medium">{application.tower || "N/A"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Floor:</span>
+              <span className="font-medium">{application.floor || "N/A"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Unit:</span>
+              <span className="font-medium">
+                {application.unitNumber || "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
 
-                  {app.status === "approved" && (
-                    <button
-                      onClick={(e) => handleStartBilling(app._id, e)}
-                      disabled={actionLoading === app._id}
-                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition disabled:opacity-50"
-                      title="Start Billing"
-                    >
-                      <PlayCircleIcon className="h-4 w-4" />
-                    </button>
-                  )}
+        {/* Plan Information */}
+        <div className="border rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Plan Information
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Plan:</span>
+              <span className="font-medium">
+                {getPlanName(application.planId)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Price:</span>
+              <span className="font-medium">
+                ₱{getPlanPrice(application.planId).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
 
-                  {actionLoading === app._id && (
-                    <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        {/* Additional Information */}
+        <div className="border rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Additional Information
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Created:</span>
+              <span className="font-medium">
+                {formatDate(application.createdAt)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Updated:</span>
+              <span className="font-medium">
+                {formatDate(application.updatedAt)}
+              </span>
+            </div>
+            {application.notes && (
+              <div className="mt-2">
+                <span className="text-gray-500">Notes:</span>
+                <p className="text-sm mt-1 p-2 bg-gray-50 rounded-md">
+                  {application.notes}
+                </p>
+              </div>
+            )}
+            {application.adminNotes && (
+              <div className="mt-2">
+                <span className="text-gray-500">Admin Notes:</span>
+                <p className="text-sm mt-1 p-2 bg-gray-50 rounded-md">
+                  {application.adminNotes}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2 justify-end pt-4 border-t">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Close
+        </button>
+        {application.status === "pending" && (
+          <>
+            <button
+              onClick={handleApprove}
+              disabled={actionLoading}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+            >
+              Approve
+            </button>
+            <button
+              onClick={handleReject}
+              disabled={actionLoading}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </>
+        )}
+        {application.status === "approved" && (
+          <button
+            onClick={handleStartBilling}
+            disabled={actionLoading}
+            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+          >
+            Start Billing
+          </button>
+        )}
+      </div>
     </div>
   );
 }
