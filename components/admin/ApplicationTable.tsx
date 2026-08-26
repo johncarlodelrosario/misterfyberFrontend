@@ -1,7 +1,7 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED
+// components/admin/ApplicationTable.tsx - COMPLETE
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { ApplicationDetails } from "./ApplicationDetails";
 import { AddApplicationModal } from "./AddApplicationModal";
 import { toast } from "sonner";
@@ -48,7 +48,7 @@ export interface ApplicationTableProps {
 }
 
 export default function ApplicationTable({
-  applications: initialApplications,
+  applications,
   total,
   currentPage,
   totalPages,
@@ -72,15 +72,6 @@ export default function ApplicationTable({
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  // Local state for instant updates - OPTIMISTIC UI
-  const [localApplications, setLocalApplications] =
-    useState<Application[]>(initialApplications);
-
-  // Update local applications when props change
-  useEffect(() => {
-    setLocalApplications(initialApplications);
-  }, [initialApplications]);
 
   // Load buildings for filter
   useEffect(() => {
@@ -165,31 +156,16 @@ export default function ApplicationTable({
     return plan?.price || 0;
   };
 
-  // OPTIMISTIC UPDATE: Instant status change without waiting for API
-  const updateApplicationStatus = useCallback(
-    (id: string, newStatus: "pending" | "approved" | "rejected") => {
-      setLocalApplications((prev) =>
-        prev.map((app) =>
-          app._id === id ? { ...app, status: newStatus } : app,
-        ),
-      );
-    },
-    [],
-  );
-
   const handleApprove = async (id: string) => {
     setActionLoading(id);
-    // OPTIMISTIC UPDATE: Change status instantly
-    updateApplicationStatus(id, "approved");
-    toast.success("✅ Application approved!");
-
     try {
       await onApprove(id);
-      // Refresh in background to sync with server
-      setTimeout(() => onRefresh(), 300);
+      toast.success("Application approved successfully!");
+      // Auto-refresh after approve
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
-      // Revert on error
-      updateApplicationStatus(id, "pending");
       toast.error(
         error?.response?.data?.message || "Failed to approve application",
       );
@@ -200,15 +176,14 @@ export default function ApplicationTable({
 
   const handleReject = async (id: string) => {
     setActionLoading(id);
-    // OPTIMISTIC UPDATE: Change status instantly
-    updateApplicationStatus(id, "rejected");
-    toast.success("❌ Application rejected");
-
     try {
       await onReject(id);
-      setTimeout(() => onRefresh(), 300);
+      toast.success("Application rejected");
+      // Auto-refresh after reject
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
-      updateApplicationStatus(id, "pending");
       toast.error(
         error?.response?.data?.message || "Failed to reject application",
       );
@@ -219,12 +194,13 @@ export default function ApplicationTable({
 
   const handleStartBilling = async (id: string) => {
     setActionLoading(id);
-    toast.success("💰 Starting billing...");
-
     try {
       await onStartBilling(id);
-      toast.success("✅ Billing started successfully!");
-      setTimeout(() => onRefresh(), 300);
+      toast.success("Billing started successfully!");
+      // Auto-refresh after start billing
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Failed to start billing");
     } finally {
@@ -244,12 +220,6 @@ export default function ApplicationTable({
       return date;
     }
   };
-
-  // Use localApplications for display
-  const displayApplications = useMemo(
-    () => localApplications,
-    [localApplications],
-  );
 
   return (
     <div className="space-y-4">
@@ -400,7 +370,7 @@ export default function ApplicationTable({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {isLoading && displayApplications.length === 0 ? (
+            {isLoading ? (
               <tr>
                 <td colSpan={8} className="px-6 py-8 text-center">
                   <div className="flex items-center justify-center">
@@ -428,14 +398,14 @@ export default function ApplicationTable({
                   </div>
                 </td>
               </tr>
-            ) : displayApplications.length === 0 ? (
+            ) : applications.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                   No applications found
                 </td>
               </tr>
             ) : (
-              displayApplications.map((app) => (
+              applications.map((app) => (
                 <tr key={app._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="font-medium text-gray-900">
@@ -493,14 +463,18 @@ export default function ApplicationTable({
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
                           >
-                            {actionLoading === app._id ? "⏳" : "✅ Approve"}
+                            {actionLoading === app._id
+                              ? "Processing..."
+                              : "Approve"}
                           </button>
                           <button
                             onClick={() => handleReject(app._id)}
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
-                            {actionLoading === app._id ? "⏳" : "❌ Reject"}
+                            {actionLoading === app._id
+                              ? "Processing..."
+                              : "Reject"}
                           </button>
                         </>
                       )}
@@ -511,8 +485,8 @@ export default function ApplicationTable({
                           className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
                         >
                           {actionLoading === app._id
-                            ? "⏳"
-                            : "💰 Start Billing"}
+                            ? "Processing..."
+                            : "Start Billing"}
                         </button>
                       )}
                     </div>
@@ -528,7 +502,7 @@ export default function ApplicationTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-500">
-            Showing {displayApplications.length} of {total} applications
+            Showing {applications.length} of {total} applications
           </div>
           <div className="flex gap-2">
             <button
@@ -610,7 +584,7 @@ export default function ApplicationTable({
         onSuccess={() => {
           setShowAddModal(false);
           onApplicationAdded();
-          toast.success("✅ Application submitted successfully!");
+          toast.success("Application submitted successfully!");
         }}
       />
     </div>
