@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE WITH BUILDING FILTER
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -182,9 +182,8 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await approveApplication(id);
-        toast.success("Application approved successfully");
-        // Refresh with force to get latest data
-        fetchApplications(
+        // Force refresh to get latest data
+        await fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -195,6 +194,7 @@ export default function AdminApplicationsPage() {
         toast.error(
           error?.response?.data?.message || "Failed to approve application",
         );
+        throw error;
       }
     },
     [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
@@ -204,8 +204,7 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await rejectApplication(id);
-        toast.success("Application rejected");
-        fetchApplications(
+        await fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -216,6 +215,7 @@ export default function AdminApplicationsPage() {
         toast.error(
           error?.response?.data?.message || "Failed to reject application",
         );
+        throw error;
       }
     },
     [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
@@ -225,8 +225,7 @@ export default function AdminApplicationsPage() {
     async (id: string) => {
       try {
         await startBillingForApplication(id);
-        toast.success("Billing started successfully");
-        fetchApplications(
+        await fetchApplications(
           currentPage,
           statusFilter,
           buildingFilter,
@@ -237,6 +236,7 @@ export default function AdminApplicationsPage() {
         toast.error(
           error?.response?.data?.message || "Failed to start billing",
         );
+        throw error;
       }
     },
     [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],

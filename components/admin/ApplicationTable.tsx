@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE WITH BUILDING FILTER
+// components/admin/ApplicationTable.tsx - COMPLETE
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
@@ -160,8 +160,11 @@ export default function ApplicationTable({
     setActionLoading(id);
     try {
       await onApprove(id);
-      toast.success("Application approved successfully");
-      onRefresh();
+      toast.success("Application approved successfully!");
+      // Auto-refresh after approve
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
       toast.error(
         error?.response?.data?.message || "Failed to approve application",
@@ -176,7 +179,10 @@ export default function ApplicationTable({
     try {
       await onReject(id);
       toast.success("Application rejected");
-      onRefresh();
+      // Auto-refresh after reject
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
       toast.error(
         error?.response?.data?.message || "Failed to reject application",
@@ -190,8 +196,11 @@ export default function ApplicationTable({
     setActionLoading(id);
     try {
       await onStartBilling(id);
-      toast.success("Billing started successfully");
-      onRefresh();
+      toast.success("Billing started successfully!");
+      // Auto-refresh after start billing
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Failed to start billing");
     } finally {
@@ -454,14 +463,18 @@ export default function ApplicationTable({
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
                           >
-                            Approve
+                            {actionLoading === app._id
+                              ? "Processing..."
+                              : "Approve"}
                           </button>
                           <button
                             onClick={() => handleReject(app._id)}
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
-                            Reject
+                            {actionLoading === app._id
+                              ? "Processing..."
+                              : "Reject"}
                           </button>
                         </>
                       )}
@@ -471,7 +484,9 @@ export default function ApplicationTable({
                           disabled={actionLoading === app._id}
                           className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
                         >
-                          Start Billing
+                          {actionLoading === app._id
+                            ? "Processing..."
+                            : "Start Billing"}
                         </button>
                       )}
                     </div>
@@ -569,7 +584,7 @@ export default function ApplicationTable({
         onSuccess={() => {
           setShowAddModal(false);
           onApplicationAdded();
-          toast.success("Application submitted successfully");
+          toast.success("Application submitted successfully!");
         }}
       />
     </div>
