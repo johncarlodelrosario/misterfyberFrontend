@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - FIXED IMPORT
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE WITH BUILDING FILTER
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -13,7 +13,6 @@ import {
   startBillingForApplication,
 } from "@/services/admin";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
 
 // Fast LRU cache for applications
 const applicationCache = new Map();
@@ -39,13 +38,13 @@ function setCachedApplications(key: string, data: any): void {
 }
 
 export default function AdminApplicationsPage() {
-  const router = useRouter();
   const [applications, setApplications] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [buildingFilter, setBuildingFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const isMounted = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -54,6 +53,7 @@ export default function AdminApplicationsPage() {
     async (
       page: number,
       status: string,
+      building: string,
       search: string,
       forceRefresh = false,
     ) => {
@@ -67,7 +67,7 @@ export default function AdminApplicationsPage() {
       }
       abortControllerRef.current = new AbortController();
 
-      const cacheKey = `applications_${page}_${status}_${search}`;
+      const cacheKey = `applications_${page}_${status}_${building}_${search}`;
 
       // Try cache first
       if (!forceRefresh) {
@@ -86,6 +86,7 @@ export default function AdminApplicationsPage() {
           page,
           limit: 20,
           status: status === "all" ? undefined : status,
+          buildingId: building === "all" ? undefined : building,
           search: search || undefined,
         });
 
@@ -126,7 +127,7 @@ export default function AdminApplicationsPage() {
   // Initial load
   useEffect(() => {
     isMounted.current = true;
-    fetchApplications(currentPage, statusFilter, searchQuery);
+    fetchApplications(currentPage, statusFilter, buildingFilter, searchQuery);
 
     return () => {
       isMounted.current = false;
@@ -134,18 +135,41 @@ export default function AdminApplicationsPage() {
         abortControllerRef.current.abort();
       }
     };
-  }, [currentPage, statusFilter, searchQuery, fetchApplications]);
+  }, [
+    currentPage,
+    statusFilter,
+    buildingFilter,
+    searchQuery,
+    fetchApplications,
+  ]);
 
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
   }, []);
 
   const handleRefresh = useCallback(() => {
-    fetchApplications(currentPage, statusFilter, searchQuery, true);
-  }, [currentPage, statusFilter, searchQuery, fetchApplications]);
+    fetchApplications(
+      currentPage,
+      statusFilter,
+      buildingFilter,
+      searchQuery,
+      true,
+    );
+  }, [
+    currentPage,
+    statusFilter,
+    buildingFilter,
+    searchQuery,
+    fetchApplications,
+  ]);
 
   const handleStatusFilterChange = useCallback((status: string) => {
     setStatusFilter(status);
+    setCurrentPage(1);
+  }, []);
+
+  const handleBuildingFilterChange = useCallback((building: string) => {
+    setBuildingFilter(building);
     setCurrentPage(1);
   }, []);
 
@@ -156,32 +180,83 @@ export default function AdminApplicationsPage() {
 
   const handleApprove = useCallback(
     async (id: string) => {
-      await approveApplication(id);
-      // Refresh with force to get latest data
-      fetchApplications(currentPage, statusFilter, searchQuery, true);
+      try {
+        await approveApplication(id);
+        toast.success("Application approved successfully");
+        // Refresh with force to get latest data
+        fetchApplications(
+          currentPage,
+          statusFilter,
+          buildingFilter,
+          searchQuery,
+          true,
+        );
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.message || "Failed to approve application",
+        );
+      }
     },
-    [currentPage, statusFilter, searchQuery, fetchApplications],
+    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
   );
 
   const handleReject = useCallback(
     async (id: string) => {
-      await rejectApplication(id);
-      fetchApplications(currentPage, statusFilter, searchQuery, true);
+      try {
+        await rejectApplication(id);
+        toast.success("Application rejected");
+        fetchApplications(
+          currentPage,
+          statusFilter,
+          buildingFilter,
+          searchQuery,
+          true,
+        );
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.message || "Failed to reject application",
+        );
+      }
     },
-    [currentPage, statusFilter, searchQuery, fetchApplications],
+    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
   );
 
   const handleStartBilling = useCallback(
     async (id: string) => {
-      await startBillingForApplication(id);
-      fetchApplications(currentPage, statusFilter, searchQuery, true);
+      try {
+        await startBillingForApplication(id);
+        toast.success("Billing started successfully");
+        fetchApplications(
+          currentPage,
+          statusFilter,
+          buildingFilter,
+          searchQuery,
+          true,
+        );
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.message || "Failed to start billing",
+        );
+      }
     },
-    [currentPage, statusFilter, searchQuery, fetchApplications],
+    [currentPage, statusFilter, buildingFilter, searchQuery, fetchApplications],
   );
 
   const handleApplicationAdded = useCallback(() => {
-    fetchApplications(currentPage, statusFilter, searchQuery, true);
-  }, [currentPage, statusFilter, searchQuery, fetchApplications]);
+    fetchApplications(
+      currentPage,
+      statusFilter,
+      buildingFilter,
+      searchQuery,
+      true,
+    );
+  }, [
+    currentPage,
+    statusFilter,
+    buildingFilter,
+    searchQuery,
+    fetchApplications,
+  ]);
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -228,6 +303,7 @@ export default function AdminApplicationsPage() {
         onPageChange={handlePageChange}
         onRefresh={handleRefresh}
         onStatusFilterChange={handleStatusFilterChange}
+        onBuildingFilterChange={handleBuildingFilterChange}
         onSearch={handleSearch}
         onApprove={handleApprove}
         onReject={handleReject}

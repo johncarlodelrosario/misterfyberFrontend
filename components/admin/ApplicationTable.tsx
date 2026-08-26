@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED
+// components/admin/ApplicationTable.tsx - COMPLETE WITH BUILDING FILTER
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { getActiveBuildings, Building } from "@/services/building";
 
-// Interface definitions - SIMPLIFIED
+// Interface definitions
 export interface Application {
   _id: string;
   firstName: string;
