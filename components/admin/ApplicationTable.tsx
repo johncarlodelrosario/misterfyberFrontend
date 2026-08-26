@@ -1,9 +1,14 @@
-// components/admin/ApplicationDetails.tsx
+// components/admin/ApplicationTable.tsx - FIXED EXPORT
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
+import { ApplicationDetails } from "./ApplicationDetails";
+import { AddApplicationModal } from "./AddApplicationModal";
+import { toast } from "sonner";
+import { format } from "date-fns";
 
-interface Application {
+// Interface definitions
+export interface Application {
   _id: string;
   firstName: string;
   lastName: string;
@@ -24,43 +29,57 @@ interface Application {
   updatedAt: string;
 }
 
-interface ApplicationDetailsProps {
-  application: Application;
+export interface ApplicationTableProps {
+  applications: Application[];
+  total: number;
+  currentPage: number;
+  totalPages: number;
+  isLoading: boolean;
+  onPageChange: (page: number) => void;
+  onRefresh: () => void;
+  onStatusFilterChange: (status: string) => void;
+  onSearch: (query: string) => void;
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
   onStartBilling: (id: string) => Promise<void>;
-  onClose: () => void;
+  onApplicationAdded: () => void;
 }
 
-export function ApplicationDetails({
-  application,
+// Export the component as default
+export default function ApplicationTable({
+  applications,
+  total,
+  currentPage,
+  totalPages,
+  isLoading,
+  onPageChange,
+  onRefresh,
+  onStatusFilterChange,
+  onSearch,
   onApprove,
   onReject,
   onStartBilling,
-  onClose,
-}: ApplicationDetailsProps) {
-  const [actionLoading, setActionLoading] = useState(false);
+  onApplicationAdded,
+}: ApplicationTableProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedApplication, setSelectedApplication] =
+    useState<Application | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const getBuildingName = (
-    building: string | { _id: string; buildingName: string },
-  ) => {
-    if (typeof building === "string") return building;
-    return building?.buildingName || "N/A";
-  };
+  const handleSearch = useCallback(() => {
+    onSearch(searchQuery);
+  }, [searchQuery, onSearch]);
 
-  const getPlanName = (
-    plan: string | { _id: string; name: string; price: number },
-  ) => {
-    if (typeof plan === "string") return plan;
-    return plan?.name || "N/A";
-  };
-
-  const getPlanPrice = (
-    plan: string | { _id: string; name: string; price: number },
-  ) => {
-    if (typeof plan === "string") return 0;
-    return plan?.price || 0;
-  };
+  const handleStatusFilter = useCallback(
+    (value: string) => {
+      setStatusFilter(value);
+      onStatusFilterChange(value);
+    },
+    [onStatusFilterChange],
+  );
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -91,218 +110,423 @@ export function ApplicationDetails({
     }
   };
 
+  const getBuildingName = (
+    building: string | { _id: string; buildingName: string },
+  ) => {
+    if (typeof building === "string") return building;
+    return building?.buildingName || "N/A";
+  };
+
+  const getPlanName = (
+    plan: string | { _id: string; name: string; price: number },
+  ) => {
+    if (typeof plan === "string") return plan;
+    return plan?.name || "N/A";
+  };
+
+  const getPlanPrice = (
+    plan: string | { _id: string; name: string; price: number },
+  ) => {
+    if (typeof plan === "string") return 0;
+    return plan?.price || 0;
+  };
+
+  const handleApprove = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await onApprove(id);
+      toast.success("Application approved successfully");
+    } catch (error) {
+      toast.error("Failed to approve application");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await onReject(id);
+      toast.success("Application rejected");
+    } catch (error) {
+      toast.error("Failed to reject application");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleStartBilling = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await onStartBilling(id);
+      toast.success("Billing started successfully");
+    } catch (error) {
+      toast.error("Failed to start billing");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleViewDetails = (application: Application) => {
+    setSelectedApplication(application);
+    setShowDetailsModal(true);
+  };
+
   const formatDate = (date: string) => {
     try {
-      return new Date(date).toLocaleString();
+      return format(new Date(date), "MMM d, yyyy");
     } catch {
       return date;
     }
   };
 
-  const handleApprove = async () => {
-    setActionLoading(true);
-    try {
-      await onApprove(application._id);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReject = async () => {
-    setActionLoading(true);
-    try {
-      await onReject(application._id);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleStartBilling = async () => {
-    setActionLoading(true);
-    try {
-      await onStartBilling(application._id);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Status Header */}
-      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">Status:</span>
-          {getStatusBadge(application.status)}
-        </div>
-        <div className="text-sm text-gray-500">
-          ID: {application._id.slice(-8).toUpperCase()}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Personal Information */}
-        <div className="border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Personal Information
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Name:</span>
-              <span className="font-medium">
-                {application.firstName} {application.lastName}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Email:</span>
-              <span className="font-medium">{application.email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Phone:</span>
-              <span className="font-medium">{application.phoneNumber}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">ID Type:</span>
-              <span className="font-medium">{application.idType}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">ID Number:</span>
-              <span className="font-medium">{application.idNumber}</span>
-            </div>
-            {application.macAddress && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">MAC Address:</span>
-                <span className="font-medium font-mono text-xs">
-                  {application.macAddress}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Address Information */}
-        <div className="border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Address Information
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Building:</span>
-              <span className="font-medium">
-                {getBuildingName(application.buildingId)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Tower:</span>
-              <span className="font-medium">{application.tower || "N/A"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Floor:</span>
-              <span className="font-medium">{application.floor || "N/A"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Unit:</span>
-              <span className="font-medium">
-                {application.unitNumber || "N/A"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Plan Information */}
-        <div className="border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Plan Information
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Plan:</span>
-              <span className="font-medium">
-                {getPlanName(application.planId)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Price:</span>
-              <span className="font-medium">
-                ₱{getPlanPrice(application.planId).toLocaleString()}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Additional Information */}
-        <div className="border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Additional Information
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Created:</span>
-              <span className="font-medium">
-                {formatDate(application.createdAt)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Updated:</span>
-              <span className="font-medium">
-                {formatDate(application.updatedAt)}
-              </span>
-            </div>
-            {application.notes && (
-              <div className="mt-2">
-                <span className="text-gray-500">Notes:</span>
-                <p className="text-sm mt-1 p-2 bg-gray-50 rounded-md">
-                  {application.notes}
-                </p>
-              </div>
-            )}
-            {application.adminNotes && (
-              <div className="mt-2">
-                <span className="text-gray-500">Admin Notes:</span>
-                <p className="text-sm mt-1 p-2 bg-gray-50 rounded-md">
-                  {application.adminNotes}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2 justify-end pt-4 border-t">
-        <button
-          onClick={onClose}
-          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          Close
-        </button>
-        {application.status === "pending" && (
-          <>
-            <button
-              onClick={handleApprove}
-              disabled={actionLoading}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="flex flex-1 items-center gap-4 w-full sm:w-auto">
+          <div className="relative flex-1 sm:max-w-sm">
+            <input
+              type="text"
+              placeholder="Search applications..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <svg
+              className="absolute left-3 top-2.5 h-4 w-4 text-gray-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              Approve
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={actionLoading}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-            >
-              Reject
-            </button>
-          </>
-        )}
-        {application.status === "approved" && (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
           <button
-            onClick={handleStartBilling}
-            disabled={actionLoading}
-            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+            onClick={handleSearch}
+            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            Start Billing
+            <svg
+              className="h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
           </button>
-        )}
+          <button
+            onClick={onRefresh}
+            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            <svg
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+          >
+            <svg
+              className="h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+              />
+            </svg>
+            Add Customer
+          </button>
+        </div>
       </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Customer
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Contact
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Building
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Unit
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Plan
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Date
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {isLoading ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-8 text-center">
+                  <div className="flex items-center justify-center">
+                    <svg
+                      className="animate-spin h-6 w-6 text-gray-400"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    <span className="ml-2 text-gray-500">Loading...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : applications.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                  No applications found
+                </td>
+              </tr>
+            ) : (
+              applications.map((app) => (
+                <tr key={app._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="font-medium text-gray-900">
+                      {app.firstName} {app.lastName}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      ID: {app.idNumber || "N/A"}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{app.email}</div>
+                    <div className="text-xs text-gray-500">
+                      {app.phoneNumber}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {getBuildingName(app.buildingId)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Tower {app.tower || "N/A"}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {app.floor || "N/A"} - {app.unitNumber || "N/A"}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {getPlanName(app.planId)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      ₱{getPlanPrice(app.planId).toLocaleString()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getStatusBadge(app.status)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {formatDate(app.createdAt)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <div className="relative inline-block text-left">
+                      <button
+                        onClick={() => handleViewDetails(app)}
+                        className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        View
+                      </button>
+                      {app.status === "pending" && (
+                        <>
+                          <button
+                            onClick={() => handleApprove(app._id)}
+                            disabled={actionLoading === app._id}
+                            className="px-3 py-1 text-sm text-green-600 hover:text-green-800"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleReject(app._id)}
+                            disabled={actionLoading === app._id}
+                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {app.status === "approved" && (
+                        <button
+                          onClick={() => handleStartBilling(app._id)}
+                          disabled={actionLoading === app._id}
+                          className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800"
+                        >
+                          Start Billing
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            Showing {applications.length} of {total} applications
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPageChange(currentPage - 1)}
+              disabled={currentPage <= 1 || isLoading}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => onPageChange(pageNum)}
+                    disabled={isLoading}
+                    className={`px-4 py-2 border rounded-md ${
+                      pageNum === currentPage
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => onPageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages || isLoading}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Details Modal - Simple version */}
+      {showDetailsModal && selectedApplication && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold">Application Details</h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <ApplicationDetails
+                application={selectedApplication}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onStartBilling={handleStartBilling}
+                onClose={() => setShowDetailsModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Application Modal */}
+      <AddApplicationModal
+        open={showAddModal}
+        onOpenChange={setShowAddModal}
+        onSuccess={() => {
+          setShowAddModal(false);
+          onApplicationAdded();
+          toast.success("Application submitted successfully");
+        }}
+      />
     </div>
   );
 }
