@@ -206,7 +206,9 @@ export default function ApplicationTable({
     toast.success("✅ Application approved!");
 
     try {
-      if (onApprove) await onApprove(id);
+      if (onApprove) {
+        await onApprove(id);
+      }
       if (onRefresh) setTimeout(() => onRefresh(), 300);
     } catch (error: any) {
       updateApplicationStatus(id, "pending");
@@ -224,7 +226,9 @@ export default function ApplicationTable({
     toast.success("❌ Application rejected");
 
     try {
-      if (onReject) await onReject(id);
+      if (onReject) {
+        await onReject(id);
+      }
       if (onRefresh) setTimeout(() => onRefresh(), 300);
     } catch (error: any) {
       updateApplicationStatus(id, "pending");
@@ -242,7 +246,9 @@ export default function ApplicationTable({
     toast.success("💰 Billing started!");
 
     try {
-      if (onStartBilling) await onStartBilling(id);
+      if (onStartBilling) {
+        await onStartBilling(id);
+      }
       if (onRefresh) setTimeout(() => onRefresh(), 300);
     } catch (error: any) {
       updateApplicationStatus(id, "approved");
@@ -542,14 +548,12 @@ export default function ApplicationTable({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="relative inline-block text-left">
-                      {onView && (
-                        <button
-                          onClick={() => onView(app._id)}
-                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          View
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleViewDetails(app)}
+                        className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        View
+                      </button>
                       {app.status === "pending" && onApprove && onReject && (
                         <>
                           <button
@@ -557,14 +561,14 @@ export default function ApplicationTable({
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
                           >
-                            {actionLoading === app._id ? "⏳" : "✅ Approve"}
+                            {actionLoading === app._id ? "⏳" : "✅"}
                           </button>
                           <button
                             onClick={() => handleReject(app._id)}
                             disabled={actionLoading === app._id}
                             className="px-3 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
-                            {actionLoading === app._id ? "⏳" : "❌ Reject"}
+                            {actionLoading === app._id ? "⏳" : "❌"}
                           </button>
                         </>
                       )}
@@ -574,9 +578,7 @@ export default function ApplicationTable({
                           disabled={actionLoading === app._id}
                           className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
                         >
-                          {actionLoading === app._id
-                            ? "⏳"
-                            : "💰 Start Billing"}
+                          {actionLoading === app._id ? "⏳" : "💰"}
                         </button>
                       )}
                     </div>

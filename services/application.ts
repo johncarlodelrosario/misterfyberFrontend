@@ -1,4 +1,4 @@
-// services/application.ts - UPDATED WITH getAllApplications
+// services/application.ts - COMPLETE FIXED
 import api from "./api";
 
 export interface Building {
@@ -128,20 +128,23 @@ export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
 export const submitApplication = async (data: ApplicationData) => {
   const formData = new FormData();
 
+  // Append all required fields
   formData.append("firstName", data.firstName);
   formData.append("lastName", data.lastName);
   formData.append("email", data.email);
   formData.append("phoneNumber", data.phoneNumber);
   formData.append("buildingId", data.buildingId);
-  formData.append("tower", data.tower);
+  formData.append("tower", data.tower || "");
   formData.append("floor", data.floor);
   formData.append("unitNumber", data.unitNumber);
-  if (data.notes) {
-    formData.append("notes", data.notes);
-  }
   formData.append("planId", data.planId);
   formData.append("idType", data.idType);
   formData.append("idNumber", data.idNumber);
+
+  // Optional fields
+  if (data.notes && data.notes.trim()) {
+    formData.append("notes", data.notes);
+  }
 
   if (data.macAddress && data.macAddress.trim()) {
     formData.append("macAddress", data.macAddress);
@@ -152,8 +155,11 @@ export const submitApplication = async (data: ApplicationData) => {
   }
 
   const response = await api.post("/applications", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
   });
+
   return response.data;
 };
 

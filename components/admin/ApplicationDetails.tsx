@@ -1,4 +1,4 @@
-// components/admin/ApplicationDetails.tsx - FIXED
+// components/admin/ApplicationDetails.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState } from "react";

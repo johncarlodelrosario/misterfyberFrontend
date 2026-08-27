@@ -1,21 +1,25 @@
-// app/(dashboard)/admin/applications/page.tsx
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   MagnifyingGlassIcon,
-  FunnelIcon,
   ArrowPathIcon,
   PlusIcon,
-  DocumentArrowDownIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
 import ApplicationTable from "@/components/admin/ApplicationTable";
+import { AddApplicationModal } from "@/components/admin/AddApplicationModal";
 import { getAllApplications } from "@/services/application";
 import { getActiveBuildings } from "@/services/building";
 import { getPlans } from "@/services/plan";
+import {
+  approveApplication,
+  rejectApplication,
+  startBillingForApplication,
+} from "@/services/application";
 
 // Types
 interface Application {
@@ -41,6 +45,8 @@ interface Application {
   idNumber: string;
   macAddress?: string;
   adminNotes?: string;
+  notes?: string;
+  applicationId?: string;
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -77,13 +83,15 @@ export default function AdminApplicationsPage() {
   });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasInitialLoad, setHasInitialLoad] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Fetch applications with filters
   const fetchApplications = useCallback(
     async (refresh = false) => {
       try {
         if (refresh) setIsRefreshing(true);
-        else setLoading(true);
+        else if (!hasInitialLoad) setLoading(true);
         setError(null);
 
         const params: any = {
@@ -101,7 +109,6 @@ export default function AdminApplicationsPage() {
           params.buildingId = filters.buildingId;
         }
 
-        // Add forceRefresh to bypass cache if needed
         if (refresh) {
           params.forceRefresh = true;
         }
@@ -113,6 +120,7 @@ export default function AdminApplicationsPage() {
         setTotal(response.total || 0);
         setTotalPages(response.totalPages || 0);
         setCurrentPage(response.currentPage || 1);
+        setHasInitialLoad(true);
       } catch (err: any) {
         console.error("Error fetching applications:", err);
         setError(err.message || "Failed to load applications");
@@ -122,7 +130,7 @@ export default function AdminApplicationsPage() {
         setIsRefreshing(false);
       }
     },
-    [filters],
+    [filters, hasInitialLoad],
   );
 
   // Fetch buildings and plans for dropdowns
@@ -160,22 +168,16 @@ export default function AdminApplicationsPage() {
 
   // Refresh when filters change
   useEffect(() => {
-    if (
-      filters.page > 1 ||
-      filters.search ||
-      filters.status !== "all" ||
-      filters.buildingId
-    ) {
+    if (hasInitialLoad) {
       fetchApplications();
     }
   }, [filters.page, filters.status, filters.buildingId]);
 
   // Handle search with debounce
   useEffect(() => {
+    if (!hasInitialLoad) return;
     const debounceTimer = setTimeout(() => {
-      if (filters.search) {
-        fetchApplications();
-      }
+      fetchApplications();
     }, 500);
 
     return () => clearTimeout(debounceTimer);
@@ -251,6 +253,67 @@ export default function AdminApplicationsPage() {
     return { total, pending, approved, rejected, billingStarted };
   }, [applications]);
 
+  // Handle application added
+  const handleApplicationAdded = useCallback(() => {
+    setShowAddModal(false);
+    fetchApplications(true);
+    toast.success("Application submitted successfully!");
+  }, [fetchApplications]);
+
+  // FIXED: Approve application handler - actually calls the API
+  const handleApprove = useCallback(
+    async (id: string) => {
+      try {
+        await approveApplication(id);
+        toast.success("Application approved successfully!");
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error approving application:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to approve application",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
+  // FIXED: Reject application handler - actually calls the API
+  const handleReject = useCallback(
+    async (id: string) => {
+      try {
+        await rejectApplication(id);
+        toast.success("Application rejected successfully!");
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error rejecting application:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to reject application",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
+  // FIXED: Start billing handler - actually calls the API
+  const handleStartBilling = useCallback(
+    async (id: string) => {
+      try {
+        await startBillingForApplication(id, {});
+        toast.success("Billing started successfully!");
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error starting billing:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to start billing",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
   if (error && !loading) {
     return (
       <div className="p-6">
@@ -291,7 +354,7 @@ export default function AdminApplicationsPage() {
           </button>
 
           <button
-            onClick={() => router.push("/admin/applications/new")}
+            onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
           >
             <PlusIcon className="h-5 w-5" />
@@ -387,6 +450,10 @@ export default function AdminApplicationsPage() {
           onView={handleViewApplication}
           onEdit={handleEditApplication}
           onRefresh={handleRefresh}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onStartBilling={handleStartBilling}
+          onApplicationAdded={handleApplicationAdded}
         />
 
         {/* Pagination */}
@@ -420,6 +487,13 @@ export default function AdminApplicationsPage() {
           </div>
         )}
       </div>
+
+      {/* Add Application Modal */}
+      <AddApplicationModal
+        open={showAddModal}
+        onOpenChange={setShowAddModal}
+        onSuccess={handleApplicationAdded}
+      />
     </div>
   );
 }

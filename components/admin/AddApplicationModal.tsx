@@ -1,4 +1,4 @@
-// components/admin/AddApplicationModal.tsx - PLAIN HTML VERSION
+// components/admin/AddApplicationModal.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -65,16 +65,22 @@ export function AddApplicationModal({
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.firstName) newErrors.firstName = "First name is required";
-    if (!formData.lastName) newErrors.lastName = "Last name is required";
-    if (!formData.email) newErrors.email = "Email is required";
-    if (!formData.phoneNumber)
+    if (!formData.firstName.trim())
+      newErrors.firstName = "First name is required";
+    if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
+    if (!formData.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = "Please enter a valid email address";
+    }
+    if (!formData.phoneNumber.trim())
       newErrors.phoneNumber = "Phone number is required";
     if (!formData.buildingId) newErrors.buildingId = "Building is required";
-    if (!formData.floor) newErrors.floor = "Floor is required";
-    if (!formData.unitNumber) newErrors.unitNumber = "Unit number is required";
+    if (!formData.floor.trim()) newErrors.floor = "Floor is required";
+    if (!formData.unitNumber.trim())
+      newErrors.unitNumber = "Unit number is required";
     if (!formData.planId) newErrors.planId = "Plan is required";
-    if (!formData.idNumber) newErrors.idNumber = "ID number is required";
+    if (!formData.idNumber.trim()) newErrors.idNumber = "ID number is required";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -86,22 +92,24 @@ export function AddApplicationModal({
     setIsLoading(true);
     try {
       const applicationData: ApplicationData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phoneNumber: formData.phoneNumber,
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim(),
+        phoneNumber: formData.phoneNumber.trim(),
         buildingId: formData.buildingId,
-        tower: formData.tower || "",
-        floor: formData.floor,
-        unitNumber: formData.unitNumber,
+        tower: formData.tower.trim(),
+        floor: formData.floor.trim(),
+        unitNumber: formData.unitNumber.trim(),
         planId: formData.planId,
         idType: formData.idType,
-        idNumber: formData.idNumber,
-        macAddress: formData.macAddress || undefined,
-        notes: formData.notes || undefined,
+        idNumber: formData.idNumber.trim(),
+        macAddress: formData.macAddress.trim() || undefined,
+        notes: formData.notes.trim() || undefined,
       };
 
       await submitApplication(applicationData);
+
+      // Reset form
       setFormData({
         firstName: "",
         lastName: "",
@@ -117,24 +125,45 @@ export function AddApplicationModal({
         macAddress: "",
         notes: "",
       });
+      setErrors({});
+
       onSuccess();
-      toast.success("Application submitted successfully");
+      toast.success("Application submitted successfully!");
     } catch (error: any) {
       console.error("Error submitting application:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to submit application",
-      );
+
+      // Handle specific error messages from backend
+      const errorMessage =
+        error?.response?.data?.message || "Failed to submit application";
+      toast.error(errorMessage);
+
+      // If there are validation errors from backend, display them
+      if (error?.response?.data?.errors) {
+        const backendErrors = error.response.data.errors;
+        const newErrors: Record<string, string> = {};
+        Object.keys(backendErrors).forEach((key) => {
+          newErrors[key] = backendErrors[key];
+        });
+        setErrors(newErrors);
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!open) {
+      setErrors({});
+    }
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
           <h2 className="text-xl font-bold">Add New Customer Application</h2>
           <button
             onClick={() => onOpenChange(false)}
@@ -161,7 +190,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, firstName: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Juan"
                 />
                 {errors.firstName && (
@@ -180,7 +209,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, lastName: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Dela Cruz"
                 />
                 {errors.lastName && (
@@ -200,7 +229,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="customer@email.com"
                 />
                 {errors.email && (
@@ -217,7 +246,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, phoneNumber: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="09123456789"
                 />
                 {errors.phoneNumber && (
@@ -258,7 +287,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, idNumber: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.idNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Enter ID number"
                 />
                 {errors.idNumber && (
@@ -282,7 +311,7 @@ export function AddApplicationModal({
                 onChange={(e) =>
                   setFormData({ ...formData, buildingId: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border ${errors.buildingId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -324,7 +353,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, floor: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.floor ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="e.g., 2nd Floor"
                 />
                 {errors.floor && (
@@ -341,7 +370,7 @@ export function AddApplicationModal({
                   onChange={(e) =>
                     setFormData({ ...formData, unitNumber: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${errors.unitNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="e.g., 201"
                 />
                 {errors.unitNumber && (
@@ -367,7 +396,7 @@ export function AddApplicationModal({
                 onChange={(e) =>
                   setFormData({ ...formData, planId: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border ${errors.planId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -376,7 +405,7 @@ export function AddApplicationModal({
                 {plans.map((plan) => (
                   <option key={plan._id} value={plan._id}>
                     {plan.name} - ₱{plan.price.toLocaleString()} (
-                    {plan.speed.download} Mbps)
+                    {plan.speed?.download || 0} Mbps)
                   </option>
                 ))}
               </select>
