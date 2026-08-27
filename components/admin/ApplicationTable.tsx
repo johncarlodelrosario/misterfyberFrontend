@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { getActiveBuildings, Building } from "@/services/building";
 
-// Interface definitions - UPDATED with billing_started
+// Interface definitions
 export interface Application {
   _id: string;
   applicationId?: string;
@@ -21,12 +21,13 @@ export interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected" | "billing_started";
+  status: "pending" | "approved" | "rejected";
   idType: string;
   idNumber: string;
   macAddress?: string;
   notes?: string;
   adminNotes?: string;
+  idImage?: string;
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -42,13 +43,8 @@ export interface ApplicationTableProps {
   selectedIds?: string[];
   onPageChange?: (page: number) => void;
   onRefresh?: () => void;
-  onStatusFilterChange?: (status: string) => void;
-  onBuildingFilterChange?: (buildingId: string) => void;
-  onSearch?: (query: string) => void;
   onApprove?: (id: string) => Promise<void>;
   onReject?: (id: string) => Promise<void>;
-  onStartBilling?: (id: string) => Promise<void>;
-  onApplicationAdded?: () => void;
   onSelectAll?: (checked: boolean) => void;
   onSelectOne?: (id: string, checked: boolean) => void;
   onView?: (id: string) => void;
@@ -57,30 +53,17 @@ export interface ApplicationTableProps {
 
 export default function ApplicationTable({
   applications: initialApplications,
-  total = 0,
-  currentPage = 1,
-  totalPages = 1,
   isLoading = false,
   loading = false,
   selectedIds = [],
-  onPageChange,
   onRefresh,
-  onStatusFilterChange,
-  onBuildingFilterChange,
-  onSearch,
   onApprove,
   onReject,
-  onStartBilling,
-  onApplicationAdded,
   onSelectAll,
   onSelectOne,
   onView,
   onEdit,
 }: ApplicationTableProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [buildingFilter, setBuildingFilter] = useState("all");
-  const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -97,6 +80,7 @@ export default function ApplicationTable({
   }, [initialApplications]);
 
   // Load buildings for filter
+  const [buildings, setBuildings] = useState<Building[]>([]);
   useEffect(() => {
     const loadBuildings = async () => {
       try {
@@ -108,26 +92,6 @@ export default function ApplicationTable({
     };
     loadBuildings();
   }, []);
-
-  const handleSearch = useCallback(() => {
-    if (onSearch) onSearch(searchQuery);
-  }, [searchQuery, onSearch]);
-
-  const handleStatusFilter = useCallback(
-    (value: string) => {
-      setStatusFilter(value);
-      if (onStatusFilterChange) onStatusFilterChange(value);
-    },
-    [onStatusFilterChange],
-  );
-
-  const handleBuildingFilter = useCallback(
-    (value: string) => {
-      setBuildingFilter(value);
-      if (onBuildingFilterChange) onBuildingFilterChange(value);
-    },
-    [onBuildingFilterChange],
-  );
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -147,12 +111,6 @@ export default function ApplicationTable({
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
             Rejected
-          </span>
-        );
-      case "billing_started":
-        return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-            Billing Started
           </span>
         );
       default:
@@ -187,10 +145,7 @@ export default function ApplicationTable({
 
   // OPTIMISTIC UPDATE: Instant status change without waiting for API
   const updateApplicationStatus = useCallback(
-    (
-      id: string,
-      newStatus: "pending" | "approved" | "rejected" | "billing_started",
-    ) => {
+    (id: string, newStatus: "pending" | "approved" | "rejected") => {
       setLocalApplications((prev) =>
         prev.map((app) =>
           app._id === id ? { ...app, status: newStatus } : app,
@@ -240,24 +195,6 @@ export default function ApplicationTable({
     }
   };
 
-  const handleStartBilling = async (id: string) => {
-    setActionLoading(id);
-    updateApplicationStatus(id, "billing_started");
-    toast.success("₱ Billing started!");
-
-    try {
-      if (onStartBilling) {
-        await onStartBilling(id);
-      }
-      if (onRefresh) setTimeout(() => onRefresh(), 300);
-    } catch (error: any) {
-      updateApplicationStatus(id, "approved");
-      toast.error(error?.response?.data?.message || "Failed to start billing");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleViewDetails = (application: Application) => {
     setSelectedApplication(application);
     setShowDetailsModal(true);
@@ -289,55 +226,12 @@ export default function ApplicationTable({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* Toolbar - Only Refresh and Add buttons */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex flex-1 items-center gap-4 w-full sm:w-auto">
-          <div className="relative flex-1 sm:max-w-sm">
-            <input
-              type="text"
-              placeholder="Search applications..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <svg
-              className="absolute left-3 top-2.5 h-4 w-4 text-gray-400"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <button
-            onClick={handleSearch}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </button>
+        <div className="flex items-center gap-2">
           <button
             onClick={onRefresh}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
           >
             <svg
               className={`h-4 w-4 ${isLoaded ? "animate-spin" : ""}`}
@@ -356,32 +250,7 @@ export default function ApplicationTable({
           </button>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-          <select
-            value={statusFilter}
-            onChange={(e) => handleStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="billing_started">Billing Started</option>
-          </select>
-
-          <select
-            value={buildingFilter}
-            onChange={(e) => handleBuildingFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
-          >
-            <option value="all">All Buildings</option>
-            {buildings.map((building) => (
-              <option key={building._id} value={building._id}>
-                {building.buildingName}
-              </option>
-            ))}
-          </select>
-
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAddModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
@@ -397,10 +266,10 @@ export default function ApplicationTable({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                d="M12 4v16m8-8H4"
               />
             </svg>
-            Add Customer
+            Add Application
           </button>
         </div>
       </div>
@@ -572,15 +441,6 @@ export default function ApplicationTable({
                           </button>
                         </>
                       )}
-                      {app.status === "approved" && onStartBilling && (
-                        <button
-                          onClick={() => handleStartBilling(app._id)}
-                          disabled={actionLoading === app._id}
-                          className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                        >
-                          {actionLoading === app._id ? "⏳" : "₱"}
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -589,59 +449,6 @@ export default function ApplicationTable({
           </tbody>
         </table>
       </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && onPageChange && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            Showing {displayApplications.length} of {total} applications
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => onPageChange(currentPage - 1)}
-              disabled={currentPage <= 1 || isLoaded}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Previous
-            </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => onPageChange(pageNum)}
-                    disabled={isLoaded}
-                    className={`px-4 py-2 border rounded-md ${
-                      pageNum === currentPage
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => onPageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages || isLoaded}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Details Modal */}
       {showDetailsModal && selectedApplication && (
@@ -661,7 +468,6 @@ export default function ApplicationTable({
                 application={selectedApplication}
                 onApprove={handleApprove}
                 onReject={handleReject}
-                onStartBilling={handleStartBilling}
                 onClose={() => setShowDetailsModal(false)}
               />
             </div>
@@ -675,7 +481,7 @@ export default function ApplicationTable({
         onOpenChange={setShowAddModal}
         onSuccess={() => {
           setShowAddModal(false);
-          if (onApplicationAdded) onApplicationAdded();
+          if (onRefresh) onRefresh();
           toast.success("✅ Application submitted successfully!");
         }}
       />

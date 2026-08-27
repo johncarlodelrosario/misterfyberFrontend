@@ -6,20 +6,14 @@ import { useRouter } from "next/navigation";
 import {
   MagnifyingGlassIcon,
   ArrowPathIcon,
-  PlusIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
 import ApplicationTable from "@/components/admin/ApplicationTable";
-import { AddApplicationModal } from "@/components/admin/AddApplicationModal";
 import { getAllApplications } from "@/services/application";
 import { getActiveBuildings } from "@/services/building";
 import { getPlans } from "@/services/plan";
-import {
-  approveApplication,
-  rejectApplication,
-  startBillingForApplication,
-} from "@/services/application";
+import { approveApplication, rejectApplication } from "@/services/application";
 
 // Types
 interface Application {
@@ -40,13 +34,14 @@ interface Application {
     name: string;
     price: number;
   };
-  status: "pending" | "approved" | "rejected" | "billing_started";
+  status: "pending" | "approved" | "rejected";
   idType: string;
   idNumber: string;
   macAddress?: string;
   adminNotes?: string;
   notes?: string;
   applicationId?: string;
+  idImage?: string;
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -84,7 +79,6 @@ export default function AdminApplicationsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
 
   // Fetch applications with filters
   const fetchApplications = useCallback(
@@ -237,7 +231,6 @@ export default function AdminApplicationsPage() {
     { value: "pending", label: "Pending" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
-    { value: "billing_started", label: "Billing Started" },
   ];
 
   // Memoized stats
@@ -246,21 +239,11 @@ export default function AdminApplicationsPage() {
     const pending = applications.filter((a) => a.status === "pending").length;
     const approved = applications.filter((a) => a.status === "approved").length;
     const rejected = applications.filter((a) => a.status === "rejected").length;
-    const billingStarted = applications.filter(
-      (a) => a.status === "billing_started",
-    ).length;
 
-    return { total, pending, approved, rejected, billingStarted };
+    return { total, pending, approved, rejected };
   }, [applications]);
 
-  // Handle application added
-  const handleApplicationAdded = useCallback(() => {
-    setShowAddModal(false);
-    fetchApplications(true);
-    toast.success("Application submitted successfully!");
-  }, [fetchApplications]);
-
-  // FIXED: Approve application handler - actually calls the API
+  // Approve application handler
   const handleApprove = useCallback(
     async (id: string) => {
       try {
@@ -278,7 +261,7 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // FIXED: Reject application handler - actually calls the API
+  // Reject application handler
   const handleReject = useCallback(
     async (id: string) => {
       try {
@@ -289,24 +272,6 @@ export default function AdminApplicationsPage() {
         console.error("Error rejecting application:", error);
         toast.error(
           error?.response?.data?.message || "Failed to reject application",
-        );
-        throw error;
-      }
-    },
-    [fetchApplications],
-  );
-
-  // FIXED: Start billing handler - actually calls the API
-  const handleStartBilling = useCallback(
-    async (id: string) => {
-      try {
-        await startBillingForApplication(id, {});
-        toast.success("Billing started successfully!");
-        await fetchApplications(true);
-      } catch (error: any) {
-        console.error("Error starting billing:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to start billing",
         );
         throw error;
       }
@@ -352,14 +317,6 @@ export default function AdminApplicationsPage() {
               className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
             />
           </button>
-
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            <PlusIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">New Application</span>
-          </button>
         </div>
       </div>
 
@@ -377,11 +334,9 @@ export default function AdminApplicationsPage() {
           <p className="text-sm text-green-700">Approved</p>
           <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
         </div>
-        <div className="bg-purple-50 rounded-lg shadow p-4 border border-purple-100">
-          <p className="text-sm text-purple-700">Billing Started</p>
-          <p className="text-2xl font-bold text-purple-600">
-            {stats.billingStarted}
-          </p>
+        <div className="bg-red-50 rounded-lg shadow p-4 border border-red-100">
+          <p className="text-sm text-red-700">Rejected</p>
+          <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
         </div>
       </div>
 
@@ -452,8 +407,6 @@ export default function AdminApplicationsPage() {
           onRefresh={handleRefresh}
           onApprove={handleApprove}
           onReject={handleReject}
-          onStartBilling={handleStartBilling}
-          onApplicationAdded={handleApplicationAdded}
         />
 
         {/* Pagination */}
@@ -487,13 +440,6 @@ export default function AdminApplicationsPage() {
           </div>
         )}
       </div>
-
-      {/* Add Application Modal */}
-      <AddApplicationModal
-        open={showAddModal}
-        onOpenChange={setShowAddModal}
-        onSuccess={handleApplicationAdded}
-      />
     </div>
   );
 }

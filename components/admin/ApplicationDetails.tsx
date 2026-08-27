@@ -2,13 +2,13 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import type { Application } from "./ApplicationTable";
 
 interface ApplicationDetailsProps {
   application: Application;
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
-  onStartBilling: (id: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -16,10 +16,10 @@ export function ApplicationDetails({
   application,
   onApprove,
   onReject,
-  onStartBilling,
   onClose,
 }: ApplicationDetailsProps) {
   const [actionLoading, setActionLoading] = useState(false);
+  const [showFullImage, setShowFullImage] = useState(false);
 
   const getBuildingName = (
     building: string | { _id: string; buildingName: string },
@@ -62,12 +62,6 @@ export function ApplicationDetails({
             Rejected
           </span>
         );
-      case "billing_started":
-        return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-            Billing Started
-          </span>
-        );
       default:
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
@@ -101,18 +95,6 @@ export function ApplicationDetails({
     setActionLoading(true);
     try {
       await onReject(application._id);
-      onClose();
-    } catch (error) {
-      // Error is handled in parent
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleStartBilling = async () => {
-    setActionLoading(true);
-    try {
-      await onStartBilling(application._id);
       onClose();
     } catch (error) {
       // Error is handled in parent
@@ -179,6 +161,25 @@ export function ApplicationDetails({
               </div>
             )}
           </div>
+
+          {/* ID Image */}
+          {application.idImage && (
+            <div className="mt-4 pt-4 border-t">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                ID Image
+              </h4>
+              <div className="relative w-48 h-48 border rounded-md overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
+                <Image
+                  src={application.idImage}
+                  alt="ID Image"
+                  fill
+                  className="object-contain"
+                  onClick={() => setShowFullImage(true)}
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Click to enlarge</p>
+            </div>
+          )}
         </div>
 
         {/* Address Information */}
@@ -295,16 +296,45 @@ export function ApplicationDetails({
             </button>
           </>
         )}
-        {application.status === "approved" && (
-          <button
-            onClick={handleStartBilling}
-            disabled={actionLoading}
-            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-          >
-            {actionLoading ? "⏳ Processing..." : "₱ Start Billing"}
-          </button>
-        )}
       </div>
+
+      {/* Full Image Modal */}
+      {showFullImage && application.idImage && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setShowFullImage(false)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full h-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowFullImage(false)}
+              className="absolute top-2 right-2 text-white bg-black/50 rounded-full p-2 hover:bg-black/70 z-10"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <Image
+              src={application.idImage}
+              alt="ID Image Full"
+              fill
+              className="object-contain"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,11 +1,12 @@
 // components/admin/AddApplicationModal.tsx - COMPLETE FIXED
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getActiveBuildings, Building } from "@/services/building";
 import { getPlans, Plan } from "@/services/plan";
 import { submitApplication, ApplicationData } from "@/services/application";
 import { toast } from "sonner";
+import Image from "next/image";
 
 interface AddApplicationModalProps {
   open: boolean;
@@ -22,6 +23,9 @@ export function AddApplicationModal({
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [idImagePreview, setIdImagePreview] = useState<string | null>(null);
+  const [idImageFile, setIdImageFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -60,6 +64,28 @@ export function AddApplicationModal({
         }
       };
       loadData();
+      // Reset form when modal opens
+      setFormData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        buildingId: "",
+        tower: "",
+        floor: "",
+        unitNumber: "",
+        planId: "",
+        idType: "Passport",
+        idNumber: "",
+        macAddress: "",
+        notes: "",
+      });
+      setIdImageFile(null);
+      setIdImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      setErrors({});
     }
   }, [open]);
 
@@ -85,6 +111,36 @@ export function AddApplicationModal({
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleIdImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please upload an image file");
+        return;
+      }
+      setIdImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIdImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeIdImage = () => {
+    setIdImageFile(null);
+    setIdImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
@@ -105,6 +161,7 @@ export function AddApplicationModal({
         idNumber: formData.idNumber.trim(),
         macAddress: formData.macAddress.trim() || undefined,
         notes: formData.notes.trim() || undefined,
+        idImage: idImageFile || undefined,
       };
 
       await submitApplication(applicationData);
@@ -125,6 +182,11 @@ export function AddApplicationModal({
         macAddress: "",
         notes: "",
       });
+      setIdImageFile(null);
+      setIdImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setErrors({});
 
       onSuccess();
@@ -155,6 +217,11 @@ export function AddApplicationModal({
   useEffect(() => {
     if (!open) {
       setErrors({});
+      setIdImageFile(null);
+      setIdImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   }, [open]);
 
@@ -294,6 +361,54 @@ export function AddApplicationModal({
                   <p className="text-red-500 text-sm mt-1">{errors.idNumber}</p>
                 )}
               </div>
+            </div>
+
+            {/* ID Image Upload */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ID Image
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleIdImageChange}
+                  className="hidden"
+                  id="idImageUpload"
+                />
+                <label
+                  htmlFor="idImageUpload"
+                  className="px-4 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  Choose Image
+                </label>
+                <span className="text-sm text-gray-500">
+                  {idImageFile ? idImageFile.name : "No file chosen"}
+                </span>
+                {idImagePreview && (
+                  <button
+                    type="button"
+                    onClick={removeIdImage}
+                    className="text-red-600 hover:text-red-800 text-sm"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {idImagePreview && (
+                <div className="mt-2 relative w-32 h-32 border rounded-md overflow-hidden">
+                  <Image
+                    src={idImagePreview}
+                    alt="ID Preview"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                Accepted formats: JPG, PNG, GIF (Max 5MB)
+              </p>
             </div>
           </div>
 

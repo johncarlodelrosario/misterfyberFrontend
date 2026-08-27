@@ -1,26 +1,29 @@
+// app/admin/email/page.tsx
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import emailService, {
   Customer,
-  Bill,
   EmailTemplate,
   EmailSentRecord,
 } from "@/services/emailService";
+import RichTextEditor from "@/components/RichTextEditor";
+import ScheduledEmailsTab from "@/components/ScheduledEmailsTab";
 import toast from "react-hot-toast";
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    "single" | "bulk" | "templates" | "sent"
+    "single" | "bulk" | "templates" | "sent" | "scheduled"
   >("single");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
-  const [customerBills, setCustomerBills] = useState<Bill[]>([]);
+  const [customerBills, setCustomerBills] = useState<any[]>([]);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [sentRecords, setSentRecords] = useState<EmailSentRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -31,6 +34,7 @@ export default function ManualEmailPage() {
   // Email form state
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [richTextContent, setRichTextContent] = useState("");
   const [includeBilling, setIncludeBilling] = useState(false);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [sendCopyToAdmin, setSendCopyToAdmin] = useState(false);
@@ -77,23 +81,17 @@ export default function ManualEmailPage() {
   const [reminderMessage, setReminderMessage] = useState("");
   const [includeDueDateReminder, setIncludeDueDateReminder] = useState(true);
 
+  // Refs
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
-  // FIXED: Add refresh counter to force re-render
   const [refreshKey, setRefreshKey] = useState(0);
 
   // ==================== HELPER FUNCTIONS ====================
   const getLocationFromBuildingName = (buildingName?: string): string => {
-    if (!buildingName) {
-      return "other";
-    }
+    if (!buildingName) return "other";
     const name = buildingName.toLowerCase().trim();
-    if (name.includes("breeze")) {
-      return "breeze";
-    }
-    if (name.includes("sil") || name.includes("silk")) {
-      return "sil";
-    }
+    if (name.includes("breeze")) return "breeze";
+    if (name.includes("sil") || name.includes("silk")) return "sil";
     return "other";
   };
 
@@ -129,7 +127,7 @@ export default function ManualEmailPage() {
     return "bg-gray-100 text-gray-800 border-gray-300";
   };
 
-  // ==================== UPDATE LOCATION WHEN CUSTOMER SELECTED ====================
+  // ==================== UPDATE LOCATION ====================
   useEffect(() => {
     if (selectedCustomer) {
       const location = getLocationFromBuildingName(
@@ -152,31 +150,20 @@ export default function ManualEmailPage() {
     setTotalEmailsSent(total);
   }, [sentRecords]);
 
-  // ==================== LOAD FUNCTIONS - NO CACHING ====================
-  // FIXED: Added forceRefresh parameter to bypass cache
+  // ==================== LOAD FUNCTIONS ====================
   const loadCustomers = useCallback(
-    async (search?: string, forceRefresh = false) => {
+    async (search?: string, forceRefresh = false, location?: string) => {
       if (!isMountedRef.current) return;
 
       try {
         setLoading(true);
         setError(null);
 
-        console.log(
-          `🔄 loadCustomers called with search: "${search}", forceRefresh: ${forceRefresh}`,
-        );
-
-        // FIXED: Pass forceRefresh parameter to API
         const data = await emailService.getCustomers({
           search,
-          forceRefresh: forceRefresh || false,
+          forceRefresh,
+          location,
         });
-
-        console.log("📊 Raw data from API:", data?.length || 0, "customers");
-        console.log(
-          "📊 API response timestamp:",
-          data?.[0]?._fetchedAt || "No timestamp",
-        );
 
         const processedData = (data || []).map((customer) => ({
           ...customer,
@@ -184,19 +171,6 @@ export default function ManualEmailPage() {
         }));
 
         setCustomers(processedData);
-        console.log(`✅ Loaded ${processedData.length} customers (fresh data)`);
-
-        if (processedData.length > 0) {
-          console.log(
-            "👤 First 3 customers:",
-            processedData.slice(0, 3).map((c) => ({
-              name: `${c.firstName} ${c.lastName}`,
-              id: c.applicationId,
-              email: c.email,
-              building: c.buildingName,
-            })),
-          );
-        }
       } catch (error: any) {
         console.error("Failed to load customers:", error);
         const errorMsg =
@@ -216,7 +190,6 @@ export default function ManualEmailPage() {
 
   const loadTemplates = useCallback(async () => {
     if (!isMountedRef.current) return;
-
     try {
       const data = await emailService.getTemplates();
       setTemplates(data || []);
@@ -228,7 +201,6 @@ export default function ManualEmailPage() {
 
   const loadSentRecords = useCallback(async () => {
     if (!isMountedRef.current) return;
-
     try {
       const data = await emailService.getSentRecords();
       setSentRecords(data || []);
@@ -256,7 +228,6 @@ export default function ManualEmailPage() {
     isMountedRef.current = true;
 
     const loadAllData = async () => {
-      // FIXED: Force refresh on initial load
       await Promise.all([
         loadCustomers("", true),
         loadTemplates(),
@@ -289,6 +260,7 @@ export default function ManualEmailPage() {
     if (template) {
       setSubject(template.subject || "");
       setMessage(template.message || "");
+      setRichTextContent(template.message || "");
       setIncludeBilling(template.includeBillingDefault || false);
     }
   };
@@ -323,10 +295,11 @@ export default function ManualEmailPage() {
       const preview = await emailService.previewEmail({
         subject,
         message,
+        richTextContent: richTextContent || message,
         includeBilling,
         applicationId: selectedCustomer.applicationId,
         billIds: includeBilling ? selectedBillIds : undefined,
-        useAdminSender: useAdminSender,
+        useAdminSender,
       });
       setPreviewHtml(preview.html || "");
       setPreviewLocation(preview.location || "unknown");
@@ -346,7 +319,7 @@ export default function ManualEmailPage() {
       return;
     }
 
-    if (!subject.trim() || !message.trim()) {
+    if (!subject.trim() || !(message.trim() || richTextContent.trim())) {
       toast.error("Please enter subject and message");
       return;
     }
@@ -361,11 +334,12 @@ export default function ManualEmailPage() {
       const result = await emailService.sendEmail({
         applicationId: selectedCustomer.applicationId,
         subject,
-        message,
+        message: richTextContent || message,
+        richTextContent: richTextContent || message,
         includeBilling,
         billIds: includeBilling ? selectedBillIds : undefined,
         sendCopyToAdmin,
-        useAdminSender: useAdminSender,
+        useAdminSender,
       });
 
       const senderDisplay = useAdminSender ? "Admin" : "Collection";
@@ -376,11 +350,11 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      // FIXED: Force refresh after sending email
       await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
 
       setSubject("");
       setMessage("");
+      setRichTextContent("");
       setIncludeBilling(false);
       setSelectedBillIds([]);
     } catch (error: any) {
@@ -397,7 +371,7 @@ export default function ManualEmailPage() {
       return;
     }
 
-    if (!subject.trim() || !message.trim()) {
+    if (!subject.trim() || !(message.trim() || richTextContent.trim())) {
       toast.error("Please enter subject and message");
       return;
     }
@@ -407,11 +381,13 @@ export default function ManualEmailPage() {
       const result = await emailService.sendBulkEmails({
         applicationIds: selectedCustomers.map((c) => c.applicationId),
         subject,
-        message,
+        message: richTextContent || message,
+        richTextContent: richTextContent || message,
         includeBilling,
         billType: bulkBillType,
         sendCopyToAdmin,
-        useAdminSender: useAdminSender,
+        useAdminSender,
+        locationFilter: buildingFilter !== "all" ? buildingFilter : undefined,
       });
 
       const senderDisplay = useAdminSender ? "Admin" : "Collection";
@@ -419,12 +395,12 @@ export default function ManualEmailPage() {
         `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
       );
 
-      // FIXED: Force refresh after sending bulk emails
       await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
 
       setSelectedCustomers([]);
       setSubject("");
       setMessage("");
+      setRichTextContent("");
     } catch (error: any) {
       console.error("Failed to send bulk emails:", error);
       toast.error(
@@ -452,7 +428,6 @@ export default function ManualEmailPage() {
       setShowReminderDialog(false);
       setReminderMessage("");
 
-      // FIXED: Force refresh after sending reminders
       await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
@@ -479,7 +454,6 @@ export default function ManualEmailPage() {
         category: "general",
         includeBillingDefault: false,
       });
-
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to save template:", error);
@@ -522,7 +496,6 @@ export default function ManualEmailPage() {
         category: "general",
         includeBillingDefault: false,
       });
-
       await loadTemplates();
     } catch (error: any) {
       console.error("Failed to update template:", error);
@@ -535,7 +508,6 @@ export default function ManualEmailPage() {
       try {
         await emailService.deleteTemplate(templateId);
         toast.success("Template deleted successfully");
-
         await loadTemplates();
       } catch (error) {
         console.error("Failed to delete template:", error);
@@ -549,7 +521,6 @@ export default function ManualEmailPage() {
       try {
         await emailService.deleteSentRecord(recordId);
         toast.success("Record deleted successfully");
-
         await loadSentRecords();
       } catch (error) {
         console.error("Failed to delete record:", error);
@@ -558,20 +529,16 @@ export default function ManualEmailPage() {
     }
   };
 
-  // FIXED: Enhanced refresh function with force flag
   const handleRefresh = async () => {
     setLoading(true);
     try {
       await Promise.all([
-        loadCustomers("", true), // Force refresh
+        loadCustomers("", true),
         loadTemplates(),
         loadSentRecords(),
       ]);
-      setRefreshKey((prev) => prev + 1); // Force re-render
+      setRefreshKey((prev) => prev + 1);
       toast.success("✅ All data refreshed successfully!");
-      console.log("🔄 Refresh completed at:", new Date().toISOString());
-      console.log("📊 Total customers:", customers.length);
-      console.log("📧 Total emails sent:", totalEmailsSent);
     } catch (error) {
       console.error("Refresh failed:", error);
       toast.error("Failed to refresh data");
@@ -608,7 +575,6 @@ export default function ManualEmailPage() {
   const filteredUnpaidCustomers = filteredCustomers.filter(
     (c) => c.hasUnpaidBills === true,
   );
-
   const displayCustomers = showUnpaidOnly
     ? filteredUnpaidCustomers
     : filteredCustomers;
@@ -652,8 +618,8 @@ export default function ManualEmailPage() {
                 📧 Manual Email Management
               </h1>
               <p className="text-gray-500 mt-1">
-                Send custom emails to customers based on their building location
-                (Breeze or SIL)
+                Send custom emails to customers with rich text formatting and
+                scheduling
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 🔄 Last updated: {new Date().toLocaleTimeString()}
@@ -706,19 +672,20 @@ export default function ManualEmailPage() {
           </div>
         </div>
 
-        {/* Tabs - same as before */}
+        {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <nav className="flex space-x-8">
+          <nav className="flex space-x-8 overflow-x-auto">
             {[
               { id: "single", name: "Single Email", icon: "✉️" },
               { id: "bulk", name: "Bulk Email", icon: "👥" },
               { id: "templates", name: "Templates", icon: "📄" },
               { id: "sent", name: "Sent Records", icon: "📨" },
+              { id: "scheduled", name: "📅 Scheduled", icon: "📅" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? "border-blue-500 text-blue-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -736,11 +703,8 @@ export default function ManualEmailPage() {
           </nav>
         </div>
 
-        {/* Rest of the component remains the same */}
-        {/* ... (Single Email, Bulk Email, Templates, Sent Records tabs - unchanged) ... */}
-
-        {/* FIXED: Add key to force re-render when customers change */}
-        <div key={`customer-list-${refreshKey}-${customers.length}`}>
+        {/* Tab Content */}
+        <div key={`content-${refreshKey}`}>
           {/* Single Email Tab */}
           {activeTab === "single" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -830,11 +794,6 @@ export default function ManualEmailPage() {
                     {displayCustomers.length === 0 ? (
                       <div className="text-center py-8 text-gray-500">
                         <p>No customers found</p>
-                        <p className="text-xs mt-1">
-                          {buildingFilter !== "all"
-                            ? `No customers found in "${buildingFilter}" building`
-                            : "Make sure there are approved applications with email addresses"}
-                        </p>
                         <button
                           onClick={() => loadCustomers("", true)}
                           className="mt-2 text-sm text-blue-600 underline"
@@ -1028,13 +987,6 @@ export default function ManualEmailPage() {
                       </span>
                     </button>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {useAdminSender
-                      ? "📌 Email will be sent from the main admin email"
-                      : customerLocation && customerLocation !== "other"
-                        ? `📌 Email will be sent from ${customerLocation.toUpperCase()} collection email: ${collectionEmail}`
-                        : "📌 No location detected. Please select a customer with a building."}
-                  </p>
                 </div>
 
                 <div className="mb-4">
@@ -1054,12 +1006,15 @@ export default function ManualEmailPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Message
                   </label>
-                  <textarea
-                    rows={6}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Write your email message here..."
+                  <RichTextEditor
+                    value={richTextContent || message}
+                    onChange={(content) => {
+                      setRichTextContent(content);
+                      setMessage(content.replace(/<[^>]*>/g, ""));
+                    }}
+                    placeholder="Write your email message here... (supports bold, italic, highlight, and lists)"
+                    minHeight="200px"
+                    maxHeight="350px"
                   />
                 </div>
 
@@ -1201,7 +1156,9 @@ export default function ManualEmailPage() {
                   <button
                     onClick={handlePreview}
                     disabled={
-                      !selectedCustomer || !subject.trim() || !message.trim()
+                      !selectedCustomer ||
+                      !subject.trim() ||
+                      !(message.trim() || richTextContent.trim())
                     }
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1213,7 +1170,7 @@ export default function ManualEmailPage() {
                       loading ||
                       !selectedCustomer ||
                       !subject.trim() ||
-                      !message.trim() ||
+                      !(message.trim() || richTextContent.trim()) ||
                       (includeBilling && selectedBillIds.length === 0)
                     }
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -1239,7 +1196,6 @@ export default function ManualEmailPage() {
                   Select Customers
                 </h2>
 
-                {/* Building Filter */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Filter by Building
@@ -1314,12 +1270,6 @@ export default function ManualEmailPage() {
                   </div>
                 )}
 
-                {error && !loading && customers.length === 0 && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                    <p className="text-red-600 text-sm">{error}</p>
-                  </div>
-                )}
-
                 {!loading && !error && (
                   <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
                     {displayCustomers.length === 0 ? (
@@ -1329,12 +1279,6 @@ export default function ManualEmailPage() {
                             ? "No unpaid customers found"
                             : "No customers found"}
                         </p>
-                        <button
-                          onClick={() => loadCustomers("", true)}
-                          className="mt-2 text-sm text-blue-600 underline"
-                        >
-                          🔄 Refresh customer list
-                        </button>
                       </div>
                     ) : (
                       displayCustomers.map((customer) => {
@@ -1472,7 +1416,6 @@ export default function ManualEmailPage() {
                   Compose Bulk Email
                 </h2>
 
-                {/* Sender Type Selector for Bulk */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     📧 Send From
@@ -1507,11 +1450,6 @@ export default function ManualEmailPage() {
                       </span>
                     </button>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {useAdminSender
-                      ? "📌 All customers will receive from the main admin email"
-                      : "📌 Each customer will receive from their location-specific collection email"}
-                  </p>
                 </div>
 
                 <div className="mb-4">
@@ -1531,12 +1469,15 @@ export default function ManualEmailPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Message
                   </label>
-                  <textarea
-                    rows={8}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Write your email message here... (will be sent to all selected customers)"
+                  <RichTextEditor
+                    value={richTextContent || message}
+                    onChange={(content) => {
+                      setRichTextContent(content);
+                      setMessage(content.replace(/<[^>]*>/g, ""));
+                    }}
+                    placeholder="Write your email message here... (supports bold, italic, highlight, and lists)"
+                    minHeight="200px"
+                    maxHeight="300px"
                   />
                 </div>
 
@@ -1589,7 +1530,7 @@ export default function ManualEmailPage() {
                     loading ||
                     selectedCustomers.length === 0 ||
                     !subject.trim() ||
-                    !message.trim()
+                    !(message.trim() || richTextContent.trim())
                   }
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
@@ -1651,13 +1592,17 @@ export default function ManualEmailPage() {
                     <p className="text-sm font-medium text-gray-700 mb-2">
                       Subject: {template.subject || ""}
                     </p>
-                    <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                      {(template.message || "").substring(0, 150)}...
-                    </p>
+                    <p
+                      className="text-sm text-gray-600 line-clamp-3 mb-4"
+                      dangerouslySetInnerHTML={{
+                        __html: (template.message || "").substring(0, 200),
+                      }}
+                    />
                     <button
                       onClick={() => {
                         setSubject(template.subject || "");
                         setMessage(template.message || "");
+                        setRichTextContent(template.message || "");
                         setIncludeBilling(
                           template.includeBillingDefault || false,
                         );
@@ -1684,181 +1629,185 @@ export default function ManualEmailPage() {
 
           {/* Sent Records Tab */}
           {activeTab === "sent" && (
-            <div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    📨 Sent Email Records
-                  </h2>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-500">
-                      Total:{" "}
-                      <strong className="text-blue-600">
-                        {totalEmailsSent}
-                      </strong>{" "}
-                      emails sent
-                    </span>
-                    <button
-                      onClick={async () => {
-                        await loadSentRecords();
-                      }}
-                      className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                      🔄 Refresh
-                    </button>
-                  </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  📨 Sent Email Records
+                </h2>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-500">
+                    Total:{" "}
+                    <strong className="text-blue-600">{totalEmailsSent}</strong>{" "}
+                    emails sent
+                  </span>
+                  <button
+                    onClick={async () => {
+                      await loadSentRecords();
+                    }}
+                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    🔄 Refresh
+                  </button>
                 </div>
-
-                {loading && sentRecords.length === 0 && (
-                  <div className="flex justify-center py-12">
-                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                )}
-
-                {!loading && sentRecords.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    <p className="text-4xl mb-4">📭</p>
-                    <p>No sent email records found</p>
-                    <p className="text-sm mt-2">Emails sent will appear here</p>
-                  </div>
-                )}
-
-                {!loading && sentRecords.length > 0 && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Date
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            To
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Subject
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Type
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Location
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Sender
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {sentRecords.map((record) => {
-                          const locationDisplay =
-                            record.location && record.location !== "unknown"
-                              ? getLocationDisplay(record.location)
-                              : "📍 Unknown";
-                          const badgeColor =
-                            record.location && record.location !== "unknown"
-                              ? getLocationBadgeColor(record.location)
-                              : "bg-gray-100 text-gray-800 border-gray-300";
-
-                          return (
-                            <tr
-                              key={record.id}
-                              className="hover:bg-gray-50 transition-colors"
-                            >
-                              <td className="py-3 px-4 text-sm text-gray-600">
-                                {formatDate(record.sentAt)}
-                              </td>
-                              <td className="py-3 px-4">
-                                <div>
-                                  <p className="text-sm font-medium text-gray-900">
-                                    {record.customerName || "N/A"}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {record.customerEmail || "N/A"}
-                                  </p>
-                                  <p className="text-xs text-gray-400">
-                                    ID: {record.applicationId || "N/A"}
-                                  </p>
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
-                                {record.subject || ""}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                    record.isBulk
-                                      ? "bg-purple-100 text-purple-700"
-                                      : "bg-blue-100 text-blue-700"
-                                  }`}
-                                >
-                                  {record.isBulk ? "Bulk" : "Single"}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4">
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
-                                >
-                                  {locationDisplay}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4">
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                    record.senderType === "admin"
-                                      ? "bg-orange-100 text-orange-700"
-                                      : "bg-green-100 text-green-700"
-                                  }`}
-                                >
-                                  {record.senderType === "admin"
-                                    ? "Admin"
-                                    : "Collection"}
-                                </span>
-                                {record.collectionEmail &&
-                                  record.senderType !== "admin" && (
-                                    <p className="text-xs text-gray-400 mt-1 truncate max-w-[100px]">
-                                      {record.collectionEmail}
-                                    </p>
-                                  )}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                    record.status === "sent"
-                                      ? "bg-green-100 text-green-700"
-                                      : record.status === "failed"
-                                        ? "bg-red-100 text-red-700"
-                                        : "bg-yellow-100 text-yellow-700"
-                                  }`}
-                                >
-                                  {record.status || "unknown"}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4">
-                                <button
-                                  onClick={() =>
-                                    handleDeleteSentRecord(record.id)
-                                  }
-                                  className="text-red-500 hover:text-red-700 transition-colors text-sm"
-                                  title="Delete record"
-                                >
-                                  🗑️
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
+
+              {loading && sentRecords.length === 0 && (
+                <div className="flex justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+
+              {!loading && sentRecords.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <p className="text-4xl mb-4">📭</p>
+                  <p>No sent email records found</p>
+                  <p className="text-sm mt-2">Emails sent will appear here</p>
+                </div>
+              )}
+
+              {!loading && sentRecords.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          To
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Subject
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Location
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Sender
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {sentRecords.map((record) => {
+                        const locationDisplay =
+                          record.location && record.location !== "unknown"
+                            ? getLocationDisplay(record.location)
+                            : "📍 Unknown";
+                        const badgeColor =
+                          record.location && record.location !== "unknown"
+                            ? getLocationBadgeColor(record.location)
+                            : "bg-gray-100 text-gray-800 border-gray-300";
+
+                        return (
+                          <tr
+                            key={record.id}
+                            className="hover:bg-gray-50 transition-colors"
+                          >
+                            <td className="py-3 px-4 text-sm text-gray-600">
+                              {formatDate(record.sentAt)}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {record.customerName || "N/A"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {record.customerEmail || "N/A"}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  ID: {record.applicationId || "N/A"}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-700 max-w-xs truncate">
+                              {record.subject || ""}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.isBulk
+                                    ? "bg-purple-100 text-purple-700"
+                                    : "bg-blue-100 text-blue-700"
+                                }`}
+                              >
+                                {record.isBulk ? "Bulk" : "Single"}
+                              </span>
+                              {record.isScheduled && (
+                                <span className="ml-1 px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                  Scheduled
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
+                              >
+                                {locationDisplay}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.senderType === "admin"
+                                    ? "bg-orange-100 text-orange-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                {record.senderType === "admin"
+                                  ? "Admin"
+                                  : "Collection"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  record.status === "sent"
+                                    ? "bg-green-100 text-green-700"
+                                    : record.status === "failed"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
+                              >
+                                {record.status || "unknown"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                onClick={() =>
+                                  handleDeleteSentRecord(record.id)
+                                }
+                                className="text-red-500 hover:text-red-700 transition-colors text-sm"
+                                title="Delete record"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Scheduled Emails Tab */}
+          {activeTab === "scheduled" && (
+            <ScheduledEmailsTab
+              customers={customers}
+              customersLoading={loading}
+              onRefresh={handleRefresh}
+            />
           )}
         </div>
       </div>
@@ -2082,7 +2031,6 @@ export default function ManualEmailPage() {
                 bills.
               </p>
 
-              {/* Sender type for reminder */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   📧 Send From

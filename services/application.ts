@@ -186,18 +186,6 @@ export const rejectApplication = async (id: string, adminNotes?: string) => {
   return response.data;
 };
 
-// ============ START BILLING ============
-export const startBillingForApplication = async (
-  applicationId: string,
-  data: { installationDate?: string; notes?: string },
-) => {
-  const response = await api.post(
-    `/applications/${applicationId}/start-billing`,
-    data,
-  );
-  return response.data;
-};
-
 // ============ UPDATE MAC ADDRESS ============
 export const updateMacAddress = async (id: string, macAddress: string) => {
   const response = await api.patch(`/applications/${id}/mac-address`, {

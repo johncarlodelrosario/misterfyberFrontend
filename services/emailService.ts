@@ -17,7 +17,6 @@ export interface Customer {
   lastBillAmount: number;
   lastBillStatus: string | null;
   location: string;
-  // FIXED: Added timestamp for debugging
   _fetchedAt?: string;
 }
 
@@ -53,6 +52,7 @@ export interface EmailSentRecord {
   customerEmail: string;
   subject: string;
   message: string;
+  richTextContent?: string;
   sentAt: string;
   status: "sent" | "failed" | "pending";
   isBulk: boolean;
@@ -64,15 +64,63 @@ export interface EmailSentRecord {
   senderType: "admin" | "collection";
   location: string;
   collectionEmail?: string;
+  isScheduled: boolean;
+  scheduleId?: string;
+}
+
+export interface ScheduledEmail {
+  id: string;
+  name: string;
+  applicationIds: string[];
+  subject: string;
+  message: string;
+  richTextContent?: string;
+  includeBilling: boolean;
+  billType?: "unpaid" | "latest" | "installation";
+  sendCopyToAdmin: boolean;
+  useAdminSender: boolean;
+  scheduledFor: string;
+  status: "pending" | "processing" | "sent" | "failed" | "cancelled";
+  sentCount: number;
+  failedCount: number;
+  totalRecipients: number;
+  lastRunAt?: string;
+  completedAt?: string;
+  error?: string;
+  createdBy: string;
+  locationFilter?: "all" | "breeze" | "sil" | "other";
+  recurring: {
+    enabled: boolean;
+    frequency: "daily" | "weekly" | "monthly";
+    interval: number;
+    endDate?: string;
+  };
+  createdAt: string;
+}
+
+export interface ScheduleStats {
+  pending: number;
+  processing: number;
+  sent: number;
+  failed: number;
+  cancelled: number;
+  totalRecipients: number;
+  upcoming: Array<{
+    id: string;
+    name: string;
+    scheduledFor: string;
+    totalRecipients: number;
+  }>;
 }
 
 class EmailService {
-  // FIXED: Added forceRefresh parameter
+  // Customer methods
   async getCustomers(params?: {
     search?: string;
     status?: string;
     hasBilling?: string;
     forceRefresh?: boolean;
+    location?: string;
   }): Promise<Customer[]> {
     try {
       const queryParams = new URLSearchParams();
@@ -80,10 +128,10 @@ class EmailService {
       if (params?.status) queryParams.append("status", params.status);
       if (params?.hasBilling)
         queryParams.append("hasBilling", params.hasBilling);
-      // FIXED: Pass forceRefresh to bypass cache
       if (params?.forceRefresh) queryParams.append("forceRefresh", "true");
-
-      // FIXED: Add cache-busting timestamp
+      if (params?.location && params.location !== "all") {
+        queryParams.append("location", params.location);
+      }
       queryParams.append("_t", Date.now().toString());
 
       const response = await api.get(
@@ -100,7 +148,6 @@ class EmailService {
     applicationId: string,
   ): Promise<{ customer: any; bills: Bill[] }> {
     try {
-      // FIXED: Add cache-busting timestamp
       const response = await api.get(
         `/manual-email/customers/${applicationId}/bills?_t=${Date.now()}`,
       );
@@ -111,10 +158,12 @@ class EmailService {
     }
   }
 
+  // Send email methods
   async sendEmail(data: {
     applicationId: string;
     subject: string;
     message: string;
+    richTextContent?: string;
     includeBilling: boolean;
     billIds?: string[];
     sendCopyToAdmin?: boolean;
@@ -133,10 +182,12 @@ class EmailService {
     applicationIds: string[];
     subject: string;
     message: string;
+    richTextContent?: string;
     includeBilling: boolean;
     billType: "unpaid" | "latest" | "installation";
     sendCopyToAdmin?: boolean;
     useAdminSender?: boolean;
+    locationFilter?: string;
   }): Promise<any> {
     try {
       const response = await api.post("/manual-email/send-bulk", data);
@@ -165,9 +216,9 @@ class EmailService {
     }
   }
 
+  // Template methods
   async getTemplates(): Promise<EmailTemplate[]> {
     try {
-      // FIXED: Add cache-busting timestamp
       const response = await api.get(
         `/manual-email/templates?_t=${Date.now()}`,
       );
@@ -228,11 +279,22 @@ class EmailService {
     }
   }
 
-  async getSentRecords(): Promise<EmailSentRecord[]> {
+  // Sent records methods
+  async getSentRecords(params?: {
+    scheduleId?: string;
+    isScheduled?: boolean;
+  }): Promise<EmailSentRecord[]> {
     try {
-      // FIXED: Add cache-busting timestamp
+      const queryParams = new URLSearchParams();
+      if (params?.scheduleId)
+        queryParams.append("scheduleId", params.scheduleId);
+      if (params?.isScheduled !== undefined) {
+        queryParams.append("isScheduled", params.isScheduled.toString());
+      }
+      queryParams.append("_t", Date.now().toString());
+
       const response = await api.get(
-        `/manual-email/sent-records?_t=${Date.now()}`,
+        `/manual-email/sent-records?${queryParams.toString()}`,
       );
       return response.data.data || [];
     } catch (error) {
@@ -253,9 +315,11 @@ class EmailService {
     }
   }
 
+  // Preview
   async previewEmail(data: {
     subject: string;
     message: string;
+    richTextContent?: string;
     includeBilling: boolean;
     applicationId: string;
     billIds?: string[];
@@ -266,6 +330,126 @@ class EmailService {
       return response.data.data || {};
     } catch (error) {
       console.error("Failed to preview email:", error);
+      throw error;
+    }
+  }
+
+  // Scheduling methods
+  async scheduleEmail(data: {
+    name: string;
+    applicationIds: string[];
+    subject: string;
+    message: string;
+    richTextContent?: string;
+    includeBilling: boolean;
+    billType?: "unpaid" | "latest" | "installation";
+    sendCopyToAdmin?: boolean;
+    useAdminSender?: boolean;
+    scheduledFor: string;
+    locationFilter?: "all" | "breeze" | "sil" | "other";
+    recurring?: {
+      enabled: boolean;
+      frequency: "daily" | "weekly" | "monthly";
+      interval: number;
+      endDate?: string;
+    };
+  }): Promise<any> {
+    try {
+      const response = await api.post("/manual-email/schedule", data);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to schedule email:", error);
+      throw error;
+    }
+  }
+
+  async getScheduledEmails(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: ScheduledEmail[]; total: number; totalPages: number }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.status && params.status !== "all") {
+        queryParams.append("status", params.status);
+      }
+      if (params?.page) queryParams.append("page", params.page.toString());
+      if (params?.limit) queryParams.append("limit", params.limit.toString());
+      queryParams.append("_t", Date.now().toString());
+
+      const response = await api.get(
+        `/manual-email/schedules?${queryParams.toString()}`,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Failed to get scheduled emails:", error);
+      throw error;
+    }
+  }
+
+  async updateScheduledEmail(
+    scheduleId: string,
+    data: {
+      name?: string;
+      subject?: string;
+      message?: string;
+      richTextContent?: string;
+      includeBilling?: boolean;
+      billType?: "unpaid" | "latest" | "installation";
+      sendCopyToAdmin?: boolean;
+      useAdminSender?: boolean;
+      scheduledFor?: string;
+      locationFilter?: "all" | "breeze" | "sil" | "other";
+      recurring?: {
+        enabled: boolean;
+        frequency: "daily" | "weekly" | "monthly";
+        interval: number;
+        endDate?: string;
+      };
+    },
+  ): Promise<any> {
+    try {
+      const response = await api.put(
+        `/manual-email/schedules/${scheduleId}`,
+        data,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Failed to update scheduled email:", error);
+      throw error;
+    }
+  }
+
+  async cancelScheduledEmail(scheduleId: string): Promise<any> {
+    try {
+      const response = await api.post(
+        `/manual-email/schedules/${scheduleId}/cancel`,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Failed to cancel scheduled email:", error);
+      throw error;
+    }
+  }
+
+  async deleteScheduledEmail(scheduleId: string): Promise<any> {
+    try {
+      const response = await api.delete(
+        `/manual-email/schedules/${scheduleId}`,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Failed to delete scheduled email:", error);
+      throw error;
+    }
+  }
+
+  async getScheduleStats(): Promise<ScheduleStats> {
+    try {
+      const response = await api.get(`/manual-email/schedule-stats`);
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to get schedule stats:", error);
       throw error;
     }
   }
