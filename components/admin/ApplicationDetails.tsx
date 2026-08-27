@@ -301,7 +301,7 @@ export function ApplicationDetails({
             disabled={actionLoading}
             className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
           >
-            {actionLoading ? "⏳ Processing..." : "💰 Start Billing"}
+            {actionLoading ? "⏳ Processing..." : "₱ Start Billing"}
           </button>
         )}
       </div>

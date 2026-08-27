@@ -243,7 +243,7 @@ export default function ApplicationTable({
   const handleStartBilling = async (id: string) => {
     setActionLoading(id);
     updateApplicationStatus(id, "billing_started");
-    toast.success("💰 Billing started!");
+    toast.success("₱ Billing started!");
 
     try {
       if (onStartBilling) {
@@ -578,7 +578,7 @@ export default function ApplicationTable({
                           disabled={actionLoading === app._id}
                           className="px-3 py-1 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
                         >
-                          {actionLoading === app._id ? "⏳" : "💰"}
+                          {actionLoading === app._id ? "⏳" : "₱"}
                         </button>
                       )}
                     </div>
