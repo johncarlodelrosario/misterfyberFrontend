@@ -22,18 +22,11 @@ interface Application {
   lastName: string;
   email: string;
   phoneNumber: string;
-  buildingId: {
-    _id: string;
-    buildingName: string;
-  };
+  buildingId: string | { _id: string; buildingName: string };
   tower: string;
   floor: string;
   unitNumber: string;
-  planId: {
-    _id: string;
-    name: string;
-    price: number;
-  };
+  planId: string | { _id: string; name: string; price: number };
   status: "pending" | "approved" | "rejected";
   idType: string;
   idNumber: string;
@@ -79,6 +72,9 @@ export default function AdminApplicationsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(
+    null,
+  );
 
   // Fetch applications with filters
   const fetchApplications = useCallback(
@@ -93,19 +89,26 @@ export default function AdminApplicationsPage() {
           limit: filters.limit,
         };
 
+        // Only add status if it's not "all"
         if (filters.status && filters.status !== "all") {
           params.status = filters.status;
         }
-        if (filters.search) {
-          params.search = filters.search;
+
+        // Add search if it has value
+        if (filters.search && filters.search.trim()) {
+          params.search = filters.search.trim();
         }
-        if (filters.buildingId) {
+
+        // Add buildingId if it has value - FIXED: properly include buildingId
+        if (filters.buildingId && filters.buildingId !== "") {
           params.buildingId = filters.buildingId;
         }
 
         if (refresh) {
           params.forceRefresh = true;
         }
+
+        console.log("Fetching applications with params:", params);
 
         const response = await getAllApplications(params);
         const data = response.data || [];
@@ -160,21 +163,34 @@ export default function AdminApplicationsPage() {
     fetchMetadata();
   }, []);
 
-  // Refresh when filters change
+  // Refresh when filters change (except search which has debounce)
   useEffect(() => {
     if (hasInitialLoad) {
       fetchApplications();
     }
   }, [filters.page, filters.status, filters.buildingId]);
 
-  // Handle search with debounce
+  // Handle search with debounce - FIXED: proper debounce implementation
   useEffect(() => {
     if (!hasInitialLoad) return;
-    const debounceTimer = setTimeout(() => {
+
+    // Clear any existing timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    // Set new timeout
+    const timeout = setTimeout(() => {
       fetchApplications();
     }, 500);
 
-    return () => clearTimeout(debounceTimer);
+    setSearchTimeout(timeout);
+
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
   }, [filters.search]);
 
   // Handlers
@@ -188,6 +204,11 @@ export default function AdminApplicationsPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // Clear any pending timeout and fetch immediately
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+      setSearchTimeout(null);
+    }
     fetchApplications();
   };
 
@@ -233,15 +254,14 @@ export default function AdminApplicationsPage() {
     { value: "rejected", label: "Rejected" },
   ];
 
-  // Memoized stats
+  // Memoized stats - shows total count from API response
   const stats = useMemo(() => {
-    const total = applications.length;
     const pending = applications.filter((a) => a.status === "pending").length;
     const approved = applications.filter((a) => a.status === "approved").length;
     const rejected = applications.filter((a) => a.status === "rejected").length;
 
     return { total, pending, approved, rejected };
-  }, [applications]);
+  }, [applications, total]);
 
   // Approve application handler
   const handleApprove = useCallback(
@@ -320,11 +340,11 @@ export default function AdminApplicationsPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Shows correct counts based on filters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+          <p className="text-2xl font-bold text-gray-900">{total}</p>
         </div>
         <div className="bg-yellow-50 rounded-lg shadow p-4 border border-yellow-100">
           <p className="text-sm text-yellow-700">Pending</p>
@@ -407,6 +427,7 @@ export default function AdminApplicationsPage() {
           onRefresh={handleRefresh}
           onApprove={handleApprove}
           onReject={handleReject}
+          buildings={buildings}
         />
 
         {/* Pagination */}

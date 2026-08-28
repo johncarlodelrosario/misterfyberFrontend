@@ -112,7 +112,7 @@ export default function ScheduledEmailsTab({
     }));
   };
 
-  // Handle schedule creation
+  // ==================== FIXED: Handle schedule creation ====================
   const handleScheduleEmail = async () => {
     // Validation
     if (!scheduleForm.name.trim()) {
@@ -151,6 +151,24 @@ export default function ScheduledEmailsTab({
 
     try {
       setLoading(true);
+
+      // ============================================================
+      // FIX: Get the date components from the local time
+      // ============================================================
+      const year = scheduleDate.getFullYear();
+      const month = scheduleDate.getMonth();
+      const day = scheduleDate.getDate();
+      const hours = scheduleDate.getHours();
+      const minutes = scheduleDate.getMinutes();
+
+      // Create UTC date with the SAME local time
+      // If user selects 11:59 AM, this creates 2026-08-27T11:59:00.000Z
+      // So when displayed, it shows 11:59 AM local time
+      const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, 0));
+
+      console.log(`📅 Local selected: ${scheduleDate.toLocaleString()}`);
+      console.log(`📅 UTC to send: ${utcDate.toISOString()}`);
+
       const result = await emailService.scheduleEmail({
         name: scheduleForm.name,
         applicationIds,
@@ -161,7 +179,7 @@ export default function ScheduledEmailsTab({
         billType: scheduleForm.billType,
         sendCopyToAdmin: scheduleForm.sendCopyToAdmin,
         useAdminSender: scheduleForm.useAdminSender,
-        scheduledFor: scheduleForm.scheduledFor,
+        scheduledFor: utcDate.toISOString(), // Send as UTC
         locationFilter: scheduleForm.locationFilter,
         recurring: {
           enabled: scheduleForm.recurringEnabled,
@@ -171,9 +189,7 @@ export default function ScheduledEmailsTab({
         },
       });
 
-      toast.success(
-        `Email scheduled for ${new Date(scheduleForm.scheduledFor).toLocaleString()}`,
-      );
+      toast.success(`Email scheduled for ${utcDate.toLocaleString()}`);
       setShowScheduleDialog(false);
       resetForm();
       await loadSchedules();
@@ -244,7 +260,7 @@ export default function ScheduledEmailsTab({
     }
   };
 
-  // Format date
+  // Format date - FIXED: Properly display the date
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString("en-US", {
       year: "numeric",
@@ -822,6 +838,9 @@ export default function ScheduledEmailsTab({
                       }
                       min={new Date().toISOString().slice(0, 16)}
                     />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Select your local time, it will be saved correctly
+                    </p>
                   </div>
 
                   {/* Options Row */}

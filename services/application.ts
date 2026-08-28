@@ -110,9 +110,23 @@ export const getAllApplications = async (
   const { page = 1, limit = 20, status, search, buildingId } = filters;
 
   const params: any = { page, limit };
-  if (status && status !== "all") params.status = status;
-  if (search) params.search = search;
-  if (buildingId) params.buildingId = buildingId;
+
+  // Only add status if it's not "all" or empty
+  if (status && status !== "all" && status !== "") {
+    params.status = status;
+  }
+
+  // Add search if it has value
+  if (search && search.trim() !== "") {
+    params.search = search.trim();
+  }
+
+  // Add buildingId if it has value
+  if (buildingId && buildingId !== "" && buildingId !== "all") {
+    params.buildingId = buildingId;
+  }
+
+  console.log("getAllApplications params:", params);
 
   const response = await api.get("/applications", { params });
   return response.data;

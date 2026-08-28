@@ -1,7 +1,7 @@
 // components/admin/ApplicationDetails.tsx - COMPLETE FIXED
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import Image from "next/image";
 import type { Application } from "./ApplicationTable";
 
@@ -10,6 +10,7 @@ interface ApplicationDetailsProps {
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
   onClose: () => void;
+  buildings?: { _id: string; buildingName: string }[];
 }
 
 export function ApplicationDetails({
@@ -17,20 +18,40 @@ export function ApplicationDetails({
   onApprove,
   onReject,
   onClose,
+  buildings = [],
 }: ApplicationDetailsProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
 
-  const getBuildingName = (
-    building: string | { _id: string; buildingName: string },
-  ) => {
-    if (typeof building === "string") return building;
-    return building?.buildingName || "N/A";
-  };
+  // FIXED: Get building name from either object or string ID
+  const getBuildingName = useCallback(
+    (building: string | { _id: string; buildingName: string }) => {
+      if (!building) return "N/A";
+
+      // If it's an object with buildingName
+      if (
+        typeof building === "object" &&
+        building !== null &&
+        "buildingName" in building
+      ) {
+        return building.buildingName || "N/A";
+      }
+
+      // If it's a string ID, try to find it in the buildings list
+      if (typeof building === "string") {
+        const found = buildings.find((b) => b._id === building);
+        return found ? found.buildingName : building;
+      }
+
+      return "N/A";
+    },
+    [buildings],
+  );
 
   const getPlanName = (
     plan: string | { _id: string; name: string; price: number },
   ) => {
+    if (!plan) return "N/A";
     if (typeof plan === "string") return plan;
     return plan?.name || "N/A";
   };
@@ -38,6 +59,7 @@ export function ApplicationDetails({
   const getPlanPrice = (
     plan: string | { _id: string; name: string; price: number },
   ) => {
+    if (!plan) return 0;
     if (typeof plan === "string") return 0;
     return plan?.price || 0;
   };

@@ -6,7 +6,6 @@ import { ApplicationDetails } from "./ApplicationDetails";
 import { AddApplicationModal } from "./AddApplicationModal";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { getActiveBuildings, Building } from "@/services/building";
 
 // Interface definitions
 export interface Application {
@@ -49,6 +48,7 @@ export interface ApplicationTableProps {
   onSelectOne?: (id: string, checked: boolean) => void;
   onView?: (id: string) => void;
   onEdit?: (id: string) => void;
+  buildings?: { _id: string; buildingName: string }[];
 }
 
 export default function ApplicationTable({
@@ -63,6 +63,7 @@ export default function ApplicationTable({
   onSelectOne,
   onView,
   onEdit,
+  buildings = [],
 }: ApplicationTableProps) {
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
@@ -78,20 +79,6 @@ export default function ApplicationTable({
   useEffect(() => {
     setLocalApplications(initialApplications);
   }, [initialApplications]);
-
-  // Load buildings for filter
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  useEffect(() => {
-    const loadBuildings = async () => {
-      try {
-        const data = await getActiveBuildings();
-        setBuildings(data || []);
-      } catch (error) {
-        console.error("Error loading buildings:", error);
-      }
-    };
-    loadBuildings();
-  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -122,16 +109,35 @@ export default function ApplicationTable({
     }
   };
 
-  const getBuildingName = (
-    building: string | { _id: string; buildingName: string },
-  ) => {
-    if (typeof building === "string") return building;
-    return building?.buildingName || "N/A";
-  };
+  // FIXED: Get building name from either object or string ID
+  const getBuildingName = useCallback(
+    (building: string | { _id: string; buildingName: string }) => {
+      if (!building) return "N/A";
+
+      // If it's an object with buildingName
+      if (
+        typeof building === "object" &&
+        building !== null &&
+        "buildingName" in building
+      ) {
+        return building.buildingName || "N/A";
+      }
+
+      // If it's a string ID, try to find it in the buildings list
+      if (typeof building === "string") {
+        const found = buildings.find((b) => b._id === building);
+        return found ? found.buildingName : building;
+      }
+
+      return "N/A";
+    },
+    [buildings],
+  );
 
   const getPlanName = (
     plan: string | { _id: string; name: string; price: number },
   ) => {
+    if (!plan) return "N/A";
     if (typeof plan === "string") return plan;
     return plan?.name || "N/A";
   };
@@ -139,6 +145,7 @@ export default function ApplicationTable({
   const getPlanPrice = (
     plan: string | { _id: string; name: string; price: number },
   ) => {
+    if (!plan) return 0;
     if (typeof plan === "string") return 0;
     return plan?.price || 0;
   };
@@ -469,6 +476,7 @@ export default function ApplicationTable({
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onClose={() => setShowDetailsModal(false)}
+                buildings={buildings}
               />
             </div>
           </div>
