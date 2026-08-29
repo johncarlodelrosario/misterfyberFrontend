@@ -9,6 +9,8 @@ interface ApplicationDetailsProps {
   application: Application;
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
+  onEdit?: () => void;
   onClose: () => void;
   buildings?: { _id: string; buildingName: string }[];
 }
@@ -17,18 +19,17 @@ export function ApplicationDetails({
   application,
   onApprove,
   onReject,
+  onDelete,
+  onEdit,
   onClose,
   buildings = [],
 }: ApplicationDetailsProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
 
-  // FIXED: Get building name from either object or string ID
   const getBuildingName = useCallback(
     (building: string | { _id: string; buildingName: string }) => {
       if (!building) return "N/A";
-
-      // If it's an object with buildingName
       if (
         typeof building === "object" &&
         building !== null &&
@@ -36,13 +37,10 @@ export function ApplicationDetails({
       ) {
         return building.buildingName || "N/A";
       }
-
-      // If it's a string ID, try to find it in the buildings list
       if (typeof building === "string") {
         const found = buildings.find((b) => b._id === building);
         return found ? found.buildingName : building;
       }
-
       return "N/A";
     },
     [buildings],
@@ -82,6 +80,12 @@ export function ApplicationDetails({
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
             Rejected
+          </span>
+        );
+      case "suspended":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+            Suspended
           </span>
         );
       default:
@@ -125,6 +129,26 @@ export function ApplicationDetails({
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (
+      !confirm(
+        "Are you sure you want to delete this application? This action cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await onDelete(application._id);
+      onClose();
+    } catch (error) {
+      // Error is handled in parent
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Status Header */}
@@ -132,6 +156,15 @@ export function ApplicationDetails({
         <div className="flex items-center gap-2">
           <span className="font-medium">Status:</span>
           {getStatusBadge(application.status)}
+          {application.serviceStatus && (
+            <>
+              <span className="text-gray-400 mx-2">|</span>
+              <span className="font-medium">Service:</span>
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                {application.serviceStatus}
+              </span>
+            </>
+          )}
         </div>
         <div className="text-sm text-gray-500 font-mono">
           ID:{" "}
@@ -156,6 +189,7 @@ export function ApplicationDetails({
               <span className="text-gray-500">Name:</span>
               <span className="font-medium">
                 {application.firstName} {application.lastName}
+                {application.middleName && ` ${application.middleName}`}
               </span>
             </div>
             <div className="flex justify-between">
@@ -166,6 +200,22 @@ export function ApplicationDetails({
               <span className="text-gray-500">Phone:</span>
               <span className="font-medium">{application.phoneNumber}</span>
             </div>
+            {application.birthDate && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Birth Date:</span>
+                <span className="font-medium">
+                  {new Date(application.birthDate).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+            {application.gender && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Gender:</span>
+                <span className="font-medium capitalize">
+                  {application.gender}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-500">ID Type:</span>
               <span className="font-medium">{application.idType}</span>
@@ -182,6 +232,14 @@ export function ApplicationDetails({
                 </span>
               </div>
             )}
+            {application.hasAccount !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Has Account:</span>
+                <span className="font-medium">
+                  {application.hasAccount ? "✅ Yes" : "❌ No"}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ID Image */}
@@ -192,7 +250,7 @@ export function ApplicationDetails({
               </h4>
               <div className="relative w-48 h-48 border rounded-md overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
                 <Image
-                  src={application.idImage}
+                  src={application.idImageUrl || application.idImage}
                   alt="ID Image"
                   fill
                   className="object-contain"
@@ -251,6 +309,15 @@ export function ApplicationDetails({
                 ₱{getPlanPrice(application.planId).toLocaleString()}
               </span>
             </div>
+            {application.installationFee !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Installation Fee:</span>
+                <span className="font-medium">
+                  ₱{application.installationFee.toLocaleString()}
+                  {application.installationFeePaid && " (Paid)"}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -294,6 +361,14 @@ export function ApplicationDetails({
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2 justify-end pt-4 border-t">
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >
+            ✏️ Edit
+          </button>
+        )}
         <button
           onClick={onClose}
           className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
@@ -317,6 +392,15 @@ export function ApplicationDetails({
               {actionLoading ? "⏳ Processing..." : "❌ Reject"}
             </button>
           </>
+        )}
+        {onDelete && (
+          <button
+            onClick={handleDelete}
+            disabled={actionLoading}
+            className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 disabled:opacity-50"
+          >
+            {actionLoading ? "⏳ Processing..." : "🗑️ Delete"}
+          </button>
         )}
       </div>
 
@@ -349,7 +433,7 @@ export function ApplicationDetails({
               </svg>
             </button>
             <Image
-              src={application.idImage}
+              src={application.idImageUrl || application.idImage}
               alt="ID Image Full"
               fill
               className="object-contain"

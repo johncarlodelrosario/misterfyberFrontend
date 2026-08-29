@@ -1,19 +1,23 @@
 // app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import {
-  MagnifyingGlassIcon,
-  ArrowPathIcon,
-} from "@heroicons/react/24/outline";
+import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
-import ApplicationTable from "@/components/admin/ApplicationTable";
+import { ApplicationTable } from "@/components/admin/ApplicationTable";
 import { getAllApplications } from "@/services/application";
 import { getActiveBuildings } from "@/services/building";
 import { getPlans } from "@/services/plan";
-import { approveApplication, rejectApplication } from "@/services/application";
+import {
+  approveApplication,
+  rejectApplication,
+  deleteApplication,
+  bulkDeleteApplications,
+  patchApplication,
+} from "@/services/application";
+import { Building, Plan } from "@/services/application";
 
 // Types
 interface Application {
@@ -27,7 +31,7 @@ interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "suspended";
   idType: string;
   idNumber: string;
   macAddress?: string;
@@ -56,12 +60,8 @@ export default function AdminApplicationsPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [buildings, setBuildings] = useState<
-    { _id: string; buildingName: string }[]
-  >([]);
-  const [plans, setPlans] = useState<
-    { _id: string; name: string; price: number }[]
-  >([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [filters, setFilters] = useState<Filters>({
     status: "all",
     search: "",
@@ -72,9 +72,7 @@ export default function AdminApplicationsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
-  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(
-    null,
-  );
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch applications with filters
   const fetchApplications = useCallback(
@@ -89,17 +87,14 @@ export default function AdminApplicationsPage() {
           limit: filters.limit,
         };
 
-        // Only add status if it's not "all"
         if (filters.status && filters.status !== "all") {
           params.status = filters.status;
         }
 
-        // Add search if it has value
         if (filters.search && filters.search.trim()) {
           params.search = filters.search.trim();
         }
 
-        // Add buildingId if it has value - FIXED: properly include buildingId
         if (filters.buildingId && filters.buildingId !== "") {
           params.buildingId = filters.buildingId;
         }
@@ -138,20 +133,8 @@ export default function AdminApplicationsPage() {
         getPlans(),
       ]);
 
-      setBuildings(
-        buildingsRes.map((b: any) => ({
-          _id: b._id,
-          buildingName: b.buildingName,
-        })),
-      );
-
-      setPlans(
-        plansRes.map((p: any) => ({
-          _id: p._id,
-          name: p.name,
-          price: p.price,
-        })),
-      );
+      setBuildings(buildingsRes);
+      setPlans(plansRes);
     } catch (err) {
       console.error("Error fetching metadata:", err);
     }
@@ -161,36 +144,35 @@ export default function AdminApplicationsPage() {
   useEffect(() => {
     fetchApplications();
     fetchMetadata();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh when filters change (except search which has debounce)
+  // Refresh when filters change (page, status, buildingId)
   useEffect(() => {
     if (hasInitialLoad) {
       fetchApplications();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.page, filters.status, filters.buildingId]);
 
-  // Handle search with debounce - FIXED: proper debounce implementation
+  // Handle search with debounce
   useEffect(() => {
     if (!hasInitialLoad) return;
 
-    // Clear any existing timeout
-    if (searchTimeout) {
-      clearTimeout(searchTimeout);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
 
-    // Set new timeout
-    const timeout = setTimeout(() => {
+    searchTimeoutRef.current = setTimeout(() => {
       fetchApplications();
     }, 500);
 
-    setSearchTimeout(timeout);
-
     return () => {
-      if (timeout) {
-        clearTimeout(timeout);
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.search]);
 
   // Handlers
@@ -200,16 +182,6 @@ export default function AdminApplicationsPage() {
       [key]: value,
       ...(key !== "page" && { page: 1 }),
     }));
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Clear any pending timeout and fetch immediately
-    if (searchTimeout) {
-      clearTimeout(searchTimeout);
-      setSearchTimeout(null);
-    }
-    fetchApplications();
   };
 
   const handleRefresh = () => {
@@ -246,23 +218,6 @@ export default function AdminApplicationsPage() {
     router.push(`/admin/applications/${id}/edit`);
   };
 
-  // Status options for filter
-  const statusOptions = [
-    { value: "all", label: "All Status" },
-    { value: "pending", label: "Pending" },
-    { value: "approved", label: "Approved" },
-    { value: "rejected", label: "Rejected" },
-  ];
-
-  // Memoized stats - shows total count from API response
-  const stats = useMemo(() => {
-    const pending = applications.filter((a) => a.status === "pending").length;
-    const approved = applications.filter((a) => a.status === "approved").length;
-    const rejected = applications.filter((a) => a.status === "rejected").length;
-
-    return { total, pending, approved, rejected };
-  }, [applications, total]);
-
   // Approve application handler
   const handleApprove = useCallback(
     async (id: string) => {
@@ -298,6 +253,83 @@ export default function AdminApplicationsPage() {
     },
     [fetchApplications],
   );
+
+  // Delete application handler
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteApplication(id);
+        setSelectedIds((prev) => prev.filter((item) => item !== id));
+        toast.success("Application deleted successfully!");
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error deleting application:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to delete application",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
+  // Bulk delete handler
+  const handleBulkDelete = useCallback(
+    async (ids: string[]) => {
+      try {
+        await bulkDeleteApplications(ids);
+        setSelectedIds([]);
+        toast.success(`${ids.length} applications deleted successfully!`);
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error bulk deleting applications:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to delete applications",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
+  // Edit handler
+  const handleEdit = useCallback(
+    async (id: string, data: any) => {
+      try {
+        await patchApplication(id, data);
+        toast.success("Application updated successfully!");
+        await fetchApplications(true);
+      } catch (error: any) {
+        console.error("Error updating application:", error);
+        toast.error(
+          error?.response?.data?.message || "Failed to update application",
+        );
+        throw error;
+      }
+    },
+    [fetchApplications],
+  );
+
+  // Status options for filter
+  const statusOptions = [
+    { value: "all", label: "All Status" },
+    { value: "pending", label: "Pending" },
+    { value: "approved", label: "Approved" },
+    { value: "rejected", label: "Rejected" },
+    { value: "suspended", label: "Suspended" },
+  ];
+
+  // Memoized stats
+  const stats = useMemo(() => {
+    const pending = applications.filter((a) => a.status === "pending").length;
+    const approved = applications.filter((a) => a.status === "approved").length;
+    const rejected = applications.filter((a) => a.status === "rejected").length;
+    const suspended = applications.filter(
+      (a) => a.status === "suspended",
+    ).length;
+
+    return { total, pending, approved, rejected, suspended };
+  }, [applications, total]);
 
   if (error && !loading) {
     return (
@@ -340,7 +372,7 @@ export default function AdminApplicationsPage() {
         </div>
       </div>
 
-      {/* Stats Cards - Shows correct counts based on filters */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Total</p>
@@ -360,61 +392,7 @@ export default function AdminApplicationsPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
-        <form
-          onSubmit={handleSearch}
-          className="flex flex-col sm:flex-row gap-4"
-        >
-          {/* Search */}
-          <div className="flex-1 relative">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name, email, or ID..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange("search", e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <select
-            value={filters.status}
-            onChange={(e) => handleFilterChange("status", e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            {statusOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Building Filter */}
-          <select
-            value={filters.buildingId}
-            onChange={(e) => handleFilterChange("buildingId", e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px]"
-          >
-            <option value="">All Buildings</option>
-            {buildings.map((b) => (
-              <option key={b._id} value={b._id}>
-                {b.buildingName}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="submit"
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            Search
-          </button>
-        </form>
-      </div>
-
-      {/* Table */}
+      {/* Table with Filters Integrated */}
       <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
         <ApplicationTable
           applications={applications}
@@ -423,43 +401,35 @@ export default function AdminApplicationsPage() {
           onSelectAll={handleSelectAll}
           onSelectOne={handleSelectOne}
           onView={handleViewApplication}
-          onEdit={handleEditApplication}
+          onEdit={handleEdit}
           onRefresh={handleRefresh}
           onApprove={handleApprove}
           onReject={handleReject}
+          onDelete={handleDelete}
+          onBulkDelete={handleBulkDelete}
           buildings={buildings}
+          plans={plans}
+          statusFilter={filters.status}
+          buildingFilter={filters.buildingId}
+          searchQuery={filters.search}
+          onStatusFilterChange={(value) => handleFilterChange("status", value)}
+          onBuildingFilterChange={(value) =>
+            handleFilterChange("buildingId", value)
+          }
+          onSearchChange={(value) => handleFilterChange("search", value)}
+          onSearchSubmit={() => {
+            if (searchTimeoutRef.current) {
+              clearTimeout(searchTimeoutRef.current);
+              searchTimeoutRef.current = null;
+            }
+            fetchApplications();
+          }}
+          statusOptions={statusOptions}
+          total={total}
+          totalPages={totalPages}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
         />
-
-        {/* Pagination */}
-        {totalPages > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
-            <p className="text-sm text-gray-500">
-              Showing {applications.length} of {total} applications
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage <= 1}
-                className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-
-              <span className="px-3 py-1 text-sm">
-                Page {currentPage} of {totalPages}
-              </span>
-
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage >= totalPages}
-                className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

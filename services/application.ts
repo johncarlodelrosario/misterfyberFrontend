@@ -13,9 +13,21 @@ export interface Building {
   isActive: boolean;
 }
 
+export interface Plan {
+  _id: string;
+  name: string;
+  price: number;
+  speed?: {
+    download: number;
+    upload: number;
+  };
+  isActive?: boolean;
+}
+
 export interface ApplicationData {
   firstName: string;
   lastName: string;
+  middleName?: string;
   email: string;
   phoneNumber: string;
   buildingId: string;
@@ -27,7 +39,14 @@ export interface ApplicationData {
   idType: string;
   idNumber: string;
   macAddress?: string;
-  idImage?: File;
+  idImage?: File | string;
+  birthDate?: string;
+  gender?: string;
+  status?: string;
+  serviceStatus?: string;
+  installationFee?: number;
+  installationFeePaid?: boolean;
+  adminNotes?: string;
 }
 
 export interface Region {
@@ -103,6 +122,12 @@ export const getActiveBuildings = async (): Promise<Building[]> => {
   return response.data.data;
 };
 
+// ============ PLANS ============
+export const getPlans = async (): Promise<Plan[]> => {
+  const response = await api.get("/plans");
+  return response.data.data;
+};
+
 // ============ GET ALL APPLICATIONS (PAGINATED) ============
 export const getAllApplications = async (
   filters: ApplicationFilters = {},
@@ -111,17 +136,14 @@ export const getAllApplications = async (
 
   const params: any = { page, limit };
 
-  // Only add status if it's not "all" or empty
   if (status && status !== "all" && status !== "") {
     params.status = status;
   }
 
-  // Add search if it has value
   if (search && search.trim() !== "") {
     params.search = search.trim();
   }
 
-  // Add buildingId if it has value
   if (buildingId && buildingId !== "" && buildingId !== "all") {
     params.buildingId = buildingId;
   }
@@ -142,9 +164,11 @@ export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
 export const submitApplication = async (data: ApplicationData) => {
   const formData = new FormData();
 
-  // Append all required fields
   formData.append("firstName", data.firstName);
   formData.append("lastName", data.lastName);
+  if (data.middleName) {
+    formData.append("middleName", data.middleName);
+  }
   formData.append("email", data.email);
   formData.append("phoneNumber", data.phoneNumber);
   formData.append("buildingId", data.buildingId);
@@ -155,7 +179,6 @@ export const submitApplication = async (data: ApplicationData) => {
   formData.append("idType", data.idType);
   formData.append("idNumber", data.idNumber);
 
-  // Optional fields
   if (data.notes && data.notes.trim()) {
     formData.append("notes", data.notes);
   }
@@ -164,7 +187,15 @@ export const submitApplication = async (data: ApplicationData) => {
     formData.append("macAddress", data.macAddress);
   }
 
-  if (data.idImage) {
+  if (data.birthDate) {
+    formData.append("birthDate", data.birthDate);
+  }
+
+  if (data.gender) {
+    formData.append("gender", data.gender);
+  }
+
+  if (data.idImage && data.idImage instanceof File) {
     formData.append("idImage", data.idImage);
   }
 
@@ -200,6 +231,140 @@ export const rejectApplication = async (id: string, adminNotes?: string) => {
   return response.data;
 };
 
+// ============================================================
+// ✅ DELETE APPLICATION
+// ============================================================
+export const deleteApplication = async (id: string) => {
+  const response = await api.delete(`/applications/${id}`);
+  return response.data;
+};
+
+// ============================================================
+// ✅ BULK DELETE APPLICATIONS
+// ============================================================
+export const bulkDeleteApplications = async (applicationIds: string[]) => {
+  const response = await api.post("/applications/bulk-delete", {
+    applicationIds,
+  });
+  return response.data;
+};
+
+// ============================================================
+// ✅ UPDATE APPLICATION - PUT (FULL UPDATE)
+// ============================================================
+export const updateApplication = async (
+  id: string,
+  data: Partial<ApplicationData>,
+) => {
+  const formData = new FormData();
+
+  if (data.firstName) formData.append("firstName", data.firstName);
+  if (data.lastName) formData.append("lastName", data.lastName);
+  if (data.middleName !== undefined)
+    formData.append("middleName", data.middleName || "");
+  if (data.email) formData.append("email", data.email);
+  if (data.phoneNumber) formData.append("phoneNumber", data.phoneNumber);
+  if (data.buildingId) formData.append("buildingId", data.buildingId);
+  if (data.tower !== undefined) formData.append("tower", data.tower || "");
+  if (data.floor) formData.append("floor", data.floor);
+  if (data.unitNumber) formData.append("unitNumber", data.unitNumber);
+  if (data.planId) formData.append("planId", data.planId);
+  if (data.idType) formData.append("idType", data.idType);
+  if (data.idNumber) formData.append("idNumber", data.idNumber);
+  if (data.notes !== undefined) formData.append("notes", data.notes || "");
+  if (data.macAddress !== undefined)
+    formData.append("macAddress", data.macAddress || "");
+  if (data.birthDate) formData.append("birthDate", data.birthDate);
+  if (data.gender) formData.append("gender", data.gender);
+  if (data.adminNotes !== undefined)
+    formData.append("adminNotes", data.adminNotes || "");
+  if (data.status) formData.append("status", data.status);
+  if (data.serviceStatus) formData.append("serviceStatus", data.serviceStatus);
+  if (data.installationFee !== undefined)
+    formData.append("installationFee", String(data.installationFee));
+  if (data.installationFeePaid !== undefined)
+    formData.append("installationFeePaid", String(data.installationFeePaid));
+
+  if (data.idImage instanceof File) {
+    formData.append("idImage", data.idImage);
+  }
+
+  const response = await api.put(`/applications/${id}`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  return response.data;
+};
+
+// ============================================================
+// ✅ PATCH UPDATE APPLICATION - PARTIAL UPDATE
+// ============================================================
+export const patchApplication = async (
+  id: string,
+  data: Partial<ApplicationData>,
+) => {
+  // Clean the data - remove undefined values and handle gender properly
+  const cleanData: Record<string, any> = {};
+
+  // Only include fields that have values
+  const fields = [
+    "firstName",
+    "lastName",
+    "middleName",
+    "email",
+    "phoneNumber",
+    "buildingId",
+    "tower",
+    "floor",
+    "unitNumber",
+    "planId",
+    "idType",
+    "idNumber",
+    "macAddress",
+    "notes",
+    "adminNotes",
+    "birthDate",
+    "status",
+    "serviceStatus",
+    "installationFee",
+    "installationFeePaid",
+  ];
+
+  fields.forEach((field) => {
+    const value = data[field as keyof ApplicationData];
+    if (value !== undefined && value !== null) {
+      cleanData[field] = value;
+    }
+  });
+
+  // Handle gender separately - only include if valid
+  if (data.gender !== undefined && data.gender !== null && data.gender !== "") {
+    const validGenders = ["male", "female", "other"];
+    const normalizedGender = data.gender.toLowerCase().trim();
+    if (validGenders.includes(normalizedGender)) {
+      cleanData.gender = normalizedGender;
+    }
+  }
+
+  // Handle installationFee separately - ensure it's a number
+  if (data.installationFee !== undefined) {
+    cleanData.installationFee = Number(data.installationFee);
+  }
+
+  // Handle boolean
+  if (data.installationFeePaid !== undefined) {
+    cleanData.installationFeePaid = data.installationFeePaid;
+  }
+
+  console.log("📤 PATCH data being sent:", JSON.stringify(cleanData, null, 2));
+
+  // Use PATCH method
+  const response = await api.patch(`/applications/${id}`, cleanData);
+  return response.data;
+};
+
 // ============ UPDATE MAC ADDRESS ============
 export const updateMacAddress = async (id: string, macAddress: string) => {
   const response = await api.patch(`/applications/${id}/mac-address`, {
@@ -211,6 +376,12 @@ export const updateMacAddress = async (id: string, macAddress: string) => {
 // ============ UPDATE TOWER ============
 export const updateTower = async (id: string, tower: string) => {
   const response = await api.patch(`/applications/${id}/tower`, { tower });
+  return response.data;
+};
+
+// ============ UPDATE STATUS ============
+export const updateStatus = async (id: string, status: string) => {
+  const response = await api.patch(`/applications/${id}/status`, { status });
   return response.data;
 };
 

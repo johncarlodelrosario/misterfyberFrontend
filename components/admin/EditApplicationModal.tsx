@@ -1,31 +1,56 @@
-// components/admin/AddApplicationModal.tsx
+// components/admin/EditApplicationModal.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { getActiveBuildings, Building } from "@/services/building";
-import { getPlans, Plan } from "@/services/plan";
-import { submitApplication, ApplicationData } from "@/services/application";
+import { Building, Plan } from "@/services/application";
+import { patchApplication } from "@/services/application";
 import { toast } from "sonner";
 import Image from "next/image";
 
-interface AddApplicationModalProps {
+interface EditApplicationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  application: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    middleName?: string;
+    email: string;
+    phoneNumber: string;
+    buildingId: string | { _id: string; buildingName: string };
+    tower: string;
+    floor: string;
+    unitNumber: string;
+    planId: string | { _id: string; name: string; price: number };
+    idType: string;
+    idNumber: string;
+    macAddress?: string;
+    notes?: string;
+    adminNotes?: string;
+    idImage?: string;
+    status: string;
+    serviceStatus?: string;
+    installationFee?: number;
+    installationFeePaid?: boolean;
+    birthDate?: string;
+    gender?: string;
+  };
+  buildings: Building[];
+  plans: Plan[];
+  onSuccess: (id: string, data: any) => Promise<void>;
 }
 
-// ✅ ITO ANG FIX - EXPORT DEFAULT!
-const AddApplicationModal = ({
+export function EditApplicationModal({
   open,
   onOpenChange,
+  application,
+  buildings,
+  plans,
   onSuccess,
-}: AddApplicationModalProps) => {
+}: EditApplicationModalProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
-  const [idImagePreview, setIdImagePreview] = useState<string | null>(null);
   const [idImageFile, setIdImageFile] = useState<File | null>(null);
+  const [idImagePreview, setIdImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -39,61 +64,73 @@ const AddApplicationModal = ({
     floor: "",
     unitNumber: "",
     planId: "",
-    idType: "Passport",
+    idType: "",
     idNumber: "",
     macAddress: "",
     notes: "",
+    adminNotes: "",
+    status: "",
+    serviceStatus: "",
+    installationFee: "",
+    installationFeePaid: false,
     birthDate: "",
     gender: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Initialize form with application data when modal opens
   useEffect(() => {
-    if (open) {
-      const loadData = async () => {
-        setLoadingData(true);
-        try {
-          const [buildingsRes, plansRes] = await Promise.all([
-            getActiveBuildings(),
-            getPlans(),
-          ]);
-          setBuildings(buildingsRes || []);
-          setPlans(plansRes || []);
-        } catch (error) {
-          console.error("Error loading data:", error);
-          toast.error("Failed to load buildings and plans");
-        } finally {
-          setLoadingData(false);
-        }
-      };
-      loadData();
+    if (open && application) {
+      const buildingId =
+        typeof application.buildingId === "string"
+          ? application.buildingId
+          : application.buildingId?._id || "";
+
+      const planId =
+        typeof application.planId === "string"
+          ? application.planId
+          : application.planId?._id || "";
+
       setFormData({
-        firstName: "",
-        lastName: "",
-        middleName: "",
-        email: "",
-        phoneNumber: "",
-        buildingId: "",
-        tower: "",
-        floor: "",
-        unitNumber: "",
-        planId: "",
-        idType: "Passport",
-        idNumber: "",
-        macAddress: "",
-        notes: "",
-        birthDate: "",
-        gender: "",
+        firstName: application.firstName || "",
+        lastName: application.lastName || "",
+        middleName: application.middleName || "",
+        email: application.email || "",
+        phoneNumber: application.phoneNumber || "",
+        buildingId: buildingId,
+        tower: application.tower || "",
+        floor: application.floor || "",
+        unitNumber: application.unitNumber || "",
+        planId: planId,
+        idType: application.idType || "",
+        idNumber: application.idNumber || "",
+        macAddress: application.macAddress || "",
+        notes: application.notes || "",
+        adminNotes: application.adminNotes || "",
+        status: application.status || "pending",
+        serviceStatus: application.serviceStatus || "pending",
+        installationFee: application.installationFee?.toString() || "",
+        installationFeePaid: application.installationFeePaid || false,
+        birthDate: application.birthDate
+          ? new Date(application.birthDate).toISOString().split("T")[0]
+          : "",
+        gender: application.gender || "",
       });
+
+      // Set ID image preview
+      if (application.idImage) {
+        setIdImagePreview(application.idImage);
+      } else {
+        setIdImagePreview(null);
+      }
       setIdImageFile(null);
-      setIdImagePreview(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
       setErrors({});
     }
-  }, [open]);
+  }, [open, application]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -151,59 +188,60 @@ const AddApplicationModal = ({
 
     setIsLoading(true);
     try {
-      const applicationData: ApplicationData = {
+      // Build the update data with all fields
+      const updateData: any = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
-        middleName: formData.middleName.trim(),
+        middleName: formData.middleName.trim() || "",
         email: formData.email.trim(),
         phoneNumber: formData.phoneNumber.trim(),
         buildingId: formData.buildingId,
-        tower: formData.tower.trim(),
+        tower: formData.tower.trim() || "",
         floor: formData.floor.trim(),
         unitNumber: formData.unitNumber.trim(),
         planId: formData.planId,
-        idType: formData.idType,
+        idType: formData.idType.trim() || "",
         idNumber: formData.idNumber.trim(),
-        macAddress: formData.macAddress.trim() || undefined,
-        notes: formData.notes.trim() || undefined,
-        birthDate: formData.birthDate || undefined,
-        gender: formData.gender || undefined,
-        idImage: idImageFile || undefined,
+        macAddress: formData.macAddress.trim() || "",
+        notes: formData.notes.trim() || "",
+        adminNotes: formData.adminNotes.trim() || "",
+        status: formData.status,
+        serviceStatus: formData.serviceStatus,
+        installationFee: parseFloat(formData.installationFee) || 0,
+        installationFeePaid: formData.installationFeePaid,
+        birthDate: formData.birthDate || "",
+        gender: formData.gender || "",
       };
 
-      await submitApplication(applicationData);
+      console.log("📤 Submitting update data:", updateData);
 
-      setFormData({
-        firstName: "",
-        lastName: "",
-        middleName: "",
-        email: "",
-        phoneNumber: "",
-        buildingId: "",
-        tower: "",
-        floor: "",
-        unitNumber: "",
-        planId: "",
-        idType: "Passport",
-        idNumber: "",
-        macAddress: "",
-        notes: "",
-        birthDate: "",
-        gender: "",
-      });
-      setIdImageFile(null);
-      setIdImagePreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      // Call the API
+      await patchApplication(application._id, updateData);
+
+      // Handle image upload if needed
+      if (idImageFile) {
+        const { updateApplication } = await import("@/services/application");
+        await updateApplication(application._id, { idImage: idImageFile });
+        console.log("✅ Image uploaded successfully");
       }
-      setErrors({});
 
-      onSuccess();
-      toast.success("Application submitted successfully!");
+      await onSuccess(application._id, updateData);
+      toast.success("Application updated successfully!");
+      onOpenChange(false);
     } catch (error: any) {
-      console.error("Error submitting application:", error);
+      console.error("❌ Error updating application:", error);
+
+      // Log the full error response
+      if (error.response) {
+        console.error("❌ Error response data:", error.response.data);
+        console.error("❌ Error response status:", error.response.status);
+      }
+
       const errorMessage =
-        error?.response?.data?.message || "Failed to submit application";
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Failed to update application";
       toast.error(errorMessage);
 
       if (error?.response?.data?.errors) {
@@ -219,24 +257,13 @@ const AddApplicationModal = ({
     }
   };
 
-  useEffect(() => {
-    if (!open) {
-      setErrors({});
-      setIdImageFile(null);
-      setIdImagePreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  }, [open]);
-
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
-          <h2 className="text-xl font-bold">Add New Customer Application</h2>
+          <h2 className="text-xl font-bold">Edit Application</h2>
           <button
             onClick={() => onOpenChange(false)}
             className="text-gray-500 hover:text-gray-700 text-2xl"
@@ -246,6 +273,49 @@ const AddApplicationModal = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Status Section */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Status Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Application Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Service Status
+                </label>
+                <select
+                  value={formData.serviceStatus}
+                  onChange={(e) =>
+                    setFormData({ ...formData, serviceStatus: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="disconnected">Disconnected</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Personal Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
@@ -262,8 +332,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, firstName: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  placeholder="Juan"
+                  className={`w-full px-3 py-2 border ${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
                 {errors.firstName && (
                   <p className="text-red-500 text-sm mt-1">
@@ -281,8 +350,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, middleName: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Optional"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -295,8 +363,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, lastName: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  placeholder="Dela Cruz"
+                  className={`w-full px-3 py-2 border ${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
                 {errors.lastName && (
                   <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>
@@ -315,8 +382,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  placeholder="customer@email.com"
+                  className={`w-full px-3 py-2 border ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
                 {errors.email && (
                   <p className="text-red-500 text-sm mt-1">{errors.email}</p>
@@ -332,8 +398,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, phoneNumber: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  placeholder="09123456789"
+                  className={`w-full px-3 py-2 border ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
                 {errors.phoneNumber && (
                   <p className="text-red-500 text-sm mt-1">
@@ -354,7 +419,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, birthDate: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -366,7 +431,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, gender: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select Gender</option>
                   <option value="male">Male</option>
@@ -381,20 +446,15 @@ const AddApplicationModal = ({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   ID Type
                 </label>
-                <select
+                <input
+                  type="text"
                   value={formData.idType}
                   onChange={(e) =>
                     setFormData({ ...formData, idType: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="Passport">Passport</option>
-                  <option value="Driver License">Driver License</option>
-                  <option value="National ID">National ID</option>
-                  <option value="UMID">UMID</option>
-                  <option value="Postal ID">Postal ID</option>
-                  <option value="Other">Other</option>
-                </select>
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Passport, Driver License"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -406,8 +466,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, idNumber: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.idNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  placeholder="Enter ID number"
+                  className={`w-full px-3 py-2 border ${errors.idNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
                 {errors.idNumber && (
                   <p className="text-red-500 text-sm mt-1">{errors.idNumber}</p>
@@ -415,6 +474,7 @@ const AddApplicationModal = ({
               </div>
             </div>
 
+            {/* ID Image */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 ID Image
@@ -426,24 +486,33 @@ const AddApplicationModal = ({
                   accept="image/*"
                   onChange={handleIdImageChange}
                   className="hidden"
-                  id="idImageUpload"
+                  id="editIdImageUpload"
                 />
                 <label
-                  htmlFor="idImageUpload"
+                  htmlFor="editIdImageUpload"
                   className="px-4 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors"
                 >
-                  Choose Image
+                  Change Image
                 </label>
                 <span className="text-sm text-gray-500">
-                  {idImageFile ? idImageFile.name : "No file chosen"}
+                  {idImageFile ? idImageFile.name : "Keep current image"}
                 </span>
-                {idImagePreview && (
+                {idImagePreview && !idImageFile && (
                   <button
                     type="button"
                     onClick={removeIdImage}
                     className="text-red-600 hover:text-red-800 text-sm"
                   >
                     Remove
+                  </button>
+                )}
+                {idImageFile && (
+                  <button
+                    type="button"
+                    onClick={removeIdImage}
+                    className="text-red-600 hover:text-red-800 text-sm"
+                  >
+                    Remove New
                   </button>
                 )}
               </div>
@@ -463,6 +532,7 @@ const AddApplicationModal = ({
             </div>
           </div>
 
+          {/* Address Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Address Information
@@ -476,12 +546,9 @@ const AddApplicationModal = ({
                 onChange={(e) =>
                   setFormData({ ...formData, buildingId: e.target.value })
                 }
-                className={`w-full px-3 py-2 border ${errors.buildingId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                disabled={loadingData}
+                className={`w-full px-3 py-2 border ${errors.buildingId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
               >
-                <option value="">
-                  {loadingData ? "Loading..." : "Select building"}
-                </option>
+                <option value="">Select building</option>
                 {buildings.map((building) => (
                   <option key={building._id} value={building._id}>
                     {building.buildingName}
@@ -504,7 +571,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, tower: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., A, B, C"
                 />
               </div>
@@ -518,7 +585,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, floor: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.floor ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.floor ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="e.g., 2nd Floor"
                 />
                 {errors.floor && (
@@ -535,7 +602,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     setFormData({ ...formData, unitNumber: e.target.value })
                   }
-                  className={`w-full px-3 py-2 border ${errors.unitNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.unitNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="e.g., 201"
                 />
                 {errors.unitNumber && (
@@ -547,6 +614,7 @@ const AddApplicationModal = ({
             </div>
           </div>
 
+          {/* Plan Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Plan Information
@@ -560,16 +628,12 @@ const AddApplicationModal = ({
                 onChange={(e) =>
                   setFormData({ ...formData, planId: e.target.value })
                 }
-                className={`w-full px-3 py-2 border ${errors.planId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                disabled={loadingData}
+                className={`w-full px-3 py-2 border ${errors.planId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
               >
-                <option value="">
-                  {loadingData ? "Loading..." : "Select plan"}
-                </option>
+                <option value="">Select plan</option>
                 {plans.map((plan) => (
                   <option key={plan._id} value={plan._id}>
-                    {plan.name} - ₱{plan.price.toLocaleString()} (
-                    {plan.speed?.download || 0} Mbps)
+                    {plan.name} - ₱{plan.price.toLocaleString()}
                   </option>
                 ))}
               </select>
@@ -578,36 +642,96 @@ const AddApplicationModal = ({
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                MAC Address (Optional)
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  MAC Address
+                </label>
+                <input
+                  type="text"
+                  value={formData.macAddress}
+                  onChange={(e) =>
+                    setFormData({ ...formData, macAddress: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 00:1A:2B:3C:4D:5E"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Installation Fee (₱)
+                </label>
+                <input
+                  type="number"
+                  value={formData.installationFee}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      installationFee: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.installationFeePaid}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      installationFeePaid: e.target.checked,
+                    })
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Installation Fee Paid
+                </span>
               </label>
-              <input
-                type="text"
-                value={formData.macAddress}
-                onChange={(e) =>
-                  setFormData({ ...formData, macAddress: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., 00:1A:2B:3C:4D:5E"
-              />
             </div>
           </div>
 
+          {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes (Optional)
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) =>
-                setFormData({ ...formData, notes: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[80px]"
-              placeholder="Additional notes about this application..."
-            />
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Notes
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Notes
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, notes: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                  placeholder="Customer notes..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Admin Notes
+                </label>
+                <textarea
+                  value={formData.adminNotes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, adminNotes: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                  placeholder="Admin notes..."
+                />
+              </div>
+            </div>
           </div>
 
+          {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -619,7 +743,7 @@ const AddApplicationModal = ({
             </button>
             <button
               type="submit"
-              disabled={isLoading || loadingData}
+              disabled={isLoading}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isLoading ? (
@@ -644,10 +768,10 @@ const AddApplicationModal = ({
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     ></path>
                   </svg>
-                  Submitting...
+                  Saving...
                 </>
               ) : (
-                "Submit Application"
+                "Save Changes"
               )}
             </button>
           </div>
@@ -655,7 +779,4 @@ const AddApplicationModal = ({
       </div>
     </div>
   );
-};
-
-// ✅ ITO ANG IMPORTANTE - EXPORT DEFAULT!
-export default AddApplicationModal;
+}

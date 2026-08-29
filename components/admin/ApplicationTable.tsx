@@ -3,9 +3,12 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { ApplicationDetails } from "./ApplicationDetails";
-import { AddApplicationModal } from "./AddApplicationModal";
+import AddApplicationModal from "./AddApplicationModal";
+import { EditApplicationModal } from "./EditApplicationModal";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { Building, Plan } from "@/services/application";
 
 // Interface definitions
 export interface Application {
@@ -13,6 +16,7 @@ export interface Application {
   applicationId?: string;
   firstName: string;
   lastName: string;
+  middleName?: string;
   email: string;
   phoneNumber: string;
   buildingId: string | { _id: string; buildingName: string };
@@ -20,16 +24,30 @@ export interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "suspended";
   idType: string;
   idNumber: string;
   macAddress?: string;
   notes?: string;
   adminNotes?: string;
   idImage?: string;
+  idImageUrl?: string;
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
+  birthDate?: string;
+  gender?: string;
+  billingStarted?: boolean;
+  registeredUserId?: string;
+  hasAccount?: boolean;
+  serviceStatus?: string;
+  installationFee?: number;
+  installationFeePaid?: boolean;
+}
+
+export interface StatusOption {
+  value: string;
+  label: string;
 }
 
 export interface ApplicationTableProps {
@@ -44,14 +62,25 @@ export interface ApplicationTableProps {
   onRefresh?: () => void;
   onApprove?: (id: string) => Promise<void>;
   onReject?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
+  onBulkDelete?: (ids: string[]) => Promise<void>;
+  onEdit?: (id: string, data: any) => Promise<void>;
   onSelectAll?: (checked: boolean) => void;
   onSelectOne?: (id: string, checked: boolean) => void;
   onView?: (id: string) => void;
-  onEdit?: (id: string) => void;
-  buildings?: { _id: string; buildingName: string }[];
+  buildings?: Building[];
+  plans?: Plan[];
+  statusFilter?: string;
+  buildingFilter?: string;
+  searchQuery?: string;
+  onStatusFilterChange?: (value: string) => void;
+  onBuildingFilterChange?: (value: string) => void;
+  onSearchChange?: (value: string) => void;
+  onSearchSubmit?: () => void;
+  statusOptions?: StatusOption[];
 }
 
-export default function ApplicationTable({
+export function ApplicationTable({
   applications: initialApplications,
   isLoading = false,
   loading = false,
@@ -59,23 +88,43 @@ export default function ApplicationTable({
   onRefresh,
   onApprove,
   onReject,
+  onDelete,
+  onBulkDelete,
+  onEdit,
   onSelectAll,
   onSelectOne,
   onView,
-  onEdit,
   buildings = [],
+  plans = [],
+  statusFilter = "all",
+  buildingFilter = "",
+  searchQuery = "",
+  onStatusFilterChange,
+  onBuildingFilterChange,
+  onSearchChange,
+  onSearchSubmit,
+  statusOptions = [
+    { value: "all", label: "All Status" },
+    { value: "pending", label: "Pending" },
+    { value: "approved", label: "Approved" },
+    { value: "rejected", label: "Rejected" },
+    { value: "suspended", label: "Suspended" },
+  ],
+  total = 0,
+  totalPages = 0,
+  currentPage = 1,
+  onPageChange,
 }: ApplicationTableProps) {
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Local state for instant updates - OPTIMISTIC UI
   const [localApplications, setLocalApplications] =
     useState<Application[]>(initialApplications);
 
-  // Update local applications when props change
   useEffect(() => {
     setLocalApplications(initialApplications);
   }, [initialApplications]);
@@ -100,6 +149,12 @@ export default function ApplicationTable({
             Rejected
           </span>
         );
+      case "suspended":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+            Suspended
+          </span>
+        );
       default:
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
@@ -109,12 +164,9 @@ export default function ApplicationTable({
     }
   };
 
-  // FIXED: Get building name from either object or string ID
   const getBuildingName = useCallback(
     (building: string | { _id: string; buildingName: string }) => {
       if (!building) return "N/A";
-
-      // If it's an object with buildingName
       if (
         typeof building === "object" &&
         building !== null &&
@@ -122,13 +174,10 @@ export default function ApplicationTable({
       ) {
         return building.buildingName || "N/A";
       }
-
-      // If it's a string ID, try to find it in the buildings list
       if (typeof building === "string") {
         const found = buildings.find((b) => b._id === building);
         return found ? found.buildingName : building;
       }
-
       return "N/A";
     },
     [buildings],
@@ -150,9 +199,11 @@ export default function ApplicationTable({
     return plan?.price || 0;
   };
 
-  // OPTIMISTIC UPDATE: Instant status change without waiting for API
   const updateApplicationStatus = useCallback(
-    (id: string, newStatus: "pending" | "approved" | "rejected") => {
+    (
+      id: string,
+      newStatus: "pending" | "approved" | "rejected" | "suspended",
+    ) => {
       setLocalApplications((prev) =>
         prev.map((app) =>
           app._id === id ? { ...app, status: newStatus } : app,
@@ -161,6 +212,16 @@ export default function ApplicationTable({
     },
     [],
   );
+
+  const removeApplication = useCallback((id: string) => {
+    setLocalApplications((prev) => prev.filter((app) => app._id !== id));
+  }, []);
+
+  const removeApplications = useCallback((ids: string[]) => {
+    setLocalApplications((prev) =>
+      prev.filter((app) => !ids.includes(app._id)),
+    );
+  }, []);
 
   const handleApprove = async (id: string) => {
     setActionLoading(id);
@@ -202,6 +263,88 @@ export default function ApplicationTable({
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this application? This action cannot be undone.",
+      )
+    ) {
+      return;
+    }
+
+    setActionLoading(id);
+    const appToDelete = localApplications.find((app) => app._id === id);
+    removeApplication(id);
+    toast.info("🗑️ Deleting application...");
+
+    try {
+      if (onDelete) {
+        await onDelete(id);
+        toast.success(
+          `✅ Application ${appToDelete?.applicationId || ""} deleted successfully`,
+        );
+      }
+      if (onRefresh) setTimeout(() => onRefresh(), 300);
+    } catch (error: any) {
+      if (appToDelete) {
+        setLocalApplications((prev) => [...prev, appToDelete]);
+      }
+      toast.error(
+        error?.response?.data?.message || "Failed to delete application",
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) {
+      toast.error("Please select applications to delete");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Are you sure you want to delete ${selectedIds.length} applications? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    const idsToDelete = [...selectedIds];
+    removeApplications(idsToDelete);
+    toast.info(`🗑️ Deleting ${idsToDelete.length} applications...`);
+
+    try {
+      if (onBulkDelete) {
+        await onBulkDelete(idsToDelete);
+        toast.success(
+          `✅ ${idsToDelete.length} applications deleted successfully`,
+        );
+      }
+      if (onRefresh) setTimeout(() => onRefresh(), 300);
+    } catch (error: any) {
+      setLocalApplications(initialApplications);
+      toast.error(
+        error?.response?.data?.message || "Failed to delete applications",
+      );
+    }
+  };
+
+  const handleEdit = (application: Application) => {
+    setSelectedApplication(application);
+    setShowEditModal(true);
+  };
+
+  const handleEditSuccess = async (id: string, data: any) => {
+    setShowEditModal(false);
+    if (onEdit) {
+      await onEdit(id, data);
+    }
+    if (onRefresh) setTimeout(() => onRefresh(), 300);
+    toast.success("✅ Application updated successfully!");
+  };
+
   const handleViewDetails = (application: Application) => {
     setSelectedApplication(application);
     setShowDetailsModal(true);
@@ -221,20 +364,92 @@ export default function ApplicationTable({
   );
   const isLoaded = loading || isLoading;
 
-  // Handle select all
   const handleSelectAll = (checked: boolean) => {
     if (onSelectAll) onSelectAll(checked);
   };
 
-  // Handle select one
   const handleSelectOne = (id: string, checked: boolean) => {
     if (onSelectOne) onSelectOne(id, checked);
   };
 
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onSearchSubmit) onSearchSubmit();
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (onStatusFilterChange) {
+      onStatusFilterChange(e.target.value);
+    }
+  };
+
+  const handleBuildingChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (onBuildingFilterChange) {
+      onBuildingFilterChange(e.target.value);
+    }
+  };
+
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (onSearchChange) {
+      onSearchChange(e.target.value);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {/* Toolbar - Only Refresh and Add buttons */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      {/* Filters Toolbar */}
+      <div className="p-4 border-b border-gray-200 bg-gray-50">
+        <form
+          onSubmit={handleSearchSubmit}
+          className="flex flex-col sm:flex-row gap-4"
+        >
+          <div className="flex-1 relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or ID..."
+              value={searchQuery}
+              onChange={handleSearchInputChange}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={handleStatusChange}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+          >
+            {statusOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={buildingFilter}
+            onChange={handleBuildingChange}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px] bg-white"
+          >
+            <option value="">All Buildings</option>
+            {buildings.map((b) => (
+              <option key={b._id} value={b._id}>
+                {b.buildingName}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="submit"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+          >
+            Search
+          </button>
+        </form>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <button
             onClick={onRefresh}
@@ -255,6 +470,27 @@ export default function ApplicationTable({
               />
             </svg>
           </button>
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 flex items-center gap-1"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+              Delete ({selectedIds.length})
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -423,31 +659,49 @@ export default function ApplicationTable({
                     {formatDate(app.createdAt)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="relative inline-block text-left">
+                    <div className="relative inline-flex items-center gap-1">
                       <button
                         onClick={() => handleViewDetails(app)}
-                        className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800"
+                        className="px-2 py-1 text-sm text-blue-600 hover:text-blue-800"
+                        title="View Details"
                       >
-                        View
+                        👁️
+                      </button>
+                      <button
+                        onClick={() => handleEdit(app)}
+                        className="px-2 py-1 text-sm text-indigo-600 hover:text-indigo-800"
+                        title="Edit Application"
+                      >
+                        ✏️
                       </button>
                       {app.status === "pending" && onApprove && onReject && (
                         <>
                           <button
                             onClick={() => handleApprove(app._id)}
                             disabled={actionLoading === app._id}
-                            className="px-3 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+                            className="px-2 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+                            title="Approve"
                           >
                             {actionLoading === app._id ? "⏳" : "✅"}
                           </button>
                           <button
                             onClick={() => handleReject(app._id)}
                             disabled={actionLoading === app._id}
-                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                            className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                            title="Reject"
                           >
                             {actionLoading === app._id ? "⏳" : "❌"}
                           </button>
                         </>
                       )}
+                      <button
+                        onClick={() => handleDelete(app._id)}
+                        disabled={actionLoading === app._id}
+                        className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                        title="Delete"
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -456,6 +710,37 @@ export default function ApplicationTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
+          <p className="text-sm text-gray-500">
+            Showing {displayApplications.length} of {total} applications
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onPageChange && onPageChange(currentPage - 1)}
+              disabled={currentPage <= 1}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+
+            <span className="px-3 py-1 text-sm">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              onClick={() => onPageChange && onPageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Details Modal */}
       {showDetailsModal && selectedApplication && (
@@ -475,6 +760,8 @@ export default function ApplicationTable({
                 application={selectedApplication}
                 onApprove={handleApprove}
                 onReject={handleReject}
+                onDelete={handleDelete}
+                onEdit={() => handleEdit(selectedApplication)}
                 onClose={() => setShowDetailsModal(false)}
                 buildings={buildings}
               />
@@ -493,6 +780,18 @@ export default function ApplicationTable({
           toast.success("✅ Application submitted successfully!");
         }}
       />
+
+      {/* Edit Application Modal */}
+      {showEditModal && selectedApplication && (
+        <EditApplicationModal
+          open={showEditModal}
+          onOpenChange={setShowEditModal}
+          application={selectedApplication}
+          buildings={buildings}
+          plans={plans}
+          onSuccess={handleEditSuccess}
+        />
+      )}
     </div>
   );
 }
