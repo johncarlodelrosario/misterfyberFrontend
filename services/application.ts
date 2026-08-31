@@ -160,52 +160,123 @@ export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
   return response.data.data;
 };
 
-// ============ SUBMIT APPLICATION ============
+// ============ SUBMIT APPLICATION - FIXED ============
 export const submitApplication = async (data: ApplicationData) => {
-  const formData = new FormData();
+  try {
+    const formData = new FormData();
 
-  formData.append("firstName", data.firstName);
-  formData.append("lastName", data.lastName);
-  if (data.middleName) {
-    formData.append("middleName", data.middleName);
+    // Required fields
+    formData.append("firstName", data.firstName.trim());
+    formData.append("lastName", data.lastName.trim());
+    formData.append("email", data.email.trim().toLowerCase());
+    formData.append("phoneNumber", data.phoneNumber.trim());
+    formData.append("buildingId", data.buildingId);
+    formData.append("floor", data.floor.trim());
+    formData.append("unitNumber", data.unitNumber.trim());
+    formData.append("planId", data.planId);
+    formData.append("idType", data.idType);
+    formData.append("idNumber", data.idNumber.trim());
+
+    // Optional fields - only append if they have values
+    if (data.middleName && data.middleName.trim()) {
+      formData.append("middleName", data.middleName.trim());
+    }
+
+    if (data.tower && data.tower.trim()) {
+      formData.append("tower", data.tower.trim());
+    }
+
+    if (data.notes && data.notes.trim()) {
+      formData.append("notes", data.notes.trim());
+    }
+
+    if (data.macAddress && data.macAddress.trim()) {
+      formData.append("macAddress", data.macAddress.trim());
+    }
+
+    if (data.birthDate) {
+      formData.append("birthDate", data.birthDate);
+    }
+
+    if (data.gender && data.gender.trim()) {
+      const validGenders = ["male", "female", "other"];
+      const normalizedGender = data.gender.toLowerCase().trim();
+      if (validGenders.includes(normalizedGender)) {
+        formData.append("gender", normalizedGender);
+      }
+    }
+
+    // ID Image
+    if (data.idImage && data.idImage instanceof File) {
+      formData.append("idImage", data.idImage);
+    }
+
+    // Log what we're sending (for debugging)
+    console.log("📤 Submitting application with:");
+    console.log("  - Email:", data.email);
+    console.log("  - Phone:", data.phoneNumber);
+    console.log("  - Building:", data.buildingId);
+    console.log("  - Unit:", data.floor, data.unitNumber);
+
+    const response = await api.post("/applications", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+
+    return response.data;
+  } catch (error: any) {
+    // ✅ Better error handling
+    console.error("❌ Submit application error:", error);
+
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      const status = error.response.status;
+      const data = error.response.data;
+
+      console.error("  - Status:", status);
+      console.error("  - Data:", data);
+
+      if (status === 409) {
+        // Conflict - already exists
+        throw {
+          status: 409,
+          message: data.message || "Application conflict detected",
+          data: data,
+        };
+      }
+
+      if (status === 400) {
+        // Validation error
+        throw {
+          status: 400,
+          message: data.message || "Validation failed",
+          errors: data.errors || [],
+        };
+      }
+
+      throw {
+        status: status,
+        message: data.message || "Server error",
+        data: data,
+      };
+    }
+
+    if (error.request) {
+      // The request was made but no response was received
+      throw {
+        status: 0,
+        message: "Network error - no response from server",
+      };
+    }
+
+    // Something happened in setting up the request that triggered an Error
+    throw {
+      status: 0,
+      message: error.message || "Unknown error",
+    };
   }
-  formData.append("email", data.email);
-  formData.append("phoneNumber", data.phoneNumber);
-  formData.append("buildingId", data.buildingId);
-  formData.append("tower", data.tower || "");
-  formData.append("floor", data.floor);
-  formData.append("unitNumber", data.unitNumber);
-  formData.append("planId", data.planId);
-  formData.append("idType", data.idType);
-  formData.append("idNumber", data.idNumber);
-
-  if (data.notes && data.notes.trim()) {
-    formData.append("notes", data.notes);
-  }
-
-  if (data.macAddress && data.macAddress.trim()) {
-    formData.append("macAddress", data.macAddress);
-  }
-
-  if (data.birthDate) {
-    formData.append("birthDate", data.birthDate);
-  }
-
-  if (data.gender) {
-    formData.append("gender", data.gender);
-  }
-
-  if (data.idImage && data.idImage instanceof File) {
-    formData.append("idImage", data.idImage);
-  }
-
-  const response = await api.post("/applications", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
-
-  return response.data;
 };
 
 // ============ CHECK APPLICATION STATUS ============
@@ -231,17 +302,13 @@ export const rejectApplication = async (id: string, adminNotes?: string) => {
   return response.data;
 };
 
-// ============================================================
-// ✅ DELETE APPLICATION
-// ============================================================
+// ============ DELETE APPLICATION ============
 export const deleteApplication = async (id: string) => {
   const response = await api.delete(`/applications/${id}`);
   return response.data;
 };
 
-// ============================================================
-// ✅ BULK DELETE APPLICATIONS
-// ============================================================
+// ============ BULK DELETE APPLICATIONS ============
 export const bulkDeleteApplications = async (applicationIds: string[]) => {
   const response = await api.post("/applications/bulk-delete", {
     applicationIds,
@@ -249,9 +316,7 @@ export const bulkDeleteApplications = async (applicationIds: string[]) => {
   return response.data;
 };
 
-// ============================================================
-// ✅ UPDATE APPLICATION - PUT (FULL UPDATE)
-// ============================================================
+// ============ UPDATE APPLICATION - PUT (FULL UPDATE) ============
 export const updateApplication = async (
   id: string,
   data: Partial<ApplicationData>,
@@ -298,17 +363,13 @@ export const updateApplication = async (
   return response.data;
 };
 
-// ============================================================
-// ✅ PATCH UPDATE APPLICATION - PARTIAL UPDATE
-// ============================================================
+// ============ PATCH UPDATE APPLICATION - PARTIAL UPDATE ============
 export const patchApplication = async (
   id: string,
   data: Partial<ApplicationData>,
 ) => {
-  // Clean the data - remove undefined values and handle gender properly
   const cleanData: Record<string, any> = {};
 
-  // Only include fields that have values
   const fields = [
     "firstName",
     "lastName",
@@ -334,12 +395,11 @@ export const patchApplication = async (
 
   fields.forEach((field) => {
     const value = data[field as keyof ApplicationData];
-    if (value !== undefined && value !== null) {
+    if (value !== undefined && value !== null && value !== "") {
       cleanData[field] = value;
     }
   });
 
-  // Handle gender separately - only include if valid
   if (data.gender !== undefined && data.gender !== null && data.gender !== "") {
     const validGenders = ["male", "female", "other"];
     const normalizedGender = data.gender.toLowerCase().trim();
@@ -348,19 +408,16 @@ export const patchApplication = async (
     }
   }
 
-  // Handle installationFee separately - ensure it's a number
   if (data.installationFee !== undefined) {
     cleanData.installationFee = Number(data.installationFee);
   }
 
-  // Handle boolean
   if (data.installationFeePaid !== undefined) {
     cleanData.installationFeePaid = data.installationFeePaid;
   }
 
   console.log("📤 PATCH data being sent:", JSON.stringify(cleanData, null, 2));
 
-  // Use PATCH method
   const response = await api.patch(`/applications/${id}`, cleanData);
   return response.data;
 };

@@ -1,4 +1,4 @@
-// components/admin/AddApplicationModal.tsx
+// components/admin/AddApplicationModal.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -14,7 +14,6 @@ interface AddApplicationModalProps {
   onSuccess: () => void;
 }
 
-// ✅ ITO ANG FIX - EXPORT DEFAULT!
 const AddApplicationModal = ({
   open,
   onOpenChange,
@@ -48,7 +47,9 @@ const AddApplicationModal = ({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Load data when modal opens
   useEffect(() => {
     if (open) {
       const loadData = async () => {
@@ -68,6 +69,8 @@ const AddApplicationModal = ({
         }
       };
       loadData();
+
+      // Reset form
       setFormData({
         firstName: "",
         lastName: "",
@@ -88,31 +91,49 @@ const AddApplicationModal = ({
       });
       setIdImageFile(null);
       setIdImagePreview(null);
+      setErrors({});
+      setSubmitError(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      setErrors({});
     }
   }, [open]);
 
-  const validate = () => {
+  const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!formData.firstName.trim())
+
+    if (!formData.firstName.trim()) {
       newErrors.firstName = "First name is required";
-    if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
+    }
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = "Last name is required";
+    }
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = "Please enter a valid email address";
     }
-    if (!formData.phoneNumber.trim())
+    if (!formData.phoneNumber.trim()) {
       newErrors.phoneNumber = "Phone number is required";
-    if (!formData.buildingId) newErrors.buildingId = "Building is required";
-    if (!formData.floor.trim()) newErrors.floor = "Floor is required";
-    if (!formData.unitNumber.trim())
+    } else if (!/^[0-9+\-\s()]{7,15}$/.test(formData.phoneNumber.trim())) {
+      newErrors.phoneNumber = "Please enter a valid phone number";
+    }
+    if (!formData.buildingId) {
+      newErrors.buildingId = "Building is required";
+    }
+    if (!formData.floor.trim()) {
+      newErrors.floor = "Floor is required";
+    }
+    if (!formData.unitNumber.trim()) {
       newErrors.unitNumber = "Unit number is required";
-    if (!formData.planId) newErrors.planId = "Plan is required";
-    if (!formData.idNumber.trim()) newErrors.idNumber = "ID number is required";
+    }
+    if (!formData.planId) {
+      newErrors.planId = "Plan is required";
+    }
+    if (!formData.idNumber.trim()) {
+      newErrors.idNumber = "ID number is required";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -147,14 +168,20 @@ const AddApplicationModal = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    setSubmitError(null);
+
+    if (!validate()) {
+      toast.error("Please fix the validation errors");
+      return;
+    }
 
     setIsLoading(true);
+
     try {
       const applicationData: ApplicationData = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
-        middleName: formData.middleName.trim(),
+        middleName: formData.middleName.trim() || undefined,
         email: formData.email.trim(),
         phoneNumber: formData.phoneNumber.trim(),
         buildingId: formData.buildingId,
@@ -171,8 +198,17 @@ const AddApplicationModal = ({
         idImage: idImageFile || undefined,
       };
 
-      await submitApplication(applicationData);
+      console.log("📤 Submitting application data:", {
+        ...applicationData,
+        idImage: idImageFile ? "File present" : "No file",
+      });
 
+      const response = await submitApplication(applicationData);
+
+      // Success!
+      console.log("✅ Application submitted:", response);
+
+      // Reset form
       setFormData({
         firstName: "",
         lastName: "",
@@ -198,37 +234,83 @@ const AddApplicationModal = ({
       }
       setErrors({});
 
+      toast.success("✅ Application submitted successfully!");
       onSuccess();
-      toast.success("Application submitted successfully!");
+      onOpenChange(false);
     } catch (error: any) {
-      console.error("Error submitting application:", error);
-      const errorMessage =
-        error?.response?.data?.message || "Failed to submit application";
-      toast.error(errorMessage);
+      console.error("❌ Submit error:", error);
 
-      if (error?.response?.data?.errors) {
-        const backendErrors = error.response.data.errors;
-        const newErrors: Record<string, string> = {};
-        Object.keys(backendErrors).forEach((key) => {
-          newErrors[key] = backendErrors[key];
-        });
-        setErrors(newErrors);
+      // Handle specific error types
+      if (error.status === 409) {
+        // Conflict - show user-friendly message
+        const message =
+          error.data?.message || "This application already exists.";
+
+        // Try to extract specific conflict info
+        if (message.includes("email")) {
+          setSubmitError(
+            "This email address is already registered. Please use a different email.",
+          );
+          toast.error("Email already exists");
+        } else if (message.includes("phone")) {
+          setSubmitError(
+            "This phone number is already registered. Please use a different phone number.",
+          );
+          toast.error("Phone number already exists");
+        } else if (message.includes("unit") || message.includes("Unit")) {
+          setSubmitError(
+            "This unit already has an active application. Please check the unit details.",
+          );
+          toast.error("Unit already occupied");
+        } else {
+          setSubmitError(message);
+          toast.error(message);
+        }
+      } else if (error.status === 400) {
+        // Validation error
+        const message =
+          error.message || "Please check your input and try again.";
+        setSubmitError(message);
+        toast.error(message);
+
+        // Set field-specific errors if available
+        if (error.errors && Array.isArray(error.errors)) {
+          const fieldErrors: Record<string, string> = {};
+          error.errors.forEach((err: any) => {
+            if (err.field) {
+              fieldErrors[err.field] = err.message;
+            }
+          });
+          setErrors(fieldErrors);
+        }
+      } else {
+        // Generic error
+        const message =
+          error.message || "Failed to submit application. Please try again.";
+        setSubmitError(message);
+        toast.error(message);
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (!open) {
-      setErrors({});
-      setIdImageFile(null);
-      setIdImagePreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+  // Reset error when form changes
+  const handleFieldChange = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    // Clear errors for this field
+    if (errors[field]) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
-  }, [open]);
+    // Clear submit error
+    if (submitError) {
+      setSubmitError(null);
+    }
+  };
 
   if (!open) return null;
 
@@ -246,6 +328,13 @@ const AddApplicationModal = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Submit Error Display */}
+          {submitError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">{submitError}</p>
+            </div>
+          )}
+
           {/* Personal Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
@@ -260,9 +349,11 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.firstName}
                   onChange={(e) =>
-                    setFormData({ ...formData, firstName: e.target.value })
+                    handleFieldChange("firstName", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${
+                    errors.firstName ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Juan"
                 />
                 {errors.firstName && (
@@ -279,7 +370,7 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.middleName}
                   onChange={(e) =>
-                    setFormData({ ...formData, middleName: e.target.value })
+                    handleFieldChange("middleName", e.target.value)
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Optional"
@@ -293,9 +384,11 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.lastName}
                   onChange={(e) =>
-                    setFormData({ ...formData, lastName: e.target.value })
+                    handleFieldChange("lastName", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${
+                    errors.lastName ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Dela Cruz"
                 />
                 {errors.lastName && (
@@ -312,10 +405,10 @@ const AddApplicationModal = ({
                 <input
                   type="email"
                   value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
-                  className={`w-full px-3 py-2 border ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  onChange={(e) => handleFieldChange("email", e.target.value)}
+                  className={`w-full px-3 py-2 border ${
+                    errors.email ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="customer@email.com"
                 />
                 {errors.email && (
@@ -330,9 +423,11 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.phoneNumber}
                   onChange={(e) =>
-                    setFormData({ ...formData, phoneNumber: e.target.value })
+                    handleFieldChange("phoneNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${
+                    errors.phoneNumber ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="09123456789"
                 />
                 {errors.phoneNumber && (
@@ -352,7 +447,7 @@ const AddApplicationModal = ({
                   type="date"
                   value={formData.birthDate}
                   onChange={(e) =>
-                    setFormData({ ...formData, birthDate: e.target.value })
+                    handleFieldChange("birthDate", e.target.value)
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -363,9 +458,7 @@ const AddApplicationModal = ({
                 </label>
                 <select
                   value={formData.gender}
-                  onChange={(e) =>
-                    setFormData({ ...formData, gender: e.target.value })
-                  }
+                  onChange={(e) => handleFieldChange("gender", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Select Gender</option>
@@ -383,9 +476,7 @@ const AddApplicationModal = ({
                 </label>
                 <select
                   value={formData.idType}
-                  onChange={(e) =>
-                    setFormData({ ...formData, idType: e.target.value })
-                  }
+                  onChange={(e) => handleFieldChange("idType", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="Passport">Passport</option>
@@ -404,9 +495,11 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.idNumber}
                   onChange={(e) =>
-                    setFormData({ ...formData, idNumber: e.target.value })
+                    handleFieldChange("idNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${errors.idNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${
+                    errors.idNumber ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="Enter ID number"
                 />
                 {errors.idNumber && (
@@ -463,6 +556,7 @@ const AddApplicationModal = ({
             </div>
           </div>
 
+          {/* Address Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Address Information
@@ -474,9 +568,11 @@ const AddApplicationModal = ({
               <select
                 value={formData.buildingId}
                 onChange={(e) =>
-                  setFormData({ ...formData, buildingId: e.target.value })
+                  handleFieldChange("buildingId", e.target.value)
                 }
-                className={`w-full px-3 py-2 border ${errors.buildingId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                className={`w-full px-3 py-2 border ${
+                  errors.buildingId ? "border-red-500" : "border-gray-300"
+                } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -501,9 +597,7 @@ const AddApplicationModal = ({
                 <input
                   type="text"
                   value={formData.tower}
-                  onChange={(e) =>
-                    setFormData({ ...formData, tower: e.target.value })
-                  }
+                  onChange={(e) => handleFieldChange("tower", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., A, B, C"
                 />
@@ -515,10 +609,10 @@ const AddApplicationModal = ({
                 <input
                   type="text"
                   value={formData.floor}
-                  onChange={(e) =>
-                    setFormData({ ...formData, floor: e.target.value })
-                  }
-                  className={`w-full px-3 py-2 border ${errors.floor ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  onChange={(e) => handleFieldChange("floor", e.target.value)}
+                  className={`w-full px-3 py-2 border ${
+                    errors.floor ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="e.g., 2nd Floor"
                 />
                 {errors.floor && (
@@ -533,9 +627,11 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.unitNumber}
                   onChange={(e) =>
-                    setFormData({ ...formData, unitNumber: e.target.value })
+                    handleFieldChange("unitNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${errors.unitNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${
+                    errors.unitNumber ? "border-red-500" : "border-gray-300"
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                   placeholder="e.g., 201"
                 />
                 {errors.unitNumber && (
@@ -547,6 +643,7 @@ const AddApplicationModal = ({
             </div>
           </div>
 
+          {/* Plan Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Plan Information
@@ -557,10 +654,10 @@ const AddApplicationModal = ({
               </label>
               <select
                 value={formData.planId}
-                onChange={(e) =>
-                  setFormData({ ...formData, planId: e.target.value })
-                }
-                className={`w-full px-3 py-2 border ${errors.planId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                onChange={(e) => handleFieldChange("planId", e.target.value)}
+                className={`w-full px-3 py-2 border ${
+                  errors.planId ? "border-red-500" : "border-gray-300"
+                } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -586,7 +683,7 @@ const AddApplicationModal = ({
                 type="text"
                 value={formData.macAddress}
                 onChange={(e) =>
-                  setFormData({ ...formData, macAddress: e.target.value })
+                  handleFieldChange("macAddress", e.target.value)
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="e.g., 00:1A:2B:3C:4D:5E"
@@ -594,20 +691,20 @@ const AddApplicationModal = ({
             </div>
           </div>
 
+          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Notes (Optional)
             </label>
             <textarea
               value={formData.notes}
-              onChange={(e) =>
-                setFormData({ ...formData, notes: e.target.value })
-              }
+              onChange={(e) => handleFieldChange("notes", e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[80px]"
               placeholder="Additional notes about this application..."
             />
           </div>
 
+          {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -657,5 +754,4 @@ const AddApplicationModal = ({
   );
 };
 
-// ✅ ITO ANG IMPORTANTE - EXPORT DEFAULT!
 export default AddApplicationModal;
