@@ -1,4 +1,4 @@
-// components/admin/AddApplicationModal.tsx - COMPLETE FIXED
+// components/admin/AddApplicationModal.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -42,8 +42,6 @@ const AddApplicationModal = ({
     idNumber: "",
     macAddress: "",
     notes: "",
-    birthDate: "",
-    gender: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -86,8 +84,6 @@ const AddApplicationModal = ({
         idNumber: "",
         macAddress: "",
         notes: "",
-        birthDate: "",
-        gender: "",
       });
       setIdImageFile(null);
       setIdImagePreview(null);
@@ -193,8 +189,6 @@ const AddApplicationModal = ({
         idNumber: formData.idNumber.trim(),
         macAddress: formData.macAddress.trim() || undefined,
         notes: formData.notes.trim() || undefined,
-        birthDate: formData.birthDate || undefined,
-        gender: formData.gender || undefined,
         idImage: idImageFile || undefined,
       };
 
@@ -224,8 +218,6 @@ const AddApplicationModal = ({
         idNumber: "",
         macAddress: "",
         notes: "",
-        birthDate: "",
-        gender: "",
       });
       setIdImageFile(null);
       setIdImagePreview(null);
@@ -435,37 +427,6 @@ const AddApplicationModal = ({
                     {errors.phoneNumber}
                   </p>
                 )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Birth Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.birthDate}
-                  onChange={(e) =>
-                    handleFieldChange("birthDate", e.target.value)
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Gender
-                </label>
-                <select
-                  value={formData.gender}
-                  onChange={(e) => handleFieldChange("gender", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select Gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
               </div>
             </div>
 

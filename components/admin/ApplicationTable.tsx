@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -35,8 +35,6 @@ export interface Application {
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
-  birthDate?: string;
-  gender?: string;
   billingStarted?: boolean;
   registeredUserId?: string;
   hasAccount?: boolean;

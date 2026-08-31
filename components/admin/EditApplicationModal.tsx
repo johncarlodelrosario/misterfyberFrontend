@@ -1,4 +1,4 @@
-// components/admin/EditApplicationModal.tsx - COMPLETE FIXED
+// components/admin/EditApplicationModal.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -32,8 +32,6 @@ interface EditApplicationModalProps {
     serviceStatus?: string;
     installationFee?: number;
     installationFeePaid?: boolean;
-    birthDate?: string;
-    gender?: string;
   };
   buildings: Building[];
   plans: Plan[];
@@ -73,8 +71,6 @@ export function EditApplicationModal({
     serviceStatus: "",
     installationFee: "",
     installationFeePaid: false,
-    birthDate: "",
-    gender: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -112,10 +108,6 @@ export function EditApplicationModal({
         serviceStatus: application.serviceStatus || "pending",
         installationFee: application.installationFee?.toString() || "",
         installationFeePaid: application.installationFeePaid || false,
-        birthDate: application.birthDate
-          ? new Date(application.birthDate).toISOString().split("T")[0]
-          : "",
-        gender: application.gender || "",
       });
 
       // Set ID image preview
@@ -188,7 +180,7 @@ export function EditApplicationModal({
 
     setIsLoading(true);
     try {
-      // Build the update data with all fields
+      // Build the update data with all fields (removed birthDate and gender)
       const updateData: any = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
@@ -209,8 +201,6 @@ export function EditApplicationModal({
         serviceStatus: formData.serviceStatus,
         installationFee: parseFloat(formData.installationFee) || 0,
         installationFeePaid: formData.installationFeePaid,
-        birthDate: formData.birthDate || "",
-        gender: formData.gender || "",
       };
 
       console.log("📤 Submitting update data:", updateData);
@@ -405,39 +395,6 @@ export function EditApplicationModal({
                     {errors.phoneNumber}
                   </p>
                 )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Birth Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.birthDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, birthDate: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Gender
-                </label>
-                <select
-                  value={formData.gender}
-                  onChange={(e) =>
-                    setFormData({ ...formData, gender: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
               </div>
             </div>
 

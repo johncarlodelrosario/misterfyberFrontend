@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";

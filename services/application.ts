@@ -1,4 +1,4 @@
-// services/application.ts - COMPLETE FIXED
+// services/application.ts - COMPLETE FIXED - REMOVED birthDate AND gender
 import api from "./api";
 
 export interface Building {
@@ -40,8 +40,6 @@ export interface ApplicationData {
   idNumber: string;
   macAddress?: string;
   idImage?: File | string;
-  birthDate?: string;
-  gender?: string;
   status?: string;
   serviceStatus?: string;
   installationFee?: number;
@@ -194,18 +192,6 @@ export const submitApplication = async (data: ApplicationData) => {
       formData.append("macAddress", data.macAddress.trim());
     }
 
-    if (data.birthDate) {
-      formData.append("birthDate", data.birthDate);
-    }
-
-    if (data.gender && data.gender.trim()) {
-      const validGenders = ["male", "female", "other"];
-      const normalizedGender = data.gender.toLowerCase().trim();
-      if (validGenders.includes(normalizedGender)) {
-        formData.append("gender", normalizedGender);
-      }
-    }
-
     // ID Image
     if (data.idImage && data.idImage instanceof File) {
       formData.append("idImage", data.idImage);
@@ -339,8 +325,6 @@ export const updateApplication = async (
   if (data.notes !== undefined) formData.append("notes", data.notes || "");
   if (data.macAddress !== undefined)
     formData.append("macAddress", data.macAddress || "");
-  if (data.birthDate) formData.append("birthDate", data.birthDate);
-  if (data.gender) formData.append("gender", data.gender);
   if (data.adminNotes !== undefined)
     formData.append("adminNotes", data.adminNotes || "");
   if (data.status) formData.append("status", data.status);
@@ -386,7 +370,6 @@ export const patchApplication = async (
     "macAddress",
     "notes",
     "adminNotes",
-    "birthDate",
     "status",
     "serviceStatus",
     "installationFee",
@@ -399,14 +382,6 @@ export const patchApplication = async (
       cleanData[field] = value;
     }
   });
-
-  if (data.gender !== undefined && data.gender !== null && data.gender !== "") {
-    const validGenders = ["male", "female", "other"];
-    const normalizedGender = data.gender.toLowerCase().trim();
-    if (validGenders.includes(normalizedGender)) {
-      cleanData.gender = normalizedGender;
-    }
-  }
 
   if (data.installationFee !== undefined) {
     cleanData.installationFee = Number(data.installationFee);

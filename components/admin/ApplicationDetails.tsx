@@ -1,4 +1,4 @@
-// components/admin/ApplicationDetails.tsx - COMPLETE FIXED
+// components/admin/ApplicationDetails.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import React, { useState, useCallback } from "react";
@@ -200,22 +200,6 @@ export function ApplicationDetails({
               <span className="text-gray-500">Phone:</span>
               <span className="font-medium">{application.phoneNumber}</span>
             </div>
-            {application.birthDate && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Birth Date:</span>
-                <span className="font-medium">
-                  {new Date(application.birthDate).toLocaleDateString()}
-                </span>
-              </div>
-            )}
-            {application.gender && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Gender:</span>
-                <span className="font-medium capitalize">
-                  {application.gender}
-                </span>
-              </div>
-            )}
             <div className="flex justify-between">
               <span className="text-gray-500">ID Type:</span>
               <span className="font-medium">{application.idType}</span>
