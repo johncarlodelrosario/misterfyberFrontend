@@ -1,4 +1,4 @@
-// app/admin/email/page.tsx (Updated Templates Tab)
+// app/admin/email/page.tsx (Complete Updated File with RichTextEditor in Edit Template Dialog)
 
 "use client";
 
@@ -75,6 +75,15 @@ export default function ManualEmailPage() {
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(
     null,
   );
+  // State for edit template form with rich text
+  const [editTemplateData, setEditTemplateData] = useState({
+    name: "",
+    subject: "",
+    message: "",
+    richTextContent: "",
+    category: "general",
+    includeBillingDefault: false,
+  });
 
   // Reminder dialog
   const [showReminderDialog, setShowReminderDialog] = useState(false);
@@ -482,15 +491,39 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ==================== EDIT TEMPLATE HANDLERS ====================
   const handleEditTemplate = (template: EmailTemplate) => {
     setEditingTemplate(template);
-    setNewTemplate({
+
+    // Get the template message and check if it has HTML formatting
+    const templateMessage = template.message || "";
+    const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
+
+    let richTextContent = templateMessage;
+    let plainText = templateMessage;
+
+    if (hasHtml) {
+      // If it has HTML, use it directly as rich text content
+      richTextContent = templateMessage;
+      // Extract plain text for the message field
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = templateMessage;
+      plainText = tempDiv.textContent || "";
+    } else {
+      // If it's plain text, convert to HTML with line breaks preserved
+      richTextContent = templateMessage.replace(/\n/g, "<br>");
+      plainText = templateMessage;
+    }
+
+    setEditTemplateData({
       name: template.name || "",
       subject: template.subject || "",
-      message: template.message || "",
+      message: plainText,
+      richTextContent: richTextContent,
       category: template.category || "general",
       includeBillingDefault: template.includeBillingDefault || false,
     });
+
     setShowEditTemplateDialog(true);
   };
 
@@ -500,20 +533,32 @@ export default function ManualEmailPage() {
       return;
     }
 
-    if (!newTemplate.name || !newTemplate.subject || !newTemplate.message) {
+    if (
+      !editTemplateData.name ||
+      !editTemplateData.subject ||
+      !editTemplateData.richTextContent
+    ) {
       toast.error("Please fill in all template fields");
       return;
     }
 
     try {
-      await emailService.updateTemplate(editingTemplate.id, newTemplate);
+      await emailService.updateTemplate(editingTemplate.id, {
+        name: editTemplateData.name,
+        subject: editTemplateData.subject,
+        message: editTemplateData.richTextContent, // Save HTML content
+        category: editTemplateData.category,
+        includeBillingDefault: editTemplateData.includeBillingDefault,
+      });
+
       toast.success("Template updated successfully");
       setShowEditTemplateDialog(false);
       setEditingTemplate(null);
-      setNewTemplate({
+      setEditTemplateData({
         name: "",
         subject: "",
         message: "",
+        richTextContent: "",
         category: "general",
         includeBillingDefault: false,
       });
@@ -726,7 +771,7 @@ export default function ManualEmailPage() {
 
         {/* Tab Content */}
         <div key={`content-${refreshKey}`}>
-          {/* Single Email Tab - same as before */}
+          {/* Single Email Tab */}
           {activeTab === "single" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left Column - Customer Selection */}
@@ -947,7 +992,7 @@ export default function ManualEmailPage() {
                     </div>
                   )}
 
-                {/* Template Selector - FIXED */}
+                {/* Template Selector */}
                 {templates.length > 0 && (
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1215,14 +1260,310 @@ export default function ManualEmailPage() {
             </div>
           )}
 
-          {/* Bulk Email Tab - same as before */}
+          {/* Bulk Email Tab */}
           {activeTab === "bulk" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* ... bulk email content ... */}
+              {/* Left Column - Customer Selection */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Select Customers for Bulk Email
+                </h2>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Building
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setBuildingFilter("all")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "all"
+                          ? "bg-gray-800 text-white border-gray-800"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      All ({customers.length})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("breeze")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "breeze"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                      }`}
+                    >
+                      🌊 Breeze ({breezeCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("sil")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "sil"
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
+                      }`}
+                    >
+                      🏢 SIL ({silCount})
+                    </button>
+                    <button
+                      onClick={() => setBuildingFilter("other")}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        buildingFilter === "other"
+                          ? "bg-gray-600 text-white border-gray-600"
+                          : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      📍 Other ({otherCount})
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Search customers..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+
+                <div className="flex items-center gap-4 mb-4">
+                  <label className="flex items-center text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                      checked={showUnpaidOnly}
+                      onChange={(e) => setShowUnpaidOnly(e.target.checked)}
+                    />
+                    Show unpaid only
+                  </label>
+                  <span className="text-sm text-gray-500">
+                    {selectedCustomers.length} selected
+                  </span>
+                </div>
+
+                {loading && customers.length === 0 && (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+
+                {!loading && (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {displayCustomers.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No customers found</p>
+                      </div>
+                    ) : (
+                      displayCustomers.map((customer) => (
+                        <label
+                          key={customer._id || customer.applicationId}
+                          className={`flex items-start p-3 rounded-lg border cursor-pointer transition-all ${
+                            selectedCustomers.some(
+                              (c) => c.applicationId === customer.applicationId,
+                            )
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            checked={selectedCustomers.some(
+                              (c) => c.applicationId === customer.applicationId,
+                            )}
+                            onChange={() => {
+                              if (
+                                selectedCustomers.some(
+                                  (c) =>
+                                    c.applicationId === customer.applicationId,
+                                )
+                              ) {
+                                setSelectedCustomers((prev) =>
+                                  prev.filter(
+                                    (c) =>
+                                      c.applicationId !==
+                                      customer.applicationId,
+                                  ),
+                                );
+                              } else {
+                                setSelectedCustomers((prev) => [
+                                  ...prev,
+                                  customer,
+                                ]);
+                              }
+                            }}
+                          />
+                          <div className="ml-3 flex-1">
+                            <p className="font-medium text-gray-900">
+                              {customer.firstName || ""}{" "}
+                              {customer.lastName || ""}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {customer.email || "No email"}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-gray-400">
+                                ID: {customer.applicationId || "N/A"}
+                              </span>
+                              {customer.hasUnpaidBills && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                                  Unpaid
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column - Compose Bulk Email */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Compose Bulk Email
+                </h2>
+
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>📧 Sending to:</strong> {selectedCustomers.length}{" "}
+                    customer(s)
+                  </p>
+                  {buildingFilter !== "all" && (
+                    <p className="text-xs text-blue-600">
+                      Location Filter:{" "}
+                      {buildingFilter === "breeze"
+                        ? "🌊 Breeze"
+                        : buildingFilter === "sil"
+                          ? "🏢 SIL"
+                          : "📍 Other"}
+                    </p>
+                  )}
+                </div>
+
+                {/* Sender Type Selector */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📧 Send From
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(false)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        !useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Collection</span>
+                      <span className="text-xs text-gray-500">
+                        Location-specific
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseAdminSender(true)}
+                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
+                        useAdminSender
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-300 hover:border-gray-400 text-gray-700"
+                      }`}
+                    >
+                      <span className="block font-medium">Admin</span>
+                      <span className="text-xs text-gray-500">
+                        admin@misterfyber.com
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Enter email subject..."
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Message
+                  </label>
+                  <RichTextEditor
+                    value={richTextContent || message}
+                    onChange={(content) => {
+                      setRichTextContent(content);
+                      const tempDiv = document.createElement("div");
+                      tempDiv.innerHTML = content;
+                      setMessage(tempDiv.textContent || "");
+                    }}
+                    placeholder="Write your email message here..."
+                    minHeight="200px"
+                    maxHeight="350px"
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bill Type
+                  </label>
+                  <select
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={bulkBillType}
+                    onChange={(e) =>
+                      setBulkBillType(
+                        e.target.value as "unpaid" | "latest" | "installation",
+                      )
+                    }
+                  >
+                    <option value="unpaid">Unpaid Bills</option>
+                    <option value="latest">Latest Bill</option>
+                    <option value="installation">Installation Bill</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center mb-6">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={sendCopyToAdmin}
+                    onChange={(e) => setSendCopyToAdmin(e.target.checked)}
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Send copy to admin
+                  </span>
+                </label>
+
+                <button
+                  onClick={handleSendBulkEmails}
+                  disabled={
+                    loading ||
+                    selectedCustomers.length === 0 ||
+                    !subject.trim() ||
+                    !(message.trim() || richTextContent.trim())
+                  }
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <span>📨</span> Send Bulk Emails (
+                      {selectedCustomers.length} customers)
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* TEMPLATES TAB - FIXED with proper formatting display */}
+          {/* TEMPLATES TAB */}
           {activeTab === "templates" && (
             <div>
               <div className="mb-6">
@@ -1267,7 +1608,6 @@ export default function ManualEmailPage() {
                     <p className="text-sm font-medium text-gray-700 mb-2">
                       Subject: {template.subject || ""}
                     </p>
-                    {/* FIXED: Display template with preserved formatting */}
                     <div
                       className="text-sm text-gray-600 mb-4 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded-lg"
                       dangerouslySetInnerHTML={{
@@ -1279,7 +1619,6 @@ export default function ManualEmailPage() {
                     />
                     <button
                       onClick={() => {
-                        // FIXED: Load template with proper formatting preservation
                         const templateMessage = template.message || "";
                         const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
 
@@ -1326,7 +1665,110 @@ export default function ManualEmailPage() {
           {/* Sent Records Tab */}
           {activeTab === "sent" && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              {/* ... sent records content ... */}
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Sent Email Records
+              </h2>
+
+              {sentRecords.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No sent email records found.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Sent At
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Customer
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Subject
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Sender
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Status
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sentRecords.map((record) => (
+                        <tr
+                          key={record.id}
+                          className="border-b hover:bg-gray-50"
+                        >
+                          <td className="py-3 px-4 text-gray-600">
+                            {formatDate(record.sentAt)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <p className="font-medium text-gray-900">
+                              {record.customerName}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {record.customerEmail}
+                            </p>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
+                            {record.subject}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                record.senderType === "admin"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {record.senderType === "admin"
+                                ? "Admin"
+                                : "Collection"}
+                            </span>
+                            {record.location && (
+                              <span className="ml-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                {record.location}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                record.status === "sent"
+                                  ? "bg-green-100 text-green-700"
+                                  : record.status === "failed"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {record.status}
+                            </span>
+                            {record.isBulk && (
+                              <span className="ml-1 px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700">
+                                Bulk ({record.recipientCount})
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => handleDeleteSentRecord(record.id)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                              title="Delete record"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -1456,58 +1898,121 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Edit Template Dialog */}
+      {/* ==================== EDIT TEMPLATE DIALOG WITH RICH TEXT EDITOR ==================== */}
       {showEditTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full">
-            <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold">Edit Email Template</h3>
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="text-lg font-semibold">✏️ Edit Email Template</h3>
+              <button
+                onClick={() => {
+                  setShowEditTemplateDialog(false);
+                  setEditingTemplate(null);
+                  setEditTemplateData({
+                    name: "",
+                    subject: "",
+                    message: "",
+                    richTextContent: "",
+                    category: "general",
+                    includeBillingDefault: false,
+                  });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
             </div>
-            <div className="p-4 space-y-4">
-              <input
-                type="text"
-                placeholder="Template Name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.name}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, name: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Category"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.category}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, category: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.subject}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, subject: e.target.value })
-                }
-              />
-              <textarea
-                rows={4}
-                placeholder="Message"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.message}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, message: e.target.value })
-                }
-              />
-              <label className="flex items-center">
+            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
+              {/* Template Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Template Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter template name..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editTemplateData.name}
+                  onChange={(e) =>
+                    setEditTemplateData({
+                      ...editTemplateData,
+                      name: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., welcome, payment, reminder..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editTemplateData.category}
+                  onChange={(e) =>
+                    setEditTemplateData({
+                      ...editTemplateData,
+                      category: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter email subject..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editTemplateData.subject}
+                  onChange={(e) =>
+                    setEditTemplateData({
+                      ...editTemplateData,
+                      subject: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              {/* Message with Rich Text Editor */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Use the toolbar below to format your text (bold, italic,
+                  lists, highlight, links, etc.)
+                </p>
+                <RichTextEditor
+                  value={editTemplateData.richTextContent}
+                  onChange={(content) => {
+                    setEditTemplateData({
+                      ...editTemplateData,
+                      richTextContent: content,
+                      message: content, // Keep plain text version for compatibility
+                    });
+                  }}
+                  placeholder="Write your email message here..."
+                  minHeight="250px"
+                  maxHeight="400px"
+                />
+              </div>
+
+              {/* Include Billing Default */}
+              <div className="flex items-center pt-2">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                  checked={newTemplate.includeBillingDefault}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  checked={editTemplateData.includeBillingDefault}
                   onChange={(e) =>
-                    setNewTemplate({
-                      ...newTemplate,
+                    setEditTemplateData({
+                      ...editTemplateData,
                       includeBillingDefault: e.target.checked,
                     })
                   }
@@ -1515,30 +2020,46 @@ export default function ManualEmailPage() {
                 <span className="ml-2 text-sm text-gray-700">
                   Include billing by default
                 </span>
-              </label>
+              </div>
+
+              {/* Preview of formatted content */}
+              {editTemplateData.richTextContent && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs font-medium text-gray-500 mb-2">
+                    📄 Preview of formatted content:
+                  </p>
+                  <div
+                    className="text-sm text-gray-700 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{
+                      __html: editTemplateData.richTextContent,
+                    }}
+                  />
+                </div>
+              )}
             </div>
-            <div className="p-4 border-t flex gap-3">
+            <div className="p-4 border-t flex gap-3 bg-gray-50">
               <button
                 onClick={() => {
                   setShowEditTemplateDialog(false);
                   setEditingTemplate(null);
-                  setNewTemplate({
+                  setEditTemplateData({
                     name: "",
                     subject: "",
                     message: "",
+                    richTextContent: "",
                     category: "general",
                     includeBillingDefault: false,
                   });
                 }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleUpdateTemplate}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
-                Update Template
+                <span>💾</span> Update Template
               </button>
             </div>
           </div>
