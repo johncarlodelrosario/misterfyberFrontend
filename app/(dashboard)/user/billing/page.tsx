@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from "react";
 import {
-  getUserCurrentBilling,
-  getUserBillingHistory,
+  getCurrentBill,
+  getBillingHistory,
   submitProRatedPayment,
   submitMonthlyPayment,
 } from "@/services/billing";
@@ -35,15 +35,16 @@ export default function BillingPage() {
     setLoading(true);
     try {
       const [currentResult, historyResult] = await Promise.all([
-        getUserCurrentBilling(),
-        getUserBillingHistory({ page: 1, limit: 50 }),
+        getCurrentBill(),
+        getBillingHistory({ page: 1, limit: 50 }),
       ]);
 
       console.log("✅ Current Billing:", currentResult);
       console.log("✅ Billing History:", historyResult);
 
-      setBillingData(currentResult?.data || null);
-      setBillingHistory(historyResult?.data?.billingHistory || []);
+      // Handle different response structures
+      setBillingData(currentResult || null);
+      setBillingHistory(historyResult?.billingHistory || historyResult || []);
     } catch (error: any) {
       console.error("Failed to load billing:", error);
       toast.error(error.response?.data?.message || "Failed to load billing");
