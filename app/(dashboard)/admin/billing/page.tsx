@@ -1,7 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED VERSION
-// FIXED: Infinite loop in useEffect - proper dependency arrays added
-// FIXED: WebSocket connection handled gracefully
-// FIXED: Import uses lowercase "billingTable"
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED - REAL-TIME REFRESH WORKING!
 
 "use client";
 
@@ -80,6 +77,9 @@ import {
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
 import api from "@/services/api";
+
+// ===== IMPORT WEBSOCKET CLIENT =====
+import { wsClient } from "@/services/websocket";
 
 // Import types
 interface CustomerItem {
@@ -173,16 +173,14 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
   return hasUnpaidInstallationBill || true;
 }
 
-// ==================== QUERY CLIENT SETUP ====================
+// ==================== QUERY CLIENT SETUP - NO PERSISTENT CACHE! ====================
 import { QueryClient } from "@tanstack/react-query";
-import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
-import { persistQueryClient } from "@tanstack/react-query-persist-client";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 3 * 1000,
-      gcTime: 5 * 60 * 1000,
+      staleTime: 0, // ZERO - Always refetch
+      gcTime: 0, // ZERO - No garbage collection cache
       refetchOnMount: true,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
@@ -191,25 +189,13 @@ const queryClient = new QueryClient({
   },
 });
 
-const persister = createSyncStoragePersister({
-  storage: typeof window !== "undefined" ? window.localStorage : undefined,
-  key: "BILLING_APP_CACHE",
-  throttleTime: 500,
-});
-
-if (typeof window !== "undefined") {
-  persistQueryClient({
-    queryClient,
-    persister,
-    maxAge: 5 * 60 * 1000,
-    buster: "v3",
-  });
-}
-
-// ==================== API FUNCTIONS ====================
+// ===== API FUNCTIONS WITH CACHE BUSTING =====
 const fetchDashboardData = async () => {
   try {
-    const response = await api.get("/billing/dashboard-data");
+    const timestamp = Date.now();
+    const response = await api.get(
+      `/billing/dashboard-data?forceRefresh=true&_t=${timestamp}`,
+    );
     return response.data.data;
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
@@ -247,8 +233,10 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 3 * 1000,
-    refetchInterval: 3000,
+    staleTime: 0,
+    refetchInterval: 3000, // 3 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 };
 
@@ -298,7 +286,7 @@ function AdminBillingPageContent() {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
-  // Real-time states - NO NOTIFICATIONS
+  // Real-time states
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
   const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -307,6 +295,11 @@ function AdminBillingPageContent() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isMounted, setIsMounted] = useState(true);
   const [silentRefreshCount, setSilentRefreshCount] = useState(0);
+
+  // ===== WEBSOCKET STATES =====
+  const [websocketConnected, setWebsocketConnected] = useState(false);
+  const [realtimeUpdateCount, setRealtimeUpdateCount] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
@@ -380,32 +373,32 @@ function AdminBillingPageContent() {
   const customers = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customers || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const billingCycles = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.billingCycles || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const bills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.bills || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const pendingPayments = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingPayments || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const customersWithoutAccounts = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customersWithoutAccounts || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const pendingInstallationBills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingInstallationBills || [];
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const stats = useMemo(() => {
     if (!dashboardData?.stats) {
@@ -426,7 +419,7 @@ function AdminBillingPageContent() {
       };
     }
     return dashboardData.stats;
-  }, [dashboardData, realtimeUpdate]);
+  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
 
   const totalPendingCount = useMemo(() => {
     return (
@@ -444,10 +437,12 @@ function AdminBillingPageContent() {
     customersWithoutAccounts,
     stats,
     realtimeUpdate,
+    realtimeUpdateCount,
   ]);
 
-  // ==================== MUTATIONS ====================
+  // ==================== INVALIDATE ALL ====================
   const invalidateAll = useCallback(() => {
+    console.log("🔄 invalidateAll: Clearing cache and refetching...");
     clearBillingCache();
     queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
     queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
@@ -458,11 +453,100 @@ function AdminBillingPageContent() {
     queryClient.invalidateQueries({ queryKey: ["pendingInstallationBills"] });
 
     setRealtimeUpdate((prev) => prev + 1);
+    setRealtimeUpdateCount((prev) => prev + 1);
+    setLastUpdated(new Date());
 
+    // Force refetch immediately
+    refetch();
+
+    // Second refetch after 300ms para sure
     setTimeout(() => {
       refetch();
-    }, 100);
+    }, 300);
   }, [queryClient, refetch]);
+
+  // ==================== WEBSOCKET SETUP ====================
+  useEffect(() => {
+    if (!isMounted) return;
+
+    console.log("🔌 Setting up WebSocket connection...");
+    wsClient.connect();
+
+    const handleConnected = () => {
+      setWebsocketConnected(true);
+      console.log("🔌 WebSocket connected!");
+      // Force refresh on connect
+      invalidateAll();
+    };
+
+    const handleDisconnected = () => {
+      setWebsocketConnected(false);
+      console.log("🔌 WebSocket disconnected");
+    };
+
+    // ===== FORCE REFRESH - IMMEDIATE UPDATE! =====
+    const handleForceRefresh = (data: any) => {
+      console.log("🔥🔥🔥 FORCE REFRESH RECEIVED!", data);
+
+      // Clear all caches
+      clearBillingCache();
+
+      // Invalidate all queries
+      queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+      queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
+      queryClient.invalidateQueries({ queryKey: ["bills"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingInstallationBills"] });
+
+      // Force refetch immediately
+      refetch();
+
+      // Second refetch after 200ms
+      setTimeout(() => {
+        refetch();
+      }, 200);
+
+      // Update UI
+      setRealtimeUpdate((prev) => prev + 1);
+      setRealtimeUpdateCount((prev) => prev + 1);
+      setLastUpdated(new Date());
+      setLastPaymentUpdate(new Date());
+
+      toast.success(`🔄 Dashboard updated!`, { duration: 2000 });
+    };
+
+    // Register listeners
+    wsClient.on("connected", handleConnected);
+    wsClient.on("disconnected", handleDisconnected);
+    wsClient.on("dashboard:forceRefresh", handleForceRefresh);
+    wsClient.on("dashboard:update", handleForceRefresh);
+    wsClient.on("billing:paid", handleForceRefresh);
+    wsClient.on("billing:created", handleForceRefresh);
+    wsClient.on("customer:created", handleForceRefresh);
+    wsClient.on("payment:confirmed", handleForceRefresh);
+    wsClient.on("billingCycle:created", handleForceRefresh);
+    wsClient.on("billingCycle:updated", handleForceRefresh);
+    wsClient.on("billingCycle:deleted", handleForceRefresh);
+
+    // Check initial connection
+    setWebsocketConnected(wsClient.isConnectedStatus());
+
+    return () => {
+      wsClient.off("connected", handleConnected);
+      wsClient.off("disconnected", handleDisconnected);
+      wsClient.off("dashboard:forceRefresh", handleForceRefresh);
+      wsClient.off("dashboard:update", handleForceRefresh);
+      wsClient.off("billing:paid", handleForceRefresh);
+      wsClient.off("billing:created", handleForceRefresh);
+      wsClient.off("customer:created", handleForceRefresh);
+      wsClient.off("payment:confirmed", handleForceRefresh);
+      wsClient.off("billingCycle:created", handleForceRefresh);
+      wsClient.off("billingCycle:updated", handleForceRefresh);
+      wsClient.off("billingCycle:deleted", handleForceRefresh);
+    };
+  }, [invalidateAll, isMounted, refetch, queryClient]);
 
   // ==================== EARLY BILL GENERATION MUTATION ====================
   const generateEarlyBillMutation = useMutation({
@@ -769,8 +853,13 @@ function AdminBillingPageContent() {
   };
 
   const handleRefresh = () => {
+    console.log("🔄 Manual refresh triggered");
     clearBillingCache();
     invalidateAll();
+    // Double refresh para sure
+    setTimeout(() => {
+      invalidateAll();
+    }, 300);
     toast.success("🔄 Refreshing data...");
   };
 
@@ -853,7 +942,7 @@ function AdminBillingPageContent() {
     }
   }, [invalidateAll]);
 
-  // ==================== SILENT AUTO-REFRESH ====================
+  // ==================== SILENT AUTO-REFRESH - EVERY 3 SECONDS ====================
   useEffect(() => {
     if (!isMounted) return;
 
@@ -863,6 +952,7 @@ function AdminBillingPageContent() {
         refetch().then((result) => {
           if (result.data) {
             setRealtimeUpdate((prev) => prev + 1);
+            setRealtimeUpdateCount((prev) => prev + 1);
           }
         });
       }
@@ -873,7 +963,7 @@ function AdminBillingPageContent() {
     };
   }, [isMounted, isFetching, isLoading, refetch]);
 
-  // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS ====================
+  // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS (BACKUP) ====================
   useEffect(() => {
     if (!isMounted) return;
 
@@ -1457,40 +1547,7 @@ function AdminBillingPageContent() {
   // ==================== RENDER ====================
   return (
     <div>
-      {/* Real-time status bar - NO NEW CUSTOMER NOTIFICATIONS */}
-      {(autoGenerationRunning || lastPaymentUpdate) && (
-        <div className="sticky top-0 z-50 bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {autoGenerationRunning && (
-              <span className="flex items-center gap-1 text-amber-700">
-                <FiClock className="w-4 h-4 animate-spin" />
-                <span className="font-medium">
-                  Auto-generating early bills...
-                </span>
-              </span>
-            )}
-            {lastPaymentUpdate && !autoGenerationRunning && (
-              <span className="flex items-center gap-1 text-green-700">
-                <FiCheckCircle className="w-4 h-4" />
-                <span className="font-medium">Payment updated!</span>
-                <span className="text-sm text-green-500">
-                  {lastPaymentUpdate.toLocaleTimeString()}
-                </span>
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => {
-              setLastPaymentUpdate(null);
-            }}
-            className="text-blue-600 hover:text-blue-800 text-sm"
-          >
-            <FiX className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Silent refresh indicator - subtle */}
+      {/* Silent refresh indicator */}
       <div className="text-right text-[10px] text-gray-400 px-4 py-1">
         Auto-refresh: {silentRefreshCount} updates
         {isFetching && " 🔄"}
@@ -1536,6 +1593,9 @@ function AdminBillingPageContent() {
         onAutoGenerateEarlyBills={handleAutoGenerateEarlyBills}
         autoGenerationRunning={autoGenerationRunning}
         lastAutoGenTime={lastAutoGenTime}
+        // ===== WEBSOCKET PROPS =====
+        realtimeUpdateCount={realtimeUpdateCount}
+        websocketConnected={websocketConnected}
       />
 
       {/* ==================== MODALS ==================== */}
@@ -2733,7 +2793,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* Existing Customers Modal - NO NEW CUSTOMER NOTIFICATIONS */}
+      {/* Existing Customers Modal */}
       {showExistingCustomersModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">

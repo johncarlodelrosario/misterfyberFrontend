@@ -1,6 +1,8 @@
 // components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
+// FIXED: Added WebSocket props for real-time updates
 // FIXED: Installation fee status now properly checks actual bill status from database
-// FIXED: File name casing - exports as BillingTable (capital B)
+// FIXED: Force refresh on real-time updates with multiple triggers
+// FIXED: UI will automatically refresh without browser refresh
 
 "use client";
 
@@ -138,6 +140,9 @@ interface BillingTableProps {
   onAutoGenerateEarlyBills?: () => void;
   autoGenerationRunning?: boolean;
   lastAutoGenTime?: Date | null;
+  // ===== WEBSOCKET PROPS =====
+  realtimeUpdateCount?: number;
+  websocketConnected?: boolean;
 }
 
 // Helper functions
@@ -183,7 +188,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
 } {
   const fee = customer.installationFee || 0;
 
-  // No installation fee
   if (fee <= 0) {
     return {
       display: "—",
@@ -194,16 +198,10 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // ============================================================
-  // STEP 1: Check if there's an installation bill in unpaidBills
-  // ============================================================
   const unpaidInstallationBill = customer.unpaidBills?.find(
     (bill: any) => bill.isInstallationBill === true,
   );
 
-  // ============================================================
-  // STEP 2: If there's an unpaid installation bill -> NOT PAID
-  // ============================================================
   if (unpaidInstallationBill && unpaidInstallationBill.status !== "paid") {
     return {
       display: `₱${fee.toLocaleString()}`,
@@ -214,9 +212,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // ============================================================
-  // STEP 3: If there's NO unpaid bill, check the flag
-  // ============================================================
   if (customer.installationFeePaid === true) {
     return {
       display: `₱${fee.toLocaleString()}`,
@@ -227,14 +222,10 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // ============================================================
-  // STEP 4: Check if there's ANY installation bill (paid or not)
-  // ============================================================
   const hasAnyInstallationBill = customer.unpaidBills?.some(
     (bill: any) => bill.isInstallationBill === true,
   );
 
-  // If there's a paid installation bill, show as PAID
   if (hasAnyInstallationBill) {
     const paidInstallationBill = customer.unpaidBills?.find(
       (bill: any) => bill.isInstallationBill === true && bill.status === "paid",
@@ -250,9 +241,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     }
   }
 
-  // ============================================================
-  // STEP 5: Default - if no bill exists and fee > 0, show as DUE
-  // ============================================================
   if (!hasAnyInstallationBill && fee > 0) {
     return {
       display: `₱${fee.toLocaleString()}`,
@@ -263,7 +251,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
     };
   }
 
-  // Fallback
   return {
     display: `₱${fee.toLocaleString()}`,
     color: "text-red-600",
@@ -273,7 +260,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
   };
 }
 
-// Check if installation fee is due
 function isInstallationFeeDue(customer: CustomerItem): boolean {
   const status = getInstallationFeeStatus(customer);
   return status.isDue;
@@ -301,11 +287,9 @@ const CustomerRow = React.memo(
       customer.billingCycle?.status === "pending_activation";
     const hasNextMonthBill = !!customer.nextMonthBill;
 
-    // Get installation fee status
     const installFeeStatus = getInstallationFeeStatus(customer);
     const hasUnpaidInstallationFee = installFeeStatus.isDue;
 
-    // Status badge
     const getStatusBadge = () => {
       if (hasUnpaidInstallationFee) {
         return "bg-amber-100 text-amber-800";
@@ -351,7 +335,6 @@ const CustomerRow = React.memo(
       return "bg-gray-100 text-gray-800";
     };
 
-    // Status text
     const getStatusText = () => {
       if (hasUnpaidInstallationFee) {
         return "Installation Fee Due";
@@ -673,7 +656,7 @@ const CustomerRow = React.memo(
 
 CustomerRow.displayName = "CustomerRow";
 
-// Main Table Component - EXPORTED AS BillingTable (capital B)
+// Main Table Component
 export default function BillingTable({
   customers,
   loading,
@@ -706,12 +689,157 @@ export default function BillingTable({
   onAutoGenerateEarlyBills,
   autoGenerationRunning = false,
   lastAutoGenTime = null,
+  // ===== WEBSOCKET PROPS WITH DEFAULTS =====
+  realtimeUpdateCount = 0,
+  websocketConnected = false,
 }: BillingTableProps) {
+  // ===== FORCE REFRESH ON REAL-TIME UPDATES =====
+  const [forceRefreshKey, setForceRefreshKey] = useState(0);
+  const prevUpdateCount = useRef(0);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ===== FORCE UPDATE STATE =====
+  const [updateTrigger, setUpdateTrigger] = useState(0);
+
+  // ===== USE CUSTOMERS DIRECTLY FOR RENDERING =====
+  const [displayCustomers, setDisplayCustomers] = useState(customers);
+
+  // ===== UPDATE DISPLAY CUSTOMERS WHEN PROP CHANGES =====
+  useEffect(() => {
+    console.log("📊 BillingTable: customers prop changed, updating display...");
+    setDisplayCustomers(customers);
+    // Force re-render
+    setForceRefreshKey((prev) => prev + 1);
+    setUpdateTrigger((prev) => prev + 1);
+  }, [customers]);
+
+  // ===== EFFECT: Force refresh when realtimeUpdateCount changes =====
+  useEffect(() => {
+    console.log(
+      "🔄 BillingTable: realtimeUpdateCount changed to:",
+      realtimeUpdateCount,
+    );
+
+    // Skip initial render
+    if (realtimeUpdateCount === 0) return;
+
+    // Check if this is a new update
+    if (realtimeUpdateCount > prevUpdateCount.current) {
+      console.log(
+        "✅ BillingTable: New real-time update detected! Count:",
+        realtimeUpdateCount,
+      );
+      prevUpdateCount.current = realtimeUpdateCount;
+
+      // ===== CRITICAL: Force re-render by updating state =====
+      setForceRefreshKey((prev) => prev + 1);
+      setUpdateTrigger((prev) => prev + 1);
+
+      console.log(
+        "🔄 BillingTable: Force refresh key updated to:",
+        forceRefreshKey + 1,
+      );
+      console.log("🔄 BillingTable: Update trigger set to:", updateTrigger + 1);
+
+      // Clear any existing timeout
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+
+      // ===== CRITICAL: Update display customers =====
+      setDisplayCustomers([...customers]);
+
+      // Call onRefresh to fetch fresh data
+      if (onRefresh && !refreshing) {
+        console.log(
+          "🔄 BillingTable: Calling onRefresh to fetch fresh data...",
+        );
+        // Call immediately
+        onRefresh();
+
+        // Also call again after a short delay to ensure data is fetched
+        refreshTimeoutRef.current = setTimeout(() => {
+          if (onRefresh && !refreshing) {
+            console.log(
+              "🔄 BillingTable: Second refresh call to ensure data is fresh...",
+            );
+            onRefresh();
+            // Update display customers again after refresh
+            setDisplayCustomers([...customers]);
+            setForceRefreshKey((prev) => prev + 1);
+            setUpdateTrigger((prev) => prev + 1);
+          }
+          refreshTimeoutRef.current = null;
+        }, 500);
+      } else if (refreshing) {
+        console.log(
+          "⏳ BillingTable: Refresh already in progress, skipping...",
+        );
+        // Still force re-render even if refresh is in progress
+        setForceRefreshKey((prev) => prev + 1);
+      }
+    }
+  }, [
+    realtimeUpdateCount,
+    onRefresh,
+    refreshing,
+    forceRefreshKey,
+    updateTrigger,
+    customers,
+  ]);
+
+  // ===== EFFECT: Force refresh when websocket connects =====
+  useEffect(() => {
+    if (websocketConnected && realtimeUpdateCount > 0) {
+      console.log(
+        "🔌 BillingTable: WebSocket connected, checking for updates...",
+      );
+      // Force re-render
+      setForceRefreshKey((prev) => prev + 1);
+      setDisplayCustomers([...customers]);
+
+      // If websocket just connected and we have updates, refresh
+      if (onRefresh && !refreshing) {
+        console.log("🔌 BillingTable: Refreshing on WebSocket connection...");
+        onRefresh();
+      }
+    }
+  }, [
+    websocketConnected,
+    onRefresh,
+    refreshing,
+    realtimeUpdateCount,
+    customers,
+  ]);
+
+  // ===== EFFECT: Periodic refresh every 5 seconds =====
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (websocketConnected && !refreshing && onRefresh) {
+        console.log("⏰ BillingTable: Periodic refresh triggered");
+        onRefresh();
+        // Also force visual update
+        setForceRefreshKey((prev) => prev + 1);
+        setDisplayCustomers([...customers]);
+      }
+    }, 5000); // Every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [websocketConnected, onRefresh, refreshing, customers]);
+
+  // ===== EFFECT: Cleanup =====
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Filter and sort customers
   const filteredAndSortedCustomers = useMemo(() => {
-    let filtered = [...customers];
+    let filtered = [...displayCustomers];
 
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -723,7 +851,6 @@ export default function BillingTable({
       );
     }
 
-    // Building filter
     if (buildingFilter !== "all") {
       filtered = filtered.filter((c) => {
         const customerBuildingId = c.building?._id || null;
@@ -731,7 +858,6 @@ export default function BillingTable({
       });
     }
 
-    // Status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter((c) => {
         if (statusFilter === "has_balance") return c.currentBalance > 0;
@@ -752,7 +878,6 @@ export default function BillingTable({
       });
     }
 
-    // Sort
     filtered.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -801,17 +926,21 @@ export default function BillingTable({
       return 0;
     });
 
+    console.log(
+      `📊 BillingTable: Filtered ${filtered.length} customers (forceRefreshKey: ${forceRefreshKey})`,
+    );
     return filtered;
   }, [
-    customers,
+    displayCustomers,
     searchTerm,
     statusFilter,
     buildingFilter,
     sortField,
     sortDirection,
+    forceRefreshKey,
+    updateTrigger,
   ]);
 
-  // Update pagination
   useEffect(() => {
     setPagination((prev: any) => ({
       ...prev,
@@ -824,12 +953,17 @@ export default function BillingTable({
     }));
   }, [filteredAndSortedCustomers.length, setPagination]);
 
-  // Get current page data
   const currentPageData = useMemo(() => {
     const start = (pagination.page - 1) * pagination.limit;
     const end = start + pagination.limit;
     return filteredAndSortedCustomers.slice(start, end);
-  }, [filteredAndSortedCustomers, pagination.page, pagination.limit]);
+  }, [
+    filteredAndSortedCustomers,
+    pagination.page,
+    pagination.limit,
+    forceRefreshKey,
+    updateTrigger,
+  ]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -850,7 +984,6 @@ export default function BillingTable({
     );
   };
 
-  // Helper to format last auto-gen time
   const getLastAutoGenText = () => {
     if (!lastAutoGenTime) return "Never";
     const now = new Date();
@@ -874,7 +1007,7 @@ export default function BillingTable({
   }
 
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen" key={forceRefreshKey}>
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -885,8 +1018,40 @@ export default function BillingTable({
             <p className="text-sm text-gray-500">
               Manage customer balances, bills, payments, and subscriptions
             </p>
+            {forceRefreshKey > 0 && (
+              <p className="text-xs text-blue-500 mt-1">
+                🔄 Refreshed {forceRefreshKey} times
+              </p>
+            )}
+            {realtimeUpdateCount > 0 && (
+              <p className="text-xs text-green-500 mt-1">
+                📨 Updates: {realtimeUpdateCount}
+              </p>
+            )}
+            {websocketConnected && (
+              <p className="text-xs text-green-500 mt-1">🟢 Live</p>
+            )}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* ===== WEBSOCKET STATUS INDICATOR ===== */}
+            <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 rounded-lg text-xs">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  websocketConnected
+                    ? "bg-green-500 animate-pulse"
+                    : "bg-red-500"
+                }`}
+              ></span>
+              <span className="text-gray-600">
+                {websocketConnected ? "Live" : "Offline"}
+              </span>
+              {realtimeUpdateCount > 0 && (
+                <span className="text-blue-500 font-medium">
+                  {realtimeUpdateCount} updates
+                </span>
+              )}
+            </div>
+
             {onAutoGenerateEarlyBills && (
               <button
                 onClick={onAutoGenerateEarlyBills}
@@ -950,7 +1115,15 @@ export default function BillingTable({
               <FiSettings className="w-3.5 h-3.5" /> Settings
             </button>
             <button
-              onClick={onRefresh}
+              onClick={() => {
+                console.log("🔄 BillingTable: Manual refresh triggered");
+                setForceRefreshKey((prev) => prev + 1);
+                setUpdateTrigger((prev) => prev + 1);
+                setDisplayCustomers([...customers]);
+                if (onRefresh) {
+                  onRefresh();
+                }
+              }}
               disabled={refreshing}
               className="px-3 py-1.5 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
             >
@@ -1123,7 +1296,7 @@ export default function BillingTable({
               ) : (
                 currentPageData.map((customer, idx) => (
                   <CustomerRow
-                    key={`${customer.type}-${customer._id}`}
+                    key={`${customer.type}-${customer._id}-${forceRefreshKey}-${updateTrigger}`}
                     customer={customer}
                     index={(pagination.page - 1) * pagination.limit + idx}
                     onAction={onAction}
@@ -1183,6 +1356,16 @@ export default function BillingTable({
         {lastAutoGenTime && (
           <span className="ml-4 text-gray-400">
             ⚡ Auto-gen last run: {getLastAutoGenText()}
+          </span>
+        )}
+        {realtimeUpdateCount > 0 && (
+          <span className="ml-4 text-green-500">
+            🔄 Real-time updates: {realtimeUpdateCount}
+          </span>
+        )}
+        {forceRefreshKey > 0 && (
+          <span className="ml-4 text-purple-500">
+            🔄 Refresh count: {forceRefreshKey}
           </span>
         )}
       </div>

@@ -9,26 +9,32 @@ import {
   FiPause,
   FiFileText,
   FiHome,
+  FiCheckCircle,
 } from "react-icons/fi";
 
 interface BillingStatsProps {
   stats: {
     totalCustomers: number;
     totalBalance: number;
-    customersWithBalance: number;
-    overdueCustomers: number;
-    activeCycles: number;
-    pausedCycles: number;
+    customersWithBalanceCount: number;
+    overdueCustomersCount: number;
+    activeCyclesCount: number;
+    pausedCyclesCount: number;
+    pendingProRatedCount: number;
+    pendingActivationsCount: number;
     pendingPaymentsCount: number;
+    pendingInstallationBillsCount: number;
     applicationsWithoutBilling: number;
     totalInstallationFeesDue: number;
-    installationFeesPaid: number;
+    installationFeesPaidCount: number;
   };
   loading?: boolean;
+  realtimeUpdate?: number;
+  lastUpdated?: Date | null;
 }
 
 const BillingStats: React.FC<BillingStatsProps> = memo(
-  ({ stats, loading = false }) => {
+  ({ stats, loading = false, realtimeUpdate = 0, lastUpdated = null }) => {
     const statCards = [
       {
         label: "Total Customers",
@@ -42,56 +48,53 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
         value: `₱${stats.totalBalance.toLocaleString()}`,
         icon: FiDollarSign,
         color: "red",
-        subtitle: `${stats.customersWithBalance} customers with balance`,
+        subtitle: `${stats.customersWithBalanceCount} with balance`,
       },
       {
         label: "Overdue",
-        value: stats.overdueCustomers,
+        value: stats.overdueCustomersCount,
         icon: FiAlertCircle,
         color: "orange",
-        subtitle: "Customers with overdue bills",
+        subtitle: "Need payment",
       },
       {
         label: "Active Cycles",
-        value: stats.activeCycles,
+        value: stats.activeCyclesCount,
         icon: FiActivity,
         color: "green",
-        subtitle: `${stats.pausedCycles} paused`,
+        subtitle: `${stats.pausedCyclesCount} paused`,
       },
       {
-        label: "Pending Payments",
-        value: stats.pendingPaymentsCount,
+        label: "Pending",
+        value:
+          stats.pendingPaymentsCount +
+          stats.pendingProRatedCount +
+          stats.pendingActivationsCount +
+          stats.pendingInstallationBillsCount,
         icon: FiClock,
         color: "purple",
-        subtitle: "Awaiting confirmation",
+        subtitle: "Awaiting action",
       },
       {
-        label: "Installation Fees Due",
+        label: "Install Fees Due",
         value: `₱${stats.totalInstallationFeesDue.toLocaleString()}`,
         icon: FiFileText,
         color: "amber",
-        subtitle: `${stats.installationFeesPaid} paid`,
-      },
-      {
-        label: "Applications",
-        value: stats.totalCustomers - stats.totalCustomers, // Placeholder
-        icon: FiHome,
-        color: "indigo",
-        subtitle: "Active applications",
+        subtitle: `${stats.installationFeesPaidCount} paid`,
       },
       {
         label: "Without Billing",
         value: stats.applicationsWithoutBilling,
-        icon: FiAlertCircle,
+        icon: FiHome,
         color: "gray",
-        subtitle: "Need billing setup",
+        subtitle: "Need setup",
       },
     ];
 
     if (loading) {
       return (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3 mb-6">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 7 }).map((_, i) => (
             <div
               key={i}
               className="bg-white rounded-lg shadow-sm p-3 border border-gray-100 animate-pulse"
@@ -106,42 +109,67 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
     }
 
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3 mb-6">
-        {statCards.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={idx}
-              className="bg-white rounded-lg shadow-sm p-3 border border-gray-100 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide truncate">
-                    {stat.label}
-                  </p>
-                  <p className={`text-lg font-bold text-${stat.color}-600`}>
-                    {stat.value}
-                  </p>
-                  {stat.subtitle && (
-                    <p className="text-[10px] text-gray-400 truncate">
-                      {stat.subtitle}
+      <div>
+        {lastUpdated && (
+          <div className="text-right text-xs text-gray-400 mb-2">
+            Last updated: {lastUpdated.toLocaleTimeString()}
+            {realtimeUpdate > 0 && (
+              <span className="ml-2 text-green-500">
+                ● Live ({realtimeUpdate} updates)
+              </span>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3 mb-6">
+          {statCards.map((stat, idx) => {
+            const Icon = stat.icon;
+            const colors = {
+              blue: "text-blue-600 bg-blue-50 text-blue-500",
+              red: "text-red-600 bg-red-50 text-red-500",
+              orange: "text-orange-600 bg-orange-50 text-orange-500",
+              green: "text-green-600 bg-green-50 text-green-500",
+              purple: "text-purple-600 bg-purple-50 text-purple-500",
+              amber: "text-amber-600 bg-amber-50 text-amber-500",
+              gray: "text-gray-600 bg-gray-50 text-gray-500",
+            };
+            const colorClass =
+              colors[stat.color as keyof typeof colors] || colors.gray;
+
+            return (
+              <div
+                key={idx}
+                className="bg-white rounded-lg shadow-sm p-3 border border-gray-100 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400 uppercase tracking-wide truncate">
+                      {stat.label}
                     </p>
-                  )}
-                </div>
-                <div
-                  className={`flex-shrink-0 w-8 h-8 bg-${stat.color}-50 rounded-lg flex items-center justify-center`}
-                >
-                  <Icon className={`w-4 h-4 text-${stat.color}-500`} />
+                    <p
+                      className={`text-lg font-bold ${colorClass.split(" ")[0]}`}
+                    >
+                      {stat.value}
+                    </p>
+                    {stat.subtitle && (
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {stat.subtitle}
+                      </p>
+                    )}
+                  </div>
+                  <div
+                    className={`flex-shrink-0 w-8 h-8 ${colorClass.split(" ")[1]} rounded-lg flex items-center justify-center`}
+                  >
+                    <Icon className={`w-4 h-4 ${colorClass.split(" ")[2]}`} />
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     );
   },
 );
 
 BillingStats.displayName = "BillingStats";
-
 export default BillingStats;
