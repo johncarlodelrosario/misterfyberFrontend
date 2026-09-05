@@ -283,6 +283,119 @@ export const clearBillingCache = (): void => {
   cacheManager.clear();
 };
 
+// ==================== BILLING CYCLE FUNCTIONS ====================
+export const getAllBillingCycles = async (params?: any): Promise<any> => {
+  try {
+    const response = await api.get("/billing/cycles", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching billing cycles:", error);
+    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+  }
+};
+
+export const getBillingCycle = async (id: string): Promise<any> => {
+  try {
+    const response = await api.get(`/billing/cycles/${id}`);
+    return response.data.data;
+  } catch (error) {
+    console.error("Error fetching billing cycle:", error);
+    throw error;
+  }
+};
+
+export const getBillingCycleByApplication = async (
+  applicationId: string,
+): Promise<any> => {
+  try {
+    const response = await api.get(
+      `/billing/cycles/application/${applicationId}`,
+    );
+    return response.data.data;
+  } catch (error) {
+    console.error("Error fetching billing cycle by application:", error);
+    return null;
+  }
+};
+
+// ==================== BILL FUNCTIONS ====================
+export const getAllBills = async (params?: any): Promise<any> => {
+  try {
+    const response = await api.get("/billing/bills", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching bills:", error);
+    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+  }
+};
+
+export const getBill = async (id: string): Promise<any> => {
+  try {
+    const response = await api.get(`/billing/bills/${id}`);
+    return response.data.data;
+  } catch (error) {
+    console.error("Error fetching bill:", error);
+    throw error;
+  }
+};
+
+export const getBillsByCycle = async (cycleId: string): Promise<any> => {
+  try {
+    const response = await api.get(`/billing/bills/cycle/${cycleId}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error("Error fetching bills by cycle:", error);
+    return [];
+  }
+};
+
+export const getBillsByApplication = async (
+  applicationId: string,
+): Promise<any> => {
+  try {
+    const response = await api.get(
+      `/billing/bills/application/${applicationId}`,
+    );
+    return response.data.data || [];
+  } catch (error) {
+    console.error("Error fetching bills by application:", error);
+    return [];
+  }
+};
+
+// ==================== PENDING BILLS FUNCTIONS ====================
+export const getPendingProRatedBills = async (params?: any): Promise<any> => {
+  try {
+    const response = await api.get("/billing/pending-pro-rated", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending pro-rated bills:", error);
+    return { data: [], total: 0 };
+  }
+};
+
+export const getPendingInstallationBills = async (
+  params?: any,
+): Promise<any> => {
+  try {
+    const response = await api.get("/billing/pending-installation", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending installation bills:", error);
+    return { data: [], total: 0 };
+  }
+};
+
+export const getPendingActivations = async (params?: any): Promise<any> => {
+  try {
+    const response = await api.get("/billing/pending-activations", { params });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching pending activations:", error);
+    return { data: [], total: 0 };
+  }
+};
+
 // ==================== DASHBOARD DATA ====================
 export const fetchDashboardData = async (
   forceRefresh = false,
