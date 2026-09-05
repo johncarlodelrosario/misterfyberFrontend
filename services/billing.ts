@@ -1,4 +1,4 @@
-// frontend/src/services/billing.ts - COMPLETE FIXED - NO CACHE!
+// frontend/src/services/billing.ts - COMPLETE WITH WEBSOCKET ONLY REFRESH
 
 import api from "./api";
 
@@ -106,14 +106,14 @@ export interface Bill {
 
 // ==================== CACHE - TOTALLY DISABLED ====================
 const BILLING_CACHE = new Map();
-const CACHE_TTL = 0; // ZERO - NO CACHE!
+const CACHE_TTL = 0;
 
 const cacheManager = {
   get<T>(key: string): T | null {
-    return null; // ALWAYS RETURN NULL!
+    return null;
   },
   set<T>(key: string, data: T): void {
-    // DO NOTHING!
+    // DO NOTHING
   },
   clear(): void {
     BILLING_CACHE.clear();
@@ -126,7 +126,7 @@ const cacheManager = {
   },
 };
 
-// ==================== EVENT SYSTEM ====================
+// ==================== EVENT SYSTEM WITH WEBSOCKET ====================
 type BillingEventListener = (data: any) => void;
 
 class BillingEventManager {
@@ -134,29 +134,56 @@ class BillingEventManager {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 2000;
+  private reconnectDelay = 3000;
+  private isConnecting = false;
+  private isManualDisconnect = false;
 
-  constructor() {
+  connect(): void {
+    if (this.isConnecting) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+
+    this.isConnecting = true;
+    this.isManualDisconnect = false;
     this.connectWebSocket();
   }
 
-  private connectWebSocket() {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:5000";
+  private connectWebSocket(): void {
     try {
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:5000";
+      console.log(`🔌 Connecting WebSocket to: ${wsUrl}/billing-events`);
+
       this.ws = new WebSocket(`${wsUrl}/billing-events`);
-      this.ws.onmessage = this.handleWebSocketMessage.bind(this);
-      this.ws.onclose = this.handleWebSocketClose.bind(this);
+
       this.ws.onopen = () => {
         console.log("✅ Billing WebSocket connected");
+        this.isConnecting = false;
         this.reconnectAttempts = 0;
+        this.emit("connected", {});
+      };
+
+      this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+
+      this.ws.onclose = (event) => {
+        console.log(`🔌 WebSocket closed: ${event.code} - ${event.reason}`);
+        this.isConnecting = false;
+        this.emit("disconnected", {});
+        if (!this.isManualDisconnect) {
+          this.scheduleReconnect();
+        }
+      };
+
+      this.ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        this.isConnecting = false;
       };
     } catch (error) {
       console.error("WebSocket connection error:", error);
+      this.isConnecting = false;
       this.scheduleReconnect();
     }
   }
 
-  private handleWebSocketMessage(event: MessageEvent) {
+  private handleWebSocketMessage(event: MessageEvent): void {
     try {
       const data = JSON.parse(event.data);
       const { eventType, payload } = data;
@@ -181,26 +208,30 @@ class BillingEventManager {
         });
       }
 
-      // Clear cache on ANY event
       cacheManager.clear();
     } catch (error) {
       console.error("Error handling WebSocket message:", error);
     }
   }
 
-  private handleWebSocketClose() {
-    this.scheduleReconnect();
-  }
-
-  private scheduleReconnect() {
+  private scheduleReconnect(): void {
+    if (this.isManualDisconnect) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.warn("⚠️ Max WebSocket reconnect attempts reached");
       return;
     }
+
     this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.min(this.reconnectAttempts, 3);
+    console.log(
+      `🔄 Reconnecting WebSocket in ${delay}ms (attempt ${this.reconnectAttempts})`,
+    );
+
     setTimeout(() => {
-      this.connectWebSocket();
-    }, this.reconnectDelay * this.reconnectAttempts);
+      if (!this.isManualDisconnect) {
+        this.connect();
+      }
+    }, delay);
   }
 
   on(eventType: string, listener: BillingEventListener): () => void {
@@ -235,45 +266,29 @@ class BillingEventManager {
   }
 
   disconnect(): void {
+    this.isManualDisconnect = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+    this.isConnecting = false;
+    this.reconnectAttempts = 0;
   }
 }
 
 export const billingEvents = new BillingEventManager();
-
-// ==================== CACHE KEYS ====================
-const CACHE_KEYS = {
-  BILLING_CYCLES: "billing_cycles",
-  BILLS: "bills",
-  SETTINGS: "billing_settings",
-  PENDING_PRO_RATED: "pending_pro_rated",
-  PENDING_INSTALLATION: "pending_installation",
-  PENDING_ACTIVATIONS: "pending_activations",
-  DASHBOARD_DATA: "dashboard_data",
-  CUSTOMERS: "customers",
-};
-
-function getCacheKey(prefix: string, params?: any): string {
-  return `${prefix}_${params ? JSON.stringify(params) : ""}`;
-}
 
 // ==================== CLEAR CACHE ====================
 export const clearBillingCache = (): void => {
   cacheManager.clear();
 };
 
-// ==================== DASHBOARD DATA - FORCE REFRESH ====================
+// ==================== DASHBOARD DATA ====================
 export const fetchDashboardData = async (
   forceRefresh = false,
 ): Promise<any> => {
   try {
-    // Always add forceRefresh=true para walang cache sa backend
-    const url = forceRefresh
-      ? "/billing/dashboard-data?forceRefresh=true"
-      : "/billing/dashboard-data?forceRefresh=true"; // ALWAYS FORCE REFRESH!
+    const url = "/billing/dashboard-data?forceRefresh=true";
     const response = await api.get(url);
     return response.data.data;
   } catch (error) {
@@ -288,7 +303,7 @@ export const startBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/start", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "started",
       ...data,
       data: response.data,
@@ -312,7 +327,7 @@ export const startBillingForApplication = async (
       includeInstallationFee: data?.includeInstallationFee,
     });
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "started",
       applicationId,
       data: response.data,
@@ -328,7 +343,7 @@ export const stopBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/stop", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "stopped",
       ...data,
       data: response.data,
@@ -344,7 +359,7 @@ export const pauseBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/pause", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "paused",
       ...data,
       data: response.data,
@@ -360,7 +375,7 @@ export const resumeBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/resume", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "resumed",
       ...data,
       data: response.data,
@@ -376,7 +391,7 @@ export const disconnectClient = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/disconnect", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "disconnected",
       ...data,
       data: response.data,
@@ -392,7 +407,7 @@ export const reconnectClient = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/reconnect", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "reconnected",
       ...data,
       data: response.data,
@@ -408,7 +423,7 @@ export const deleteBillingCycle = async (data: any): Promise<any> => {
   try {
     const response = await api.delete("/billing/delete-cycle", { data });
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "deleted",
       ...data,
       data: response.data,
@@ -427,16 +442,11 @@ export const markBillAsPaid = async (
   try {
     const response = await api.put(`/billing/mark-paid/${billId}`, paymentData);
     cacheManager.clear();
-    billingEvents.emit("payment_confirmed", {
+    billingEvents.emit("refresh", {
+      type: "paid",
       billId,
       paymentData,
       data: response.data,
-    });
-    // FORCE CLEAR AND EMIT
-    billingEvents.emit("billing_updated", {
-      type: "paid",
-      billId,
-      forceRefresh: true,
     });
     return response.data;
   } catch (error) {
@@ -455,16 +465,11 @@ export const markInstallationBillAsPaid = async (
       paymentData,
     );
     cacheManager.clear();
-    billingEvents.emit("payment_confirmed", {
-      billId,
-      type: "installation",
-      paymentData,
-      data: response.data,
-    });
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "installation_paid",
       billId,
-      forceRefresh: true,
+      paymentData,
+      data: response.data,
     });
     return response.data;
   } catch (error) {
@@ -473,18 +478,64 @@ export const markInstallationBillAsPaid = async (
   }
 };
 
+// ==================== MARK AS FREE FUNCTIONS ====================
+
+export const markBillAsFree = async (
+  billId: string,
+  paymentData?: any,
+): Promise<any> => {
+  try {
+    const response = await api.put(
+      `/billing/mark-free/${billId}`,
+      paymentData || {},
+    );
+    cacheManager.clear();
+    billingEvents.emit("refresh", {
+      type: "free",
+      billId,
+      paymentData,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error marking bill as free:", error);
+    throw error;
+  }
+};
+
+export const markInstallationBillAsFree = async (
+  billId: string,
+  paymentData?: any,
+): Promise<any> => {
+  try {
+    const response = await api.put(
+      `/billing/mark-installation-free/${billId}`,
+      paymentData || {},
+    );
+    cacheManager.clear();
+    billingEvents.emit("refresh", {
+      type: "installation_free",
+      billId,
+      paymentData,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error marking installation bill as free:", error);
+    throw error;
+  }
+};
+
+// ==================== OTHER BILLING FUNCTIONS ====================
+
 export const confirmProRatedPayment = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/confirm-pro-rated", data);
     cacheManager.clear();
-    billingEvents.emit("payment_confirmed", {
-      type: "pro-rated",
+    billingEvents.emit("refresh", {
+      type: "pro_rated_confirmed",
       ...data,
       data: response.data,
-    });
-    billingEvents.emit("billing_updated", {
-      type: "pro_rated_confirmed",
-      forceRefresh: true,
     });
     return response.data;
   } catch (error) {
@@ -497,7 +548,7 @@ export const startMonthlyBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/start-monthly", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "monthly_started",
       ...data,
       data: response.data,
@@ -513,7 +564,7 @@ export const initializeBackdatedBilling = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/initialize-backdated", data);
     cacheManager.clear();
-    billingEvents.emit("billing_updated", {
+    billingEvents.emit("refresh", {
       type: "backdated_initialized",
       ...data,
       data: response.data,
@@ -529,7 +580,8 @@ export const recoverMissingBills = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/recover-missing-bills", data);
     cacheManager.clear();
-    billingEvents.emit("bills_recovered", {
+    billingEvents.emit("refresh", {
+      type: "bills_recovered",
       ...data,
       data: response.data,
     });
@@ -547,7 +599,7 @@ export const manuallyGenerateEarlyBill = async (data: any): Promise<any> => {
       data,
     );
     cacheManager.clear();
-    billingEvents.emit("bill_generated", {
+    billingEvents.emit("refresh", {
       type: "early_bill",
       ...data,
       data: response.data,
@@ -563,7 +615,7 @@ export const autoGenerateEarlyBills = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-generate-early-bills");
     cacheManager.clear();
-    billingEvents.emit("bill_generated", {
+    billingEvents.emit("refresh", {
       type: "auto_early_bill",
       data: response.data,
     });
@@ -605,7 +657,10 @@ export const updateBillingSettingsAdmin = async (data: any): Promise<any> => {
   try {
     const response = await api.put("/billing/settings/admin", data);
     cacheManager.clear();
-    billingEvents.emit("settings_updated", response.data);
+    billingEvents.emit("refresh", {
+      type: "settings_updated",
+      data: response.data,
+    });
     return response.data;
   } catch (error) {
     console.error("Error updating admin billing settings:", error);
@@ -617,8 +672,8 @@ export const autoGenerateMonthlyBills = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-generate");
     cacheManager.clear();
-    billingEvents.emit("bills_generated", {
-      type: "monthly",
+    billingEvents.emit("refresh", {
+      type: "monthly_bills_generated",
       data: response.data,
     });
     return response.data;
@@ -632,7 +687,8 @@ export const autoSuspendOverdue = async (): Promise<any> => {
   try {
     const response = await api.post("/billing/auto-suspend");
     cacheManager.clear();
-    billingEvents.emit("suspension_updated", {
+    billingEvents.emit("refresh", {
+      type: "suspension_updated",
       data: response.data,
     });
     return response.data;
@@ -709,7 +765,10 @@ export const updateBillingSettings = async (data: any): Promise<any> => {
   try {
     const response = await api.put("/billing/settings", data);
     cacheManager.clear();
-    billingEvents.emit("settings_updated", response.data);
+    billingEvents.emit("refresh", {
+      type: "settings_updated",
+      data: response.data,
+    });
     return response.data;
   } catch (error) {
     console.error("Error updating billing settings:", error);
@@ -724,8 +783,8 @@ export const submitProRatedPayment = async (data: any): Promise<any> => {
       data,
     );
     cacheManager.clear();
-    billingEvents.emit("payment_submitted", {
-      type: "pro-rated",
+    billingEvents.emit("refresh", {
+      type: "pro_rated_submitted",
       ...data,
       data: response.data,
     });
@@ -743,8 +802,8 @@ export const submitMonthlyPayment = async (data: any): Promise<any> => {
       data,
     );
     cacheManager.clear();
-    billingEvents.emit("payment_submitted", {
-      type: "monthly",
+    billingEvents.emit("refresh", {
+      type: "monthly_submitted",
       ...data,
       data: response.data,
     });
@@ -762,8 +821,8 @@ export const submitInstallationPayment = async (data: any): Promise<any> => {
       data,
     );
     cacheManager.clear();
-    billingEvents.emit("payment_submitted", {
-      type: "installation",
+    billingEvents.emit("refresh", {
+      type: "installation_submitted",
       ...data,
       data: response.data,
     });
@@ -795,10 +854,42 @@ export const autoSendReminders = async (): Promise<any> => {
   }
 };
 
-// ==================== POLLING ====================
+// ==================== UPDATE BILL PRICE ====================
+export const updateBillPrice = async (
+  billId: string,
+  newPrice: number,
+): Promise<any> => {
+  try {
+    const response = await api.put(`/billing/update-price/${billId}`, {
+      total: newPrice,
+      subtotal: newPrice,
+      items: [
+        {
+          description: "Monthly Subscription (Price Updated)",
+          quantity: 1,
+          rate: newPrice,
+          amount: newPrice,
+        },
+      ],
+    });
+    cacheManager.clear();
+    billingEvents.emit("refresh", {
+      type: "price_updated",
+      billId,
+      newPrice,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating bill price:", error);
+    throw error;
+  }
+};
+
+// ==================== POLLING - ONLY FOR NEW CUSTOMERS ====================
 export const startRealtimePolling = (
   callback: (data: any) => void,
-  interval: number = 5000,
+  interval: number = 60000,
 ): NodeJS.Timeout => {
   const poll = async () => {
     try {

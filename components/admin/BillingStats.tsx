@@ -1,4 +1,4 @@
-// components/admin/BillingStats.tsx
+// components/admin/BillingStats.tsx - OPTIMIZED
 import React, { memo } from "react";
 import {
   FiUser,
