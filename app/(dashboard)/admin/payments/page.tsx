@@ -1,4 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FIXED toast.info ERROR
+// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FREE BADGE SUPPORT
 
 "use client";
 
@@ -42,6 +42,7 @@ import {
   FiBarChart2,
   FiPrinter,
   FiAlertTriangle,
+  FiCheckCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -446,6 +447,7 @@ function getPaymentTypeColor(type: string): string {
 const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
   const [info, setInfo] = useState<CustomerInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const isFree = payment.paymentDetails?.isFree === true;
 
   useEffect(() => {
     let mounted = true;
@@ -489,9 +491,16 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="text-xs text-gray-500">Amount</p>
-          <p className="text-2xl font-bold text-green-600">
-            {formatCurrency(payment.amount)}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-2xl font-bold text-green-600">
+              {formatCurrency(payment.amount)}
+            </p>
+            {isFree && (
+              <span className="px-2 py-0.5 text-xs font-bold bg-green-500 text-white rounded-full flex items-center gap-1">
+                <FiCheckCircle className="w-3 h-3" /> FREE
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <p className="text-xs text-gray-500">Status</p>
@@ -555,6 +564,14 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
           </p>
         </div>
       )}
+      {isFree && (
+        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+          <p className="text-xs text-green-600 flex items-center gap-1">
+            <FiCheckCircle className="w-3 h-3" /> This payment was marked as
+            FREE
+          </p>
+        </div>
+      )}
     </div>
   );
 });
@@ -586,6 +603,7 @@ const PendingPaymentRow = React.memo(
   }) => {
     const [info, setInfo] = useState<CustomerInfo | null>(null);
     const [loading, setLoading] = useState(true);
+    const isFree = payment.paymentDetails?.isFree === true;
 
     useEffect(() => {
       let mounted = true;
@@ -621,11 +639,21 @@ const PendingPaymentRow = React.memo(
         <td className="px-4 py-3 text-sm">
           {formatShortDate(payment.createdAt)}
         </td>
-        <td className="px-4 py-3 font-medium">{info.name}</td>
+        <td className="px-4 py-3 font-medium">
+          {info.name}
+          {isFree && (
+            <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full">
+              FREE
+            </span>
+          )}
+        </td>
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
         <td className="px-4 py-3 text-sm">{info.buildingName || "—"}</td>
         <td className="px-4 py-3 font-semibold">
           {formatCurrency(payment.amount)}
+          {isFree && (
+            <span className="ml-1 text-xs text-green-600">(FREE)</span>
+          )}
         </td>
         <td className="px-4 py-3 text-sm">
           {isInstallation ? (
@@ -713,6 +741,9 @@ const CustomerSummaryRow = React.memo(
   }) => {
     const hasMultiple = group.paymentCount > 1;
     const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+    const hasFreePayment = group.payments.some(
+      (p) => p.paymentDetails?.isFree === true,
+    );
 
     // Helper to show toast info (fix for toast.info error)
     const showToastInfo = (message: string) => {
@@ -743,6 +774,11 @@ const CustomerSummaryRow = React.memo(
                 </button>
               )}
               <span className="font-semibold">{group.customerInfo.name}</span>
+              {hasFreePayment && (
+                <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full flex items-center gap-0.5">
+                  <FiCheckCircle className="w-3 h-3" /> FREE
+                </span>
+              )}
             </div>
           </td>
           <td className="px-4 py-4 font-mono text-sm">
@@ -870,10 +906,11 @@ const CustomerSummaryRow = React.memo(
                     const isInstallation =
                       p.paymentType === "installation" ||
                       (p.billingId as any)?.isInstallationBill;
+                    const isFree = p.paymentDetails?.isFree === true;
                     return (
                       <div
                         key={p._id}
-                        className="border border-gray-200 rounded-lg p-3 bg-white"
+                        className={`border rounded-lg p-3 bg-white ${isFree ? "border-green-300" : "border-gray-200"}`}
                       >
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
                           <div>
@@ -901,11 +938,23 @@ const CustomerSummaryRow = React.memo(
                                   ? "Monthly Subscription"
                                   : p.paymentType}
                             </span>
+                            {isFree && (
+                              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full">
+                                FREE
+                              </span>
+                            )}
                           </div>
                           <div>
                             <p className="text-xs text-gray-400">Amount</p>
-                            <p className="font-bold text-green-600">
+                            <p
+                              className={`font-bold ${isFree ? "text-green-600" : "text-green-600"}`}
+                            >
                               {formatCurrency(p.amount)}
+                              {isFree && (
+                                <span className="ml-1 text-xs text-green-500">
+                                  (FREE)
+                                </span>
+                              )}
                             </p>
                           </div>
                           <div>
@@ -1315,10 +1364,13 @@ export default function AdminPaymentsPage() {
 
     let tableRows = "";
     exportData.forEach((group, index) => {
+      const hasFree = group.payments.some(
+        (p) => p.paymentDetails?.isFree === true,
+      );
       tableRows += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.name}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.name}${hasFree ? " 🆓" : ""}</td>
           <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace;">${group.customerInfo.applicationId}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.email}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${group.customerInfo.buildingName || "—"}</td>
@@ -1377,6 +1429,14 @@ export default function AdminPaymentsPage() {
           .summary-item .paid { color: #16a34a; font-weight: bold; }
           .summary-item .pending { color: #ca8a04; font-weight: bold; }
           .summary-item .grand { color: #1e40af; font-weight: bold; font-size: 16px; }
+          .free-badge {
+            background: #22c55e;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: bold;
+          }
           table { 
             width: 100%; 
             border-collapse: collapse; 

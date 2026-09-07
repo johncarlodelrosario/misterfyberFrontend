@@ -1,9 +1,10 @@
-// app/(dashboard)/user/dashboard/page.tsx
+// app/(dashboard)/user/dashboard/page.tsx - FIXED
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserCurrentBilling } from "@/services/billing";
+import { getUserBillingCycle, getCurrentBill } from "@/services/billing";
 import {
   FiWifi,
   FiClipboard,
@@ -41,12 +42,19 @@ export default function UserDashboard() {
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      const [data, billingCurrent] = await Promise.all([
+      const [data, billingCycle, currentBill] = await Promise.all([
         getUserDashboard(),
-        getUserCurrentBilling(),
+        getUserBillingCycle(),
+        getCurrentBill(),
       ]);
+
       setDashboardData(data);
-      setBillingData(billingCurrent?.data || null);
+      setBillingData({
+        billingCycle: billingCycle,
+        currentBill: currentBill,
+        needsFirstPayment: billingCycle?.proRatedPaid === false,
+        isAfterCutoff: billingCycle?.isAfterCutoff || false,
+      });
     } catch (error: any) {
       console.error("Failed to load dashboard:", error);
       toast.error(error.response?.data?.message || "Failed to load dashboard");

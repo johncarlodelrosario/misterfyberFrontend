@@ -63,7 +63,7 @@ const getApiUrl = (): string => {
   if (typeof window === "undefined") {
     return (
       process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend.onrender.com/api"
+      "https://misterfyberbackend-q4k5.onrender.com/api"
     );
   }
 
@@ -79,7 +79,7 @@ const getApiUrl = (): string => {
   // ALWAYS USE RENDER BACKEND FOR PRODUCTION
   if (isProduction || isProdDomain) {
     console.log("🌍 PRODUCTION MODE: Using Render backend");
-    return "https://misterfyberbackend.onrender.com/api";
+    return "https://misterfyberbackend-q4k5.onrender.com/api";
   }
 
   // DEVELOPMENT - Use localhost

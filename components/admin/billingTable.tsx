@@ -1,8 +1,4 @@
-// components/admin/BillingTable.tsx - COMPLETE FIXED VERSION
-// FIXED: Added WebSocket props for real-time updates
-// FIXED: Installation fee status now properly checks actual bill status from database
-// FIXED: Force refresh on real-time updates with multiple triggers
-// FIXED: UI will automatically refresh without browser refresh
+// components/admin/BillingTable.tsx - COMPLETE FIXED - NO LOOP REFRESH
 
 "use client";
 
@@ -38,6 +34,8 @@ import {
   FiZap,
   FiCheckCircle,
   FiAlertCircle,
+  FiEdit2,
+  FiSave,
 } from "react-icons/fi";
 
 // Types
@@ -140,9 +138,18 @@ interface BillingTableProps {
   onAutoGenerateEarlyBills?: () => void;
   autoGenerationRunning?: boolean;
   lastAutoGenTime?: Date | null;
-  // ===== WEBSOCKET PROPS =====
   realtimeUpdateCount?: number;
   websocketConnected?: boolean;
+  onEditBillPrice?: (
+    billId: string,
+    newPrice: number,
+    customer: CustomerItem,
+  ) => void;
+  onEditInstallationPrice?: (
+    billId: string,
+    newPrice: number,
+    customer: CustomerItem,
+  ) => void;
 }
 
 // Helper functions
@@ -174,10 +181,6 @@ function formatDate(dateString: string): string {
     return "-";
   }
 }
-
-// ============================================================
-// CRITICAL FIX: Installation fee status - 100% BASED ON DATABASE
-// ============================================================
 
 function getInstallationFeeStatus(customer: CustomerItem): {
   display: string;
@@ -265,6 +268,113 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
   return status.isDue;
 }
 
+// ==================== BILL PRICE EDIT COMPONENT ====================
+const EditablePrice = ({
+  amount,
+  billId,
+  isInstallation,
+  customer,
+  onSave,
+}: {
+  amount: number;
+  billId: string;
+  isInstallation: boolean;
+  customer: CustomerItem;
+  onSave: (billId: string, newPrice: number, customer: CustomerItem) => void;
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(amount.toString());
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = () => {
+    const newPrice = parseFloat(editValue);
+    if (isNaN(newPrice) || newPrice < 0) {
+      alert("Please enter a valid price (must be 0 or greater)");
+      return;
+    }
+    if (newPrice === amount) {
+      setIsEditing(false);
+      return;
+    }
+    setIsSaving(true);
+    onSave(billId, newPrice, customer);
+    setIsSaving(false);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSave();
+    } else if (e.key === "Escape") {
+      setEditValue(amount.toString());
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gray-500">₱</span>
+        <input
+          type="number"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="w-20 px-1 py-0.5 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          autoFocus
+          min="0"
+          step="1"
+          disabled={isSaving}
+        />
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+          title="Save price"
+        >
+          {isSaving ? (
+            <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <FiSave className="w-3.5 h-3.5" />
+          )}
+        </button>
+        <button
+          onClick={() => {
+            setEditValue(amount.toString());
+            setIsEditing(false);
+          }}
+          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+          title="Cancel"
+        >
+          <FiX className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 group">
+      <span
+        className={`text-sm font-medium ${amount > 0 ? "text-red-600" : "text-green-600"}`}
+      >
+        ₱{amount.toLocaleString()}
+      </span>
+      {amount > 0 && (
+        <button
+          onClick={() => {
+            setEditValue(amount.toString());
+            setIsEditing(true);
+          }}
+          className="p-0.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+          title="Edit price"
+        >
+          <FiEdit2 className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 // Memoized Row Component
 const CustomerRow = React.memo(
   ({
@@ -272,11 +382,23 @@ const CustomerRow = React.memo(
     index,
     onAction,
     onGenerateEarlyBill,
+    onEditBillPrice,
+    onEditInstallationPrice,
   }: {
     customer: CustomerItem;
     index: number;
     onAction: (action: string, customer: CustomerItem, data?: any) => void;
     onGenerateEarlyBill?: (customer: CustomerItem) => void;
+    onEditBillPrice?: (
+      billId: string,
+      newPrice: number,
+      customer: CustomerItem,
+    ) => void;
+    onEditInstallationPrice?: (
+      billId: string,
+      newPrice: number,
+      customer: CustomerItem,
+    ) => void;
   }) => {
     const hasUnpaidBills =
       customer.unpaidBills && customer.unpaidBills.length > 0;
@@ -289,6 +411,13 @@ const CustomerRow = React.memo(
 
     const installFeeStatus = getInstallationFeeStatus(customer);
     const hasUnpaidInstallationFee = installFeeStatus.isDue;
+
+    const unpaidMonthlyBill = customer.unpaidBills?.find(
+      (bill: any) => !bill.isInstallationBill && bill.status !== "paid",
+    );
+    const unpaidInstallationBill = customer.unpaidBills?.find(
+      (bill: any) => bill.isInstallationBill && bill.status !== "paid",
+    );
 
     const getStatusBadge = () => {
       if (hasUnpaidInstallationFee) {
@@ -386,6 +515,13 @@ const CustomerRow = React.memo(
       return "text-orange-600";
     };
 
+    const hasUnpaidMonthlyBill = customer.unpaidBills?.some(
+      (bill: any) => !bill.isInstallationBill && bill.status !== "paid",
+    );
+    const hasUnpaidInstallationBill = customer.unpaidBills?.some(
+      (bill: any) => bill.isInstallationBill && bill.status !== "paid",
+    );
+
     return (
       <tr
         className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
@@ -448,9 +584,19 @@ const CustomerRow = React.memo(
         <td className="px-3 py-2">
           {customer.type === "application" && installFeeStatus.amount > 0 ? (
             <div>
-              <p className={`text-sm font-medium ${installFeeStatus.color}`}>
-                {installFeeStatus.display}
-              </p>
+              {unpaidInstallationBill && onEditInstallationPrice ? (
+                <EditablePrice
+                  amount={installFeeStatus.amount}
+                  billId={unpaidInstallationBill._id}
+                  isInstallation={true}
+                  customer={customer}
+                  onSave={onEditInstallationPrice}
+                />
+              ) : (
+                <p className={`text-sm font-medium ${installFeeStatus.color}`}>
+                  {installFeeStatus.display}
+                </p>
+              )}
               <p
                 className={`text-[10px] ${
                   installFeeStatus.isPaid ? "text-green-600" : "text-red-600"
@@ -492,6 +638,44 @@ const CustomerRow = React.memo(
             >
               <FiMail className="w-3.5 h-3.5" />
             </button>
+
+            {/* FREE BUTTONS */}
+            {hasUnpaidMonthlyBill && (
+              <button
+                onClick={() => {
+                  const bill = customer.unpaidBills.find(
+                    (b: any) => !b.isInstallationBill && b.status !== "paid",
+                  );
+                  if (bill) {
+                    onAction("freeBill", customer, { billId: bill._id });
+                  }
+                }}
+                className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                title="Mark Bill as FREE"
+              >
+                <FiCheckCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {hasUnpaidInstallationBill && (
+              <button
+                onClick={() => {
+                  const bill = customer.unpaidBills.find(
+                    (b: any) => b.isInstallationBill && b.status !== "paid",
+                  );
+                  if (bill) {
+                    onAction("freeInstallation", customer, {
+                      billId: bill._id,
+                    });
+                  }
+                }}
+                className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                title="Mark Installation Fee as FREE"
+              >
+                <FiCheckCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {customer.type === "application" && hasBillingCycle && (
               <button
                 onClick={() => onAction("recover", customer)}
@@ -689,154 +873,20 @@ export default function BillingTable({
   onAutoGenerateEarlyBills,
   autoGenerationRunning = false,
   lastAutoGenTime = null,
-  // ===== WEBSOCKET PROPS WITH DEFAULTS =====
   realtimeUpdateCount = 0,
   websocketConnected = false,
+  onEditBillPrice,
+  onEditInstallationPrice,
 }: BillingTableProps) {
-  // ===== FORCE REFRESH ON REAL-TIME UPDATES =====
-  const [forceRefreshKey, setForceRefreshKey] = useState(0);
-  const prevUpdateCount = useRef(0);
-  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // ===== FORCE UPDATE STATE =====
-  const [updateTrigger, setUpdateTrigger] = useState(0);
-
-  // ===== USE CUSTOMERS DIRECTLY FOR RENDERING =====
   const [displayCustomers, setDisplayCustomers] = useState(customers);
 
-  // ===== UPDATE DISPLAY CUSTOMERS WHEN PROP CHANGES =====
+  // Update when customers prop changes (from parent refresh)
   useEffect(() => {
-    console.log("📊 BillingTable: customers prop changed, updating display...");
     setDisplayCustomers(customers);
-    // Force re-render
-    setForceRefreshKey((prev) => prev + 1);
-    setUpdateTrigger((prev) => prev + 1);
   }, [customers]);
 
-  // ===== EFFECT: Force refresh when realtimeUpdateCount changes =====
-  useEffect(() => {
-    console.log(
-      "🔄 BillingTable: realtimeUpdateCount changed to:",
-      realtimeUpdateCount,
-    );
+  // NO AUTO-REFRESH INTERVALS - REMOVED
 
-    // Skip initial render
-    if (realtimeUpdateCount === 0) return;
-
-    // Check if this is a new update
-    if (realtimeUpdateCount > prevUpdateCount.current) {
-      console.log(
-        "✅ BillingTable: New real-time update detected! Count:",
-        realtimeUpdateCount,
-      );
-      prevUpdateCount.current = realtimeUpdateCount;
-
-      // ===== CRITICAL: Force re-render by updating state =====
-      setForceRefreshKey((prev) => prev + 1);
-      setUpdateTrigger((prev) => prev + 1);
-
-      console.log(
-        "🔄 BillingTable: Force refresh key updated to:",
-        forceRefreshKey + 1,
-      );
-      console.log("🔄 BillingTable: Update trigger set to:", updateTrigger + 1);
-
-      // Clear any existing timeout
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-
-      // ===== CRITICAL: Update display customers =====
-      setDisplayCustomers([...customers]);
-
-      // Call onRefresh to fetch fresh data
-      if (onRefresh && !refreshing) {
-        console.log(
-          "🔄 BillingTable: Calling onRefresh to fetch fresh data...",
-        );
-        // Call immediately
-        onRefresh();
-
-        // Also call again after a short delay to ensure data is fetched
-        refreshTimeoutRef.current = setTimeout(() => {
-          if (onRefresh && !refreshing) {
-            console.log(
-              "🔄 BillingTable: Second refresh call to ensure data is fresh...",
-            );
-            onRefresh();
-            // Update display customers again after refresh
-            setDisplayCustomers([...customers]);
-            setForceRefreshKey((prev) => prev + 1);
-            setUpdateTrigger((prev) => prev + 1);
-          }
-          refreshTimeoutRef.current = null;
-        }, 500);
-      } else if (refreshing) {
-        console.log(
-          "⏳ BillingTable: Refresh already in progress, skipping...",
-        );
-        // Still force re-render even if refresh is in progress
-        setForceRefreshKey((prev) => prev + 1);
-      }
-    }
-  }, [
-    realtimeUpdateCount,
-    onRefresh,
-    refreshing,
-    forceRefreshKey,
-    updateTrigger,
-    customers,
-  ]);
-
-  // ===== EFFECT: Force refresh when websocket connects =====
-  useEffect(() => {
-    if (websocketConnected && realtimeUpdateCount > 0) {
-      console.log(
-        "🔌 BillingTable: WebSocket connected, checking for updates...",
-      );
-      // Force re-render
-      setForceRefreshKey((prev) => prev + 1);
-      setDisplayCustomers([...customers]);
-
-      // If websocket just connected and we have updates, refresh
-      if (onRefresh && !refreshing) {
-        console.log("🔌 BillingTable: Refreshing on WebSocket connection...");
-        onRefresh();
-      }
-    }
-  }, [
-    websocketConnected,
-    onRefresh,
-    refreshing,
-    realtimeUpdateCount,
-    customers,
-  ]);
-
-  // ===== EFFECT: Periodic refresh every 5 seconds =====
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (websocketConnected && !refreshing && onRefresh) {
-        console.log("⏰ BillingTable: Periodic refresh triggered");
-        onRefresh();
-        // Also force visual update
-        setForceRefreshKey((prev) => prev + 1);
-        setDisplayCustomers([...customers]);
-      }
-    }, 5000); // Every 5 seconds
-
-    return () => clearInterval(interval);
-  }, [websocketConnected, onRefresh, refreshing, customers]);
-
-  // ===== EFFECT: Cleanup =====
-  useEffect(() => {
-    return () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Filter and sort customers
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...displayCustomers];
 
@@ -926,9 +976,6 @@ export default function BillingTable({
       return 0;
     });
 
-    console.log(
-      `📊 BillingTable: Filtered ${filtered.length} customers (forceRefreshKey: ${forceRefreshKey})`,
-    );
     return filtered;
   }, [
     displayCustomers,
@@ -937,8 +984,6 @@ export default function BillingTable({
     buildingFilter,
     sortField,
     sortDirection,
-    forceRefreshKey,
-    updateTrigger,
   ]);
 
   useEffect(() => {
@@ -957,13 +1002,7 @@ export default function BillingTable({
     const start = (pagination.page - 1) * pagination.limit;
     const end = start + pagination.limit;
     return filteredAndSortedCustomers.slice(start, end);
-  }, [
-    filteredAndSortedCustomers,
-    pagination.page,
-    pagination.limit,
-    forceRefreshKey,
-    updateTrigger,
-  ]);
+  }, [filteredAndSortedCustomers, pagination.page, pagination.limit]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -1007,7 +1046,7 @@ export default function BillingTable({
   }
 
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen" key={forceRefreshKey}>
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -1018,11 +1057,6 @@ export default function BillingTable({
             <p className="text-sm text-gray-500">
               Manage customer balances, bills, payments, and subscriptions
             </p>
-            {forceRefreshKey > 0 && (
-              <p className="text-xs text-blue-500 mt-1">
-                🔄 Refreshed {forceRefreshKey} times
-              </p>
-            )}
             {realtimeUpdateCount > 0 && (
               <p className="text-xs text-green-500 mt-1">
                 📨 Updates: {realtimeUpdateCount}
@@ -1033,7 +1067,6 @@ export default function BillingTable({
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* ===== WEBSOCKET STATUS INDICATOR ===== */}
             <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 rounded-lg text-xs">
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -1116,9 +1149,6 @@ export default function BillingTable({
             </button>
             <button
               onClick={() => {
-                console.log("🔄 BillingTable: Manual refresh triggered");
-                setForceRefreshKey((prev) => prev + 1);
-                setUpdateTrigger((prev) => prev + 1);
                 setDisplayCustomers([...customers]);
                 if (onRefresh) {
                   onRefresh();
@@ -1296,11 +1326,13 @@ export default function BillingTable({
               ) : (
                 currentPageData.map((customer, idx) => (
                   <CustomerRow
-                    key={`${customer.type}-${customer._id}-${forceRefreshKey}-${updateTrigger}`}
+                    key={`${customer.type}-${customer._id}`}
                     customer={customer}
                     index={(pagination.page - 1) * pagination.limit + idx}
                     onAction={onAction}
                     onGenerateEarlyBill={onGenerateEarlyBill}
+                    onEditBillPrice={onEditBillPrice}
+                    onEditInstallationPrice={onEditInstallationPrice}
                   />
                 ))
               )}
@@ -1363,10 +1395,8 @@ export default function BillingTable({
             🔄 Real-time updates: {realtimeUpdateCount}
           </span>
         )}
-        {forceRefreshKey > 0 && (
-          <span className="ml-4 text-purple-500">
-            🔄 Refresh count: {forceRefreshKey}
-          </span>
+        {websocketConnected && (
+          <span className="ml-4 text-green-500">🟢 Live</span>
         )}
       </div>
     </div>

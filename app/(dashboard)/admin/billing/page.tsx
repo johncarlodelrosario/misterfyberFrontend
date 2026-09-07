@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED - REAL-TIME REFRESH WORKING!
+// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED - NO LOOP REFRESH
 
 "use client";
 
@@ -48,6 +48,7 @@ import toast from "react-hot-toast";
 // Import components
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
 import BillingTable from "@/components/admin/billingTable";
+import CustomerDetailModal from "@/components/admin/CustomerDetailModal";
 
 // Import services
 import {
@@ -59,7 +60,9 @@ import {
   reconnectClient,
   deleteBillingCycle,
   markBillAsPaid,
+  markBillAsFree,
   markInstallationBillAsPaid,
+  markInstallationBillAsFree,
   confirmProRatedPayment,
   startMonthlyBilling,
   getBillingSettingsAdmin,
@@ -74,12 +77,10 @@ import {
   startRealtimePolling,
   stopRealtimePolling,
   billingEvents,
+  updateBillPrice,
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
 import api from "@/services/api";
-
-// ===== IMPORT WEBSOCKET CLIENT =====
-import { wsClient } from "@/services/websocket";
 
 // Import types
 interface CustomerItem {
@@ -138,58 +139,23 @@ function formatDate(dateString: string): string {
   }
 }
 
-function formatBillPeriod(bill: any): string {
-  if (!bill.billingPeriod?.start || !bill.billingPeriod?.end) return "-";
-
-  let start = new Date(bill.billingPeriod.start);
-  let end = new Date(bill.billingPeriod.end);
-
-  if (!bill.isProRated && !bill.isInstallationBill) {
-    const startDay = start.getUTCDate();
-    const startMonth = start.getUTCMonth();
-    const endMonth = end.getUTCMonth();
-
-    if (startDay === 31 && endMonth === 7) {
-      start = new Date(Date.UTC(2026, 7, 1));
-    }
-  }
-
-  const startStr = formatDate(start.toISOString());
-  const endStr = formatDate(end.toISOString());
-  return `${startStr} - ${endStr}`;
-}
-
-// Helper to check if installation fee is truly due
-function isInstallationFeeDue(customer: CustomerItem): boolean {
-  if (customer.type !== "application") return false;
-  const fee = customer.installationFee || 0;
-  if (fee <= 0) return false;
-  if (customer.installationFeePaid === true) return false;
-
-  const hasUnpaidInstallationBill = customer.unpaidBills?.some(
-    (bill: any) => bill.isInstallationBill === true && bill.status !== "paid",
-  );
-
-  return hasUnpaidInstallationBill || true;
-}
-
-// ==================== QUERY CLIENT SETUP - NO PERSISTENT CACHE! ====================
+// ==================== QUERY CLIENT SETUP ====================
 import { QueryClient } from "@tanstack/react-query";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0, // ZERO - Always refetch
-      gcTime: 0, // ZERO - No garbage collection cache
+      staleTime: 60000,
+      gcTime: 300000,
       refetchOnMount: true,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
       retry: 1,
     },
   },
 });
 
-// ===== API FUNCTIONS WITH CACHE BUSTING =====
+// ===== API FUNCTIONS =====
 const fetchDashboardData = async () => {
   try {
     const timestamp = Date.now();
@@ -233,9 +199,9 @@ const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
     queryFn: fetchDashboardData,
-    staleTime: 0,
-    refetchInterval: 3000, // 3 seconds
-    refetchOnWindowFocus: true,
+    staleTime: 60000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
     refetchOnMount: true,
   });
 };
@@ -245,6 +211,7 @@ const useBuildings = () => {
     queryKey: ["buildings"],
     queryFn: fetchBuildings,
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -253,6 +220,7 @@ const usePlans = () => {
     queryKey: ["plans"],
     queryFn: fetchPlans,
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -290,15 +258,14 @@ function AdminBillingPageContent() {
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
   const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [realtimeUpdate, setRealtimeUpdate] = useState(0);
-  const [lastPaymentUpdate, setLastPaymentUpdate] = useState<Date | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isMounted, setIsMounted] = useState(true);
-  const [silentRefreshCount, setSilentRefreshCount] = useState(0);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   // ===== WEBSOCKET STATES =====
   const [websocketConnected, setWebsocketConnected] = useState(false);
-  const [realtimeUpdateCount, setRealtimeUpdateCount] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Selected data
@@ -373,32 +340,32 @@ function AdminBillingPageContent() {
   const customers = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customers || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const billingCycles = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.billingCycles || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const bills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.bills || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const pendingPayments = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingPayments || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const customersWithoutAccounts = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.customersWithoutAccounts || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const pendingInstallationBills = useMemo(() => {
     if (!dashboardData) return [];
     return dashboardData.pendingInstallationBills || [];
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const stats = useMemo(() => {
     if (!dashboardData?.stats) {
@@ -419,7 +386,7 @@ function AdminBillingPageContent() {
       };
     }
     return dashboardData.stats;
-  }, [dashboardData, realtimeUpdate, realtimeUpdateCount]);
+  }, [dashboardData]);
 
   const totalPendingCount = useMemo(() => {
     return (
@@ -436,47 +403,75 @@ function AdminBillingPageContent() {
     pendingInstallationBills,
     customersWithoutAccounts,
     stats,
-    realtimeUpdate,
-    realtimeUpdateCount,
   ]);
 
-  // ==================== INVALIDATE ALL ====================
-  const invalidateAll = useCallback(() => {
-    console.log("🔄 invalidateAll: Clearing cache and refetching...");
-    clearBillingCache();
-    queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
-    queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
-    queryClient.invalidateQueries({ queryKey: ["bills"] });
-    queryClient.invalidateQueries({ queryKey: ["users"] });
-    queryClient.invalidateQueries({ queryKey: ["applications"] });
-    queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
-    queryClient.invalidateQueries({ queryKey: ["pendingInstallationBills"] });
+  // ==================== REFRESH FUNCTION - ONLY CALLED ON SERVER CHANGES ====================
+  const refreshData = useCallback(
+    async (silent: boolean = false) => {
+      if (isRefreshing) return;
+      setIsRefreshing(true);
 
-    setRealtimeUpdate((prev) => prev + 1);
-    setRealtimeUpdateCount((prev) => prev + 1);
-    setLastUpdated(new Date());
+      try {
+        console.log(`🔄 Refreshing dashboard data... (silent: ${silent})`);
+        clearBillingCache();
 
-    // Force refetch immediately
-    refetch();
+        queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+        queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
+        queryClient.invalidateQueries({ queryKey: ["bills"] });
+        queryClient.invalidateQueries({ queryKey: ["users"] });
+        queryClient.invalidateQueries({ queryKey: ["applications"] });
+        queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
+        queryClient.invalidateQueries({
+          queryKey: ["pendingInstallationBills"],
+        });
 
-    // Second refetch after 300ms para sure
-    setTimeout(() => {
-      refetch();
-    }, 300);
-  }, [queryClient, refetch]);
+        const result = await refetch();
 
-  // ==================== WEBSOCKET SETUP ====================
+        if (result.data) {
+          setRefreshCount((prev) => prev + 1);
+          setLastUpdated(new Date());
+          if (!silent) {
+            toast.success("🔄 Dashboard updated!", { duration: 1500 });
+          }
+          console.log("✅ Dashboard data refreshed successfully");
+        }
+      } catch (error) {
+        console.error("❌ Error refreshing data:", error);
+      } finally {
+        setIsRefreshing(false);
+      }
+    },
+    [queryClient, refetch, isRefreshing],
+  );
+
+  // ==================== WEBSOCKET SETUP - SINGLE SOURCE OF TRUTH ====================
   useEffect(() => {
     if (!isMounted) return;
 
     console.log("🔌 Setting up WebSocket connection...");
-    wsClient.connect();
 
+    let isFirstConnection = true;
+
+    // Connect WebSocket
+    billingEvents.connect();
+
+    // Handler for refresh events - ONLY trigger on actual server changes
+    const handleRefresh = (payload: any) => {
+      console.log("🔄 Server update received:", payload?.type || "unknown");
+      // Always refresh on server updates - but silently
+      refreshData(true);
+    };
+
+    // Handler for connected event
     const handleConnected = () => {
       setWebsocketConnected(true);
       console.log("🔌 WebSocket connected!");
-      // Force refresh on connect
-      invalidateAll();
+      // Only refresh on first connection
+      if (isFirstConnection) {
+        isFirstConnection = false;
+        // Check for updates on connection
+        refreshData(true);
+      }
     };
 
     const handleDisconnected = () => {
@@ -484,80 +479,130 @@ function AdminBillingPageContent() {
       console.log("🔌 WebSocket disconnected");
     };
 
-    // ===== FORCE REFRESH - IMMEDIATE UPDATE! =====
-    const handleForceRefresh = (data: any) => {
-      console.log("🔥🔥🔥 FORCE REFRESH RECEIVED!", data);
+    // Register ALL event listeners - all trigger refresh
+    const unsubConnected = billingEvents.on("connected", handleConnected);
+    const unsubDisconnected = billingEvents.on(
+      "disconnected",
+      handleDisconnected,
+    );
 
-      // Clear all caches
-      clearBillingCache();
+    // All these events trigger a refresh
+    const unsubRefresh = billingEvents.on("refresh", handleRefresh);
+    const unsubBillingUpdated = billingEvents.on(
+      "billing_updated",
+      handleRefresh,
+    );
+    const unsubPaymentConfirmed = billingEvents.on(
+      "payment_confirmed",
+      handleRefresh,
+    );
+    const unsubBillingCreated = billingEvents.on(
+      "billing:created",
+      handleRefresh,
+    );
+    const unsubBillingPaid = billingEvents.on("billing:paid", handleRefresh);
+    const unsubCustomerCreated = billingEvents.on(
+      "customer:created",
+      handleRefresh,
+    );
+    const unsubBillingCycleCreated = billingEvents.on(
+      "billingCycle:created",
+      handleRefresh,
+    );
+    const unsubBillingCycleUpdated = billingEvents.on(
+      "billingCycle:updated",
+      handleRefresh,
+    );
+    const unsubBillingCycleDeleted = billingEvents.on(
+      "billingCycle:deleted",
+      handleRefresh,
+    );
+    const unsubBillsRecovered = billingEvents.on(
+      "bills_recovered",
+      handleRefresh,
+    );
+    const unsubBillsGenerated = billingEvents.on(
+      "bills_generated",
+      handleRefresh,
+    );
+    const unsubSettingsUpdated = billingEvents.on(
+      "settings_updated",
+      (payload) => {
+        console.log("⚙️ Settings updated - reloading settings");
+        if (settingsLoaded) {
+          loadBillingFlowSettings();
+        }
+        handleRefresh(payload);
+      },
+    );
+    const unsubPaymentSubmitted = billingEvents.on(
+      "payment_submitted",
+      handleRefresh,
+    );
+    const unsubSuspensionUpdated = billingEvents.on(
+      "suspension_updated",
+      handleRefresh,
+    );
+    const unsubBillGenerated = billingEvents.on(
+      "bill_generated",
+      handleRefresh,
+    );
 
-      // Invalidate all queries
-      queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
-      queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
-      queryClient.invalidateQueries({ queryKey: ["bills"] });
-      queryClient.invalidateQueries({ queryKey: ["users"] });
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingPayments"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingInstallationBills"] });
-
-      // Force refetch immediately
-      refetch();
-
-      // Second refetch after 200ms
-      setTimeout(() => {
-        refetch();
-      }, 200);
-
-      // Update UI
-      setRealtimeUpdate((prev) => prev + 1);
-      setRealtimeUpdateCount((prev) => prev + 1);
-      setLastUpdated(new Date());
-      setLastPaymentUpdate(new Date());
-
-      toast.success(`🔄 Dashboard updated!`, { duration: 2000 });
-    };
-
-    // Register listeners
-    wsClient.on("connected", handleConnected);
-    wsClient.on("disconnected", handleDisconnected);
-    wsClient.on("dashboard:forceRefresh", handleForceRefresh);
-    wsClient.on("dashboard:update", handleForceRefresh);
-    wsClient.on("billing:paid", handleForceRefresh);
-    wsClient.on("billing:created", handleForceRefresh);
-    wsClient.on("customer:created", handleForceRefresh);
-    wsClient.on("payment:confirmed", handleForceRefresh);
-    wsClient.on("billingCycle:created", handleForceRefresh);
-    wsClient.on("billingCycle:updated", handleForceRefresh);
-    wsClient.on("billingCycle:deleted", handleForceRefresh);
-
-    // Check initial connection
-    setWebsocketConnected(wsClient.isConnectedStatus());
+    // Set initial connection state
+    setWebsocketConnected(billingEvents.isConnected());
 
     return () => {
-      wsClient.off("connected", handleConnected);
-      wsClient.off("disconnected", handleDisconnected);
-      wsClient.off("dashboard:forceRefresh", handleForceRefresh);
-      wsClient.off("dashboard:update", handleForceRefresh);
-      wsClient.off("billing:paid", handleForceRefresh);
-      wsClient.off("billing:created", handleForceRefresh);
-      wsClient.off("customer:created", handleForceRefresh);
-      wsClient.off("payment:confirmed", handleForceRefresh);
-      wsClient.off("billingCycle:created", handleForceRefresh);
-      wsClient.off("billingCycle:updated", handleForceRefresh);
-      wsClient.off("billingCycle:deleted", handleForceRefresh);
-    };
-  }, [invalidateAll, isMounted, refetch, queryClient]);
+      // Unsubscribe all
+      unsubConnected();
+      unsubDisconnected();
+      unsubRefresh();
+      unsubBillingUpdated();
+      unsubPaymentConfirmed();
+      unsubBillingCreated();
+      unsubBillingPaid();
+      unsubCustomerCreated();
+      unsubBillingCycleCreated();
+      unsubBillingCycleUpdated();
+      unsubBillingCycleDeleted();
+      unsubBillsRecovered();
+      unsubBillsGenerated();
+      unsubSettingsUpdated();
+      unsubPaymentSubmitted();
+      unsubSuspensionUpdated();
+      unsubBillGenerated();
 
-  // ==================== EARLY BILL GENERATION MUTATION ====================
+      billingEvents.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted]);
+
+  // ==================== MUTATIONS ====================
+
+  // Update Bill Price Mutation
+  const updateBillPriceMutation = useMutation({
+    mutationFn: ({ billId, newPrice }: { billId: string; newPrice: number }) =>
+      updateBillPrice(billId, newPrice),
+    onSuccess: () => {
+      clearBillingCache();
+      // Refresh silently after price update
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to update bill price",
+      );
+      console.error("Price update error:", error);
+    },
+  });
+
+  // Early Bill Generation Mutation
   const generateEarlyBillMutation = useMutation({
     mutationFn: (applicationId: string) =>
       manuallyGenerateEarlyBill({ applicationId }),
     onSuccess: (data) => {
       toast.success(data.message || "✅ Early bill generated successfully!");
       clearBillingCache();
-      setTimeout(() => {
-        invalidateAll();
-      }, 200);
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       const errorMsg =
@@ -570,9 +615,7 @@ function AdminBillingPageContent() {
   // Auto-generate early bills mutation
   const autoGenerateEarlyBillsMutation = useMutation({
     mutationFn: autoGenerateEarlyBills,
-    onMutate: () => {
-      setAutoGenerationRunning(true);
-    },
+    onMutate: () => setAutoGenerationRunning(true),
     onSuccess: (data) => {
       setAutoGenerationRunning(false);
       setLastAutoGenTime(new Date());
@@ -582,9 +625,7 @@ function AdminBillingPageContent() {
         toast.success("✅ No early bills needed at this time.");
       }
       clearBillingCache();
-      setTimeout(() => {
-        invalidateAll();
-      }, 200);
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       setAutoGenerationRunning(false);
@@ -597,43 +638,15 @@ function AdminBillingPageContent() {
   // Start Billing Mutation
   const startBillingMutation = useMutation({
     mutationFn: (params: any) => startBilling(params),
-    onMutate: async (params) => {
-      await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
-      const previousData = queryClient.getQueryData(["dashboardData"]);
-      queryClient.setQueryData(["dashboardData"], (old: any) => {
-        if (!old) return old;
-        const updatedCustomers = old.customers?.map((c: any) => {
-          if (
-            c.applicationId === params.applicationId ||
-            c._id === params.userId
-          ) {
-            return { ...c, billingCycle: { status: "starting" } };
-          }
-          return c;
-        });
-        return { ...old, customers: updatedCustomers };
-      });
-      return { previousData };
-    },
     onSuccess: () => {
       toast.success("✅ Billing started successfully!");
       clearBillingCache();
-      setTimeout(() => {
-        invalidateAll();
-      }, 200);
       setShowStartModal(false);
       resetStartForm();
+      setTimeout(() => refreshData(true), 200);
     },
-    onError: (error: any, variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(["dashboardData"], context.previousData);
-      }
+    onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to start billing");
-    },
-    onSettled: () => {
-      setTimeout(() => {
-        invalidateAll();
-      }, 300);
     },
   });
 
@@ -646,40 +659,15 @@ function AdminBillingPageContent() {
       applicationId: string;
       data?: any;
     }) => startBillingForApplication(applicationId, data),
-    onMutate: async ({ applicationId }) => {
-      await queryClient.cancelQueries({ queryKey: ["dashboardData"] });
-      const previousData = queryClient.getQueryData(["dashboardData"]);
-      queryClient.setQueryData(["dashboardData"], (old: any) => {
-        if (!old) return old;
-        const updatedCustomers = old.customers?.map((c: any) => {
-          if (c.applicationId === applicationId) {
-            return { ...c, billingCycle: { status: "starting" } };
-          }
-          return c;
-        });
-        return { ...old, customers: updatedCustomers };
-      });
-      return { previousData };
-    },
     onSuccess: () => {
       toast.success("✅ Billing started for application!");
       clearBillingCache();
-      setTimeout(() => {
-        invalidateAll();
-      }, 200);
       setShowStartModal(false);
       resetStartForm();
+      setTimeout(() => refreshData(true), 200);
     },
-    onError: (error: any, variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(["dashboardData"], context.previousData);
-      }
+    onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to start billing");
-    },
-    onSettled: () => {
-      setTimeout(() => {
-        invalidateAll();
-      }, 300);
     },
   });
 
@@ -688,7 +676,7 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => stopBilling(params),
     onSuccess: () => {
       toast.success("⛔ Billing stopped successfully!");
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to stop billing");
@@ -700,10 +688,10 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => pauseBilling(params),
     onSuccess: () => {
       toast.success("⏸️ Billing paused successfully!");
-      invalidateAll();
       setShowPauseModal(false);
       setPauseReason("");
       setPauseUntilDate("");
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to pause billing");
@@ -715,7 +703,7 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => resumeBilling(params),
     onSuccess: () => {
       toast.success("▶️ Billing resumed successfully!");
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to resume billing");
@@ -727,7 +715,7 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => disconnectClient(params),
     onSuccess: () => {
       toast.success("🔌 Client disconnected successfully!");
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
@@ -741,7 +729,7 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => reconnectClient(params),
     onSuccess: () => {
       toast.success("🔌 Client reconnected successfully!");
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
@@ -755,9 +743,9 @@ function AdminBillingPageContent() {
     mutationFn: (params: any) => deleteBillingCycle(params),
     onSuccess: () => {
       toast.success("🗑️ Billing cycle deleted successfully!");
-      invalidateAll();
       setShowDeleteConfirmModal(false);
       setCustomerToDelete(null);
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
@@ -777,12 +765,31 @@ function AdminBillingPageContent() {
     }) => markBillAsPaid(billId, paymentData),
     onSuccess: () => {
       toast.success("✅ Bill marked as paid!");
-      setLastPaymentUpdate(new Date());
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
         error.response?.data?.message || "Failed to mark bill as paid",
+      );
+    },
+  });
+
+  // Mark Bill as Free Mutation
+  const markBillFreeMutation = useMutation({
+    mutationFn: ({
+      billId,
+      paymentData,
+    }: {
+      billId: string;
+      paymentData?: any;
+    }) => markBillAsFree(billId, paymentData),
+    onSuccess: () => {
+      toast.success("✅ Bill marked as FREE!");
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to mark bill as free",
       );
     },
   });
@@ -798,8 +805,7 @@ function AdminBillingPageContent() {
     }) => markInstallationBillAsPaid(billId, paymentData),
     onSuccess: () => {
       toast.success("✅ Installation bill marked as paid!");
-      setLastPaymentUpdate(new Date());
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
@@ -809,13 +815,33 @@ function AdminBillingPageContent() {
     },
   });
 
+  // Mark Installation Bill as Free Mutation
+  const markInstallationFreeMutation = useMutation({
+    mutationFn: ({
+      billId,
+      paymentData,
+    }: {
+      billId: string;
+      paymentData?: any;
+    }) => markInstallationBillAsFree(billId, paymentData),
+    onSuccess: () => {
+      toast.success("✅ Installation bill marked as FREE!");
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to mark installation bill as free",
+      );
+    },
+  });
+
   // Confirm Payment Mutation
   const confirmPaymentMutation = useMutation({
     mutationFn: (paymentId: string) => confirmPayment(paymentId),
     onSuccess: () => {
       toast.success("✅ Payment confirmed!");
-      setLastPaymentUpdate(new Date());
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -833,10 +859,38 @@ function AdminBillingPageContent() {
     }) => rejectPayment(paymentId, reason),
     onSuccess: () => {
       toast.success("❌ Payment rejected");
-      invalidateAll();
+      setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to reject payment");
+    },
+  });
+
+  // Confirm Pro-rated Payment Mutation
+  const confirmProRatedPaymentMutation = useMutation({
+    mutationFn: (data: any) => confirmProRatedPayment(data),
+    onSuccess: () => {
+      toast.success("✅ Pro-rated payment confirmed!");
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to confirm pro-rated payment",
+      );
+    },
+  });
+
+  // Start Monthly Billing Mutation
+  const startMonthlyBillingMutation = useMutation({
+    mutationFn: (data: any) => startMonthlyBilling(data),
+    onSuccess: () => {
+      toast.success("✅ Monthly billing started!");
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to start monthly billing",
+      );
     },
   });
 
@@ -854,16 +908,31 @@ function AdminBillingPageContent() {
 
   const handleRefresh = () => {
     console.log("🔄 Manual refresh triggered");
-    clearBillingCache();
-    invalidateAll();
-    // Double refresh para sure
-    setTimeout(() => {
-      invalidateAll();
-    }, 300);
-    toast.success("🔄 Refreshing data...");
+    refreshData(false);
   };
 
-  // ==================== Handle Early Bill Generation ====================
+  const handleEditBillPrice = useCallback(
+    (billId: string, newPrice: number, customer: CustomerItem) => {
+      if (newPrice < 0) {
+        toast.error("Price cannot be negative");
+        return;
+      }
+      updateBillPriceMutation.mutate({ billId, newPrice });
+    },
+    [updateBillPriceMutation],
+  );
+
+  const handleEditInstallationPrice = useCallback(
+    (billId: string, newPrice: number, customer: CustomerItem) => {
+      if (newPrice < 0) {
+        toast.error("Price cannot be negative");
+        return;
+      }
+      updateBillPriceMutation.mutate({ billId, newPrice });
+    },
+    [updateBillPriceMutation],
+  );
+
   const handleGenerateEarlyBill = async (customer: CustomerItem) => {
     if (!customer.applicationId) {
       toast.error("No application ID found for this customer");
@@ -899,7 +968,6 @@ function AdminBillingPageContent() {
     generateEarlyBillMutation.mutate(customer.applicationId);
   };
 
-  // ==================== AUTO-GENERATE EARLY BILLS ====================
   const handleAutoGenerateEarlyBills = useCallback(async () => {
     if (autoGenerationRunning) {
       toast("⏳ Auto-generation already running...", {
@@ -927,192 +995,17 @@ function AdminBillingPageContent() {
     autoGenerateEarlyBillsMutation.mutate();
   }, [autoGenerationRunning, lastAutoGenTime, autoGenerateEarlyBillsMutation]);
 
-  // ==================== AUTO-DETECT NEW CUSTOMERS (SILENT) ====================
   const checkForNewCustomersHandler = useCallback(async () => {
     try {
       const result = await checkForNewCustomers(true);
       if (result.totalNew > 0) {
         clearBillingCache();
-        setTimeout(() => {
-          invalidateAll();
-        }, 200);
+        setTimeout(() => refreshData(true), 200);
       }
     } catch (error) {
       console.error("Error checking for new customers:", error);
     }
-  }, [invalidateAll]);
-
-  // ==================== SILENT AUTO-REFRESH - EVERY 3 SECONDS ====================
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const silentRefreshInterval = setInterval(() => {
-      if (!isFetching && !isLoading) {
-        setSilentRefreshCount((prev) => prev + 1);
-        refetch().then((result) => {
-          if (result.data) {
-            setRealtimeUpdate((prev) => prev + 1);
-            setRealtimeUpdateCount((prev) => prev + 1);
-          }
-        });
-      }
-    }, 3000);
-
-    return () => {
-      clearInterval(silentRefreshInterval);
-    };
-  }, [isMounted, isFetching, isLoading, refetch]);
-
-  // ==================== REAL-TIME WEBSOCKET EVENT LISTENERS (BACKUP) ====================
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const unsubscribers: (() => void)[] = [];
-
-    const unsubscribeNewCustomer = billingEvents.on(
-      "new_customer",
-      async (payload) => {
-        console.log(
-          "🆕 New customer detected via WebSocket (silent):",
-          payload,
-        );
-        clearBillingCache();
-        setTimeout(() => {
-          invalidateAll();
-        }, 200);
-      },
-    );
-    unsubscribers.push(unsubscribeNewCustomer);
-
-    const unsubscribePayment = billingEvents.on(
-      "payment_confirmed",
-      (payload) => {
-        console.log("💳 Payment confirmed - Real-time update:", payload);
-        clearBillingCache();
-        setLastPaymentUpdate(new Date());
-        invalidateAll();
-        toast.success(`✅ Payment confirmed!`, {
-          duration: 3000,
-        });
-      },
-    );
-    unsubscribers.push(unsubscribePayment);
-
-    const unsubscribeBill = billingEvents.on("bill_generated", (payload) => {
-      console.log("📄 Bill generated - Real-time update:", payload);
-      clearBillingCache();
-      invalidateAll();
-      toast.success(`📄 New bill generated!`, { icon: "📄" });
-    });
-    unsubscribers.push(unsubscribeBill);
-
-    const unsubscribeBilling = billingEvents.on(
-      "billing_updated",
-      (payload) => {
-        console.log("🔄 Billing updated - Real-time update:", payload);
-        clearBillingCache();
-        invalidateAll();
-        const action = payload.type || "updated";
-        toast.success(`🔄 Billing ${action}!`, { icon: "🔄" });
-      },
-    );
-    unsubscribers.push(unsubscribeBilling);
-
-    const unsubscribeBillsRecovered = billingEvents.on(
-      "bills_recovered",
-      (payload) => {
-        console.log("📄 Bills recovered - Real-time update:", payload);
-        clearBillingCache();
-        invalidateAll();
-        toast.success(`📄 Bills recovered!`, { icon: "📄" });
-      },
-    );
-    unsubscribers.push(unsubscribeBillsRecovered);
-
-    const unsubscribeSettings = billingEvents.on(
-      "settings_updated",
-      (payload) => {
-        console.log("⚙️ Settings updated - Real-time update:", payload);
-        loadBillingFlowSettings();
-      },
-    );
-    unsubscribers.push(unsubscribeSettings);
-
-    const unsubscribeSuspension = billingEvents.on(
-      "suspension_updated",
-      (payload) => {
-        console.log("⛔ Suspension updated - Real-time update:", payload);
-        clearBillingCache();
-        invalidateAll();
-        toast.success(`⛔ Suspension status updated!`, { icon: "⛔" });
-      },
-    );
-    unsubscribers.push(unsubscribeSuspension);
-
-    const unsubscribePaymentSubmitted = billingEvents.on(
-      "payment_submitted",
-      (payload) => {
-        console.log("💳 Payment submitted - Real-time update:", payload);
-        clearBillingCache();
-        invalidateAll();
-        toast.success(`💳 Payment submitted! Waiting for confirmation.`, {
-          icon: "💳",
-        });
-      },
-    );
-    unsubscribers.push(unsubscribePaymentSubmitted);
-
-    const unsubscribeBillsGenerated = billingEvents.on(
-      "bills_generated",
-      (payload) => {
-        console.log("📄 Bills generated - Real-time update:", payload);
-        clearBillingCache();
-        invalidateAll();
-        toast.success(`📄 Monthly bills generated!`, { icon: "📄" });
-      },
-    );
-    unsubscribers.push(unsubscribeBillsGenerated);
-
-    return () => {
-      unsubscribers.forEach((unsubscribe) => {
-        try {
-          unsubscribe();
-        } catch (e) {
-          console.error("Error unsubscribing:", e);
-        }
-      });
-      billingEvents.disconnect();
-    };
-  }, [invalidateAll, isMounted]);
-
-  // ==================== POLLING FOR NEW CUSTOMERS (SILENT) ====================
-  useEffect(() => {
-    if (!isMounted) return;
-
-    if (isInitialLoad) {
-      setIsInitialLoad(false);
-      setTimeout(() => {
-        checkForNewCustomersHandler();
-      }, 1000);
-    }
-
-    pollingIntervalRef.current = startRealtimePolling(async (data) => {
-      if (data.totalNew > 0) {
-        clearBillingCache();
-        setTimeout(() => {
-          invalidateAll();
-        }, 200);
-      }
-    }, 15000);
-
-    return () => {
-      if (pollingIntervalRef.current) {
-        stopRealtimePolling(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshData]);
 
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
@@ -1249,6 +1142,38 @@ function AdminBillingPageContent() {
         setCustomerToDelete(customer);
         setShowDeleteConfirmModal(true);
         break;
+      case "freeBill":
+        if (data?.billId) {
+          if (
+            confirm(
+              `Mark bill as FREE for ${customer.firstName} ${customer.lastName}?\n\nThis will set the bill amount to ₱0 and mark it as paid.`,
+            )
+          ) {
+            markBillFreeMutation.mutate({
+              billId: data.billId,
+              paymentData: {
+                notes: `Marked as free by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+              },
+            });
+          }
+        }
+        break;
+      case "freeInstallation":
+        if (data?.billId) {
+          if (
+            confirm(
+              `Mark installation fee as FREE for ${customer.firstName} ${customer.lastName}?\n\nThis will set the installation fee to ₱0 and mark it as paid.`,
+            )
+          ) {
+            markInstallationFreeMutation.mutate({
+              billId: data.billId,
+              paymentData: {
+                notes: `Installation fee marked as free by admin for ${customer.type}: ${customer.firstName} ${customer.lastName}`,
+              },
+            });
+          }
+        }
+        break;
       default:
         break;
     }
@@ -1348,6 +1273,16 @@ function AdminBillingPageContent() {
     }
   };
 
+  const handleConfirmProRated = (applicationId: string) => {
+    if (!confirm("Confirm this pro-rated payment?")) return;
+    confirmProRatedPaymentMutation.mutate({ applicationId });
+  };
+
+  const handleStartMonthly = (applicationId: string) => {
+    if (!confirm("Start monthly billing for this customer?")) return;
+    startMonthlyBillingMutation.mutate({ applicationId });
+  };
+
   const handleDeleteBillingCycle = () => {
     if (!customerToDelete?.billingCycle?._id) {
       toast.error("No billing cycle found to delete");
@@ -1380,7 +1315,7 @@ function AdminBillingPageContent() {
 
       if (result.success) {
         toast.success(result.message);
-        invalidateAll();
+        setTimeout(() => refreshData(true), 200);
       } else {
         toast.error(result.message || "Failed to recover missing bills");
       }
@@ -1433,7 +1368,7 @@ function AdminBillingPageContent() {
           includeInstallationFee: true,
         });
         setSelectedBackdatedCustomer(null);
-        invalidateAll();
+        setTimeout(() => refreshData(true), 200);
       } else {
         toast.error(result.message || "Failed to initialize backdated billing");
       }
@@ -1502,6 +1437,7 @@ function AdminBillingPageContent() {
             settingsData.autoSuspendOnNonPayment !== false,
           earlyBillGenerationDays: settingsData.earlyBillGenerationDays || 15,
         });
+        setSettingsLoaded(true);
       }
     } catch (error) {
       console.error("Failed to load billing flow settings:", error);
@@ -1512,8 +1448,8 @@ function AdminBillingPageContent() {
     try {
       await updateBillingSettingsAdmin({ ...billingFlowSettings });
       toast.success("✅ Billing flow settings saved successfully!");
-      invalidateAll();
       setShowSettingsModal(false);
+      setTimeout(() => refreshData(true), 200);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save settings");
     }
@@ -1522,34 +1458,64 @@ function AdminBillingPageContent() {
   // ==================== EFFECTS ====================
   useEffect(() => {
     setIsMounted(true);
-    loadBillingFlowSettings();
 
-    if (billingFlowSettings.earlyBillGenerationDays > 0) {
-      const autoGenInterval = setInterval(() => {
-        if (!autoGenerationRunning && isMounted) {
-          handleAutoGenerateEarlyBills();
-        }
-      }, 300000);
-
-      return () => {
-        clearInterval(autoGenInterval);
-        setIsMounted(false);
-      };
+    // Load settings only once on mount
+    if (!settingsLoaded) {
+      loadBillingFlowSettings();
     }
-  }, [
-    billingFlowSettings.earlyBillGenerationDays,
-    handleAutoGenerateEarlyBills,
-    autoGenerationRunning,
-    isMounted,
-    loadBillingFlowSettings,
-  ]);
+
+    // Auto-generate bills every 5 minutes
+    const autoGenInterval = setInterval(() => {
+      if (!autoGenerationRunning && isMounted && settingsLoaded) {
+        handleAutoGenerateEarlyBills();
+      }
+    }, 300000);
+
+    // Clean cache on mount
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach((key) => {
+        if (key.startsWith("admin_") || key.includes("cache")) {
+          try {
+            const value = localStorage.getItem(key);
+            if (value) {
+              const size = new Blob([value]).size;
+              if (size > 50 * 1024 * 1024) {
+                console.warn(
+                  `🧹 Cleaning large cache: ${key} (${(size / 1024 / 1024).toFixed(2)}MB)`,
+                );
+                localStorage.removeItem(key);
+              }
+            }
+          } catch (e) {
+            localStorage.removeItem(key);
+          }
+        }
+      });
+    } catch (e) {
+      console.error("Error cleaning cache:", e);
+    }
+
+    // Initial data load - ONLY ONCE
+    setTimeout(() => {
+      refreshData(true);
+    }, 500);
+
+    return () => {
+      clearInterval(autoGenInterval);
+      setIsMounted(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ==================== RENDER ====================
   return (
     <div>
-      {/* Silent refresh indicator */}
+      {/* Status bar */}
       <div className="text-right text-[10px] text-gray-400 px-4 py-1">
-        Auto-refresh: {silentRefreshCount} updates
+        {websocketConnected ? "🟢 Live" : "🔴 Offline"}
+        {lastUpdated && ` | Last updated: ${lastUpdated.toLocaleTimeString()}`}
+        {refreshCount > 0 && ` | Refreshes: ${refreshCount}`}
         {isFetching && " 🔄"}
       </div>
 
@@ -1559,7 +1525,7 @@ function AdminBillingPageContent() {
         bills={bills}
         pendingPayments={pendingPayments}
         loading={isLoading}
-        refreshing={isFetching}
+        refreshing={isFetching || isRefreshing}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         statusFilter={statusFilter}
@@ -1593,13 +1559,24 @@ function AdminBillingPageContent() {
         onAutoGenerateEarlyBills={handleAutoGenerateEarlyBills}
         autoGenerationRunning={autoGenerationRunning}
         lastAutoGenTime={lastAutoGenTime}
-        // ===== WEBSOCKET PROPS =====
-        realtimeUpdateCount={realtimeUpdateCount}
+        realtimeUpdateCount={refreshCount}
         websocketConnected={websocketConnected}
+        onEditBillPrice={handleEditBillPrice}
+        onEditInstallationPrice={handleEditInstallationPrice}
       />
 
       {/* ==================== MODALS ==================== */}
-      {/* Reports Modal */}
+      <CustomerDetailModal
+        isOpen={showCustomerDetailModal}
+        customer={selectedCustomer}
+        onClose={() => setShowCustomerDetailModal(false)}
+        onAction={handleAction}
+        onMarkBillAsPaid={handleMarkBillAsPaid}
+        onMarkInstallationBillAsPaid={handleMarkInstallationBillAsPaid}
+        onEditBillPrice={handleEditBillPrice}
+        onEditInstallationPrice={handleEditInstallationPrice}
+      />
+
       <BillingReportsWithDownload
         isOpen={showReportsModal}
         onClose={() => setShowReportsModal(false)}
@@ -1642,10 +1619,10 @@ function AdminBillingPageContent() {
                   onChange={(e) => {
                     const appId = e.target.value;
                     const customer = customers.find(
-                      (customer: CustomerItem) =>
-                        customer.type === "application" &&
-                        customer.applicationId === appId &&
-                        !customer.billingCycle,
+                      (c: CustomerItem) =>
+                        c.type === "application" &&
+                        c.applicationId === appId &&
+                        !c.billingCycle,
                     );
                     setSelectedBackdatedCustomer(customer);
                     setBackdatedForm({
@@ -2033,197 +2010,6 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* Customer Detail Modal */}
-      {showCustomerDetailModal && selectedCustomer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Customer Details
-              </h2>
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-gray-500">Name</p>
-                  <p className="font-medium">
-                    {selectedCustomer.firstName} {selectedCustomer.lastName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Email</p>
-                  <p>{selectedCustomer.email}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Phone</p>
-                  <p>{selectedCustomer.phoneNumber}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Type</p>
-                  <p className="capitalize">{selectedCustomer.type}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Plan</p>
-                  <p>
-                    {selectedCustomer.planName} (₱
-                    {selectedCustomer.planPrice.toLocaleString()}/mo)
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Balance</p>
-                  <p
-                    className={
-                      selectedCustomer.currentBalance > 1000
-                        ? "text-red-600 font-bold"
-                        : "text-orange-600"
-                    }
-                  >
-                    ₱{selectedCustomer.currentBalance.toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Building</p>
-                  <p>{selectedCustomer.building?.buildingName || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Unit/Floor</p>
-                  <p>
-                    {selectedCustomer.unitNumber
-                      ? `Unit ${selectedCustomer.unitNumber}`
-                      : "-"}
-                    {selectedCustomer.floor
-                      ? `, Floor ${selectedCustomer.floor}`
-                      : ""}
-                  </p>
-                </div>
-                {selectedCustomer.type === "application" && (
-                  <>
-                    <div>
-                      <p className="text-gray-500">Installation Fee</p>
-                      <p>
-                        ₱
-                        {(
-                          selectedCustomer.installationFee || 0
-                        ).toLocaleString()}
-                        <span
-                          className={
-                            selectedCustomer.installationFeePaid
-                              ? "text-green-600 ml-2"
-                              : "text-red-600 ml-2"
-                          }
-                        >
-                          (
-                          {selectedCustomer.installationFeePaid
-                            ? "Paid"
-                            : "Unpaid"}
-                          )
-                        </span>
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Billing Status</p>
-                      <p className="capitalize">
-                        {selectedCustomer.billingCycle?.status || "Not started"}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {selectedCustomer.unpaidBills.length > 0 && (
-              <div className="mb-4">
-                <h3 className="font-semibold text-sm mb-2">
-                  Unpaid Bills ({selectedCustomer.unpaidBills.length})
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-xs">
-                    <thead className="bg-red-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Invoice</th>
-                        <th className="px-3 py-2 text-left">Period</th>
-                        <th className="px-3 py-2 text-left">Due</th>
-                        <th className="px-3 py-2 text-left">Amount</th>
-                        <th className="px-3 py-2 text-left">Type</th>
-                        <th className="px-3 py-2 text-left">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedCustomer.unpaidBills.map((bill: any) => (
-                        <tr key={bill._id}>
-                          <td className="px-3 py-2 font-mono">
-                            {bill.invoiceNumber}
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatBillPeriod(bill)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatDate(bill.dueDate)}
-                          </td>
-                          <td className="px-3 py-2 text-red-600">
-                            ₱{bill.total.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2">
-                            {bill.isInstallationBill
-                              ? "Installation"
-                              : bill.isProRated
-                                ? "Pro-rated"
-                                : "Monthly"}
-                          </td>
-                          <td className="px-3 py-2">
-                            {bill.isInstallationBill &&
-                              !bill.installationFeePaid && (
-                                <button
-                                  onClick={() =>
-                                    handleMarkInstallationBillAsPaid(
-                                      bill,
-                                      selectedCustomer,
-                                    )
-                                  }
-                                  className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                            {!bill.isInstallationBill &&
-                              bill.status !== "paid" && (
-                                <button
-                                  onClick={() =>
-                                    handleMarkBillAsPaid(bill, selectedCustomer)
-                                  }
-                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowCustomerDetailModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Pending Modal */}
       {showPendingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -2292,9 +2078,7 @@ function AdminBillingPageContent() {
                         <td className="px-4 py-2">
                           <button
                             onClick={() =>
-                              confirmProRatedPayment({
-                                applicationId: bill.applicationId,
-                              })
+                              handleConfirmProRated(bill.applicationId)
                             }
                             className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
                           >
@@ -2319,35 +2103,57 @@ function AdminBillingPageContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingInstallationBills.map((bill: any) => (
-                      <tr key={bill._id} className="border-t">
-                        <td className="px-4 py-2 font-mono text-xs">
-                          {bill.invoiceNumber}
-                        </td>
-                        <td className="px-4 py-2">
-                          {bill.applicationData?.firstName}{" "}
-                          {bill.applicationData?.lastName}
-                        </td>
-                        <td className="px-4 py-2">
-                          ₱{bill.total?.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-2">
-                          {formatDate(bill.dueDate)}
-                        </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() =>
-                              markInstallationBillAsPaid(bill._id, {
-                                notes: "Admin confirmed",
-                              })
-                            }
-                            className="px-3 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
-                          >
-                            Mark Paid
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {pendingInstallationBills.map((bill: any) => {
+                      // Create a customer object for the bill
+                      const billCustomer: CustomerItem = {
+                        _id: bill.applicationId || bill._id,
+                        firstName: bill.applicationData?.firstName || "Unknown",
+                        lastName: bill.applicationData?.lastName || "",
+                        email: bill.applicationData?.email || "",
+                        phoneNumber: bill.applicationData?.phoneNumber || "",
+                        status: "active",
+                        type: "application",
+                        planName: "N/A",
+                        planPrice: 0,
+                        currentBalance: bill.total || 0,
+                        unpaidBills: [bill],
+                        overdueBills: [],
+                        billingCycle: bill.billingCycleId,
+                        applicationId: bill.applicationId,
+                        installationFee: bill.installationFee || 0,
+                        installationFeePaid: bill.installationFeePaid || false,
+                      };
+                      return (
+                        <tr key={bill._id} className="border-t">
+                          <td className="px-4 py-2 font-mono text-xs">
+                            {bill.invoiceNumber}
+                          </td>
+                          <td className="px-4 py-2">
+                            {bill.applicationData?.firstName}{" "}
+                            {bill.applicationData?.lastName}
+                          </td>
+                          <td className="px-4 py-2">
+                            ₱{bill.total?.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2">
+                            {formatDate(bill.dueDate)}
+                          </td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() =>
+                                handleMarkInstallationBillAsPaid(
+                                  bill,
+                                  billCustomer,
+                                )
+                              }
+                              className="px-3 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
+                            >
+                              Mark Paid
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -2377,9 +2183,7 @@ function AdminBillingPageContent() {
                           <td className="px-4 py-2">
                             <button
                               onClick={() =>
-                                startMonthlyBilling({
-                                  applicationId: cycle.applicationId,
-                                })
+                                handleStartMonthly(cycle.applicationId)
                               }
                               className="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
                             >
@@ -2884,7 +2688,7 @@ function AdminBillingPageContent() {
 
             <div className="mt-4 flex justify-between items-center">
               <div className="text-xs text-gray-500">
-                Auto-detecting new customers every 15 seconds
+                Auto-detecting new customers every 1 minute
               </div>
               <button
                 onClick={() => {

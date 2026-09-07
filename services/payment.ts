@@ -1,4 +1,4 @@
-// frontend/src/services/payment.ts - COMPLETE WITH DELETE
+// frontend/src/services/payment.ts - COMPLETE WITH FREE SUPPORT
 
 import api from "./api";
 
@@ -13,6 +13,7 @@ export interface CreatePaymentData {
   customerEmail?: string;
   customerPhone?: string;
   buildingId?: string;
+  isFree?: boolean;
 }
 
 export interface PaymentResponse {
@@ -43,6 +44,7 @@ export interface Payment {
     notes?: string;
     confirmedBy?: string;
     confirmedAt?: string;
+    isFree?: boolean;
   };
   paidAt: string;
   createdAt: string;
@@ -162,6 +164,7 @@ export const createPayment = async (
       customerEmail: data.customerEmail,
       customerPhone: data.customerPhone,
       buildingId: data.buildingId,
+      isFree: data.isFree || false,
     });
     clearPaymentsCache();
     return response.data;
