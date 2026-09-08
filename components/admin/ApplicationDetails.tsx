@@ -1,4 +1,4 @@
-// components/admin/ApplicationDetails.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
+// components/admin/ApplicationDetails.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useCallback } from "react";
@@ -26,6 +26,26 @@ export function ApplicationDetails({
 }: ApplicationDetailsProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
+
+  // Get the ID safely - handle both _id and id
+  const getApplicationId = useCallback((): string => {
+    const id = application._id || application.id;
+    if (!id) return "N/A";
+    if (typeof id === "string") {
+      return id.slice(-8).toUpperCase();
+    }
+    return String(id).slice(-8).toUpperCase();
+  }, [application._id, application.id]);
+
+  // Get the ID for API calls - ensures we always have a string
+  const getAppIdForApi = useCallback((): string => {
+    const id = application._id || application.id || application.applicationId;
+    if (!id) {
+      console.error("No ID found for application:", application);
+      return "";
+    }
+    return id;
+  }, [application._id, application.id, application.applicationId]);
 
   const getBuildingName = useCallback(
     (building: string | { _id: string; buildingName: string }) => {
@@ -106,9 +126,14 @@ export function ApplicationDetails({
   };
 
   const handleApprove = async () => {
+    const appId = getAppIdForApi();
+    if (!appId) {
+      console.error("Cannot approve: No ID found");
+      return;
+    }
     setActionLoading(true);
     try {
-      await onApprove(application._id);
+      await onApprove(appId);
       onClose();
     } catch (error) {
       // Error is handled in parent
@@ -118,9 +143,14 @@ export function ApplicationDetails({
   };
 
   const handleReject = async () => {
+    const appId = getAppIdForApi();
+    if (!appId) {
+      console.error("Cannot reject: No ID found");
+      return;
+    }
     setActionLoading(true);
     try {
-      await onReject(application._id);
+      await onReject(appId);
       onClose();
     } catch (error) {
       // Error is handled in parent
@@ -131,6 +161,11 @@ export function ApplicationDetails({
 
   const handleDelete = async () => {
     if (!onDelete) return;
+    const appId = getAppIdForApi();
+    if (!appId) {
+      console.error("Cannot delete: No ID found");
+      return;
+    }
     if (
       !confirm(
         "Are you sure you want to delete this application? This action cannot be undone.",
@@ -140,7 +175,7 @@ export function ApplicationDetails({
     }
     setActionLoading(true);
     try {
-      await onDelete(application._id);
+      await onDelete(appId);
       onClose();
     } catch (error) {
       // Error is handled in parent
@@ -167,8 +202,7 @@ export function ApplicationDetails({
           )}
         </div>
         <div className="text-sm text-gray-500 font-mono">
-          ID:{" "}
-          {application.applicationId || application._id.slice(-8).toUpperCase()}
+          ID: {application.applicationId || getApplicationId()}
         </div>
       </div>
 

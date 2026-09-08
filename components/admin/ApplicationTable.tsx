@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -12,7 +12,8 @@ import { Building, Plan } from "@/services/application";
 
 // Interface definitions
 export interface Application {
-  _id: string;
+  _id?: string;
+  id?: string;
   applicationId?: string;
   firstName: string;
   lastName: string;
@@ -57,7 +58,7 @@ export interface ApplicationTableProps {
   loading?: boolean;
   selectedIds?: string[];
   onPageChange?: (page: number) => void;
-  onRefresh?: () => void;
+  onRefresh?: () => Promise<void> | void;
   onApprove?: (id: string) => Promise<void>;
   onReject?: (id: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
@@ -119,13 +120,21 @@ export function ApplicationTable({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isActionInProgress, setIsActionInProgress] = useState(false);
 
   const [localApplications, setLocalApplications] =
     useState<Application[]>(initialApplications);
 
+  // Update local applications when initialApplications changes
   useEffect(() => {
     setLocalApplications(initialApplications);
   }, [initialApplications]);
+
+  // Get unique ID for an application
+  const getAppId = useCallback((app: Application): string => {
+    return app._id || app.id || app.applicationId || "";
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -197,32 +206,65 @@ export function ApplicationTable({
     return plan?.price || 0;
   };
 
+  // Helper function to refresh data
+  const refreshData = useCallback(async () => {
+    if (isRefreshing || isActionInProgress) return;
+    setIsRefreshing(true);
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (error) {
+      console.error("Refresh failed:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [onRefresh, isRefreshing, isActionInProgress]);
+
   const updateApplicationStatus = useCallback(
     (
       id: string,
       newStatus: "pending" | "approved" | "rejected" | "suspended",
     ) => {
       setLocalApplications((prev) =>
-        prev.map((app) =>
-          app._id === id ? { ...app, status: newStatus } : app,
-        ),
+        prev.map((app) => {
+          const appId = getAppId(app);
+          return appId === id ? { ...app, status: newStatus } : app;
+        }),
       );
     },
-    [],
+    [getAppId],
   );
 
-  const removeApplication = useCallback((id: string) => {
-    setLocalApplications((prev) => prev.filter((app) => app._id !== id));
-  }, []);
+  const removeApplication = useCallback(
+    (id: string) => {
+      setLocalApplications((prev) =>
+        prev.filter((app) => getAppId(app) !== id),
+      );
+    },
+    [getAppId],
+  );
 
-  const removeApplications = useCallback((ids: string[]) => {
-    setLocalApplications((prev) =>
-      prev.filter((app) => !ids.includes(app._id)),
-    );
-  }, []);
+  const removeApplications = useCallback(
+    (ids: string[]) => {
+      setLocalApplications((prev) =>
+        prev.filter((app) => !ids.includes(getAppId(app))),
+      );
+    },
+    [getAppId],
+  );
 
   const handleApprove = async (id: string) => {
+    if (!id) {
+      toast.error("Cannot approve: No ID found");
+      return;
+    }
+
+    if (isActionInProgress) return;
+    setIsActionInProgress(true);
     setActionLoading(id);
+
+    // Optimistic update
     updateApplicationStatus(id, "approved");
     toast.success("✅ Application approved!");
 
@@ -230,19 +272,33 @@ export function ApplicationTable({
       if (onApprove) {
         await onApprove(id);
       }
-      if (onRefresh) setTimeout(() => onRefresh(), 300);
+      // Refresh data from server to ensure consistency
+      await refreshData();
     } catch (error: any) {
+      // Revert optimistic update on error
       updateApplicationStatus(id, "pending");
       toast.error(
-        error?.response?.data?.message || "Failed to approve application",
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to approve application",
       );
     } finally {
       setActionLoading(null);
+      setIsActionInProgress(false);
     }
   };
 
   const handleReject = async (id: string) => {
+    if (!id) {
+      toast.error("Cannot reject: No ID found");
+      return;
+    }
+
+    if (isActionInProgress) return;
+    setIsActionInProgress(true);
     setActionLoading(id);
+
+    // Optimistic update
     updateApplicationStatus(id, "rejected");
     toast.success("❌ Application rejected");
 
@@ -250,18 +306,30 @@ export function ApplicationTable({
       if (onReject) {
         await onReject(id);
       }
-      if (onRefresh) setTimeout(() => onRefresh(), 300);
+      // Refresh data from server to ensure consistency
+      await refreshData();
     } catch (error: any) {
+      // Revert optimistic update on error
       updateApplicationStatus(id, "pending");
       toast.error(
-        error?.response?.data?.message || "Failed to reject application",
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to reject application",
       );
     } finally {
       setActionLoading(null);
+      setIsActionInProgress(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!id) {
+      toast.error("Cannot delete: No ID found");
+      return;
+    }
+
+    if (isActionInProgress) return;
+
     if (
       !confirm(
         "Are you sure you want to delete this application? This action cannot be undone.",
@@ -270,8 +338,9 @@ export function ApplicationTable({
       return;
     }
 
+    setIsActionInProgress(true);
     setActionLoading(id);
-    const appToDelete = localApplications.find((app) => app._id === id);
+    const appToDelete = localApplications.find((app) => getAppId(app) === id);
     removeApplication(id);
     toast.info("🗑️ Deleting application...");
 
@@ -282,16 +351,19 @@ export function ApplicationTable({
           `✅ Application ${appToDelete?.applicationId || ""} deleted successfully`,
         );
       }
-      if (onRefresh) setTimeout(() => onRefresh(), 300);
+      await refreshData();
     } catch (error: any) {
       if (appToDelete) {
         setLocalApplications((prev) => [...prev, appToDelete]);
       }
       toast.error(
-        error?.response?.data?.message || "Failed to delete application",
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to delete application",
       );
     } finally {
       setActionLoading(null);
+      setIsActionInProgress(false);
     }
   };
 
@@ -301,6 +373,8 @@ export function ApplicationTable({
       return;
     }
 
+    if (isActionInProgress) return;
+
     if (
       !confirm(
         `Are you sure you want to delete ${selectedIds.length} applications? This action cannot be undone.`,
@@ -309,6 +383,7 @@ export function ApplicationTable({
       return;
     }
 
+    setIsActionInProgress(true);
     const idsToDelete = [...selectedIds];
     removeApplications(idsToDelete);
     toast.info(`🗑️ Deleting ${idsToDelete.length} applications...`);
@@ -320,30 +395,45 @@ export function ApplicationTable({
           `✅ ${idsToDelete.length} applications deleted successfully`,
         );
       }
-      if (onRefresh) setTimeout(() => onRefresh(), 300);
+      await refreshData();
     } catch (error: any) {
       setLocalApplications(initialApplications);
       toast.error(
-        error?.response?.data?.message || "Failed to delete applications",
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to delete applications",
       );
+    } finally {
+      setIsActionInProgress(false);
     }
   };
 
   const handleEdit = (application: Application) => {
+    if (isActionInProgress) return;
     setSelectedApplication(application);
     setShowEditModal(true);
   };
 
   const handleEditSuccess = async (id: string, data: any) => {
     setShowEditModal(false);
-    if (onEdit) {
-      await onEdit(id, data);
+    if (isActionInProgress) return;
+    setIsActionInProgress(true);
+
+    try {
+      if (onEdit) {
+        await onEdit(id, data);
+      }
+      await refreshData();
+      toast.success("✅ Application updated successfully!");
+    } catch (error) {
+      console.error("Edit error:", error);
+    } finally {
+      setIsActionInProgress(false);
     }
-    if (onRefresh) setTimeout(() => onRefresh(), 300);
-    toast.success("✅ Application updated successfully!");
   };
 
   const handleViewDetails = (application: Application) => {
+    if (isActionInProgress) return;
     setSelectedApplication(application);
     setShowDetailsModal(true);
   };
@@ -360,7 +450,7 @@ export function ApplicationTable({
     () => localApplications,
     [localApplications],
   );
-  const isLoaded = loading || isLoading;
+  const isLoaded = loading || isLoading || isRefreshing;
 
   const handleSelectAll = (checked: boolean) => {
     if (onSelectAll) onSelectAll(checked);
@@ -391,6 +481,16 @@ export function ApplicationTable({
     if (onSearchChange) {
       onSearchChange(e.target.value);
     }
+  };
+
+  // Helper to ensure application has required _id for EditModal
+  const getApplicationForEdit = (app: Application | null) => {
+    if (!app) return null;
+    const id = app._id || app.id || app.applicationId || "";
+    return {
+      ...app,
+      _id: id,
+    } as Application & { _id: string };
   };
 
   return (
@@ -450,11 +550,12 @@ export function ApplicationTable({
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <button
-            onClick={onRefresh}
-            className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            onClick={refreshData}
+            disabled={isRefreshing || isActionInProgress}
+            className="p-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
           >
             <svg
-              className={`h-4 w-4 ${isLoaded ? "animate-spin" : ""}`}
+              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -471,7 +572,8 @@ export function ApplicationTable({
           {selectedIds.length > 0 && (
             <button
               onClick={handleBulkDelete}
-              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 flex items-center gap-1"
+              disabled={isActionInProgress}
+              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 flex items-center gap-1 disabled:opacity-50"
             >
               <svg
                 className="h-4 w-4"
@@ -494,7 +596,8 @@ export function ApplicationTable({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+            disabled={isActionInProgress}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
           >
             <svg
               className="h-4 w-4"
@@ -529,7 +632,8 @@ export function ApplicationTable({
                       selectedIds.length === displayApplications.length &&
                       displayApplications.length > 0
                     }
-                    className="rounded border-gray-300"
+                    disabled={isActionInProgress}
+                    className="rounded border-gray-300 disabled:opacity-50"
                   />
                 </th>
               )}
@@ -601,109 +705,129 @@ export function ApplicationTable({
                 </td>
               </tr>
             ) : (
-              displayApplications.map((app) => (
-                <tr key={app._id} className="hover:bg-gray-50">
-                  {onSelectAll && (
-                    <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(app._id)}
-                        onChange={(e) =>
-                          handleSelectOne(app._id, e.target.checked)
-                        }
-                        className="rounded border-gray-300"
-                      />
+              displayApplications.map((app) => {
+                const appId = getAppId(app);
+                const key =
+                  appId || app.applicationId || Math.random().toString();
+                return (
+                  <tr key={key}>
+                    {onSelectAll && (
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(appId)}
+                          onChange={(e) =>
+                            handleSelectOne(appId, e.target.checked)
+                          }
+                          disabled={isActionInProgress}
+                          className="rounded border-gray-300 disabled:opacity-50"
+                        />
+                      </td>
+                    )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">
+                        {app.firstName} {app.lastName}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ID: {app.applicationId || app.idNumber || "N/A"}
+                      </div>
                     </td>
-                  )}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="font-medium text-gray-900">
-                      {app.firstName} {app.lastName}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      ID: {app.applicationId || app.idNumber || "N/A"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{app.email}</div>
-                    <div className="text-xs text-gray-500">
-                      {app.phoneNumber}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {getBuildingName(app.buildingId)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Tower {app.tower || "N/A"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {app.floor || "N/A"} - {app.unitNumber || "N/A"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {getPlanName(app.planId)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      ₱{getPlanPrice(app.planId).toLocaleString()}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {getStatusBadge(app.status)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(app.createdAt)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="relative inline-flex items-center gap-1">
-                      <button
-                        onClick={() => handleViewDetails(app)}
-                        className="px-2 py-1 text-sm text-blue-600 hover:text-blue-800"
-                        title="View Details"
-                      >
-                        👁️
-                      </button>
-                      <button
-                        onClick={() => handleEdit(app)}
-                        className="px-2 py-1 text-sm text-indigo-600 hover:text-indigo-800"
-                        title="Edit Application"
-                      >
-                        ✏️
-                      </button>
-                      {app.status === "pending" && onApprove && onReject && (
-                        <>
-                          <button
-                            onClick={() => handleApprove(app._id)}
-                            disabled={actionLoading === app._id}
-                            className="px-2 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
-                            title="Approve"
-                          >
-                            {actionLoading === app._id ? "⏳" : "✅"}
-                          </button>
-                          <button
-                            onClick={() => handleReject(app._id)}
-                            disabled={actionLoading === app._id}
-                            className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
-                            title="Reject"
-                          >
-                            {actionLoading === app._id ? "⏳" : "❌"}
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => handleDelete(app._id)}
-                        disabled={actionLoading === app._id}
-                        className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{app.email}</div>
+                      <div className="text-xs text-gray-500">
+                        {app.phoneNumber}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {getBuildingName(app.buildingId)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Tower {app.tower || "N/A"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {app.floor || "N/A"} - {app.unitNumber || "N/A"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {getPlanName(app.planId)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ₱{getPlanPrice(app.planId).toLocaleString()}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getStatusBadge(app.status)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(app.createdAt)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="relative inline-flex items-center gap-1">
+                        <button
+                          onClick={() => handleViewDetails(app)}
+                          disabled={isActionInProgress}
+                          className="px-2 py-1 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          title="View Details"
+                        >
+                          👁️
+                        </button>
+                        <button
+                          onClick={() => handleEdit(app)}
+                          disabled={isActionInProgress}
+                          className="px-2 py-1 text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                          title="Edit Application"
+                        >
+                          ✏️
+                        </button>
+                        {app.status === "pending" && onApprove && onReject && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(appId)}
+                              disabled={
+                                actionLoading === appId ||
+                                isRefreshing ||
+                                isActionInProgress
+                              }
+                              className="px-2 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+                              title="Approve"
+                            >
+                              {actionLoading === appId ? "⏳" : "✅"}
+                            </button>
+                            <button
+                              onClick={() => handleReject(appId)}
+                              disabled={
+                                actionLoading === appId ||
+                                isRefreshing ||
+                                isActionInProgress
+                              }
+                              className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                              title="Reject"
+                            >
+                              {actionLoading === appId ? "⏳" : "❌"}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDelete(appId)}
+                          disabled={
+                            actionLoading === appId ||
+                            isRefreshing ||
+                            isActionInProgress
+                          }
+                          className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -719,7 +843,7 @@ export function ApplicationTable({
           <div className="flex items-center gap-2">
             <button
               onClick={() => onPageChange && onPageChange(currentPage - 1)}
-              disabled={currentPage <= 1}
+              disabled={currentPage <= 1 || isRefreshing || isActionInProgress}
               className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Previous
@@ -731,7 +855,9 @@ export function ApplicationTable({
 
             <button
               onClick={() => onPageChange && onPageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages}
+              disabled={
+                currentPage >= totalPages || isRefreshing || isActionInProgress
+              }
               className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Next
@@ -774,7 +900,7 @@ export function ApplicationTable({
         onOpenChange={setShowAddModal}
         onSuccess={() => {
           setShowAddModal(false);
-          if (onRefresh) onRefresh();
+          refreshData();
           toast.success("✅ Application submitted successfully!");
         }}
       />
@@ -784,7 +910,7 @@ export function ApplicationTable({
         <EditApplicationModal
           open={showEditModal}
           onOpenChange={setShowEditModal}
-          application={selectedApplication}
+          application={getApplicationForEdit(selectedApplication)!}
           buildings={buildings}
           plans={plans}
           onSuccess={handleEditSuccess}

@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -7,23 +7,26 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
 import { ApplicationTable } from "@/components/admin/ApplicationTable";
-import { getAllApplications } from "@/services/application";
-import { getActiveBuildings } from "@/services/building";
-import { getPlans } from "@/services/plan";
 import {
+  getAllApplications,
   approveApplication,
   rejectApplication,
   deleteApplication,
   bulkDeleteApplications,
   patchApplication,
 } from "@/services/application";
+import { getActiveBuildings } from "@/services/building";
+import { getPlans } from "@/services/plan";
 import { Building, Plan } from "@/services/application";
 
 // Types
 interface Application {
   _id: string;
+  id?: string;
+  applicationId?: string;
   firstName: string;
   lastName: string;
+  middleName?: string;
   email: string;
   phoneNumber: string;
   buildingId: string | { _id: string; buildingName: string };
@@ -37,11 +40,17 @@ interface Application {
   macAddress?: string;
   adminNotes?: string;
   notes?: string;
-  applicationId?: string;
   idImage?: string;
+  idImageUrl?: string;
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
+  billingStarted?: boolean;
+  registeredUserId?: string;
+  hasAccount?: boolean;
+  serviceStatus?: string;
+  installationFee?: number;
+  installationFeePaid?: boolean;
 }
 
 interface Filters {
@@ -73,13 +82,23 @@ export default function AdminApplicationsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshCounter = useRef(0);
+
+  // Get application ID consistently
+  const getAppId = useCallback((app: Application): string => {
+    return app._id || app.id || app.applicationId || "";
+  }, []);
 
   // Fetch applications with filters
   const fetchApplications = useCallback(
     async (refresh = false) => {
       try {
-        if (refresh) setIsRefreshing(true);
-        else if (!hasInitialLoad) setLoading(true);
+        if (refresh) {
+          setIsRefreshing(true);
+          refreshCounter.current += 1;
+        } else if (!hasInitialLoad) {
+          setLoading(true);
+        }
         setError(null);
 
         const params: any = {
@@ -99,8 +118,10 @@ export default function AdminApplicationsPage() {
           params.buildingId = filters.buildingId;
         }
 
+        // Add cache-busting param for refresh
         if (refresh) {
           params.forceRefresh = true;
+          params._t = Date.now() + refreshCounter.current;
         }
 
         console.log("Fetching applications with params:", params);
@@ -108,15 +129,32 @@ export default function AdminApplicationsPage() {
         const response = await getAllApplications(params);
         const data = response.data || [];
 
-        setApplications(data);
+        // Ensure each application has an _id
+        const mappedData = data.map((app: any) => {
+          if (!app._id && app.id) {
+            app._id = app.id;
+          }
+          if (!app._id && app.applicationId) {
+            app._id = app.applicationId;
+          }
+          return app;
+        });
+
+        setApplications(mappedData);
         setTotal(response.total || 0);
         setTotalPages(response.totalPages || 0);
         setCurrentPage(response.currentPage || 1);
         setHasInitialLoad(true);
+
+        if (refresh) {
+          toast.success("📋 Data refreshed successfully!");
+        }
       } catch (err: any) {
         console.error("Error fetching applications:", err);
         setError(err.message || "Failed to load applications");
-        toast.error("Failed to load applications");
+        if (!refresh) {
+          toast.error("Failed to load applications");
+        }
       } finally {
         setLoading(false);
         setIsRefreshing(false);
@@ -133,8 +171,8 @@ export default function AdminApplicationsPage() {
         getPlans(),
       ]);
 
-      setBuildings(buildingsRes);
-      setPlans(plansRes);
+      setBuildings(buildingsRes || []);
+      setPlans(plansRes || []);
     } catch (err) {
       console.error("Error fetching metadata:", err);
     }
@@ -184,9 +222,9 @@ export default function AdminApplicationsPage() {
     }));
   };
 
-  const handleRefresh = () => {
-    fetchApplications(true);
-  };
+  const handleRefresh = useCallback(async () => {
+    await fetchApplications(true);
+  }, [fetchApplications]);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -196,7 +234,8 @@ export default function AdminApplicationsPage() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(applications.map((app) => app._id));
+      const ids = applications.map((app) => getAppId(app)).filter(Boolean);
+      setSelectedIds(ids);
     } else {
       setSelectedIds([]);
     }
@@ -218,92 +257,148 @@ export default function AdminApplicationsPage() {
     router.push(`/admin/applications/${id}/edit`);
   };
 
-  // Approve application handler
+  // Approve application handler with proper refresh
   const handleApprove = useCallback(
     async (id: string) => {
+      if (!id) {
+        toast.error("Cannot approve: No ID found");
+        return;
+      }
+
       try {
-        await approveApplication(id);
-        toast.success("Application approved successfully!");
+        console.log("✅ Approving application:", id);
+        // Call the API to approve
+        const result = await approveApplication(id);
+        console.log("✅ Approve result:", result);
+
+        toast.success("✅ Application approved successfully!");
+
+        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
-        console.error("Error approving application:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to approve application",
-        );
+        console.error("❌ Error approving application:", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to approve application";
+        toast.error(message);
         throw error;
       }
     },
     [fetchApplications],
   );
 
-  // Reject application handler
+  // Reject application handler with proper refresh
   const handleReject = useCallback(
     async (id: string) => {
+      if (!id) {
+        toast.error("Cannot reject: No ID found");
+        return;
+      }
+
       try {
-        await rejectApplication(id);
-        toast.success("Application rejected successfully!");
+        console.log("❌ Rejecting application:", id);
+        // Call the API to reject
+        const result = await rejectApplication(id);
+        console.log("❌ Reject result:", result);
+
+        toast.success("❌ Application rejected successfully!");
+
+        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
-        console.error("Error rejecting application:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to reject application",
-        );
+        console.error("❌ Error rejecting application:", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to reject application";
+        toast.error(message);
         throw error;
       }
     },
     [fetchApplications],
   );
 
-  // Delete application handler
+  // Delete application handler with proper refresh
   const handleDelete = useCallback(
     async (id: string) => {
+      if (!id) {
+        toast.error("Cannot delete: No ID found");
+        return;
+      }
+
       try {
+        console.log("🗑️ Deleting application:", id);
         await deleteApplication(id);
         setSelectedIds((prev) => prev.filter((item) => item !== id));
-        toast.success("Application deleted successfully!");
+        toast.success("🗑️ Application deleted successfully!");
+
+        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
-        console.error("Error deleting application:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to delete application",
-        );
+        console.error("❌ Error deleting application:", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to delete application";
+        toast.error(message);
         throw error;
       }
     },
     [fetchApplications],
   );
 
-  // Bulk delete handler
+  // Bulk delete handler with proper refresh
   const handleBulkDelete = useCallback(
     async (ids: string[]) => {
+      if (!ids || ids.length === 0) {
+        toast.error("No applications selected for deletion");
+        return;
+      }
+
       try {
+        console.log("🗑️ Bulk deleting applications:", ids);
         await bulkDeleteApplications(ids);
         setSelectedIds([]);
-        toast.success(`${ids.length} applications deleted successfully!`);
+        toast.success(`🗑️ ${ids.length} applications deleted successfully!`);
+
+        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
-        console.error("Error bulk deleting applications:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to delete applications",
-        );
+        console.error("❌ Error bulk deleting applications:", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to delete applications";
+        toast.error(message);
         throw error;
       }
     },
     [fetchApplications],
   );
 
-  // Edit handler
+  // Edit handler with proper refresh
   const handleEdit = useCallback(
     async (id: string, data: any) => {
+      if (!id) {
+        toast.error("Cannot update: No ID found");
+        return;
+      }
+
       try {
+        console.log("✏️ Updating application:", id, data);
         await patchApplication(id, data);
-        toast.success("Application updated successfully!");
+        toast.success("✅ Application updated successfully!");
+
+        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
-        console.error("Error updating application:", error);
-        toast.error(
-          error?.response?.data?.message || "Failed to update application",
-        );
+        console.error("❌ Error updating application:", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to update application";
+        toast.error(message);
         throw error;
       }
     },
@@ -362,13 +457,17 @@ export default function AdminApplicationsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefresh}
-            disabled={isRefreshing}
+            disabled={isRefreshing || loading}
             className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition disabled:opacity-50"
+            title="Refresh"
           >
             <ArrowPathIcon
               className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
             />
           </button>
+          {isRefreshing && (
+            <span className="text-sm text-gray-500">Refreshing...</span>
+          )}
         </div>
       </div>
 
@@ -396,6 +495,7 @@ export default function AdminApplicationsPage() {
       <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
         <ApplicationTable
           applications={applications}
+          isLoading={loading}
           loading={loading}
           selectedIds={selectedIds}
           onSelectAll={handleSelectAll}

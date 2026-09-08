@@ -1,4 +1,4 @@
-// services/application.ts - COMPLETE FIXED - REMOVED birthDate AND gender
+// services/application.ts - COMPLETE FIXED
 import api from "./api";
 
 export interface Building {
@@ -72,6 +72,8 @@ export interface ApplicationFilters {
   status?: string;
   search?: string;
   buildingId?: string;
+  forceRefresh?: boolean;
+  _t?: number;
 }
 
 export interface PaginatedResponse {
@@ -130,7 +132,15 @@ export const getPlans = async (): Promise<Plan[]> => {
 export const getAllApplications = async (
   filters: ApplicationFilters = {},
 ): Promise<PaginatedResponse> => {
-  const { page = 1, limit = 20, status, search, buildingId } = filters;
+  const {
+    page = 1,
+    limit = 20,
+    status,
+    search,
+    buildingId,
+    forceRefresh = false,
+    _t,
+  } = filters;
 
   const params: any = { page, limit };
 
@@ -146,9 +156,30 @@ export const getAllApplications = async (
     params.buildingId = buildingId;
   }
 
+  // Add cache busting
+  if (forceRefresh || _t) {
+    params._t = _t || Date.now();
+  }
+
   console.log("getAllApplications params:", params);
 
   const response = await api.get("/applications", { params });
+
+  // Ensure each item has an _id field
+  if (response.data.data && Array.isArray(response.data.data)) {
+    response.data.data = response.data.data.map((item: any) => {
+      // If the item doesn't have _id, try to get it from id or applicationId
+      if (!item._id) {
+        if (item.id) {
+          item._id = item.id;
+        } else if (item.applicationId) {
+          item._id = item.applicationId;
+        }
+      }
+      return item;
+    });
+  }
+
   return response.data;
 };
 
@@ -158,7 +189,7 @@ export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
   return response.data.data;
 };
 
-// ============ SUBMIT APPLICATION - FIXED ============
+// ============ SUBMIT APPLICATION ============
 export const submitApplication = async (data: ApplicationData) => {
   try {
     const formData = new FormData();
@@ -197,13 +228,6 @@ export const submitApplication = async (data: ApplicationData) => {
       formData.append("idImage", data.idImage);
     }
 
-    // Log what we're sending (for debugging)
-    console.log("📤 Submitting application with:");
-    console.log("  - Email:", data.email);
-    console.log("  - Phone:", data.phoneNumber);
-    console.log("  - Building:", data.buildingId);
-    console.log("  - Unit:", data.floor, data.unitNumber);
-
     const response = await api.post("/applications", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
@@ -212,20 +236,13 @@ export const submitApplication = async (data: ApplicationData) => {
 
     return response.data;
   } catch (error: any) {
-    // ✅ Better error handling
     console.error("❌ Submit application error:", error);
 
     if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
       const status = error.response.status;
       const data = error.response.data;
 
-      console.error("  - Status:", status);
-      console.error("  - Data:", data);
-
       if (status === 409) {
-        // Conflict - already exists
         throw {
           status: 409,
           message: data.message || "Application conflict detected",
@@ -234,7 +251,6 @@ export const submitApplication = async (data: ApplicationData) => {
       }
 
       if (status === 400) {
-        // Validation error
         throw {
           status: 400,
           message: data.message || "Validation failed",
@@ -250,14 +266,12 @@ export const submitApplication = async (data: ApplicationData) => {
     }
 
     if (error.request) {
-      // The request was made but no response was received
       throw {
         status: 0,
         message: "Network error - no response from server",
       };
     }
 
-    // Something happened in setting up the request that triggered an Error
     throw {
       status: 0,
       message: error.message || "Unknown error",
