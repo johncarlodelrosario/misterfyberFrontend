@@ -354,20 +354,7 @@ const AddApplicationModal = ({
                   </p>
                 )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Middle Name
-                </label>
-                <input
-                  type="text"
-                  value={formData.middleName}
-                  onChange={(e) =>
-                    handleFieldChange("middleName", e.target.value)
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Optional"
-                />
-              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Last Name <span className="text-red-500">*</span>
