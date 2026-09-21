@@ -42,7 +42,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // ==================== GET API URL - PRODUCTION FIXED ====================
 const getApiUrl = (): string => {
   if (typeof window === "undefined") {
-    return "https://misterfyberbackend-q4k5.onrender.com/api";
+    return "https://misterfyberbackend-lvjd.onrender.com/api";
   }
 
   const isProduction = process.env.NODE_ENV === "production";
@@ -53,7 +53,7 @@ const getApiUrl = (): string => {
 
   if (isProduction || isProdDomain) {
     console.log("🌍 PRODUCTION: Using Render backend in AuthContext");
-    return "https://misterfyberbackend-q4k5.onrender.com/api";
+    return "https://misterfyberbackend-lvjd.onrender.com/api";
   }
 
   console.log("🛠️ DEVELOPMENT: Using local backend in AuthContext");

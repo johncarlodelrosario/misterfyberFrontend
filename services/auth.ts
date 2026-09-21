@@ -62,7 +62,7 @@ const getApiUrl = (): string => {
   if (typeof window === "undefined") {
     return (
       process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend-q4k5.onrender.com/api"
+      "https://misterfyberbackend-lvjd.onrender.com/api"
     );
   }
 
@@ -78,7 +78,7 @@ const getApiUrl = (): string => {
   // ALWAYS USE RENDER BACKEND FOR PRODUCTION
   if (isProduction || isProdDomain) {
     console.log("🌍 PRODUCTION: Using Render backend in authService");
-    return "https://misterfyberbackend-q4k5.onrender.com/api";
+    return "https://misterfyberbackend-lvjd.onrender.com/api";
   }
 
   // DEVELOPMENT - Use localhost
