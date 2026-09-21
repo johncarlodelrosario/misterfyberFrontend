@@ -162,7 +162,7 @@ export function ApplicationDetails({
 
     // If it's a relative path starting with /uploads/
     if (image.startsWith("/uploads/")) {
-      const PRODUCTION_URL = "https://misterfyberbackend-q4k5.onrender.com";
+      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fullUrl = `${PRODUCTION_URL}${image}`;
       console.log("✅ Using relative path URL:", fullUrl);
       return fullUrl;
@@ -170,7 +170,7 @@ export function ApplicationDetails({
 
     // If it's a relative path without leading slash
     if (image.startsWith("uploads/")) {
-      const PRODUCTION_URL = "https://misterfyberbackend-q4k5.onrender.com";
+      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fullUrl = `${PRODUCTION_URL}/${image}`;
       console.log("✅ Using uploads path URL:", fullUrl);
       return fullUrl;
@@ -181,7 +181,7 @@ export function ApplicationDetails({
 
     // Check if it's the placeholder
     if (filename === "placeholder.jpg" || !filename || filename === "") {
-      const PRODUCTION_URL = "https://misterfyberbackend-q4k5.onrender.com";
+      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fallbackUrl = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
       console.log("📸 Using placeholder URL:", fallbackUrl);
       return fallbackUrl;

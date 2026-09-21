@@ -4,7 +4,7 @@ const nextConfig = {
   images: {
     domains: [
       "localhost",
-      "https://misterfyberbackend-q4k5.onrender.com",
+      "https://misterfyberbackend-lvjd.onrender.com",
       "www.misterfyber.com",
       "misterfyber.com",
       "vercel.app",
@@ -17,7 +17,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "https://misterfyberbackend-q4k5.onrender.com",
+        hostname: "https://misterfyberbackend-lvjd.onrender.com",
         port: "",
         pathname: "/uploads/**",
       },
@@ -131,17 +131,17 @@ const nextConfig = {
   async rewrites() {
     const apiUrl =
       process.env.NEXT_PUBLIC_API_URL ||
-      "https://misterfyberbackend-q4k5.onrender.com/api";
+      "https://misterfyberbackend-lvjd.onrender.com/api";
 
     return [
       {
         source: "/api/:path*",
-        destination: "https://misterfyberbackend-q4k5.onrender.com/api/:path*",
+        destination: "https://misterfyberbackend-lvjd.onrender.com/api/:path*",
       },
       {
         source: "/uploads/:path*",
         destination:
-          "https://misterfyberbackend-q4k5.onrender.com/uploads/:path*",
+          "https://misterfyberbackend-lvjd.onrender.com/uploads/:path*",
       },
     ];
   },
