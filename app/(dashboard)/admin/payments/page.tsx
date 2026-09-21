@@ -1,4 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FREE BADGE SUPPORT
+// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH SEPARATE CUSTOMER TABLE COMPONENT
 
 "use client";
 
@@ -7,7 +7,6 @@ import React, {
   useEffect,
   useCallback,
   useRef,
-  Fragment,
   useMemo,
 } from "react";
 import {
@@ -31,21 +30,15 @@ import {
   FiPhone,
   FiDollarSign,
   FiFilter,
-  FiDownload,
-  FiChevronDown,
-  FiChevronUp,
-  FiChevronsDown,
-  FiChevronsUp,
   FiCalendar,
   FiTrash2,
   FiHome,
   FiBarChart2,
-  FiPrinter,
-  FiAlertTriangle,
   FiCheckCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
+import CustomerSummaryTable from "@/components/admin/CustomerSummaryTable";
 
 type Payment = ServicePayment;
 
@@ -714,325 +707,6 @@ const PendingPaymentRow = React.memo(
 
 PendingPaymentRow.displayName = "PendingPaymentRow";
 
-// ==================== CUSTOMER SUMMARY ROW COMPONENT ====================
-const CustomerSummaryRow = React.memo(
-  ({
-    group,
-    index,
-    rowNumber,
-    isExpanded,
-    onToggleExpand,
-    onView,
-    onDelete,
-    onBulkDelete,
-    deleting,
-    bulkDeleting,
-  }: {
-    group: PaymentGroup;
-    index: number;
-    rowNumber: number;
-    isExpanded: boolean;
-    onToggleExpand: (id: string) => void;
-    onView: (payment: Payment) => void;
-    onDelete: (id: string, ref: string) => void;
-    onBulkDelete: (customerId: string, customerName: string) => void;
-    deleting: boolean;
-    bulkDeleting: boolean;
-  }) => {
-    const hasMultiple = group.paymentCount > 1;
-    const [showDeleteMenu, setShowDeleteMenu] = useState(false);
-    const hasFreePayment = group.payments.some(
-      (p) => p.paymentDetails?.isFree === true,
-    );
-
-    // Helper to show toast info (fix for toast.info error)
-    const showToastInfo = (message: string) => {
-      toast(message, {
-        icon: "ℹ️",
-        duration: 4000,
-      });
-    };
-
-    return (
-      <Fragment>
-        <tr
-          className={`hover:bg-gray-50 ${group.hasPendingPayments ? "bg-yellow-50/30" : ""}`}
-        >
-          <td className="px-4 py-4 text-sm text-gray-500">{rowNumber}</td>
-          <td className="px-4 py-4">
-            <div className="flex items-center gap-2">
-              {hasMultiple && (
-                <button
-                  onClick={() => onToggleExpand(group.customerId)}
-                  className="text-blue-600 hover:text-blue-800"
-                >
-                  {isExpanded ? (
-                    <FiChevronsUp className="w-4 h-4" />
-                  ) : (
-                    <FiChevronsDown className="w-4 h-4" />
-                  )}
-                </button>
-              )}
-              <span className="font-semibold">{group.customerInfo.name}</span>
-              {hasFreePayment && (
-                <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full flex items-center gap-0.5">
-                  <FiCheckCircle className="w-3 h-3" /> FREE
-                </span>
-              )}
-            </div>
-          </td>
-          <td className="px-4 py-4 font-mono text-sm">
-            {group.customerInfo.applicationId}
-          </td>
-          <td className="px-4 py-4">
-            <div className="flex items-center gap-1 text-sm">
-              <FiMail className="w-3 h-3 text-gray-400" />{" "}
-              {group.customerInfo.email}
-            </div>
-            {group.customerInfo.phone !== "—" && (
-              <div className="flex items-center gap-1 text-xs text-gray-400">
-                <FiPhone className="w-3 h-3" /> {group.customerInfo.phone}
-              </div>
-            )}
-          </td>
-          <td className="px-4 py-4 text-sm">
-            {group.customerInfo.buildingName || "—"}
-          </td>
-          <td className="px-4 py-4 text-center">
-            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-              {group.paymentCount}
-            </span>
-          </td>
-          <td className="px-4 py-4 text-right">
-            <span className="font-bold text-green-600">
-              {formatCurrency(group.totalPaidAmount)}
-            </span>
-          </td>
-          <td className="px-4 py-4 text-right">
-            {group.totalPendingAmount > 0 ? (
-              <span className="text-yellow-600 font-medium">
-                {formatCurrency(group.totalPendingAmount)}
-              </span>
-            ) : (
-              "—"
-            )}
-          </td>
-          <td className="px-4 py-4 text-sm">
-            {formatShortDate(group.lastPaymentDate)}
-          </td>
-          <td className="px-4 py-4 text-center">
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={() => onView(group.payments[0])}
-                className="text-blue-600 hover:text-blue-800"
-                title="View Details"
-              >
-                <FiEye className="w-5 h-5" />
-              </button>
-              <div className="relative">
-                <button
-                  onClick={() => setShowDeleteMenu(!showDeleteMenu)}
-                  className="text-red-600 hover:text-red-800"
-                  title="Delete Options"
-                >
-                  <FiTrash2 className="w-5 h-5" />
-                </button>
-                {showDeleteMenu && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
-                    <div className="p-2">
-                      <p className="text-xs text-gray-500 px-3 py-1 border-b border-gray-100">
-                        Delete options for {group.customerInfo.name}
-                      </p>
-                      <button
-                        onClick={() => {
-                          setShowDeleteMenu(false);
-                          onBulkDelete(
-                            group.customerId,
-                            group.customerInfo.name,
-                          );
-                        }}
-                        disabled={bulkDeleting}
-                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition flex items-center gap-2"
-                      >
-                        <FiTrash2 className="w-4 h-4" />
-                        Delete ALL payments for this customer
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowDeleteMenu(false);
-                          // Delete only pending payments
-                          const pendingPayments = group.payments.filter(
-                            (p) => p.status === "pending",
-                          );
-                          if (pendingPayments.length === 0) {
-                            showToastInfo(
-                              "No pending payments to delete for this customer",
-                            );
-                            return;
-                          }
-                          if (
-                            !confirm(
-                              `Delete ${pendingPayments.length} pending payment(s) for ${group.customerInfo.name}?`,
-                            )
-                          )
-                            return;
-                          pendingPayments.forEach((p) =>
-                            onDelete(p._id, p.referenceNumber),
-                          );
-                        }}
-                        disabled={deleting}
-                        className="w-full text-left px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded transition flex items-center gap-2"
-                      >
-                        <FiClock className="w-4 h-4" />
-                        Delete only PENDING payments
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </td>
-        </tr>
-        {isExpanded && hasMultiple && (
-          <tr className="bg-gray-50">
-            <td colSpan={10} className="px-4 py-4 pl-12">
-              <div className="border-l-4 border-blue-400 pl-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  Payment History ({group.payments.length} payments)
-                </p>
-                <div className="space-y-3">
-                  {group.payments.map((p, idx) => {
-                    const billingPeriod = (p.billingId as any)?.billingPeriod;
-                    const isInstallation =
-                      p.paymentType === "installation" ||
-                      (p.billingId as any)?.isInstallationBill;
-                    const isFree = p.paymentDetails?.isFree === true;
-                    return (
-                      <div
-                        key={p._id}
-                        className={`border rounded-lg p-3 bg-white ${isFree ? "border-green-300" : "border-gray-200"}`}
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                          <div>
-                            <p className="text-xs text-gray-400">
-                              #{idx + 1} - Date
-                            </p>
-                            <p className="font-medium">
-                              {formatShortDate(p.createdAt)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">Reference</p>
-                            <p className="font-mono text-xs break-all">
-                              {p.referenceNumber}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">Type</p>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs inline-block ${getPaymentTypeColor(p.paymentType)}`}
-                            >
-                              {p.paymentType === "installation"
-                                ? "Installation Fee"
-                                : p.paymentType === "subscription"
-                                  ? "Monthly Subscription"
-                                  : p.paymentType}
-                            </span>
-                            {isFree && (
-                              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full">
-                                FREE
-                              </span>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">Amount</p>
-                            <p
-                              className={`font-bold ${isFree ? "text-green-600" : "text-green-600"}`}
-                            >
-                              {formatCurrency(p.amount)}
-                              {isFree && (
-                                <span className="ml-1 text-xs text-green-500">
-                                  (FREE)
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">Status</p>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs inline-block ${getStatusColor(p.status)}`}
-                            >
-                              {p.status === "completed" ? "Paid" : p.status}
-                            </span>
-                          </div>
-                          {!isInstallation &&
-                            (p.billingId as any)?.invoiceNumber && (
-                              <div>
-                                <p className="text-xs text-gray-400">Invoice</p>
-                                <p className="font-mono text-xs">
-                                  {(p.billingId as any).invoiceNumber}
-                                </p>
-                              </div>
-                            )}
-                          {!isInstallation && billingPeriod && (
-                            <>
-                              <div className="md:col-span-2">
-                                <p className="text-xs text-gray-400 flex items-center gap-1">
-                                  <FiCalendar className="w-3 h-3" /> Billing
-                                  Period
-                                </p>
-                                <p className="text-sm font-mono bg-gray-50 p-1 rounded">
-                                  {formatBillingPeriod(billingPeriod)}
-                                </p>
-                              </div>
-                              {(p.billingId as any)?.isProRated && (
-                                <div>
-                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                    Pro-rated Bill
-                                  </span>
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {!isInstallation && (p.billingId as any)?.dueDate && (
-                            <div>
-                              <p className="text-xs text-gray-400">Due Date</p>
-                              <p className="text-sm font-medium text-red-600">
-                                {formatDateFixed((p.billingId as any).dueDate)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-3 flex justify-end gap-2">
-                          <button
-                            onClick={() => onView(p)}
-                            className="text-blue-600 text-xs hover:underline flex items-center gap-1"
-                          >
-                            <FiEye className="w-3 h-3" /> View Full Details
-                          </button>
-                          <button
-                            onClick={() => onDelete(p._id, p.referenceNumber)}
-                            disabled={deleting}
-                            className="text-red-600 text-xs hover:underline flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <FiTrash2 className="w-3 h-3" /> Delete
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </td>
-          </tr>
-        )}
-      </Fragment>
-    );
-  },
-);
-
-CustomerSummaryRow.displayName = "CustomerSummaryRow";
-
 // ==================== MAIN PAGE COMPONENT ====================
 export default function AdminPaymentsPage() {
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
@@ -1050,10 +724,6 @@ export default function AdminPaymentsPage() {
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [sortField, setSortField] =
-    useState<keyof PaymentGroup>("lastPaymentDate");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
 
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
@@ -1072,8 +742,6 @@ export default function AdminPaymentsPage() {
     pendingCount: 0,
   });
   const [showFilters, setShowFilters] = useState(false);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [currentTablePage, setCurrentTablePage] = useState(1);
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
 
@@ -1309,18 +977,9 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  const handleSort = (field: keyof PaymentGroup) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("desc");
-    }
-  };
-
   // ==================== EXPORT TO PDF ====================
   const exportToPDF = () => {
-    const exportData = sortedGroups;
+    const exportData = paymentGroups;
 
     if (exportData.length === 0) {
       toast.error("No data to export. Please adjust your filters.");
@@ -1554,125 +1213,6 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  // ==================== MEMOIZED DATA ====================
-  const filteredGroups = useMemo(() => {
-    return paymentGroups.filter((group) => {
-      const info = group.customerInfo;
-
-      let matchesSearch = true;
-      if (search.trim()) {
-        const searchLower = search.toLowerCase();
-        matchesSearch =
-          info.name.toLowerCase().includes(searchLower) ||
-          info.email.toLowerCase().includes(searchLower) ||
-          info.applicationId.toLowerCase().includes(searchLower) ||
-          info.phone.toLowerCase().includes(searchLower) ||
-          group.payments.some((p) =>
-            p.referenceNumber?.toLowerCase().includes(searchLower),
-          );
-      }
-
-      let matchesBuilding = true;
-      if (buildingFilter) {
-        matchesBuilding = info.buildingId === buildingFilter;
-
-        if (!matchesBuilding && info.buildingName) {
-          const selectedBuilding = buildings.find(
-            (b) => b._id === buildingFilter,
-          );
-          if (selectedBuilding) {
-            const selectedName =
-              selectedBuilding.name || selectedBuilding.buildingName || "";
-            matchesBuilding = info.buildingName === selectedName;
-          }
-        }
-
-        if (!matchesBuilding) {
-          matchesBuilding = group.payments.some((p) => {
-            if (p.buildingId === buildingFilter) return true;
-            if (p.userId && typeof p.userId === "object") {
-              const user = p.userId as any;
-              if (user.buildingId === buildingFilter) return true;
-            }
-            return false;
-          });
-        }
-      }
-
-      return matchesSearch && matchesBuilding;
-    });
-  }, [paymentGroups, search, buildingFilter, buildings]);
-
-  const sortedGroups = useMemo(() => {
-    return [...filteredGroups].sort((a, b) => {
-      let aVal: any, bVal: any;
-      switch (sortField) {
-        case "customerInfo":
-          aVal = a.customerInfo.name;
-          bVal = b.customerInfo.name;
-          break;
-        case "totalAmount":
-          aVal = a.totalAmount;
-          bVal = b.totalAmount;
-          break;
-        case "paymentCount":
-          aVal = a.paymentCount;
-          bVal = b.paymentCount;
-          break;
-        case "lastPaymentDate":
-          aVal = new Date(a.lastPaymentDate).getTime();
-          bVal = new Date(b.lastPaymentDate).getTime();
-          break;
-        default:
-          aVal = a[sortField];
-          bVal = b[sortField];
-      }
-      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [filteredGroups, sortField, sortDirection]);
-
-  const paginatedGroups = useMemo(() => {
-    const startIndex = (currentTablePage - 1) * itemsPerPage;
-    return sortedGroups.slice(startIndex, startIndex + itemsPerPage);
-  }, [sortedGroups, currentTablePage, itemsPerPage]);
-
-  const totalFilteredCount = filteredGroups.length;
-  const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
-
-  const grandTotals = useMemo(() => {
-    let totalPaid = 0;
-    let totalPending = 0;
-    let totalOverall = 0;
-    let totalTransactions = 0;
-
-    filteredGroups.forEach((group) => {
-      totalPaid += group.totalPaidAmount;
-      totalPending += group.totalPendingAmount;
-      totalOverall += group.totalAmount;
-      totalTransactions += group.paymentCount;
-    });
-
-    return {
-      totalPaid,
-      totalPending,
-      totalOverall,
-      totalTransactions,
-      totalCustomers: filteredGroups.length,
-    };
-  }, [filteredGroups]);
-
-  const SortIcon = ({ field }: { field: keyof PaymentGroup }) => {
-    if (sortField !== field)
-      return <FiChevronDown className="w-3 h-3 opacity-30" />;
-    return sortDirection === "asc" ? (
-      <FiChevronUp className="w-3 h-3" />
-    ) : (
-      <FiChevronDown className="w-3 h-3" />
-    );
-  };
-
   if (loading && paymentGroups.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1760,40 +1300,6 @@ export default function AdminPaymentsPage() {
           </p>
         </div>
       </div>
-
-      {/* Grand Total Summary Bar */}
-      {filteredGroups.length > 0 && (
-        <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <FiBarChart2 className="w-6 h-6 text-blue-600" />
-            <div className="flex-1">
-              <p className="font-semibold text-blue-800">Report Summary</p>
-              <div className="flex flex-wrap gap-4 mt-1">
-                <span className="text-sm text-gray-600">
-                  <span className="font-medium">Customers:</span>{" "}
-                  {grandTotals.totalCustomers}
-                </span>
-                <span className="text-sm text-gray-600">
-                  <span className="font-medium">Transactions:</span>{" "}
-                  {grandTotals.totalTransactions}
-                </span>
-                <span className="text-sm text-green-600">
-                  <span className="font-medium">Total Paid:</span>{" "}
-                  {formatCurrency(grandTotals.totalPaid)}
-                </span>
-                <span className="text-sm text-yellow-600">
-                  <span className="font-medium">Total Pending:</span>{" "}
-                  {formatCurrency(grandTotals.totalPending)}
-                </span>
-                <span className="text-sm text-blue-600 font-bold">
-                  <span className="font-medium">Grand Total:</span>{" "}
-                  {formatCurrency(grandTotals.totalOverall)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Pending Alert */}
       {pendingPayments.length > 0 && (
@@ -2016,194 +1522,21 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* Customer Summary Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">
-              Customer Payment Summary ({totalFilteredCount})
-            </h2>
-            <p className="text-sm text-gray-500">
-              Showing {paginatedGroups.length} of {sortedGroups.length}{" "}
-              customers
-            </p>
-            {(dateRangeStart || dateRangeEnd) && (
-              <p className="text-xs text-blue-600 mt-1">
-                📅 Filtered by:{" "}
-                {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
-                {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
-              </p>
-            )}
-            {buildingFilter && (
-              <p className="text-xs text-blue-600 mt-1">
-                🏢 Building:{" "}
-                {buildings.find((b) => b._id === buildingFilter)?.name ||
-                  buildingFilter}
-              </p>
-            )}
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentTablePage(1);
-              }}
-              className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={10}>10 per page</option>
-              <option value={25}>25 per page</option>
-              <option value={50}>50 per page</option>
-              <option value={100}>100 per page</option>
-            </select>
-            <button
-              onClick={exportToPDF}
-              className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"
-            >
-              <FiPrinter /> PDF Report
-            </button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  #
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("customerInfo")}
-                >
-                  Customer Name <SortIcon field="customerInfo" />
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Application ID
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email / Phone
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Building
-                </th>
-                <th
-                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("paymentCount")}
-                >
-                  Payments <SortIcon field="paymentCount" />
-                </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("totalAmount")}
-                >
-                  Total Paid <SortIcon field="totalAmount" />
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pending
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("lastPaymentDate")}
-                >
-                  Last Payment <SortIcon field="lastPaymentDate" />
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
-              {paginatedGroups.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-6 py-12 text-center text-gray-500"
-                  >
-                    <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p>No payment records found</p>
-                    {(dateRangeStart || dateRangeEnd) && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Try adjusting your date range filters
-                      </p>
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                paginatedGroups.map((group, index) => {
-                  const isExpanded = expandedCustomer === group.customerId;
-                  const rowNumber =
-                    (currentTablePage - 1) * itemsPerPage + index + 1;
-                  return (
-                    <CustomerSummaryRow
-                      key={group.customerId}
-                      group={group}
-                      index={index}
-                      rowNumber={rowNumber}
-                      isExpanded={isExpanded}
-                      onToggleExpand={(id) =>
-                        setExpandedCustomer(isExpanded ? null : id)
-                      }
-                      onView={setSelectedPayment}
-                      onDelete={handleDeletePayment}
-                      onBulkDelete={handleBulkDeleteCustomerPayments}
-                      deleting={deleting}
-                      bulkDeleting={bulkDeleting}
-                    />
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {totalFilteredCount > 0 && (
-          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
-            <div className="text-sm text-gray-600">
-              Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
-              {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
-              {totalFilteredCount} entries
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentTablePage(1)}
-                disabled={currentTablePage === 1}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                First
-              </button>
-              <button
-                onClick={() =>
-                  setCurrentTablePage((prev) => Math.max(1, prev - 1))
-                }
-                disabled={currentTablePage === 1}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1 text-sm">
-                Page {currentTablePage} of {totalPagesCount}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentTablePage((prev) =>
-                    Math.min(totalPagesCount, prev + 1),
-                  )
-                }
-                disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => setCurrentTablePage(totalPagesCount)}
-                disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Customer Summary Table - SEPARATE COMPONENT */}
+      <CustomerSummaryTable
+        paymentGroups={paymentGroups}
+        search={search}
+        buildingFilter={buildingFilter}
+        buildings={buildings}
+        dateRangeStart={dateRangeStart}
+        dateRangeEnd={dateRangeEnd}
+        onView={setSelectedPayment}
+        onDelete={handleDeletePayment}
+        onBulkDelete={handleBulkDeleteCustomerPayments}
+        onExportPDF={exportToPDF}
+        deleting={deleting}
+        bulkDeleting={bulkDeleting}
+      />
 
       {/* Payment Modal */}
       {selectedPayment && (

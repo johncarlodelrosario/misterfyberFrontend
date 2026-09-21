@@ -49,6 +49,7 @@ import toast from "react-hot-toast";
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
 import BillingTable from "@/components/admin/billingTable";
 import CustomerDetailModal from "@/components/admin/CustomerDetailModal";
+import BackdatedModal from "@/components/billing/BackdatedModal";
 
 // Import services
 import {
@@ -248,7 +249,6 @@ function AdminBillingPageContent() {
     useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
-  const [showStartModal, setShowStartModal] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -641,7 +641,6 @@ function AdminBillingPageContent() {
     onSuccess: () => {
       toast.success("✅ Billing started successfully!");
       clearBillingCache();
-      setShowStartModal(false);
       resetStartForm();
       setTimeout(() => refreshData(true), 200);
     },
@@ -662,7 +661,6 @@ function AdminBillingPageContent() {
     onSuccess: () => {
       toast.success("✅ Billing started for application!");
       clearBillingCache();
-      setShowStartModal(false);
       resetStartForm();
       setTimeout(() => refreshData(true), 200);
     },
@@ -1024,6 +1022,7 @@ function AdminBillingPageContent() {
         handleRecoverMissingBills(customer);
         break;
       case "start":
+        // Instead of opening start billing modal, open backdated modal
         if (
           customer.billingCycle &&
           customer.billingCycle.status !== "cancelled"
@@ -1033,11 +1032,18 @@ function AdminBillingPageContent() {
           );
           return;
         }
-        setSelectedApplicationId(customer.applicationId || customer._id);
-        setSelectedCustomerName(`${customer.firstName} ${customer.lastName}`);
-        setSelectedCustomerEmail(customer.email);
-        setIncludeInstallationFee(true);
-        setShowStartModal(true);
+        // Pre-select this customer in the backdated modal
+        setSelectedBackdatedCustomer(customer);
+        setBackdatedForm({
+          applicationId: customer.applicationId || "",
+          serviceStartDate: "",
+          customPlanName: customer.planName || "",
+          monthlyRate: customer.planPrice?.toString() || "",
+          skipFirstBill: false,
+          notes: "",
+          includeInstallationFee: true,
+        });
+        setShowBackdatedModal(true);
         break;
       case "pause":
         if (customer.type === "application") {
@@ -1176,50 +1182,6 @@ function AdminBillingPageContent() {
         break;
       default:
         break;
-    }
-  };
-
-  const handleStartBilling = () => {
-    if (
-      startBillingMutation.isPending ||
-      startBillingForAppMutation.isPending
-    ) {
-      toast.error("⚠️ Please wait, billing is already being started");
-      return;
-    }
-
-    if (selectedApplicationId) {
-      const existingCustomer = customers.find(
-        (c: CustomerItem) => c.applicationId === selectedApplicationId,
-      );
-      if (
-        existingCustomer?.billingCycle &&
-        existingCustomer.billingCycle.status !== "cancelled"
-      ) {
-        toast.error(
-          `⚠️ ${existingCustomer.firstName} ${existingCustomer.lastName} already has an active billing cycle`,
-        );
-        return;
-      }
-
-      startBillingForAppMutation.mutate({
-        applicationId: selectedApplicationId,
-        data: {
-          installationDate: startDate || undefined,
-          notes: billingNotes,
-          includeInstallationFee,
-        },
-      });
-    } else if (selectedUserId) {
-      startBillingMutation.mutate({
-        userId: selectedUserId,
-        startDate: startDate || undefined,
-        customAmount: customAmount ? parseFloat(customAmount) : undefined,
-        notes: billingNotes,
-        includeInstallationFee,
-      });
-    } else {
-      toast.error("No customer selected");
     }
   };
 
@@ -1586,325 +1548,19 @@ function AdminBillingPageContent() {
         onMarkInstallationBillAsPaid={handleMarkInstallationBillAsPaid}
       />
 
-      {/* Backdated Modal */}
-      {showBackdatedModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Backdated Billing
-              </h2>
-              <button
-                onClick={() => setShowBackdatedModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div className="bg-amber-50 p-3 rounded-lg text-sm">
-                <p className="font-semibold text-amber-800">📌 When to use:</p>
-                <p className="text-xs text-amber-700">
-                  Customer has been using internet for past months - generates
-                  all missing bills from start date
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Customer *
-                </label>
-                <select
-                  value={backdatedForm.applicationId}
-                  onChange={(e) => {
-                    const appId = e.target.value;
-                    const customer = customers.find(
-                      (c: CustomerItem) =>
-                        c.type === "application" &&
-                        c.applicationId === appId &&
-                        !c.billingCycle,
-                    );
-                    setSelectedBackdatedCustomer(customer);
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      applicationId: appId,
-                      customPlanName: customer?.planName || "",
-                      monthlyRate: customer?.planPrice?.toString() || "",
-                    });
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">Select a customer...</option>
-                  {customers
-                    .filter(
-                      (c: CustomerItem) =>
-                        c.type === "application" &&
-                        !c.billingCycle &&
-                        c.applicationId,
-                    )
-                    .map((c: CustomerItem) => (
-                      <option key={c.applicationId} value={c.applicationId}>
-                        {c.firstName} {c.lastName} - {c.email}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {selectedBackdatedCustomer && (
-                <div className="bg-green-50 p-3 rounded-lg text-sm">
-                  <p className="font-medium">
-                    {selectedBackdatedCustomer.firstName}{" "}
-                    {selectedBackdatedCustomer.lastName}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    {selectedBackdatedCustomer.email} |{" "}
-                    {selectedBackdatedCustomer.planName} - ₱
-                    {selectedBackdatedCustomer.planPrice}/mo
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Service Start Date *
-                </label>
-                <input
-                  type="date"
-                  value={backdatedForm.serviceStartDate}
-                  onChange={(e) =>
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      serviceStartDate: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-
-              {!selectedBackdatedCustomer?.planName && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Plan Name
-                    </label>
-                    <input
-                      type="text"
-                      value={backdatedForm.customPlanName}
-                      onChange={(e) =>
-                        setBackdatedForm({
-                          ...backdatedForm,
-                          customPlanName: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Enter plan name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Monthly Rate (₱)
-                    </label>
-                    <input
-                      type="number"
-                      value={backdatedForm.monthlyRate}
-                      onChange={(e) =>
-                        setBackdatedForm({
-                          ...backdatedForm,
-                          monthlyRate: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Enter monthly rate"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={backdatedForm.includeInstallationFee}
-                    onChange={(e) =>
-                      setBackdatedForm({
-                        ...backdatedForm,
-                        includeInstallationFee: e.target.checked,
-                      })
-                    }
-                  />
-                  Include Installation Fee (₱
-                  {billingFlowSettings.installationFee.toLocaleString()})
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={backdatedForm.skipFirstBill}
-                    onChange={(e) =>
-                      setBackdatedForm({
-                        ...backdatedForm,
-                        skipFirstBill: e.target.checked,
-                      })
-                    }
-                  />
-                  Skip first bill
-                </label>
-              </div>
-
-              <div>
-                <textarea
-                  value={backdatedForm.notes}
-                  onChange={(e) =>
-                    setBackdatedForm({
-                      ...backdatedForm,
-                      notes: e.target.value,
-                    })
-                  }
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Notes..."
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowBackdatedModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBackdatedBilling}
-                  disabled={backdatedLoading}
-                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {backdatedLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    "Generate Bills"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Start Billing Modal */}
-      {showStartModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Start Billing</h2>
-              <button
-                onClick={() => setShowStartModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <FiX className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="bg-blue-50 p-3 rounded-lg text-sm mb-4">
-              <p>
-                <strong>Customer:</strong> {selectedCustomerName}
-              </p>
-              <p>
-                <strong>Email:</strong> {selectedCustomerEmail}
-              </p>
-              {selectedApplicationId && (
-                <p className="font-mono text-xs break-all">
-                  <strong>App ID:</strong> {selectedApplicationId}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Installation Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Custom Amount (Optional)
-                </label>
-                <input
-                  type="number"
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  placeholder="Auto-calculate"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={includeInstallationFee}
-                  onChange={(e) => setIncludeInstallationFee(e.target.checked)}
-                />
-                Include Installation Fee (₱
-                {billingFlowSettings.installationFee.toLocaleString()})
-              </label>
-
-              <div>
-                <textarea
-                  value={billingNotes}
-                  onChange={(e) => setBillingNotes(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Notes..."
-                />
-              </div>
-
-              <div className="bg-green-50 p-3 rounded-lg text-sm">
-                <p className="font-semibold text-green-800">
-                  ✅ Billing will be ACTIVE immediately
-                </p>
-                <p className="text-xs text-green-700">
-                  Customer can use internet right away
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowStartModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleStartBilling}
-                  disabled={
-                    startBillingMutation.isPending ||
-                    startBillingForAppMutation.isPending
-                  }
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {startBillingMutation.isPending ||
-                  startBillingForAppMutation.isPending ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Starting...
-                    </>
-                  ) : (
-                    "Start Billing"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Backdated Modal - Extracted Component */}
+      <BackdatedModal
+        isOpen={showBackdatedModal}
+        onClose={() => setShowBackdatedModal(false)}
+        customers={customers}
+        selectedBackdatedCustomer={selectedBackdatedCustomer}
+        setSelectedBackdatedCustomer={setSelectedBackdatedCustomer}
+        backdatedForm={backdatedForm}
+        setBackdatedForm={setBackdatedForm}
+        backdatedLoading={backdatedLoading}
+        onConfirm={handleBackdatedBilling}
+        installationFee={billingFlowSettings.installationFee}
+      />
 
       {/* Pause Modal */}
       {showPauseModal && (
@@ -2640,13 +2296,17 @@ function AdminBillingPageContent() {
                       <td className="px-4 py-2">
                         <button
                           onClick={() => {
-                            setSelectedApplicationId(c.applicationId);
-                            setSelectedCustomerName(
-                              `${c.firstName} ${c.lastName}`,
-                            );
-                            setSelectedCustomerEmail(c.email);
-                            setIncludeInstallationFee(true);
-                            setShowStartModal(true);
+                            setSelectedBackdatedCustomer(c);
+                            setBackdatedForm({
+                              applicationId: c.applicationId || "",
+                              serviceStartDate: "",
+                              customPlanName: c.planName || "",
+                              monthlyRate: c.planPrice?.toString() || "",
+                              skipFirstBill: false,
+                              notes: "",
+                              includeInstallationFee: true,
+                            });
+                            setShowBackdatedModal(true);
                             setShowExistingCustomersModal(false);
                           }}
                           className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
