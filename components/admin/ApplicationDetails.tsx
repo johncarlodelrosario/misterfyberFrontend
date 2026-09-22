@@ -1,9 +1,16 @@
-// components/admin/ApplicationDetails.tsx - COMPLETE FIXED WITH ID IMAGE DISPLAY
+// components/admin/ApplicationDetails.tsx - COMPLETE FIXED WITH PRODUCTION SUPPORT
 "use client";
 
 import React, { useState, useCallback } from "react";
 import Image from "next/image";
 import type { Application } from "./ApplicationTable";
+
+// ============================================================
+// PRODUCTION URL CONFIGURATION
+// ============================================================
+const PRODUCTION_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://misterfyberbackend-lvjd.onrender.com";
 
 interface ApplicationDetailsProps {
   application: Application;
@@ -162,7 +169,6 @@ export function ApplicationDetails({
 
     // If it's a relative path starting with /uploads/
     if (image.startsWith("/uploads/")) {
-      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fullUrl = `${PRODUCTION_URL}${image}`;
       console.log("✅ Using relative path URL:", fullUrl);
       return fullUrl;
@@ -170,7 +176,6 @@ export function ApplicationDetails({
 
     // If it's a relative path without leading slash
     if (image.startsWith("uploads/")) {
-      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fullUrl = `${PRODUCTION_URL}/${image}`;
       console.log("✅ Using uploads path URL:", fullUrl);
       return fullUrl;
@@ -181,14 +186,12 @@ export function ApplicationDetails({
 
     // Check if it's the placeholder
     if (filename === "placeholder.jpg" || !filename || filename === "") {
-      const PRODUCTION_URL = "https://misterfyberbackend-lvjd.onrender.com";
       const fallbackUrl = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
       console.log("📸 Using placeholder URL:", fallbackUrl);
       return fallbackUrl;
     }
 
     // Construct URL from filename
-    const PRODUCTION_URL = "https://misterfyberbackend-q4k5.onrender.com";
     const fullUrl = `${PRODUCTION_URL}/uploads/id-cards/${filename}`;
     console.log("✅ Constructed URL from filename:", fullUrl);
     return fullUrl;
@@ -265,7 +268,6 @@ export function ApplicationDetails({
       console.error("❌ Image failed to load:", idImageUrl);
       setImageError(true);
       // Try to load placeholder
-      const PRODUCTION_URL = "https://misterfyberbackend-q4k5.onrender.com";
       target.src = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
       target.onerror = null; // Prevent infinite loop
     },

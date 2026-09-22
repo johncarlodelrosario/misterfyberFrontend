@@ -1,5 +1,12 @@
-// services/application.ts - COMPLETE FIXED
+// services/application.ts - COMPLETE FIXED WITH PRODUCTION SUPPORT
 import api from "./api";
+
+// ============================================================
+// PRODUCTION URL CONFIGURATION
+// ============================================================
+const PRODUCTION_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://misterfyberbackend-lvjd.onrender.com";
 
 export interface Building {
   _id: string;
@@ -158,6 +165,7 @@ export const getAllApplications = async (
 
   // Add cache busting
   if (forceRefresh || _t) {
+    params.forceRefresh = "true";
     params._t = _t || Date.now();
   }
 
@@ -435,4 +443,27 @@ export const updateStatus = async (id: string, status: string) => {
 export const clearApplicationCache = async () => {
   const response = await api.post("/applications/cache/clear");
   return response.data;
+};
+
+// ============ GET IMAGE URL (UTILITY) ============
+export const getImageUrl = (imagePath?: string): string => {
+  if (!imagePath) return "";
+
+  if (
+    imagePath.startsWith("http://") ||
+    imagePath.startsWith("https://") ||
+    imagePath.startsWith("data:")
+  ) {
+    return imagePath;
+  }
+
+  let filename = "";
+  const parts = imagePath.split(/[\\\/]/);
+  filename = parts[parts.length - 1];
+
+  if (!filename || filename === "placeholder.jpg") {
+    return `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
+  }
+
+  return `${PRODUCTION_URL}/uploads/id-cards/${filename}`;
 };
