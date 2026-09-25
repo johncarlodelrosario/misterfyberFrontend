@@ -1,4 +1,4 @@
-// frontend/src/components/admin/CustomerSummaryTable.tsx - COMPLETE SEPARATE COMPONENT
+// frontend/src/components/admin/CustomerSummaryTable.tsx - FIXED BUILDING FILTER
 
 "use client";
 
@@ -104,9 +104,86 @@ function getPaymentTypeColor(type: string): string {
       return "bg-purple-100 text-purple-800";
     case "installation":
       return "bg-orange-100 text-orange-800";
+    case "pro_rated":
+      return "bg-blue-100 text-blue-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
+}
+
+// ==================== SAFE STRING COMPARISON HELPER ====================
+function normalizeId(value: any): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) {
+    return normalizeId(value._id);
+  }
+  if (typeof value === "object" && value.toString) {
+    try {
+      return value.toString();
+    } catch {
+      return "";
+    }
+  }
+  return String(value);
+}
+
+// ==================== BUILDING MATCHING HELPER ====================
+function groupMatchesBuilding(
+  group: PaymentGroup,
+  buildingFilter: string,
+  selectedBuildingName: string,
+  _selectedBuildingId: string,
+): boolean {
+  if (!buildingFilter) return true;
+
+  const targetId = String(buildingFilter);
+  const targetName = (selectedBuildingName || "").trim().toLowerCase();
+
+  if (normalizeId(group.customerInfo.buildingId) === targetId) return true;
+
+  if (
+    targetName &&
+    group.customerInfo.buildingName &&
+    group.customerInfo.buildingName.trim().toLowerCase() === targetName
+  ) {
+    return true;
+  }
+
+  return group.payments.some((p) => {
+    if (normalizeId((p as any).buildingId) === targetId) return true;
+
+    if (p.userId && typeof p.userId === "object") {
+      const user = p.userId as any;
+      if (normalizeId(user.buildingId) === targetId) return true;
+      if (
+        targetName &&
+        user.buildingName &&
+        String(user.buildingName).trim().toLowerCase() === targetName
+      ) {
+        return true;
+      }
+    }
+
+    if (p.applicationId && typeof p.applicationId === "object") {
+      const app = p.applicationId as any;
+      if (normalizeId(app.buildingId) === targetId) return true;
+      if (
+        targetName &&
+        app.buildingName &&
+        String(app.buildingName).trim().toLowerCase() === targetName
+      ) {
+        return true;
+      }
+    }
+
+    if (p.billingId && typeof p.billingId === "object") {
+      const billing = p.billingId as any;
+      if (normalizeId(billing.buildingId) === targetId) return true;
+    }
+
+    return false;
+  });
 }
 
 // ==================== CUSTOMER SUMMARY ROW COMPONENT ====================
@@ -461,11 +538,25 @@ export default function CustomerSummaryTable({
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentTablePage, setCurrentTablePage] = useState(1);
 
+  // Resolve the selected building's name and id for flexible matching
+  const selectedBuilding = useMemo(() => {
+    if (!buildingFilter) return null;
+    return buildings.find((b) => b._id === buildingFilter) || null;
+  }, [buildingFilter, buildings]);
+
+  const selectedBuildingName = useMemo(() => {
+    if (!selectedBuilding) return "";
+    return selectedBuilding.name || selectedBuilding.buildingName || "";
+  }, [selectedBuilding]);
+
+  const selectedBuildingId = buildingFilter || "";
+
   // ==================== MEMOIZED DATA ====================
   const filteredGroups = useMemo(() => {
     return paymentGroups.filter((group) => {
       const info = group.customerInfo;
 
+      // Search filter
       let matchesSearch = true;
       if (search.trim()) {
         const searchLower = search.toLowerCase();
@@ -479,36 +570,23 @@ export default function CustomerSummaryTable({
           );
       }
 
-      let matchesBuilding = true;
-      if (buildingFilter) {
-        matchesBuilding = info.buildingId === buildingFilter;
-
-        if (!matchesBuilding && info.buildingName) {
-          const selectedBuilding = buildings.find(
-            (b) => b._id === buildingFilter,
-          );
-          if (selectedBuilding) {
-            const selectedName =
-              selectedBuilding.name || selectedBuilding.buildingName || "";
-            matchesBuilding = info.buildingName === selectedName;
-          }
-        }
-
-        if (!matchesBuilding) {
-          matchesBuilding = group.payments.some((p) => {
-            if (p.buildingId === buildingFilter) return true;
-            if (p.userId && typeof p.userId === "object") {
-              const user = p.userId as any;
-              if (user.buildingId === buildingFilter) return true;
-            }
-            return false;
-          });
-        }
-      }
+      // Building filter (robust matching)
+      const matchesBuilding = groupMatchesBuilding(
+        group,
+        buildingFilter,
+        selectedBuildingName,
+        selectedBuildingId,
+      );
 
       return matchesSearch && matchesBuilding;
     });
-  }, [paymentGroups, search, buildingFilter, buildings]);
+  }, [
+    paymentGroups,
+    search,
+    buildingFilter,
+    selectedBuildingName,
+    selectedBuildingId,
+  ]);
 
   const sortedGroups = useMemo(() => {
     return [...filteredGroups].sort((a, b) => {
@@ -590,190 +668,223 @@ export default function CustomerSummaryTable({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">
-            Customer Payment Summary ({totalFilteredCount})
-          </h2>
-          <p className="text-sm text-gray-500">
-            Showing {paginatedGroups.length} of {sortedGroups.length} customers
-          </p>
-          {(dateRangeStart || dateRangeEnd) && (
-            <p className="text-xs text-blue-600 mt-1">
-              📅 Filtered by:{" "}
-              {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
-              {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
-            </p>
-          )}
-          {buildingFilter && (
-            <p className="text-xs text-blue-600 mt-1">
-              🏢 Building:{" "}
-              {buildings.find((b) => b._id === buildingFilter)?.name ||
-                buildingFilter}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <select
-            value={itemsPerPage}
-            onChange={(e) => {
-              setItemsPerPage(Number(e.target.value));
-              setCurrentTablePage(1);
-            }}
-            className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value={10}>10 per page</option>
-            <option value={25}>25 per page</option>
-            <option value={50}>50 per page</option>
-            <option value={100}>100 per page</option>
-          </select>
-          <button
-            onClick={onExportPDF}
-            className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"
-          >
-            <FiPrinter /> PDF Report
-          </button>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                #
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort("customerInfo")}
-              >
-                Customer Name <SortIcon field="customerInfo" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Application ID
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Email / Phone
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Building
-              </th>
-              <th
-                className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort("paymentCount")}
-              >
-                Payments <SortIcon field="paymentCount" />
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort("totalAmount")}
-              >
-                Total Paid <SortIcon field="totalAmount" />
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Pending
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort("lastPaymentDate")}
-              >
-                Last Payment <SortIcon field="lastPaymentDate" />
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
-            {paginatedGroups.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={10}
-                  className="px-6 py-12 text-center text-gray-500"
-                >
-                  <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                  <p>No payment records found</p>
-                  {(dateRangeStart || dateRangeEnd) && (
-                    <p className="text-sm text-gray-400 mt-1">
-                      Try adjusting your date range filters
-                    </p>
-                  )}
-                </td>
-              </tr>
-            ) : (
-              paginatedGroups.map((group, index) => {
-                const isExpanded = expandedCustomer === group.customerId;
-                const rowNumber =
-                  (currentTablePage - 1) * itemsPerPage + index + 1;
-                return (
-                  <CustomerSummaryRow
-                    key={group.customerId}
-                    group={group}
-                    rowNumber={rowNumber}
-                    isExpanded={isExpanded}
-                    onToggleExpand={(id) =>
-                      setExpandedCustomer(isExpanded ? null : id)
-                    }
-                    onView={onView}
-                    onDelete={onDelete}
-                    onBulkDelete={onBulkDelete}
-                    deleting={deleting}
-                    bulkDeleting={bulkDeleting}
-                  />
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-      {totalFilteredCount > 0 && (
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
-          <div className="text-sm text-gray-600">
-            Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
-            {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
-            {totalFilteredCount} entries
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCurrentTablePage(1)}
-              disabled={currentTablePage === 1}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-            >
-              First
-            </button>
-            <button
-              onClick={() =>
-                setCurrentTablePage((prev) => Math.max(1, prev - 1))
-              }
-              disabled={currentTablePage === 1}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1 text-sm">
-              Page {currentTablePage} of {totalPagesCount}
+    <div className="space-y-6">
+      {/* Building Filter Debug Info (only shows when filter is active) */}
+      {buildingFilter && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+          <p className="text-blue-800">
+            <strong>🏢 Filtering by building:</strong>{" "}
+            {selectedBuildingName || buildingFilter}{" "}
+            <span className="text-xs text-blue-600 font-mono">
+              (ID: {buildingFilter})
             </span>
-            <button
-              onClick={() =>
-                setCurrentTablePage((prev) =>
-                  Math.min(totalPagesCount, prev + 1),
-                )
-              }
-              disabled={currentTablePage === totalPagesCount}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => setCurrentTablePage(totalPagesCount)}
-              disabled={currentTablePage === totalPagesCount}
-              className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-            >
-              Last
-            </button>
-          </div>
+            {" — "}
+            <span className="font-semibold">{totalFilteredCount}</span> of{" "}
+            <span className="font-semibold">{paymentGroups.length}</span>{" "}
+            customers matched
+          </p>
+          {totalFilteredCount === 0 && paymentGroups.length > 0 && (
+            <p className="text-xs text-red-600 mt-1">
+              ⚠️ No customers matched this building. Try clearing and
+              reselecting the filter, or click Refresh.
+            </p>
+          )}
         </div>
       )}
+
+      {/* Customer Summary Table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Customer Payment Summary ({totalFilteredCount})
+            </h2>
+            <p className="text-sm text-gray-500">
+              Showing {paginatedGroups.length} of {sortedGroups.length}{" "}
+              customers
+            </p>
+            {(dateRangeStart || dateRangeEnd) && (
+              <p className="text-xs text-blue-600 mt-1">
+                📅 Filtered by:{" "}
+                {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
+                {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
+              </p>
+            )}
+            {buildingFilter && (
+              <p className="text-xs text-blue-600 mt-1">
+                🏢 Building:{" "}
+                {buildings.find((b) => b._id === buildingFilter)?.name ||
+                  buildingFilter}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentTablePage(1);
+              }}
+              className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={10}>10 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+            </select>
+            <button
+              onClick={onExportPDF}
+              className="px-3 py-1 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
+            >
+              <FiPrinter /> Export PDF
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  #
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort("customerInfo")}
+                >
+                  Customer Name <SortIcon field="customerInfo" />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Application ID
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email / Phone
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Building
+                </th>
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort("paymentCount")}
+                >
+                  Payments <SortIcon field="paymentCount" />
+                </th>
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort("totalAmount")}
+                >
+                  Total Paid <SortIcon field="totalAmount" />
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Pending
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort("lastPaymentDate")}
+                >
+                  Last Payment <SortIcon field="lastPaymentDate" />
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {paginatedGroups.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="px-6 py-12 text-center text-gray-500"
+                  >
+                    <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p>No payment records found</p>
+                    {(dateRangeStart || dateRangeEnd) && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Try adjusting your date range filters
+                      </p>
+                    )}
+                    {buildingFilter && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Try removing the building filter or selecting a
+                        different building
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                paginatedGroups.map((group, index) => {
+                  const isExpanded = expandedCustomer === group.customerId;
+                  const rowNumber =
+                    (currentTablePage - 1) * itemsPerPage + index + 1;
+                  return (
+                    <CustomerSummaryRow
+                      key={group.customerId}
+                      group={group}
+                      rowNumber={rowNumber}
+                      isExpanded={isExpanded}
+                      onToggleExpand={(id) =>
+                        setExpandedCustomer(isExpanded ? null : id)
+                      }
+                      onView={onView}
+                      onDelete={onDelete}
+                      onBulkDelete={onBulkDelete}
+                      deleting={deleting}
+                      bulkDeleting={bulkDeleting}
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalFilteredCount > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
+            <div className="text-sm text-gray-600">
+              Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
+              {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
+              {totalFilteredCount} entries
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentTablePage(1)}
+                disabled={currentTablePage === 1}
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
+              >
+                First
+              </button>
+              <button
+                onClick={() =>
+                  setCurrentTablePage((prev) => Math.max(1, prev - 1))
+                }
+                disabled={currentTablePage === 1}
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm">
+                Page {currentTablePage} of {totalPagesCount}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentTablePage((prev) =>
+                    Math.min(totalPagesCount, prev + 1),
+                  )
+                }
+                disabled={currentTablePage === totalPagesCount}
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentTablePage(totalPagesCount)}
+                disabled={currentTablePage === totalPagesCount}
+                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

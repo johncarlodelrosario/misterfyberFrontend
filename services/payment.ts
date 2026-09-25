@@ -53,7 +53,7 @@ export interface Payment {
 
 export interface GetAllPaymentsParams {
   page?: number;
-  limit?: number;
+  limit?: number | "all";
   status?: string;
   paymentType?: string;
   buildingId?: string;
@@ -282,7 +282,7 @@ export const getAllPayments = async (
   params?: GetAllPaymentsParams,
 ): Promise<GetAllPaymentsResponse> => {
   try {
-    const cacheKey = `${PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS}_${params?.page || 1}_${params?.limit || 20}_${params?.status || "all"}_${params?.paymentType || "all"}_${params?.buildingId || "all"}`;
+    const cacheKey = `${PAYMENT_CACHE_KEYS.ADMIN_ALL_PAYMENTS}_${params?.page || 1}_${params?.limit || "all"}_${params?.status || "all"}_${params?.paymentType || "all"}_${params?.buildingId || "all"}`;
 
     if (!params?.forceRefresh) {
       const cached = getCachedPayments<GetAllPaymentsResponse>(cacheKey);
@@ -291,7 +291,12 @@ export const getAllPayments = async (
 
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append("page", params.page.toString());
-    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    // Always fetch ALL payments for the admin table to avoid truncation
+    if (params?.limit) {
+      queryParams.append("limit", params.limit.toString());
+    } else {
+      queryParams.append("limit", "all");
+    }
     if (params?.status) queryParams.append("status", params.status);
     if (params?.paymentType)
       queryParams.append("paymentType", params.paymentType);

@@ -1,4 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH SEPARATE CUSTOMER TABLE COMPONENT
+// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FIXED FILTERS
 
 "use client";
 
@@ -35,10 +35,12 @@ import {
   FiHome,
   FiBarChart2,
   FiCheckCircle,
+  FiDownload,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
 import CustomerSummaryTable from "@/components/admin/CustomerSummaryTable";
+import PaymentReport from "@/components/admin/PaymentReport";
 
 type Payment = ServicePayment;
 
@@ -194,13 +196,29 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
 
   const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
 
-  let buildingId = payment.buildingId;
+  // FIX: fallback to (payment as any).buildingId so backend-supplied buildingId is used
+  let buildingId: any = (payment as any).buildingId || "";
   let buildingName = "";
 
-  if (buildingId) {
+  // If appId is an object, read buildingId from it directly
+  if (
+    payment.applicationId &&
+    typeof payment.applicationId === "object" &&
+    payment.applicationId !== null
+  ) {
+    const appObj = payment.applicationId as any;
+    if (appObj.buildingId && !buildingId) {
+      buildingId = appObj.buildingId;
+    }
+    if (appObj.buildingName && !buildingName) {
+      buildingName = appObj.buildingName;
+    }
+  }
+
+  if (buildingId && typeof buildingId === "string") {
     if (buildingCache.has(buildingId)) {
       const building = buildingCache.get(buildingId)!;
-      buildingName = building.name;
+      buildingName = buildingName || building.name;
     } else {
       try {
         const response = await api.get(`/buildings/${buildingId}`);
@@ -211,7 +229,7 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
             name,
             address: b.address || b.streetAddress || "",
           });
-          buildingName = name;
+          if (!buildingName) buildingName = name;
         }
       } catch (e) {}
     }
@@ -724,6 +742,9 @@ export default function AdminPaymentsPage() {
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [activeView, setActiveView] = useState<"payments" | "report">(
+    "payments",
+  );
 
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
@@ -745,6 +766,21 @@ export default function AdminPaymentsPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
 
+  const isFirstRender = useRef(true);
+  const prevFiltersRef = useRef({
+    statusFilter: "",
+    paymentTypeFilter: "",
+    buildingFilter: "",
+    dateRangeStart: "",
+    dateRangeEnd: "",
+    currentPage: 1,
+  });
+
+  const statsRef = useRef(stats);
+  useEffect(() => {
+    statsRef.current = stats;
+  }, [stats]);
+
   useEffect(() => {
     fetchBuildings().then((data) => {
       if (isMountedRef.current) {
@@ -759,7 +795,28 @@ export default function AdminPaymentsPage() {
       if (!isMountedRef.current) return;
 
       const now = Date.now();
-      if (!forceRefresh && globalCache) {
+
+      const currentFilters = {
+        statusFilter,
+        paymentTypeFilter,
+        buildingFilter,
+        dateRangeStart,
+        dateRangeEnd,
+        currentPage,
+      };
+
+      const filtersChanged =
+        prevFiltersRef.current.statusFilter !== currentFilters.statusFilter ||
+        prevFiltersRef.current.paymentTypeFilter !==
+          currentFilters.paymentTypeFilter ||
+        prevFiltersRef.current.buildingFilter !==
+          currentFilters.buildingFilter ||
+        prevFiltersRef.current.dateRangeStart !==
+          currentFilters.dateRangeStart ||
+        prevFiltersRef.current.dateRangeEnd !== currentFilters.dateRangeEnd ||
+        prevFiltersRef.current.currentPage !== currentFilters.currentPage;
+
+      if (!forceRefresh && !filtersChanged && globalCache) {
         if (now - globalCacheTimestamp < CACHE_TTL) {
           const cached = globalCache;
           setPaymentGroups(cached.paymentGroups);
@@ -784,45 +841,131 @@ export default function AdminPaymentsPage() {
 
       try {
         const params: any = {
-          page: currentPage,
-          limit: 100,
-          status: statusFilter || undefined,
-          buildingId: buildingFilter || undefined,
-          forceRefresh,
+          limit: "all" as const,
         };
 
+        if (statusFilter && statusFilter !== "all" && statusFilter !== "") {
+          params.status = statusFilter;
+        }
+        if (
+          paymentTypeFilter &&
+          paymentTypeFilter !== "all" &&
+          paymentTypeFilter !== ""
+        ) {
+          params.paymentType = paymentTypeFilter;
+        }
+        if (
+          buildingFilter &&
+          buildingFilter !== "all" &&
+          buildingFilter !== ""
+        ) {
+          params.buildingId = buildingFilter;
+        }
         if (dateRangeStart && dateRangeEnd) {
           params.startDate = dateRangeStart;
           params.endDate = dateRangeEnd;
         }
+        if (search && search.trim()) {
+          params.search = search.trim();
+        }
 
-        const allPaymentsResult = await getAllPayments(params);
+        console.log("🔍 Fetching ALL payments with params:", params);
+
+        const allPaymentsResult = await getAllPayments({
+          ...params,
+          forceRefresh,
+        });
 
         if (!isMountedRef.current) return;
 
-        let paymentsList: Payment[] = allPaymentsResult.data || [];
-        if (paymentTypeFilter) {
-          paymentsList = paymentsList.filter(
-            (p: Payment) => p.paymentType === paymentTypeFilter,
-          );
-        }
+        const paymentsList: Payment[] = allPaymentsResult.data || [];
+
+        console.log(
+          `📊 Received ${paymentsList.length} payments from API (total: ${allPaymentsResult.total})`,
+        );
 
         const grouped = await groupPaymentsAsync(paymentsList);
         setPaymentGroups(grouped);
+        console.log(`👥 Grouped into ${grouped.length} customers`);
 
-        const pendingResult = await getPendingPayments(forceRefresh).catch(
-          () => ({ data: [] }),
-        );
-        let pendingList: Payment[] = pendingResult.data || [];
-
-        if (paymentTypeFilter) {
-          pendingList = pendingList.filter(
-            (p: Payment) => p.paymentType === paymentTypeFilter,
+        let pendingList: Payment[] = [];
+        if (
+          !statusFilter ||
+          statusFilter === "pending" ||
+          statusFilter === ""
+        ) {
+          const pendingResult = await getPendingPayments(forceRefresh).catch(
+            () => ({ data: [] }),
           );
+          pendingList = pendingResult.data || [];
+
+          if (paymentTypeFilter && paymentTypeFilter !== "all") {
+            pendingList = pendingList.filter(
+              (p: Payment) => p.paymentType === paymentTypeFilter,
+            );
+          }
+
+          if (buildingFilter && buildingFilter !== "all") {
+            const selectedBuilding = buildings.find(
+              (b) => b._id === buildingFilter,
+            );
+            const selectedBuildingName =
+              selectedBuilding?.name || selectedBuilding?.buildingName || "";
+            const targetId = String(buildingFilter);
+
+            const normalizeId = (v: any): string => {
+              if (v === null || v === undefined) return "";
+              if (typeof v === "string") return v;
+              if (typeof v === "object" && v._id) return normalizeId(v._id);
+              if (typeof v === "object" && v.toString) {
+                try {
+                  return v.toString();
+                } catch {
+                  return "";
+                }
+              }
+              return String(v);
+            };
+
+            pendingList = pendingList.filter((p: any) => {
+              if (normalizeId(p.buildingId) === targetId) return true;
+
+              if (p.userId && typeof p.userId === "object") {
+                if (normalizeId(p.userId.buildingId) === targetId) return true;
+              }
+
+              if (p.applicationId && typeof p.applicationId === "object") {
+                if (normalizeId(p.applicationId.buildingId) === targetId)
+                  return true;
+              }
+
+              if (selectedBuildingName) {
+                const targetName = selectedBuildingName.trim().toLowerCase();
+                const checkName = (name?: string) =>
+                  name && String(name).trim().toLowerCase() === targetName;
+
+                if (checkName(p.buildingName)) return true;
+                if (
+                  p.userId &&
+                  typeof p.userId === "object" &&
+                  checkName(p.userId.buildingName)
+                )
+                  return true;
+                if (
+                  p.applicationId &&
+                  typeof p.applicationId === "object" &&
+                  checkName(p.applicationId.buildingName)
+                )
+                  return true;
+              }
+
+              return false;
+            });
+          }
         }
         setPendingPayments(pendingList);
 
-        let newStats;
+        let newStats = statsRef.current;
         if (allPaymentsResult.stats) {
           newStats = {
             totalAmount: allPaymentsResult.stats.total || 0,
@@ -843,9 +986,11 @@ export default function AdminPaymentsPage() {
         globalCache = {
           paymentGroups: grouped,
           pendingPayments: pendingList,
-          stats: newStats || stats,
+          stats: newStats,
         };
         globalCacheTimestamp = now;
+
+        prevFiltersRef.current = currentFilters;
 
         initialLoadDone.current = true;
         console.log(
@@ -866,25 +1011,56 @@ export default function AdminPaymentsPage() {
       statusFilter,
       paymentTypeFilter,
       buildingFilter,
-      stats,
       dateRangeStart,
       dateRangeEnd,
+      search,
+      buildings,
     ],
   );
 
   useEffect(() => {
     isMountedRef.current = true;
-    loadPayments();
+
+    const filtersChanged =
+      prevFiltersRef.current.statusFilter !== statusFilter ||
+      prevFiltersRef.current.paymentTypeFilter !== paymentTypeFilter ||
+      prevFiltersRef.current.buildingFilter !== buildingFilter ||
+      prevFiltersRef.current.dateRangeStart !== dateRangeStart ||
+      prevFiltersRef.current.dateRangeEnd !== dateRangeEnd ||
+      prevFiltersRef.current.currentPage !== currentPage;
+
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      loadPayments(false);
+    } else if (filtersChanged) {
+      globalCache = null;
+      globalCacheTimestamp = 0;
+      loadPayments(true);
+    }
+
     return () => {
       isMountedRef.current = false;
     };
-  }, [loadPayments]);
+  }, [
+    loadPayments,
+    statusFilter,
+    paymentTypeFilter,
+    buildingFilter,
+    dateRangeStart,
+    dateRangeEnd,
+    currentPage,
+  ]);
 
   // ==================== HANDLERS ====================
   const handleRefresh = () => {
     globalCache = null;
     globalCacheTimestamp = 0;
+    customerNameCache.clear();
     loadPayments(true);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
   };
 
   const handleConfirmPayment = async (paymentId: string) => {
@@ -1088,14 +1264,6 @@ export default function AdminPaymentsPage() {
           .summary-item .paid { color: #16a34a; font-weight: bold; }
           .summary-item .pending { color: #ca8a04; font-weight: bold; }
           .summary-item .grand { color: #1e40af; font-weight: bold; font-size: 16px; }
-          .free-badge {
-            background: #22c55e;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-            font-weight: bold;
-          }
           table { 
             width: 100%; 
             border-collapse: collapse; 
@@ -1227,10 +1395,38 @@ export default function AdminPaymentsPage() {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Payment Management</h1>
-        <p className="text-gray-600">
-          View, confirm, and manage customer payments
-        </p>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Payment Management
+            </h1>
+            <p className="text-gray-600">
+              View, confirm, and manage customer payments
+            </p>
+          </div>
+          <div className="flex items-center gap-2 bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+            <button
+              onClick={() => setActiveView("payments")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+                activeView === "payments"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              <FiFileText className="w-4 h-4" /> Payments
+            </button>
+            <button
+              onClick={() => setActiveView("report")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+                activeView === "report"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              <FiBarChart2 className="w-4 h-4" /> Report
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -1302,7 +1498,7 @@ export default function AdminPaymentsPage() {
       </div>
 
       {/* Pending Alert */}
-      {pendingPayments.length > 0 && (
+      {pendingPayments.length > 0 && activeView === "payments" && (
         <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
           <div className="flex items-center gap-3 flex-wrap">
             <FiClock className="w-6 h-6 text-yellow-600" />
@@ -1332,7 +1528,7 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters - Always visible for both views */}
       <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-200">
         <div className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
@@ -1348,19 +1544,29 @@ export default function AdminPaymentsPage() {
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 border border-gray-300"
+              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
+                showFilters
+                  ? "bg-blue-100 border-blue-300 text-blue-700"
+                  : "bg-gray-100 border-gray-300"
+              }`}
             >
               <FiFilter /> Filters
+              {(statusFilter || paymentTypeFilter || buildingFilter) && (
+                <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+              )}
             </button>
             <button
               onClick={() => setShowDateFilter(!showDateFilter)}
               className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
-                showDateFilter
+                showDateFilter || (dateRangeStart && dateRangeEnd)
                   ? "bg-blue-100 border-blue-300 text-blue-700"
                   : "bg-gray-100 border-gray-300"
               }`}
             >
               <FiCalendar /> Date Range
+              {dateRangeStart && dateRangeEnd && (
+                <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+              )}
             </button>
             <button
               onClick={handleRefresh}
@@ -1375,49 +1581,67 @@ export default function AdminPaymentsPage() {
           </div>
 
           {showFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4">
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-              <select
-                value={paymentTypeFilter}
-                onChange={(e) => {
-                  setPaymentTypeFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Types</option>
-                <option value="subscription">Subscription</option>
-                <option value="installation">Installation</option>
-              </select>
-              <select
-                value={buildingFilter}
-                onChange={(e) => {
-                  setBuildingFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-              >
-                <option value="">All Buildings</option>
-                {buildings.map((building) => (
-                  <option key={building._id} value={building._id}>
-                    {building.name ||
-                      building.buildingName ||
-                      "Unnamed Building"}
-                  </option>
-                ))}
-              </select>
+            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-600">
+                  Status:
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-600">
+                  Type:
+                </label>
+                <select
+                  value={paymentTypeFilter}
+                  onChange={(e) => setPaymentTypeFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Types</option>
+                  <option value="subscription">Subscription</option>
+                  <option value="installation">Installation</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-600">
+                  Building:
+                </label>
+                <select
+                  value={buildingFilter}
+                  onChange={(e) => setBuildingFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+                >
+                  <option value="">All Buildings</option>
+                  {buildings.map((building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.name ||
+                        building.buildingName ||
+                        "Unnamed Building"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {(statusFilter || paymentTypeFilter || buildingFilter) && (
+                <button
+                  onClick={() => {
+                    setStatusFilter("");
+                    setPaymentTypeFilter("");
+                    setBuildingFilter("");
+                  }}
+                  className="px-3 py-2 text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
+                >
+                  <FiX className="w-4 h-4" /> Clear Filters
+                </button>
+              )}
             </div>
           )}
 
@@ -1442,101 +1666,112 @@ export default function AdminPaymentsPage() {
                 min={dateRangeStart || undefined}
                 max={new Date().toISOString().split("T")[0]}
               />
-              <button
-                onClick={() => {
-                  setDateRangeStart("");
-                  setDateRangeEnd("");
-                  setShowDateFilter(false);
-                }}
-                className="px-3 py-2 text-red-600 hover:text-red-800 text-sm"
-              >
-                Clear Dates
-              </button>
-              <button
-                onClick={() => loadPayments(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              >
-                Apply Date Filter
-              </button>
+              {(dateRangeStart || dateRangeEnd) && (
+                <button
+                  onClick={() => {
+                    setDateRangeStart("");
+                    setDateRangeEnd("");
+                  }}
+                  className="px-3 py-2 text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
+                >
+                  <FiX className="w-4 h-4" /> Clear Dates
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Pending Payments Table */}
-      {pendingPayments.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold mb-4">
-            Pending Confirmation ({pendingPayments.length})
-          </h2>
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-yellow-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      #
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Application ID
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Building
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Billing Period
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {pendingPayments.map((payment, index) => (
-                    <PendingPaymentRow
-                      key={payment._id}
-                      payment={payment}
-                      index={index}
-                      onConfirm={handleConfirmPayment}
-                      onReject={handleRejectPayment}
-                      onView={setSelectedPayment}
-                      onDelete={handleDeletePayment}
-                      confirming={confirming}
-                      rejecting={rejecting}
-                      deleting={deleting}
-                    />
-                  ))}
-                </tbody>
-              </table>
+      {/* Content based on active view */}
+      {activeView === "payments" ? (
+        <>
+          {/* Pending Payments Table */}
+          {pendingPayments.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold mb-4">
+                Pending Confirmation ({pendingPayments.length})
+              </h2>
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-yellow-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          #
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer Name
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Application ID
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Building
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Amount
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Billing Period
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {pendingPayments.map((payment, index) => (
+                        <PendingPaymentRow
+                          key={payment._id}
+                          payment={payment}
+                          index={index}
+                          onConfirm={handleConfirmPayment}
+                          onReject={handleRejectPayment}
+                          onView={setSelectedPayment}
+                          onDelete={handleDeletePayment}
+                          confirming={confirming}
+                          rejecting={rejecting}
+                          deleting={deleting}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Customer Summary Table - SEPARATE COMPONENT */}
-      <CustomerSummaryTable
-        paymentGroups={paymentGroups}
-        search={search}
-        buildingFilter={buildingFilter}
-        buildings={buildings}
-        dateRangeStart={dateRangeStart}
-        dateRangeEnd={dateRangeEnd}
-        onView={setSelectedPayment}
-        onDelete={handleDeletePayment}
-        onBulkDelete={handleBulkDeleteCustomerPayments}
-        onExportPDF={exportToPDF}
-        deleting={deleting}
-        bulkDeleting={bulkDeleting}
-      />
+          {/* Customer Summary Table - SEPARATE COMPONENT */}
+          <CustomerSummaryTable
+            paymentGroups={paymentGroups}
+            search={search}
+            buildingFilter={buildingFilter}
+            buildings={buildings}
+            dateRangeStart={dateRangeStart}
+            dateRangeEnd={dateRangeEnd}
+            onView={setSelectedPayment}
+            onDelete={handleDeletePayment}
+            onBulkDelete={handleBulkDeleteCustomerPayments}
+            onExportPDF={exportToPDF}
+            deleting={deleting}
+            bulkDeleting={bulkDeleting}
+          />
+        </>
+      ) : (
+        /* Report View - SEPARATE COMPONENT */
+        <PaymentReport
+          paymentGroups={paymentGroups}
+          buildings={buildings}
+          buildingFilter={buildingFilter}
+          dateRangeStart={dateRangeStart}
+          dateRangeEnd={dateRangeEnd}
+          statusFilter={statusFilter}
+          paymentTypeFilter={paymentTypeFilter}
+        />
+      )}
 
       {/* Payment Modal */}
       {selectedPayment && (
