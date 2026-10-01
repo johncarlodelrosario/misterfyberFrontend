@@ -1,4 +1,4 @@
-// components/admin/BillingTable.tsx - COMPLETE FIXED - NO LOOP REFRESH
+// components/admin/BillingTable.tsx - COMPLETE FIXED - NO LOOP REFRESH WITH DELETE BILL
 
 "use client";
 
@@ -148,6 +148,11 @@ interface BillingTableProps {
   onEditInstallationPrice?: (
     billId: string,
     newPrice: number,
+    customer: CustomerItem,
+  ) => void;
+  onDeleteBill?: (
+    billId: string,
+    invoiceNumber: string,
     customer: CustomerItem,
   ) => void;
 }
@@ -384,6 +389,7 @@ const CustomerRow = React.memo(
     onGenerateEarlyBill,
     onEditBillPrice,
     onEditInstallationPrice,
+    onDeleteBill,
   }: {
     customer: CustomerItem;
     index: number;
@@ -397,6 +403,11 @@ const CustomerRow = React.memo(
     onEditInstallationPrice?: (
       billId: string,
       newPrice: number,
+      customer: CustomerItem,
+    ) => void;
+    onDeleteBill?: (
+      billId: string,
+      invoiceNumber: string,
       customer: CustomerItem,
     ) => void;
   }) => {
@@ -676,6 +687,41 @@ const CustomerRow = React.memo(
               </button>
             )}
 
+            {/* DELETE BILL BUTTONS */}
+            {hasUnpaidMonthlyBill && onDeleteBill && (
+              <button
+                onClick={() => {
+                  const bill = customer.unpaidBills.find(
+                    (b: any) => !b.isInstallationBill && b.status !== "paid",
+                  );
+                  if (bill) {
+                    onDeleteBill(bill._id, bill.invoiceNumber, customer);
+                  }
+                }}
+                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                title="Delete Bill"
+              >
+                <FiTrash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {hasUnpaidInstallationBill && onDeleteBill && (
+              <button
+                onClick={() => {
+                  const bill = customer.unpaidBills.find(
+                    (b: any) => b.isInstallationBill && b.status !== "paid",
+                  );
+                  if (bill) {
+                    onDeleteBill(bill._id, bill.invoiceNumber, customer);
+                  }
+                }}
+                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                title="Delete Installation Bill"
+              >
+                <FiTrash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {customer.type === "application" && hasBillingCycle && (
               <button
                 onClick={() => onAction("recover", customer)}
@@ -877,6 +923,7 @@ export default function BillingTable({
   websocketConnected = false,
   onEditBillPrice,
   onEditInstallationPrice,
+  onDeleteBill,
 }: BillingTableProps) {
   const [displayCustomers, setDisplayCustomers] = useState(customers);
 
@@ -1333,6 +1380,7 @@ export default function BillingTable({
                     onGenerateEarlyBill={onGenerateEarlyBill}
                     onEditBillPrice={onEditBillPrice}
                     onEditInstallationPrice={onEditInstallationPrice}
+                    onDeleteBill={onDeleteBill}
                   />
                 ))
               )}

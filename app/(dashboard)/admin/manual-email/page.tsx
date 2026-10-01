@@ -1,4 +1,4 @@
-// app/admin/email/page.tsx (Complete Updated File with RichTextEditor in Edit Template Dialog)
+// app/admin/email/page.tsx (Complete Fixed - Full System Auto-Refresh)
 
 "use client";
 
@@ -19,6 +19,7 @@ export default function ManualEmailPage() {
     "single" | "bulk" | "templates" | "sent" | "scheduled"
   >("single");
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
@@ -75,7 +76,6 @@ export default function ManualEmailPage() {
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(
     null,
   );
-  // State for edit template form with rich text
   const [editTemplateData, setEditTemplateData] = useState({
     name: "",
     subject: "",
@@ -94,47 +94,54 @@ export default function ManualEmailPage() {
   const isMountedRef = useRef(true);
   const initialLoadDone = useRef(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
   // ==================== HELPER FUNCTIONS ====================
-  const getLocationFromBuildingName = (buildingName?: string): string => {
-    if (!buildingName) return "other";
-    const name = buildingName.toLowerCase().trim();
-    if (name.includes("breeze")) return "breeze";
-    if (name.includes("sil") || name.includes("silk")) return "sil";
-    return "other";
-  };
+  const getLocationFromBuildingName = useCallback(
+    (buildingName?: string): string => {
+      if (!buildingName) return "other";
+      const name = buildingName.toLowerCase().trim();
+      if (name.includes("breeze")) return "breeze";
+      if (name.includes("sil") || name.includes("silk")) return "sil";
+      return "other";
+    },
+    [],
+  );
 
-  const getCollectionEmailForLocation = (location: string): string => {
-    if (location === "breeze") {
+  const getCollectionEmailForLocation = useCallback(
+    (location: string): string => {
+      if (location === "breeze") {
+        return (
+          process.env.NEXT_PUBLIC_COLLECTION_EMAIL_BREEZE ||
+          "collection.breeze@misterfyber.com"
+        );
+      } else if (location === "sil") {
+        return (
+          process.env.NEXT_PUBLIC_COLLECTION_EMAIL_SIL ||
+          "collection.silk@misterfyber.com"
+        );
+      }
       return (
-        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_BREEZE ||
-        "collection.breeze@misterfyber.com"
+        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_DEFAULT ||
+        "admin@misterfyber.com"
       );
-    } else if (location === "sil") {
-      return (
-        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_SIL ||
-        "collection.silk@misterfyber.com"
-      );
-    }
-    return (
-      process.env.NEXT_PUBLIC_COLLECTION_EMAIL_DEFAULT ||
-      "admin@misterfyber.com"
-    );
-  };
+    },
+    [],
+  );
 
-  const getLocationDisplay = (location: string): string => {
+  const getLocationDisplay = useCallback((location: string): string => {
     if (location === "breeze") return "🌊 Breeze";
     if (location === "sil") return "🏢 SIL";
     return "📍 Other";
-  };
+  }, []);
 
-  const getLocationBadgeColor = (location: string): string => {
+  const getLocationBadgeColor = useCallback((location: string): string => {
     if (location === "breeze")
       return "bg-blue-100 text-blue-800 border-blue-300";
     if (location === "sil")
       return "bg-purple-100 text-purple-800 border-purple-300";
     return "bg-gray-100 text-gray-800 border-gray-300";
-  };
+  }, []);
 
   // ==================== UPDATE LOCATION ====================
   useEffect(() => {
@@ -149,7 +156,11 @@ export default function ManualEmailPage() {
       setCustomerLocation("");
       setCollectionEmail("");
     }
-  }, [selectedCustomer]);
+  }, [
+    selectedCustomer,
+    getLocationFromBuildingName,
+    getCollectionEmailForLocation,
+  ]);
 
   // ==================== CALCULATE TOTAL EMAILS SENT ====================
   useEffect(() => {
@@ -161,16 +172,15 @@ export default function ManualEmailPage() {
 
   // ==================== LOAD FUNCTIONS ====================
   const loadCustomers = useCallback(
-    async (search?: string, forceRefresh = false, location?: string) => {
-      if (!isMountedRef.current) return;
+    async (search?: string, location?: string): Promise<Customer[]> => {
+      if (!isMountedRef.current) return [];
 
       try {
-        setLoading(true);
         setError(null);
 
         const data = await emailService.getCustomers({
           search,
-          forceRefresh,
+          forceRefresh: true,
           location,
         });
 
@@ -179,19 +189,22 @@ export default function ManualEmailPage() {
           buildingName: customer.buildingName || "",
         }));
 
-        setCustomers(processedData);
+        if (isMountedRef.current) {
+          setCustomers(processedData);
+          setLastUpdated(new Date().toLocaleTimeString());
+        }
+
+        return processedData;
       } catch (error: any) {
         console.error("Failed to load customers:", error);
         const errorMsg =
           error.response?.data?.message ||
           error.message ||
           "Failed to load customers";
-        setError(errorMsg);
-        toast.error(errorMsg);
-      } finally {
         if (isMountedRef.current) {
-          setLoading(false);
+          setError(errorMsg);
         }
+        return [];
       }
     },
     [],
@@ -201,10 +214,14 @@ export default function ManualEmailPage() {
     if (!isMountedRef.current) return;
     try {
       const data = await emailService.getTemplates();
-      setTemplates(data || []);
+      if (isMountedRef.current) {
+        setTemplates(data || []);
+      }
     } catch (error) {
       console.error("Failed to load templates:", error);
-      setTemplates([]);
+      if (isMountedRef.current) {
+        setTemplates([]);
+      }
     }
   }, []);
 
@@ -212,40 +229,131 @@ export default function ManualEmailPage() {
     if (!isMountedRef.current) return;
     try {
       const data = await emailService.getSentRecords();
-      setSentRecords(data || []);
+      if (isMountedRef.current) {
+        setSentRecords(data || []);
+      }
     } catch (error) {
       console.error("Failed to load sent records:", error);
-      setSentRecords([]);
+      if (isMountedRef.current) {
+        setSentRecords([]);
+      }
     }
   }, []);
 
-  const loadCustomerBills = async (applicationId: string) => {
-    try {
-      const data = await emailService.getCustomerBills(applicationId);
-      setCustomerBills(data?.bills || []);
-      setSelectedBillIds([]);
-    } catch (error) {
-      console.error("Failed to load customer bills:", error);
-      toast.error("Failed to load customer bills");
-      setCustomerBills([]);
-      setSelectedBillIds([]);
-    }
-  };
+  const loadCustomerBills = useCallback(
+    async (applicationId: string): Promise<any[]> => {
+      try {
+        const data = await emailService.getCustomerBills(applicationId);
+        const bills = data?.bills || [];
+        if (isMountedRef.current) {
+          setCustomerBills(bills);
+          setSelectedBillIds([]);
+        }
+        return bills;
+      } catch (error) {
+        console.error("Failed to load customer bills:", error);
+        if (isMountedRef.current) {
+          setCustomerBills([]);
+          setSelectedBillIds([]);
+        }
+        return [];
+      }
+    },
+    [],
+  );
 
-  // ==================== INITIAL LOAD ====================
+  // ==================== FULL SYSTEM REFRESH ====================
+  // ✅ This refreshes EVERYTHING from the database
+  const refreshAllData = useCallback(
+    async (options?: {
+      preserveSelectedCustomer?: boolean;
+      preserveSelection?: boolean;
+    }): Promise<Customer[]> => {
+      const { preserveSelectedCustomer = false, preserveSelection = false } =
+        options || {};
+
+      try {
+        setRefreshing(true);
+
+        // ✅ Fetch ALL data fresh from database in parallel
+        const [freshCustomers, freshSentRecords, freshTemplates] =
+          await Promise.all([
+            loadCustomers(
+              searchTerm,
+              buildingFilter !== "all" ? buildingFilter : undefined,
+            ),
+            loadSentRecords(),
+            loadTemplates(),
+          ]);
+
+        // ✅ If we have a selected customer, update it with fresh data
+        if (preserveSelectedCustomer && selectedCustomer) {
+          const updatedCustomer = freshCustomers.find(
+            (c) => c.applicationId === selectedCustomer.applicationId,
+          );
+          if (updatedCustomer) {
+            setSelectedCustomer(updatedCustomer);
+            // Also refresh bills for this customer
+            await loadCustomerBills(updatedCustomer.applicationId);
+          }
+        }
+
+        // ✅ If we have bulk selections, update them with fresh data
+        if (preserveSelection && selectedCustomers.length > 0) {
+          const updatedSelections = freshCustomers.filter((c) =>
+            selectedCustomers.some(
+              (sc) => sc.applicationId === c.applicationId,
+            ),
+          );
+          setSelectedCustomers(updatedSelections);
+        }
+
+        setRefreshKey((prev) => prev + 1);
+        return freshCustomers;
+      } catch (error) {
+        console.error("Refresh failed:", error);
+        throw error;
+      } finally {
+        if (isMountedRef.current) {
+          setRefreshing(false);
+        }
+      }
+    },
+    [
+      searchTerm,
+      buildingFilter,
+      selectedCustomer,
+      selectedCustomers,
+      loadCustomers,
+      loadSentRecords,
+      loadTemplates,
+      loadCustomerBills,
+    ],
+  );
+
+  // ==================== INITIAL LOAD (ONE TIME ONLY) ====================
   useEffect(() => {
     isMountedRef.current = true;
 
-    const loadAllData = async () => {
-      await Promise.all([
-        loadCustomers("", true),
-        loadTemplates(),
-        loadSentRecords(),
-      ]);
-      initialLoadDone.current = true;
-    };
+    if (!initialLoadDone.current) {
+      const loadAllData = async () => {
+        setLoading(true);
+        try {
+          await Promise.all([
+            loadCustomers(""),
+            loadTemplates(),
+            loadSentRecords(),
+          ]);
+          initialLoadDone.current = true;
+        } finally {
+          if (isMountedRef.current) {
+            setLoading(false);
+          }
+        }
+      };
 
-    loadAllData();
+      loadAllData();
+    }
 
     return () => {
       isMountedRef.current = false;
@@ -263,29 +371,21 @@ export default function ManualEmailPage() {
     }
   };
 
-  // FIXED: Load template with proper formatting preservation
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplateId(templateId);
     const template = templates.find((t) => t.id === templateId);
     if (template) {
-      // Set subject
       setSubject(template.subject || "");
 
-      // Set message - PRESERVE THE EXACT FORMATTING
       const templateMessage = template.message || "";
-
-      // Check if the message already has HTML formatting
       const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
 
       if (hasHtml) {
-        // If it has HTML, use it directly as rich text content
         setRichTextContent(templateMessage);
-        // Extract plain text for the message field
         const tempDiv = document.createElement("div");
         tempDiv.innerHTML = templateMessage;
         setMessage(tempDiv.textContent || "");
       } else {
-        // If it's plain text, convert to HTML with line breaks preserved
         const htmlContent = templateMessage.replace(/\n/g, "<br>");
         setRichTextContent(htmlContent);
         setMessage(templateMessage);
@@ -343,6 +443,7 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ✅ FULL SYSTEM REFRESH AFTER SEND
   const handleSendEmail = async () => {
     if (!selectedCustomer) {
       toast.error("Please select a customer");
@@ -380,13 +481,18 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
+      // ✅ FULL SYSTEM REFRESH - Fetch EVERYTHING fresh from database
+      await refreshAllData({ preserveSelectedCustomer: true });
 
+      // ✅ Clear form for next email
       setSubject("");
       setMessage("");
       setRichTextContent("");
       setIncludeBilling(false);
       setSelectedBillIds([]);
+      setSelectedTemplateId("");
+
+      toast.success("✅ Data refreshed. Ready to send another email!");
     } catch (error: any) {
       console.error("Failed to send email:", error);
       toast.error(error.response?.data?.message || "Failed to send email");
@@ -395,6 +501,7 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ✅ FULL SYSTEM REFRESH AFTER BULK SEND
   const handleSendBulkEmails = async () => {
     if (selectedCustomers.length === 0) {
       toast.error("Please select at least one customer");
@@ -425,12 +532,18 @@ export default function ManualEmailPage() {
         `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
       );
 
-      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
+      // ✅ FULL SYSTEM REFRESH
+      await refreshAllData({ preserveSelection: false });
 
+      // ✅ Clear form
       setSelectedCustomers([]);
       setSubject("");
       setMessage("");
       setRichTextContent("");
+      setIncludeBilling(false);
+      setSelectedTemplateId("");
+
+      toast.success("✅ Data refreshed. Ready to send more emails!");
     } catch (error: any) {
       console.error("Failed to send bulk emails:", error);
       toast.error(
@@ -458,7 +571,8 @@ export default function ManualEmailPage() {
       setShowReminderDialog(false);
       setReminderMessage("");
 
-      await Promise.all([loadSentRecords(), loadCustomers(searchTerm, true)]);
+      // ✅ FULL SYSTEM REFRESH
+      await refreshAllData();
     } catch (error: any) {
       console.error("Failed to send reminders:", error);
       toast.error(error.response?.data?.message || "Failed to send reminders");
@@ -491,11 +605,9 @@ export default function ManualEmailPage() {
     }
   };
 
-  // ==================== EDIT TEMPLATE HANDLERS ====================
   const handleEditTemplate = (template: EmailTemplate) => {
     setEditingTemplate(template);
 
-    // Get the template message and check if it has HTML formatting
     const templateMessage = template.message || "";
     const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
 
@@ -503,14 +615,11 @@ export default function ManualEmailPage() {
     let plainText = templateMessage;
 
     if (hasHtml) {
-      // If it has HTML, use it directly as rich text content
       richTextContent = templateMessage;
-      // Extract plain text for the message field
       const tempDiv = document.createElement("div");
       tempDiv.innerHTML = templateMessage;
       plainText = tempDiv.textContent || "";
     } else {
-      // If it's plain text, convert to HTML with line breaks preserved
       richTextContent = templateMessage.replace(/\n/g, "<br>");
       plainText = templateMessage;
     }
@@ -546,7 +655,7 @@ export default function ManualEmailPage() {
       await emailService.updateTemplate(editingTemplate.id, {
         name: editTemplateData.name,
         subject: editTemplateData.subject,
-        message: editTemplateData.richTextContent, // Save HTML content
+        message: editTemplateData.richTextContent,
         category: editTemplateData.category,
         includeBillingDefault: editTemplateData.includeBillingDefault,
       });
@@ -595,21 +704,14 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ✅ MANUAL REFRESH - Full system refresh
   const handleRefresh = async () => {
-    setLoading(true);
     try {
-      await Promise.all([
-        loadCustomers("", true),
-        loadTemplates(),
-        loadSentRecords(),
-      ]);
-      setRefreshKey((prev) => prev + 1);
-      toast.success("✅ All data refreshed successfully!");
+      await refreshAllData({ preserveSelectedCustomer: true });
+      toast.success("✅ All data refreshed from database!");
     } catch (error) {
       console.error("Refresh failed:", error);
       toast.error("Failed to refresh data");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -688,21 +790,21 @@ export default function ManualEmailPage() {
                 scheduling
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                🔄 Last updated: {new Date().toLocaleTimeString()}
+                🔄 Last updated: {lastUpdated || "Never"}
                 {customers.length > 0 &&
                   ` • ${customers.length} customers loaded`}
               </p>
             </div>
             <button
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={loading || refreshing}
               className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                loading
+                loading || refreshing
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
             >
-              {loading ? (
+              {loading || refreshing ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   Refreshing...
@@ -847,7 +949,7 @@ export default function ManualEmailPage() {
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                     <p className="text-red-600 text-sm">{error}</p>
                     <button
-                      onClick={() => loadCustomers(searchTerm, true)}
+                      onClick={() => loadCustomers(searchTerm)}
                       className="mt-2 text-sm text-red-700 underline"
                     >
                       Try Again
@@ -861,7 +963,7 @@ export default function ManualEmailPage() {
                       <div className="text-center py-8 text-gray-500">
                         <p>No customers found</p>
                         <button
-                          onClick={() => loadCustomers("", true)}
+                          onClick={() => loadCustomers("")}
                           className="mt-2 text-sm text-blue-600 underline"
                         >
                           🔄 Refresh customer list
@@ -1898,7 +2000,7 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* ==================== EDIT TEMPLATE DIALOG WITH RICH TEXT EDITOR ==================== */}
+      {/* EDIT TEMPLATE DIALOG */}
       {showEditTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
@@ -1923,7 +2025,6 @@ export default function ManualEmailPage() {
               </button>
             </div>
             <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
-              {/* Template Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Template Name <span className="text-red-500">*</span>
@@ -1942,7 +2043,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Category */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Category
@@ -1961,7 +2061,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Subject */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Subject <span className="text-red-500">*</span>
@@ -1980,7 +2079,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Message with Rich Text Editor */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message <span className="text-red-500">*</span>
@@ -1995,7 +2093,7 @@ export default function ManualEmailPage() {
                     setEditTemplateData({
                       ...editTemplateData,
                       richTextContent: content,
-                      message: content, // Keep plain text version for compatibility
+                      message: content,
                     });
                   }}
                   placeholder="Write your email message here..."
@@ -2004,7 +2102,6 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              {/* Include Billing Default */}
               <div className="flex items-center pt-2">
                 <input
                   type="checkbox"
@@ -2022,7 +2119,6 @@ export default function ManualEmailPage() {
                 </span>
               </div>
 
-              {/* Preview of formatted content */}
               {editTemplateData.richTextContent && (
                 <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                   <p className="text-xs font-medium text-gray-500 mb-2">

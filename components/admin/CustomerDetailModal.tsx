@@ -1,9 +1,9 @@
-// components/admin/CustomerDetailModal.tsx - COMPLETE
+// components/admin/CustomerDetailModal.tsx - COMPLETE WITH DELETE BILL
 
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import { FiX, FiEdit2, FiSave, FiCheckCircle } from "react-icons/fi";
+import { FiX, FiEdit2, FiSave, FiCheckCircle, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
 // Types
@@ -51,6 +51,11 @@ interface CustomerDetailModalProps {
   onEditInstallationPrice: (
     billId: string,
     newPrice: number,
+    customer: CustomerItem,
+  ) => void;
+  onDeleteBill?: (
+    billId: string,
+    invoiceNumber: string,
     customer: CustomerItem,
   ) => void;
 }
@@ -220,6 +225,7 @@ export default function CustomerDetailModal({
   onMarkInstallationBillAsPaid,
   onEditBillPrice,
   onEditInstallationPrice,
+  onDeleteBill,
 }: CustomerDetailModalProps) {
   const [localCustomer, setLocalCustomer] = useState<CustomerItem | null>(
     customer,
@@ -351,6 +357,24 @@ export default function CustomerDetailModal({
       });
     }
     onAction("freeInstallation", customer, { billId: bill._id });
+  };
+
+  const handleDeleteBillLocal = (bill: any, customer: CustomerItem) => {
+    if (!onDeleteBill) return;
+    if (localCustomer) {
+      const updatedUnpaidBills = localCustomer.unpaidBills.filter(
+        (b: any) => b._id !== bill._id,
+      );
+      setLocalCustomer({
+        ...localCustomer,
+        unpaidBills: updatedUnpaidBills,
+        currentBalance: updatedUnpaidBills.reduce(
+          (sum: number, b: any) => sum + (b.total || 0),
+          0,
+        ),
+      });
+    }
+    onDeleteBill(bill._id, bill.invoiceNumber, customer);
   };
 
   const displayCustomer = localCustomer || customer;
@@ -508,53 +532,89 @@ export default function CustomerDetailModal({
                             : "Monthly"}
                       </td>
                       <td className="px-3 py-2">
-                        {bill.isInstallationBill &&
-                          !bill.installationFeePaid && (
-                            <>
-                              <button
-                                onClick={() =>
-                                  handleMarkInstallationBillAsPaidLocal(
-                                    bill,
-                                    displayCustomer,
-                                  )
-                                }
-                                className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 mr-1"
-                              >
-                                Mark Paid
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleFreeInstallationLocal(
-                                    bill,
-                                    displayCustomer,
-                                  )
-                                }
-                                className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                              >
-                                Free
-                              </button>
-                            </>
-                          )}
-                        {!bill.isInstallationBill && bill.status !== "paid" && (
-                          <>
-                            <button
-                              onClick={() =>
-                                handleMarkBillAsPaidLocal(bill, displayCustomer)
-                              }
-                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 mr-1"
-                            >
-                              Mark Paid
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleFreeBillLocal(bill, displayCustomer)
-                              }
-                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                            >
-                              Free
-                            </button>
-                          </>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {bill.isInstallationBill &&
+                            !bill.installationFeePaid && (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    handleMarkInstallationBillAsPaidLocal(
+                                      bill,
+                                      displayCustomer,
+                                    )
+                                  }
+                                  className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
+                                >
+                                  Mark Paid
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleFreeInstallationLocal(
+                                      bill,
+                                      displayCustomer,
+                                    )
+                                  }
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                >
+                                  Free
+                                </button>
+                                {onDeleteBill && (
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteBillLocal(
+                                        bill,
+                                        displayCustomer,
+                                      )
+                                    }
+                                    className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1"
+                                    title="Delete Bill"
+                                  >
+                                    <FiTrash2 className="w-3 h-3" />
+                                    Delete
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          {!bill.isInstallationBill &&
+                            bill.status !== "paid" && (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    handleMarkBillAsPaidLocal(
+                                      bill,
+                                      displayCustomer,
+                                    )
+                                  }
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                >
+                                  Mark Paid
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleFreeBillLocal(bill, displayCustomer)
+                                  }
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                >
+                                  Free
+                                </button>
+                                {onDeleteBill && (
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteBillLocal(
+                                        bill,
+                                        displayCustomer,
+                                      )
+                                    }
+                                    className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1"
+                                    title="Delete Bill"
+                                  >
+                                    <FiTrash2 className="w-3 h-3" />
+                                    Delete
+                                  </button>
+                                )}
+                              </>
+                            )}
+                        </div>
                       </td>
                     </tr>
                   ))}

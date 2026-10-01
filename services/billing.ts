@@ -1,4 +1,4 @@
-// frontend/src/services/billing.ts - COMPLETE WITH WEBSOCKET ONLY REFRESH
+// frontend/src/services/billing.ts - COMPLETE WITH WEBSOCKET ONLY REFRESH AND DELETE BILL
 
 import api from "./api";
 
@@ -431,6 +431,29 @@ export const deleteBillingCycle = async (data: any): Promise<any> => {
     return response.data;
   } catch (error) {
     console.error("Error deleting billing cycle:", error);
+    throw error;
+  }
+};
+
+// ==================== DELETE SPECIFIC BILL ====================
+export const deleteBill = async (
+  billId: string,
+  reason?: string,
+): Promise<any> => {
+  try {
+    const response = await api.delete(`/billing/delete-bill/${billId}`, {
+      data: { reason },
+    });
+    cacheManager.clear();
+    billingEvents.emit("refresh", {
+      type: "bill_deleted",
+      billId,
+      reason,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting bill:", error);
     throw error;
   }
 };

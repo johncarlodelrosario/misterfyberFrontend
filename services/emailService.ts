@@ -1,4 +1,4 @@
-// services/emailService.ts
+// services/emailService.ts - FIXED
 
 import api from "./api";
 
@@ -114,7 +114,7 @@ export interface ScheduleStats {
 }
 
 class EmailService {
-  // Customer methods
+  // ✅ Customer methods - NO custom headers (cache busting via query param only)
   async getCustomers(params?: {
     search?: string;
     status?: string;
@@ -128,7 +128,7 @@ class EmailService {
       if (params?.status) queryParams.append("status", params.status);
       if (params?.hasBilling)
         queryParams.append("hasBilling", params.hasBilling);
-      if (params?.forceRefresh) queryParams.append("forceRefresh", "true");
+      queryParams.append("forceRefresh", "true");
       if (params?.location && params.location !== "all") {
         queryParams.append("location", params.location);
       }
@@ -446,7 +446,9 @@ class EmailService {
 
   async getScheduleStats(): Promise<ScheduleStats> {
     try {
-      const response = await api.get(`/manual-email/schedule-stats`);
+      const response = await api.get(
+        `/manual-email/schedule-stats?_t=${Date.now()}`,
+      );
       return response.data.data;
     } catch (error) {
       console.error("Failed to get schedule stats:", error);

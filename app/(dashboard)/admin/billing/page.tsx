@@ -60,6 +60,7 @@ import {
   disconnectClient,
   reconnectClient,
   deleteBillingCycle,
+  deleteBill,
   markBillAsPaid,
   markBillAsFree,
   markInstallationBillAsPaid,
@@ -253,6 +254,8 @@ function AdminBillingPageContent() {
   const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [showDeleteBillConfirmModal, setShowDeleteBillConfirmModal] =
+    useState(false);
 
   // Real-time states
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
@@ -279,6 +282,11 @@ function AdminBillingPageContent() {
   const [customerToDelete, setCustomerToDelete] = useState<CustomerItem | null>(
     null,
   );
+  const [billToDelete, setBillToDelete] = useState<{
+    billId: string;
+    invoiceNumber: string;
+    customer: CustomerItem;
+  } | null>(null);
   const [emailCustomer, setEmailCustomer] = useState<CustomerItem | null>(null);
 
   // Form states
@@ -298,6 +306,7 @@ function AdminBillingPageContent() {
   const [pendingModalType, setPendingModalType] = useState<
     "pro-rated" | "activation" | "payments" | "installation"
   >("pro-rated");
+  const [deleteBillReason, setDeleteBillReason] = useState("");
 
   const [backdatedForm, setBackdatedForm] = useState({
     applicationId: "",
@@ -592,6 +601,24 @@ function AdminBillingPageContent() {
         error.response?.data?.message || "Failed to update bill price",
       );
       console.error("Price update error:", error);
+    },
+  });
+
+  // Delete Bill Mutation
+  const deleteBillMutation = useMutation({
+    mutationFn: ({ billId, reason }: { billId: string; reason?: string }) =>
+      deleteBill(billId, reason),
+    onSuccess: (data) => {
+      toast.success(data.message || "✅ Bill deleted successfully!");
+      setShowDeleteBillConfirmModal(false);
+      setBillToDelete(null);
+      setDeleteBillReason("");
+      clearBillingCache();
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || "Failed to delete bill");
+      console.error("Delete bill error:", error);
     },
   });
 
@@ -931,6 +958,23 @@ function AdminBillingPageContent() {
     [updateBillPriceMutation],
   );
 
+  const handleDeleteBill = useCallback(
+    (billId: string, invoiceNumber: string, customer: CustomerItem) => {
+      setBillToDelete({ billId, invoiceNumber, customer });
+      setDeleteBillReason("");
+      setShowDeleteBillConfirmModal(true);
+    },
+    [],
+  );
+
+  const confirmDeleteBill = () => {
+    if (!billToDelete) return;
+    deleteBillMutation.mutate({
+      billId: billToDelete.billId,
+      reason: deleteBillReason || "Deleted by admin",
+    });
+  };
+
   const handleGenerateEarlyBill = async (customer: CustomerItem) => {
     if (!customer.applicationId) {
       toast.error("No application ID found for this customer");
@@ -1147,6 +1191,11 @@ function AdminBillingPageContent() {
       case "delete":
         setCustomerToDelete(customer);
         setShowDeleteConfirmModal(true);
+        break;
+      case "deleteBill":
+        if (data?.billId && data?.invoiceNumber) {
+          handleDeleteBill(data.billId, data.invoiceNumber, customer);
+        }
         break;
       case "freeBill":
         if (data?.billId) {
@@ -1525,6 +1574,7 @@ function AdminBillingPageContent() {
         websocketConnected={websocketConnected}
         onEditBillPrice={handleEditBillPrice}
         onEditInstallationPrice={handleEditInstallationPrice}
+        onDeleteBill={handleDeleteBill}
       />
 
       {/* ==================== MODALS ==================== */}
@@ -1537,6 +1587,7 @@ function AdminBillingPageContent() {
         onMarkInstallationBillAsPaid={handleMarkInstallationBillAsPaid}
         onEditBillPrice={handleEditBillPrice}
         onEditInstallationPrice={handleEditInstallationPrice}
+        onDeleteBill={handleDeleteBill}
       />
 
       <BillingReportsWithDownload
@@ -1561,6 +1612,93 @@ function AdminBillingPageContent() {
         onConfirm={handleBackdatedBilling}
         installationFee={billingFlowSettings.installationFee}
       />
+
+      {/* Delete Bill Confirmation Modal */}
+      {showDeleteBillConfirmModal && billToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-600">🗑️ Delete Bill</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteBillConfirmModal(false);
+                  setBillToDelete(null);
+                  setDeleteBillReason("");
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-800">
+                <strong>Warning:</strong> This action cannot be undone. The bill
+                and its associated invoice will be permanently deleted.
+              </p>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <p className="text-sm text-gray-600">Invoice Number:</p>
+                <p className="font-mono font-medium text-gray-900">
+                  {billToDelete.invoiceNumber}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Customer:</p>
+                <p className="font-medium text-gray-900">
+                  {billToDelete.customer.firstName}{" "}
+                  {billToDelete.customer.lastName}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason for deletion (optional)
+              </label>
+              <textarea
+                value={deleteBillReason}
+                onChange={(e) => setDeleteBillReason(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="Enter reason for deleting this bill..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteBillConfirmModal(false);
+                  setBillToDelete(null);
+                  setDeleteBillReason("");
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteBill}
+                disabled={deleteBillMutation.isPending}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleteBillMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 className="w-4 h-4" />
+                    Delete Bill
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pause Modal */}
       {showPauseModal && (
