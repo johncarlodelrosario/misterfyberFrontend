@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - FILTER WORKS 100% + NAME SORT
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -59,6 +59,7 @@ interface Filters {
   buildingId: string;
   page: number;
   limit: number;
+  nameSort: string;
 }
 
 export default function AdminApplicationsPage() {
@@ -77,56 +78,95 @@ export default function AdminApplicationsPage() {
     buildingId: "",
     page: 1,
     limit: 20,
+    nameSort: "none",
   });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasInitialLoad, setHasInitialLoad] = useState(false);
+
+  // ✅ Refs
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const filterChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const refreshCounter = useRef(0);
+  const hasInitialLoadRef = useRef(false);
+  const filtersRef = useRef(filters);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ✅ Keep filtersRef in sync with latest filters
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // Get application ID consistently
   const getAppId = useCallback((app: Application): string => {
     return app._id || app.id || app.applicationId || "";
   }, []);
 
-  // Fetch applications with filters
+  // ✅ FIXED: Fetch applications with AbortController - NO isFetchingRef guard
   const fetchApplications = useCallback(
-    async (refresh = false) => {
+    async (refresh = false, overrideFilters?: Partial<Filters>) => {
+      // ✅ Abort previous request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        console.log("🛑 Aborted previous request");
+      }
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       try {
         if (refresh) {
           setIsRefreshing(true);
           refreshCounter.current += 1;
-        } else if (!hasInitialLoad) {
+        } else if (!hasInitialLoadRef.current) {
           setLoading(true);
         }
         setError(null);
 
-        const params: any = {
-          page: filters.page,
-          limit: filters.limit,
+        // Use override filters if provided, otherwise use ref (latest)
+        const currentFilters = {
+          ...filtersRef.current,
+          ...overrideFilters,
         };
 
-        if (filters.status && filters.status !== "all") {
-          params.status = filters.status;
+        const params: any = {
+          page: currentFilters.page,
+          limit: currentFilters.limit,
+        };
+
+        if (currentFilters.status && currentFilters.status !== "all") {
+          params.status = currentFilters.status;
         }
 
-        if (filters.search && filters.search.trim()) {
-          params.search = filters.search.trim();
+        if (currentFilters.search && currentFilters.search.trim()) {
+          params.search = currentFilters.search.trim();
         }
 
-        if (filters.buildingId && filters.buildingId !== "") {
-          params.buildingId = filters.buildingId;
+        if (currentFilters.buildingId && currentFilters.buildingId !== "") {
+          params.buildingId = currentFilters.buildingId;
+        }
+
+        // ✅ Name sort param
+        if (currentFilters.nameSort && currentFilters.nameSort !== "none") {
+          params.nameSort = currentFilters.nameSort;
         }
 
         // Add cache-busting param for refresh
         if (refresh) {
-          params.forceRefresh = true;
+          params.forceRefresh = "true";
           params._t = Date.now() + refreshCounter.current;
         }
 
-        console.log("Fetching applications with params:", params);
+        console.log("🔄 Fetching applications with params:", params);
 
-        const response = await getAllApplications(params);
+        // ✅ Pass abort signal
+        const response = await getAllApplications(params, controller.signal);
+
+        // ✅ Skip state update if aborted
+        if (controller.signal.aborted) {
+          console.log("⏭️ Request was aborted, skipping state update");
+          return;
+        }
+
         const data = response.data || [];
 
         // Ensure each application has an _id
@@ -144,23 +184,36 @@ export default function AdminApplicationsPage() {
         setTotal(response.total || 0);
         setTotalPages(response.totalPages || 0);
         setCurrentPage(response.currentPage || 1);
-        setHasInitialLoad(true);
+        hasInitialLoadRef.current = true;
+
+        console.log(
+          `✅ Loaded ${mappedData.length} applications, Total: ${response.total}`,
+        );
 
         if (refresh) {
           toast.success("📋 Data refreshed successfully!");
         }
       } catch (err: any) {
-        console.error("Error fetching applications:", err);
+        // ✅ Ignore abort errors
+        if (err.name === "AbortError" || err.code === "ERR_CANCELED") {
+          console.log("🛑 Request aborted");
+          return;
+        }
+
+        console.error("❌ Error fetching applications:", err);
         setError(err.message || "Failed to load applications");
         if (!refresh) {
           toast.error("Failed to load applications");
         }
       } finally {
-        setLoading(false);
-        setIsRefreshing(false);
+        // ✅ Only set loading false if this controller is still current
+        if (abortControllerRef.current === controller) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
-    [filters, hasInitialLoad],
+    [],
   );
 
   // Fetch buildings and plans for dropdowns
@@ -178,31 +231,56 @@ export default function AdminApplicationsPage() {
     }
   }, []);
 
-  // Initial load
+  // ✅ Initial load - only once
   useEffect(() => {
+    console.log("🚀 Initial load");
     fetchApplications();
     fetchMetadata();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh when filters change (page, status, buildingId)
+  // ✅ FIXED: Filter changes (page, status, buildingId, nameSort)
   useEffect(() => {
-    if (hasInitialLoad) {
-      fetchApplications();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.page, filters.status, filters.buildingId]);
+    // Skip if not initial load yet
+    if (!hasInitialLoadRef.current) return;
 
-  // Handle search with debounce
+    // Clear any pending timeout
+    if (filterChangeTimeoutRef.current) {
+      clearTimeout(filterChangeTimeoutRef.current);
+    }
+
+    console.log("🔍 Filter changed, scheduling fetch...", {
+      page: filters.page,
+      status: filters.status,
+      buildingId: filters.buildingId,
+      nameSort: filters.nameSort,
+    });
+
+    // Debounce filter changes slightly
+    filterChangeTimeoutRef.current = setTimeout(() => {
+      console.log("🔍 Executing filter fetch...");
+      fetchApplications(false, filters);
+    }, 150);
+
+    return () => {
+      if (filterChangeTimeoutRef.current) {
+        clearTimeout(filterChangeTimeoutRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.page, filters.status, filters.buildingId, filters.nameSort]);
+
+  // ✅ Search with debounce (separate from other filters)
   useEffect(() => {
-    if (!hasInitialLoad) return;
+    if (!hasInitialLoadRef.current) return;
 
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
     searchTimeoutRef.current = setTimeout(() => {
-      fetchApplications();
+      console.log("🔍 Search debounce triggered");
+      fetchApplications(false, filters);
     }, 500);
 
     return () => {
@@ -215,9 +293,11 @@ export default function AdminApplicationsPage() {
 
   // Handlers
   const handleFilterChange = (key: keyof Filters, value: any) => {
+    console.log(`🔧 Filter change: ${key} = ${value}`);
     setFilters((prev) => ({
       ...prev,
       [key]: value,
+      // Reset page to 1 when changing filters (except page itself)
       ...(key !== "page" && { page: 1 }),
     }));
   };
@@ -257,7 +337,7 @@ export default function AdminApplicationsPage() {
     router.push(`/admin/applications/${id}/edit`);
   };
 
-  // Approve application handler with proper refresh
+  // Approve application handler
   const handleApprove = useCallback(
     async (id: string) => {
       if (!id) {
@@ -267,13 +347,11 @@ export default function AdminApplicationsPage() {
 
       try {
         console.log("✅ Approving application:", id);
-        // Call the API to approve
         const result = await approveApplication(id);
         console.log("✅ Approve result:", result);
 
         toast.success("✅ Application approved successfully!");
 
-        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
         console.error("❌ Error approving application:", error);
@@ -288,7 +366,7 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // Reject application handler with proper refresh
+  // Reject application handler
   const handleReject = useCallback(
     async (id: string) => {
       if (!id) {
@@ -298,13 +376,11 @@ export default function AdminApplicationsPage() {
 
       try {
         console.log("❌ Rejecting application:", id);
-        // Call the API to reject
         const result = await rejectApplication(id);
         console.log("❌ Reject result:", result);
 
         toast.success("❌ Application rejected successfully!");
 
-        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
         console.error("❌ Error rejecting application:", error);
@@ -319,7 +395,7 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // Delete application handler with proper refresh
+  // Delete application handler
   const handleDelete = useCallback(
     async (id: string) => {
       if (!id) {
@@ -333,7 +409,6 @@ export default function AdminApplicationsPage() {
         setSelectedIds((prev) => prev.filter((item) => item !== id));
         toast.success("🗑️ Application deleted successfully!");
 
-        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
         console.error("❌ Error deleting application:", error);
@@ -348,7 +423,7 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // Bulk delete handler with proper refresh
+  // Bulk delete handler
   const handleBulkDelete = useCallback(
     async (ids: string[]) => {
       if (!ids || ids.length === 0) {
@@ -362,7 +437,6 @@ export default function AdminApplicationsPage() {
         setSelectedIds([]);
         toast.success(`🗑️ ${ids.length} applications deleted successfully!`);
 
-        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
         console.error("❌ Error bulk deleting applications:", error);
@@ -377,7 +451,7 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // Edit handler with proper refresh
+  // Edit handler
   const handleEdit = useCallback(
     async (id: string, data: any) => {
       if (!id) {
@@ -390,7 +464,6 @@ export default function AdminApplicationsPage() {
         await patchApplication(id, data);
         toast.success("✅ Application updated successfully!");
 
-        // Force refresh from server with cache busting
         await fetchApplications(true);
       } catch (error: any) {
         console.error("❌ Error updating application:", error);
@@ -512,17 +585,19 @@ export default function AdminApplicationsPage() {
           statusFilter={filters.status}
           buildingFilter={filters.buildingId}
           searchQuery={filters.search}
+          nameSortFilter={filters.nameSort}
           onStatusFilterChange={(value) => handleFilterChange("status", value)}
           onBuildingFilterChange={(value) =>
             handleFilterChange("buildingId", value)
           }
           onSearchChange={(value) => handleFilterChange("search", value)}
+          onNameSortChange={(value) => handleFilterChange("nameSort", value)}
           onSearchSubmit={() => {
             if (searchTimeoutRef.current) {
               clearTimeout(searchTimeoutRef.current);
               searchTimeoutRef.current = null;
             }
-            fetchApplications();
+            fetchApplications(false, filters);
           }}
           statusOptions={statusOptions}
           total={total}

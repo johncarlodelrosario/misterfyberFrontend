@@ -1,4 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - COMPLETE WITH FIXED FILTERS
+// frontend/src/app/admin/payments/page.tsx - COMPLETE FIXED - INSTANT LOAD, NO CACHE, REALTIME
 
 "use client";
 
@@ -73,16 +73,7 @@ interface Building {
   buildingName?: string;
 }
 
-const buildingCache = new Map<string, { name: string; address: string }>();
-const customerNameCache = new Map<
-  string,
-  { name: string; email: string; phone: string; buildingId?: string }
->();
-
-let globalCache: any = null;
-let globalCacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000;
-
+// ==================== FORMATTING HELPERS ====================
 function formatBillingPeriod(billingPeriod?: {
   start: string;
   end: string;
@@ -113,69 +104,40 @@ function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
-async function fetchBuildings(): Promise<Building[]> {
-  try {
-    const response = await api.get("/buildings");
-    if (response.data?.success && response.data?.data) {
-      const buildings = response.data.data;
-      buildings.forEach((b: any) => {
-        const buildingName = b.name || b.buildingName || "Unnamed Building";
-        buildingCache.set(b._id, {
-          name: buildingName,
-          address: b.address || b.streetAddress || "",
-        });
-      });
-      return buildings;
-    }
-    return [];
-  } catch (error) {
-    console.error("Error fetching buildings:", error);
-    return [];
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "completed":
+      return "bg-green-100 text-green-800";
+    case "pending":
+      return "bg-yellow-100 text-yellow-800";
+    case "processing":
+      return "bg-blue-100 text-blue-800";
+    case "failed":
+      return "bg-red-100 text-red-800";
+    case "refunded":
+      return "bg-gray-100 text-gray-800";
+    default:
+      return "bg-gray-100 text-gray-800";
   }
 }
 
-async function fetchCustomerName(applicationId: string): Promise<{
-  name: string;
-  email: string;
-  phone: string;
-  buildingId?: string;
-}> {
-  if (!applicationId || applicationId === "—" || applicationId === "") {
-    return { name: "Unknown Customer", email: "—", phone: "—" };
-  }
-
-  if (customerNameCache.has(applicationId)) {
-    return customerNameCache.get(applicationId)!;
-  }
-
-  try {
-    const response = await api.get(`/applications/status/${applicationId}`);
-    if (response.data?.success && response.data?.data) {
-      const app = response.data.data;
-      const firstName = app.firstName || "";
-      const lastName = app.lastName || "";
-      const fullName = `${firstName} ${lastName}`.trim();
-      const finalName = fullName || app.applicationId || applicationId;
-
-      const customerInfo = {
-        name: finalName,
-        email: app.email || "—",
-        phone: app.phoneNumber || "—",
-        buildingId: app.buildingId,
-      };
-      customerNameCache.set(applicationId, customerInfo);
-      return customerInfo;
-    }
-    return { name: applicationId, email: "—", phone: "—" };
-  } catch (error) {
-    console.error(`Error fetching customer for ${applicationId}:`, error);
-    return { name: applicationId, email: "—", phone: "—" };
+function getPaymentTypeColor(type: string): string {
+  switch (type) {
+    case "subscription":
+      return "bg-purple-100 text-purple-800";
+    case "installation":
+      return "bg-orange-100 text-orange-800";
+    default:
+      return "bg-gray-100 text-gray-800";
   }
 }
 
-async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
+// ==================== SYNCHRONOUS CUSTOMER INFO EXTRACTION ====================
+// NO API CALLS - Uses data already enriched by the backend
+function extractCustomerInfoSync(payment: Payment): CustomerInfo {
   let appId = "";
 
+  // Try to get applicationId from various sources (already enriched by backend)
   if (payment.applicationId) {
     if (typeof payment.applicationId === "string") {
       appId = payment.applicationId;
@@ -194,191 +156,133 @@ async function extractCustomerInfo(payment: Payment): Promise<CustomerInfo> {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  const isAppIdPattern = /^[A-Z]{3}\d+/.test(appId);
-
-  // FIX: fallback to (payment as any).buildingId so backend-supplied buildingId is used
+  // Building info - already enriched by backend
   let buildingId: any = (payment as any).buildingId || "";
-  let buildingName = "";
+  let buildingName = (payment as any).buildingName || "";
 
-  // If appId is an object, read buildingId from it directly
   if (
     payment.applicationId &&
     typeof payment.applicationId === "object" &&
     payment.applicationId !== null
   ) {
     const appObj = payment.applicationId as any;
-    if (appObj.buildingId && !buildingId) {
-      buildingId = appObj.buildingId;
-    }
-    if (appObj.buildingName && !buildingName) {
+    if (appObj.buildingId && !buildingId) buildingId = appObj.buildingId;
+    if (appObj.buildingName && !buildingName)
       buildingName = appObj.buildingName;
-    }
   }
 
-  if (buildingId && typeof buildingId === "string") {
-    if (buildingCache.has(buildingId)) {
-      const building = buildingCache.get(buildingId)!;
-      buildingName = buildingName || building.name;
-    } else {
-      try {
-        const response = await api.get(`/buildings/${buildingId}`);
-        if (response.data?.success && response.data?.data) {
-          const b = response.data.data;
-          const name = b.name || b.buildingName || "Unnamed Building";
-          buildingCache.set(buildingId, {
-            name,
-            address: b.address || b.streetAddress || "",
-          });
-          if (!buildingName) buildingName = name;
-        }
-      } catch (e) {}
-    }
-  }
-
-  if (!buildingName) {
-    if (payment.userId && typeof payment.userId === "object") {
-      const user = payment.userId as any;
-      if (user.buildingId) {
-        const userBuildingId = user.buildingId;
-        if (
-          typeof userBuildingId === "string" &&
-          buildingCache.has(userBuildingId)
-        ) {
-          buildingName = buildingCache.get(userBuildingId)!.name;
-          if (!buildingId) {
-            buildingId = userBuildingId;
-          }
-        }
-      }
-    }
-  }
-
-  if (appId && isAppIdPattern) {
-    const customerData = await fetchCustomerName(appId);
-    const finalBuildingId = customerData.buildingId || buildingId;
-    let finalBuildingName = buildingName;
-
-    if (
-      finalBuildingId &&
-      typeof finalBuildingId === "string" &&
-      buildingCache.has(finalBuildingId)
-    ) {
-      finalBuildingName = buildingCache.get(finalBuildingId)!.name;
-    }
-
-    return {
-      name: customerData.name,
-      email: customerData.email,
-      phone: customerData.phone,
-      applicationId: appId,
-      buildingId: finalBuildingId,
-      buildingName: finalBuildingName,
-    };
-  }
-
-  if (payment.customerName && payment.customerName.trim() !== "") {
-    const name = payment.customerName.trim();
-    const isAppId = /^[A-Z]{3}\d+/.test(name);
-    if (!isAppId) {
+  // ====== PRIORITY: use the already-enriched application object from backend ======
+  if (
+    payment.applicationId &&
+    typeof payment.applicationId === "object" &&
+    payment.applicationId !== null
+  ) {
+    const appObj = payment.applicationId as any;
+    const firstName = appObj.firstName || "";
+    const lastName = appObj.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName && !/^[A-Z]{3}\d+/.test(fullName)) {
       return {
-        name: name,
-        email: payment.customerEmail || "—",
-        phone: payment.customerPhone || "—",
-        applicationId: appId || "—",
-        buildingId: buildingId,
-        buildingName: buildingName,
+        name: fullName || appObj.applicantName || appId || "Unknown Customer",
+        email: appObj.email || payment.customerEmail || "—",
+        phone: appObj.phoneNumber || payment.customerPhone || "—",
+        applicationId: appObj.applicationId || appId || "—",
+        buildingId: appObj.buildingId || buildingId,
+        buildingName: appObj.buildingName || buildingName,
       };
     }
   }
 
+  // ====== Use enriched "application" property if present ======
+  if ((payment as any).application) {
+    const app = (payment as any).application;
+    const firstName = app.firstName || "";
+    const lastName = app.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    return {
+      name: fullName || app.applicantName || appId || "Unknown Customer",
+      email: app.email || payment.customerEmail || "—",
+      phone: app.phoneNumber || payment.customerPhone || "—",
+      applicationId: app.applicationId || appId || "—",
+      buildingId: app.buildingId || buildingId,
+      buildingName: app.buildingName || buildingName,
+    };
+  }
+
+  // ====== Use enriched "user" property if present ======
+  if ((payment as any).user) {
+    const user = (payment as any).user;
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName && !/^[A-Z]{3}\d+/.test(fullName)) {
+      return {
+        name: fullName,
+        email: user.email || payment.customerEmail || "—",
+        phone: user.phoneNumber || payment.customerPhone || "—",
+        applicationId: appId || user.username || "—",
+        buildingId: user.buildingId || buildingId,
+        buildingName: user.buildingName || buildingName,
+      };
+    }
+  }
+
+  // ====== Use payment.customerName directly (enriched by backend) ======
+  if (payment.customerName && payment.customerName.trim() !== "") {
+    const name = payment.customerName.trim();
+    if (!/^[A-Z]{3}\d+$/.test(name)) {
+      return {
+        name,
+        email: payment.customerEmail || "—",
+        phone: payment.customerPhone || "—",
+        applicationId: appId || "—",
+        buildingId,
+        buildingName,
+      };
+    }
+  }
+
+  // ====== Fallback: use userId if it's an object ======
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
     const firstName = user.firstName || "";
     const lastName = user.lastName || "";
     const fullName = `${firstName} ${lastName}`.trim();
-    if (fullName.length > 1) {
-      const isAppId = /^[A-Z]{3}\d+/.test(fullName);
-      if (!isAppId) {
-        let userBuildingId = user.buildingId || buildingId;
-        let userBuildingName = buildingName;
-        if (
-          userBuildingId &&
-          typeof userBuildingId === "string" &&
-          buildingCache.has(userBuildingId)
-        ) {
-          userBuildingName = buildingCache.get(userBuildingId)!.name;
-        }
-
-        return {
-          name: fullName,
-          email: user.email || payment.customerEmail || "—",
-          phone: user.phoneNumber || user.phone || payment.customerPhone || "—",
-          applicationId: appId || "—",
-          buildingId: userBuildingId,
-          buildingName: userBuildingName,
-        };
-      }
-    }
-  }
-
-  if (appId && appId.length > 0) {
-    const customerData = await fetchCustomerName(appId);
-    if (customerData.name !== appId) {
-      const finalBuildingId = customerData.buildingId || buildingId;
-      let finalBuildingName = buildingName;
-      if (
-        finalBuildingId &&
-        typeof finalBuildingId === "string" &&
-        buildingCache.has(finalBuildingId)
-      ) {
-        finalBuildingName = buildingCache.get(finalBuildingId)!.name;
-      }
+    if (fullName && !/^[A-Z]{3}\d+$/.test(fullName)) {
       return {
-        name: customerData.name,
-        email: customerData.email,
-        phone: customerData.phone,
-        applicationId: appId,
-        buildingId: finalBuildingId,
-        buildingName: finalBuildingName,
+        name: fullName,
+        email: user.email || payment.customerEmail || "—",
+        phone: user.phoneNumber || payment.customerPhone || "—",
+        applicationId: appId || "—",
+        buildingId: user.buildingId || buildingId,
+        buildingName: user.buildingName || buildingName,
       };
     }
-    return {
-      name: appId,
-      email: payment.customerEmail || "—",
-      phone: payment.customerPhone || "—",
-      applicationId: appId,
-      buildingId: buildingId,
-      buildingName: buildingName,
-    };
   }
 
+  // ====== Final fallback ======
   return {
-    name: "Unknown Customer",
+    name: payment.customerName || appId || "Unknown Customer",
     email: payment.customerEmail || "—",
     phone: payment.customerPhone || "—",
     applicationId: appId || "—",
-    buildingId: buildingId,
-    buildingName: buildingName,
+    buildingId,
+    buildingName,
   };
 }
 
-async function groupPaymentsAsync(
-  payments: Payment[],
-): Promise<PaymentGroup[]> {
+// ==================== SYNCHRONOUS PAYMENT GROUPING ====================
+// NO async/await - pure sync operation = instant
+function groupPaymentsSync(payments: Payment[]): PaymentGroup[] {
   const groups = new Map<string, PaymentGroup>();
 
-  const paymentPromises = payments.map(async (payment) => {
-    const customerInfo = await extractCustomerInfo(payment);
-    return { payment, customerInfo };
-  });
+  for (const payment of payments) {
+    const customerInfo = extractCustomerInfoSync(payment);
 
-  const results = await Promise.all(paymentPromises);
-
-  for (const { payment, customerInfo } of results) {
     let customerId = customerInfo.applicationId;
     if (
+      !customerId ||
       customerId === "—" ||
-      customerId === "Loading..." ||
       customerId === "" ||
       customerId === "Unknown Customer"
     ) {
@@ -426,60 +330,10 @@ async function groupPaymentsAsync(
   return Array.from(groups.values());
 }
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "completed":
-      return "bg-green-100 text-green-800";
-    case "pending":
-      return "bg-yellow-100 text-yellow-800";
-    case "processing":
-      return "bg-blue-100 text-blue-800";
-    case "failed":
-      return "bg-red-100 text-red-800";
-    case "refunded":
-      return "bg-gray-100 text-gray-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-}
-
-function getPaymentTypeColor(type: string): string {
-  switch (type) {
-    case "subscription":
-      return "bg-purple-100 text-purple-800";
-    case "installation":
-      return "bg-orange-100 text-orange-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-}
-
 // ==================== CUSTOMER DETAILS COMPONENT ====================
 const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
-  const [info, setInfo] = useState<CustomerInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
   const isFree = payment.paymentDetails?.isFree === true;
-
-  useEffect(() => {
-    let mounted = true;
-    extractCustomerInfo(payment).then((result) => {
-      if (mounted) {
-        setInfo(result);
-        setLoading(false);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, [payment]);
-
-  if (loading || !info) {
-    return (
-      <div className="animate-pulse text-center py-4">
-        Loading customer info...
-      </div>
-    );
-  }
 
   const isInstallation =
     payment.paymentType === "installation" ||
@@ -612,32 +466,8 @@ const PendingPaymentRow = React.memo(
     rejecting: boolean;
     deleting: boolean;
   }) => {
-    const [info, setInfo] = useState<CustomerInfo | null>(null);
-    const [loading, setLoading] = useState(true);
+    const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
     const isFree = payment.paymentDetails?.isFree === true;
-
-    useEffect(() => {
-      let mounted = true;
-      extractCustomerInfo(payment).then((result) => {
-        if (mounted) {
-          setInfo(result);
-          setLoading(false);
-        }
-      });
-      return () => {
-        mounted = false;
-      };
-    }, [payment]);
-
-    if (loading || !info) {
-      return (
-        <tr>
-          <td colSpan={9} className="px-4 py-3 text-center">
-            <span className="animate-pulse">Loading customer info...</span>
-          </td>
-        </tr>
-      );
-    }
 
     const billingPeriod = (payment.billingId as any)?.billingPeriod;
     const isInstallation =
@@ -763,78 +593,32 @@ export default function AdminPaymentsPage() {
     pendingCount: 0,
   });
   const [showFilters, setShowFilters] = useState(false);
+
   const isMountedRef = useRef(true);
-  const initialLoadDone = useRef(false);
 
-  const isFirstRender = useRef(true);
-  const prevFiltersRef = useRef({
-    statusFilter: "",
-    paymentTypeFilter: "",
-    buildingFilter: "",
-    dateRangeStart: "",
-    dateRangeEnd: "",
-    currentPage: 1,
-  });
-
-  const statsRef = useRef(stats);
+  // ==================== FETCH BUILDINGS ONCE ====================
   useEffect(() => {
-    statsRef.current = stats;
-  }, [stats]);
-
-  useEffect(() => {
-    fetchBuildings().then((data) => {
-      if (isMountedRef.current) {
-        setBuildings(data);
-      }
-    });
+    isMountedRef.current = true;
+    api
+      .get("/buildings")
+      .then((response) => {
+        if (isMountedRef.current && response.data?.success) {
+          setBuildings(response.data.data || []);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
-  // ==================== LOAD PAYMENTS ====================
+  // ==================== LOAD PAYMENTS (REALTIME, NO CACHE) ====================
   const loadPayments = useCallback(
-    async (forceRefresh = false) => {
+    async (isRefresh = false) => {
       if (!isMountedRef.current) return;
 
-      const now = Date.now();
-
-      const currentFilters = {
-        statusFilter,
-        paymentTypeFilter,
-        buildingFilter,
-        dateRangeStart,
-        dateRangeEnd,
-        currentPage,
-      };
-
-      const filtersChanged =
-        prevFiltersRef.current.statusFilter !== currentFilters.statusFilter ||
-        prevFiltersRef.current.paymentTypeFilter !==
-          currentFilters.paymentTypeFilter ||
-        prevFiltersRef.current.buildingFilter !==
-          currentFilters.buildingFilter ||
-        prevFiltersRef.current.dateRangeStart !==
-          currentFilters.dateRangeStart ||
-        prevFiltersRef.current.dateRangeEnd !== currentFilters.dateRangeEnd ||
-        prevFiltersRef.current.currentPage !== currentFilters.currentPage;
-
-      if (!forceRefresh && !filtersChanged && globalCache) {
-        if (now - globalCacheTimestamp < CACHE_TTL) {
-          const cached = globalCache;
-          setPaymentGroups(cached.paymentGroups);
-          setPendingPayments(cached.pendingPayments);
-          setStats(cached.stats);
-          setLoading(false);
-          setRefreshing(false);
-          initialLoadDone.current = true;
-          console.log("✅ Using global cached payment data");
-          return;
-        } else {
-          globalCache = null;
-        }
-      }
-
-      if (forceRefresh) {
+      if (isRefresh) {
         setRefreshing(true);
-        customerNameCache.clear();
       } else {
         setLoading(true);
       }
@@ -842,6 +626,7 @@ export default function AdminPaymentsPage() {
       try {
         const params: any = {
           limit: "all" as const,
+          forceRefresh: true, // ALWAYS fresh data — no cache
         };
 
         if (statusFilter && statusFilter !== "all" && statusFilter !== "") {
@@ -869,105 +654,70 @@ export default function AdminPaymentsPage() {
           params.search = search.trim();
         }
 
-        console.log("🔍 Fetching ALL payments with params:", params);
-
-        const allPaymentsResult = await getAllPayments({
-          ...params,
-          forceRefresh,
-        });
+        const allPaymentsResult = await getAllPayments(params);
 
         if (!isMountedRef.current) return;
 
         const paymentsList: Payment[] = allPaymentsResult.data || [];
 
-        console.log(
-          `📊 Received ${paymentsList.length} payments from API (total: ${allPaymentsResult.total})`,
-        );
-
-        const grouped = await groupPaymentsAsync(paymentsList);
+        // INSTANT sync grouping — no async, no API calls
+        const grouped = groupPaymentsSync(paymentsList);
         setPaymentGroups(grouped);
-        console.log(`👥 Grouped into ${grouped.length} customers`);
 
+        // Fetch pending payments in parallel
         let pendingList: Payment[] = [];
         if (
           !statusFilter ||
           statusFilter === "pending" ||
           statusFilter === ""
         ) {
-          const pendingResult = await getPendingPayments(forceRefresh).catch(
-            () => ({ data: [] }),
-          );
-          pendingList = pendingResult.data || [];
+          try {
+            const pendingResult = await getPendingPayments(true);
+            pendingList = pendingResult.data || [];
 
-          if (paymentTypeFilter && paymentTypeFilter !== "all") {
-            pendingList = pendingList.filter(
-              (p: Payment) => p.paymentType === paymentTypeFilter,
-            );
-          }
+            if (paymentTypeFilter && paymentTypeFilter !== "all") {
+              pendingList = pendingList.filter(
+                (p: Payment) => p.paymentType === paymentTypeFilter,
+              );
+            }
 
-          if (buildingFilter && buildingFilter !== "all") {
-            const selectedBuilding = buildings.find(
-              (b) => b._id === buildingFilter,
-            );
-            const selectedBuildingName =
-              selectedBuilding?.name || selectedBuilding?.buildingName || "";
-            const targetId = String(buildingFilter);
-
-            const normalizeId = (v: any): string => {
-              if (v === null || v === undefined) return "";
-              if (typeof v === "string") return v;
-              if (typeof v === "object" && v._id) return normalizeId(v._id);
-              if (typeof v === "object" && v.toString) {
-                try {
-                  return v.toString();
-                } catch {
-                  return "";
+            if (buildingFilter && buildingFilter !== "all") {
+              const targetId = String(buildingFilter);
+              const normalizeId = (v: any): string => {
+                if (v === null || v === undefined) return "";
+                if (typeof v === "string") return v;
+                if (typeof v === "object" && v._id) return normalizeId(v._id);
+                if (typeof v === "object" && v.toString) {
+                  try {
+                    return v.toString();
+                  } catch {
+                    return "";
+                  }
                 }
-              }
-              return String(v);
-            };
+                return String(v);
+              };
 
-            pendingList = pendingList.filter((p: any) => {
-              if (normalizeId(p.buildingId) === targetId) return true;
-
-              if (p.userId && typeof p.userId === "object") {
-                if (normalizeId(p.userId.buildingId) === targetId) return true;
-              }
-
-              if (p.applicationId && typeof p.applicationId === "object") {
-                if (normalizeId(p.applicationId.buildingId) === targetId)
-                  return true;
-              }
-
-              if (selectedBuildingName) {
-                const targetName = selectedBuildingName.trim().toLowerCase();
-                const checkName = (name?: string) =>
-                  name && String(name).trim().toLowerCase() === targetName;
-
-                if (checkName(p.buildingName)) return true;
-                if (
-                  p.userId &&
-                  typeof p.userId === "object" &&
-                  checkName(p.userId.buildingName)
-                )
-                  return true;
-                if (
-                  p.applicationId &&
-                  typeof p.applicationId === "object" &&
-                  checkName(p.applicationId.buildingName)
-                )
-                  return true;
-              }
-
-              return false;
-            });
+              pendingList = pendingList.filter((p: any) => {
+                if (normalizeId(p.buildingId) === targetId) return true;
+                if (p.userId && typeof p.userId === "object") {
+                  if (normalizeId(p.userId.buildingId) === targetId)
+                    return true;
+                }
+                if (p.applicationId && typeof p.applicationId === "object") {
+                  if (normalizeId(p.applicationId.buildingId) === targetId)
+                    return true;
+                }
+                return false;
+              });
+            }
+          } catch {
+            // ignore
           }
         }
         setPendingPayments(pendingList);
 
-        let newStats = statsRef.current;
         if (allPaymentsResult.stats) {
-          newStats = {
+          setStats({
             totalAmount: allPaymentsResult.stats.total || 0,
             totalCount: allPaymentsResult.stats.totalCount || 0,
             monthlyAmount: allPaymentsResult.stats.monthly || 0,
@@ -979,26 +729,11 @@ export default function AdminPaymentsPage() {
               allPaymentsResult.stats.installationFeeCount || 0,
             pendingAmount: allPaymentsResult.stats.pending || 0,
             pendingCount: allPaymentsResult.stats.pendingCount || 0,
-          };
-          setStats(newStats);
+          });
         }
-
-        globalCache = {
-          paymentGroups: grouped,
-          pendingPayments: pendingList,
-          stats: newStats,
-        };
-        globalCacheTimestamp = now;
-
-        prevFiltersRef.current = currentFilters;
-
-        initialLoadDone.current = true;
-        console.log(
-          `✅ Loaded ${grouped.length} payment groups (cached globally)`,
-        );
       } catch (error: any) {
         console.error("Failed to load payments:", error);
-        if (!forceRefresh) toast.error("Failed to load payments");
+        if (isRefresh) toast.error("Failed to refresh payments");
       } finally {
         if (isMountedRef.current) {
           setLoading(false);
@@ -1007,60 +742,42 @@ export default function AdminPaymentsPage() {
       }
     },
     [
-      currentPage,
       statusFilter,
       paymentTypeFilter,
       buildingFilter,
       dateRangeStart,
       dateRangeEnd,
       search,
-      buildings,
     ],
   );
 
+  // ==================== LOAD ON FILTER CHANGE (DEBOUNCED FOR SEARCH) ====================
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    isMountedRef.current = true;
-
-    const filtersChanged =
-      prevFiltersRef.current.statusFilter !== statusFilter ||
-      prevFiltersRef.current.paymentTypeFilter !== paymentTypeFilter ||
-      prevFiltersRef.current.buildingFilter !== buildingFilter ||
-      prevFiltersRef.current.dateRangeStart !== dateRangeStart ||
-      prevFiltersRef.current.dateRangeEnd !== dateRangeEnd ||
-      prevFiltersRef.current.currentPage !== currentPage;
-
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      loadPayments(false);
-    } else if (filtersChanged) {
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      loadPayments(true);
-    }
-
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(
+      () => {
+        loadPayments(false);
+      },
+      search ? 400 : 0,
+    );
     return () => {
-      isMountedRef.current = false;
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    loadPayments,
     statusFilter,
     paymentTypeFilter,
     buildingFilter,
     dateRangeStart,
     dateRangeEnd,
-    currentPage,
+    search,
   ]);
 
   // ==================== HANDLERS ====================
   const handleRefresh = () => {
-    globalCache = null;
-    globalCacheTimestamp = 0;
-    customerNameCache.clear();
     loadPayments(true);
-  };
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
   };
 
   const handleConfirmPayment = async (paymentId: string) => {
@@ -1069,9 +786,7 @@ export default function AdminPaymentsPage() {
     try {
       await confirmPayment(paymentId);
       toast.success("Payment confirmed!");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      loadPayments(true);
+      await loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -1087,9 +802,7 @@ export default function AdminPaymentsPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      loadPayments(true);
+      await loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
@@ -1112,9 +825,7 @@ export default function AdminPaymentsPage() {
     try {
       await deletePayment(paymentId);
       toast.success(`Payment ${referenceNumber} deleted successfully`);
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      loadPayments(true);
+      await loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to delete payment");
@@ -1140,9 +851,7 @@ export default function AdminPaymentsPage() {
       toast.success(
         `Deleted ${result.data?.deletedCount || 0} payments for ${customerName}`,
       );
-      globalCache = null;
-      globalCacheTimestamp = 0;
-      loadPayments(true);
+      await loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(
@@ -1256,47 +965,18 @@ export default function AdminPaymentsPage() {
             flex-wrap: wrap;
             justify-content: space-between;
           }
-          .summary-item { 
-            padding: 5px 10px; 
-            font-size: 14px; 
-          }
+          .summary-item { padding: 5px 10px; font-size: 14px; }
           .summary-item strong { color: #1e40af; }
           .summary-item .paid { color: #16a34a; font-weight: bold; }
           .summary-item .pending { color: #ca8a04; font-weight: bold; }
           .summary-item .grand { color: #1e40af; font-weight: bold; font-size: 16px; }
-          table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            font-size: 11px;
-            margin-top: 10px;
-          }
-          th { 
-            background: #f3f4f6; 
-            padding: 10px 8px; 
-            border: 1px solid #ddd; 
-            text-align: left;
-            font-weight: bold;
-            color: #374151;
-          }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+          th { background: #f3f4f6; padding: 10px 8px; border: 1px solid #ddd; text-align: left; font-weight: bold; color: #374151; }
           td { padding: 8px; border: 1px solid #ddd; }
-          .footer { 
-            text-align: center; 
-            margin-top: 20px; 
-            font-size: 12px; 
-            color: #6b7280;
-            border-top: 1px solid #ddd;
-            padding-top: 10px;
-          }
-          .grand-total-row {
-            background: #f0fdf4;
-            font-weight: bold;
-          }
-          .grand-total-row td {
-            border-top: 2px solid #16a34a;
-          }
-          @media print {
-            .no-print { display: none; }
-          }
+          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #6b7280; border-top: 1px solid #ddd; padding-top: 10px; }
+          .grand-total-row { background: #f0fdf4; font-weight: bold; }
+          .grand-total-row td { border-top: 2px solid #16a34a; }
+          @media print { .no-print { display: none; } }
         </style>
       </head>
       <body>
@@ -1311,7 +991,6 @@ export default function AdminPaymentsPage() {
             <span>🔍 Search: ${searchStr}</span>
           </div>
         </div>
-
         <div class="summary">
           <span class="summary-item"><strong>Total Customers:</strong> ${totalCustomers}</span>
           <span class="summary-item"><strong>Total Transactions:</strong> ${totalTransactions}</span>
@@ -1319,7 +998,6 @@ export default function AdminPaymentsPage() {
           <span class="summary-item"><span class="pending">Total Pending:</span> ${formatCurrency(grandTotalPending)}</span>
           <span class="summary-item"><span class="grand">🎯 Grand Total:</span> ${formatCurrency(grandTotalOverall)}</span>
         </div>
-
         <table>
           <thead>
             <tr>
@@ -1347,23 +1025,16 @@ export default function AdminPaymentsPage() {
             </tr>
           </tbody>
         </table>
-
         <div class="footer">
           <p>This report was generated automatically. All amounts are in Philippine Pesos (₱).</p>
           <p>© ${now.getFullYear()} Misterfyber - Payment Management System</p>
         </div>
-
         <div class="no-print" style="text-align: center; margin-top: 20px;">
           <button onclick="window.print()" style="padding: 10px 30px; background: #1e3a8a; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer;">
             🖨️ Print / Save as PDF
           </button>
         </div>
-
-        <script>
-          setTimeout(() => {
-            window.print();
-          }, 500);
-        </script>
+        <script>setTimeout(() => { window.print(); }, 500);</script>
       </body>
       </html>
     `;
@@ -1381,7 +1052,7 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  if (loading && paymentGroups.length === 0) {
+  if (loading && paymentGroups.length === 0 && pendingPayments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -1528,7 +1199,7 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
-      {/* Filters - Always visible for both views */}
+      {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-200">
         <div className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
@@ -1682,10 +1353,9 @@ export default function AdminPaymentsPage() {
         </div>
       </div>
 
-      {/* Content based on active view */}
+      {/* Content */}
       {activeView === "payments" ? (
         <>
-          {/* Pending Payments Table */}
           {pendingPayments.length > 0 && (
             <div className="mb-8">
               <h2 className="text-lg font-semibold mb-4">
@@ -1744,7 +1414,6 @@ export default function AdminPaymentsPage() {
             </div>
           )}
 
-          {/* Customer Summary Table - SEPARATE COMPONENT */}
           <CustomerSummaryTable
             paymentGroups={paymentGroups}
             search={search}
@@ -1761,7 +1430,6 @@ export default function AdminPaymentsPage() {
           />
         </>
       ) : (
-        /* Report View - SEPARATE COMPONENT */
         <PaymentReport
           paymentGroups={paymentGroups}
           buildings={buildings}

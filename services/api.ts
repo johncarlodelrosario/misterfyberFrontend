@@ -95,7 +95,7 @@ const api = axios.create({
     Accept: "application/json",
   },
   withCredentials: true,
-  timeout: 30000,
+  timeout: 90000, // ✅ Increased to 90 seconds for large queries
 });
 
 // Log the API URL being used (for debugging)
@@ -179,6 +179,11 @@ api.interceptors.response.use(
     // Remove from pending requests
     const requestKey = config.__requestKey;
     if (requestKey) pendingRequests.delete(requestKey);
+
+    // ✅ Handle AbortError - don't retry aborted requests
+    if (error.name === "AbortError" || error.code === "ERR_CANCELED") {
+      return Promise.reject(error);
+    }
 
     // Network errors - fast retry with backoff
     if (

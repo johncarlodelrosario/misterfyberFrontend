@@ -1,10 +1,11 @@
-// components/admin/AddApplicationModal.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
+// components/admin/AddApplicationModal.tsx - COMPLETE FIXED WITH IMAGE COMPRESSION
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { getActiveBuildings, Building } from "@/services/building";
 import { getPlans, Plan } from "@/services/plan";
 import { submitApplication, ApplicationData } from "@/services/application";
+import { compressImage } from "@/lib/imageCompression";
 import { toast } from "sonner";
 import Image from "next/image";
 
@@ -20,11 +21,14 @@ const AddApplicationModal = ({
   onSuccess,
 }: AddApplicationModalProps) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [idImagePreview, setIdImagePreview] = useState<string | null>(null);
   const [idImageFile, setIdImageFile] = useState<File | null>(null);
+  const [originalSize, setOriginalSize] = useState<string>("");
+  const [compressedSize, setCompressedSize] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -87,6 +91,8 @@ const AddApplicationModal = ({
       });
       setIdImageFile(null);
       setIdImagePreview(null);
+      setOriginalSize("");
+      setCompressedSize("");
       setErrors({});
       setSubmitError(null);
       if (fileInputRef.current) {
@@ -134,29 +140,79 @@ const AddApplicationModal = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleIdImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ✅ FIXED: Compress image before setting state
+  const handleIdImageChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("Image size should be less than 5MB");
-        return;
-      }
-      if (!file.type.startsWith("image/")) {
-        toast.error("Please upload an image file");
-        return;
-      }
+    if (!file) return;
+
+    // ✅ Check muna ang original size bago compress
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image size should be less than 10MB");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+
+    // ✅ Show compressing state
+    setIsCompressing(true);
+    const loadingToast = toast.loading("🗜️ Compressing image...");
+
+    try {
+      // ✅ Compress the image
+      const compressedFile = await compressImage(file);
+
+      // ✅ Track sizes for display
+      setOriginalSize(`${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      setCompressedSize(`${(compressedFile.size / 1024).toFixed(0)}KB`);
+
+      setIdImageFile(compressedFile);
+
+      // Generate preview from compressed file
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIdImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(compressedFile);
+
+      const savedPercent = (
+        (1 - compressedFile.size / file.size) *
+        100
+      ).toFixed(0);
+
+      toast.success(
+        `✅ Compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024).toFixed(0)}KB (-${savedPercent}%)`,
+        { id: loadingToast },
+      );
+    } catch (error) {
+      console.error("Compression error:", error);
+      toast.error("Failed to compress image, using original", {
+        id: loadingToast,
+      });
+
+      // Fallback: use original
       setIdImageFile(file);
+      setOriginalSize(`${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      setCompressedSize("original");
       const reader = new FileReader();
       reader.onloadend = () => {
         setIdImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+    } finally {
+      setIsCompressing(false);
     }
   };
 
   const removeIdImage = () => {
     setIdImageFile(null);
     setIdImagePreview(null);
+    setOriginalSize("");
+    setCompressedSize("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -194,7 +250,7 @@ const AddApplicationModal = ({
 
       console.log("📤 Submitting application data:", {
         ...applicationData,
-        idImage: idImageFile ? "File present" : "No file",
+        idImage: idImageFile ? `File (${compressedSize})` : "No file",
       });
 
       const response = await submitApplication(applicationData);
@@ -221,6 +277,8 @@ const AddApplicationModal = ({
       });
       setIdImageFile(null);
       setIdImagePreview(null);
+      setOriginalSize("");
+      setCompressedSize("");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -232,13 +290,10 @@ const AddApplicationModal = ({
     } catch (error: any) {
       console.error("❌ Submit error:", error);
 
-      // Handle specific error types
       if (error.status === 409) {
-        // Conflict - show user-friendly message
         const message =
           error.data?.message || "This application already exists.";
 
-        // Try to extract specific conflict info
         if (message.includes("email")) {
           setSubmitError(
             "This email address is already registered. Please use a different email.",
@@ -259,13 +314,11 @@ const AddApplicationModal = ({
           toast.error(message);
         }
       } else if (error.status === 400) {
-        // Validation error
         const message =
           error.message || "Please check your input and try again.";
         setSubmitError(message);
         toast.error(message);
 
-        // Set field-specific errors if available
         if (error.errors && Array.isArray(error.errors)) {
           const fieldErrors: Record<string, string> = {};
           error.errors.forEach((err: any) => {
@@ -276,7 +329,6 @@ const AddApplicationModal = ({
           setErrors(fieldErrors);
         }
       } else {
-        // Generic error
         const message =
           error.message || "Failed to submit application. Please try again.";
         setSubmitError(message);
@@ -287,10 +339,8 @@ const AddApplicationModal = ({
     }
   };
 
-  // Reset error when form changes
   const handleFieldChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear errors for this field
     if (errors[field]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -298,7 +348,6 @@ const AddApplicationModal = ({
         return newErrors;
       });
     }
-    // Clear submit error
     if (submitError) {
       setSubmitError(null);
     }
@@ -320,7 +369,6 @@ const AddApplicationModal = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Submit Error Display */}
           {submitError && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-700 text-sm">{submitError}</p>
@@ -456,11 +504,12 @@ const AddApplicationModal = ({
               </div>
             </div>
 
+            {/* ✅ ID Image with Compression */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 ID Image
               </label>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -468,17 +517,33 @@ const AddApplicationModal = ({
                   onChange={handleIdImageChange}
                   className="hidden"
                   id="idImageUpload"
+                  disabled={isCompressing}
                 />
                 <label
                   htmlFor="idImageUpload"
-                  className="px-4 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors"
+                  className={`px-4 py-2 border border-gray-300 rounded-md transition-colors ${
+                    isCompressing
+                      ? "bg-gray-100 cursor-not-allowed text-gray-400"
+                      : "cursor-pointer hover:bg-gray-50"
+                  }`}
                 >
-                  Choose Image
+                  {isCompressing ? "🗜️ Compressing..." : "Choose Image"}
                 </label>
                 <span className="text-sm text-gray-500">
-                  {idImageFile ? idImageFile.name : "No file chosen"}
+                  {idImageFile ? (
+                    <>
+                      {idImageFile.name}
+                      {compressedSize && compressedSize !== "original" && (
+                        <span className="ml-2 text-green-600 font-medium">
+                          ({originalSize} → {compressedSize})
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    "No file chosen"
+                  )}
                 </span>
-                {idImagePreview && (
+                {idImagePreview && !isCompressing && (
                   <button
                     type="button"
                     onClick={removeIdImage}
@@ -495,11 +560,12 @@ const AddApplicationModal = ({
                     alt="ID Preview"
                     fill
                     className="object-contain"
+                    unoptimized
                   />
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-1">
-                Accepted formats: JPG, PNG, GIF (Max 5MB)
+                Accepted formats: JPG, PNG, GIF (Max 10MB, auto-compressed)
               </p>
             </div>
           </div>
@@ -658,13 +724,13 @@ const AddApplicationModal = ({
               type="button"
               onClick={() => onOpenChange(false)}
               className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-              disabled={isLoading}
+              disabled={isLoading || isCompressing}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isLoading || loadingData}
+              disabled={isLoading || loadingData || isCompressing}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isLoading ? (
@@ -691,6 +757,8 @@ const AddApplicationModal = ({
                   </svg>
                   Submitting...
                 </>
+              ) : isCompressing ? (
+                <>🗜️ Compressing...</>
               ) : (
                 "Submit Application"
               )}

@@ -1,4 +1,4 @@
-// services/application.ts - COMPLETE FIXED WITH PRODUCTION SUPPORT
+// services/application.ts - COMPLETE FIXED WITH PRODUCTION SUPPORT + NAME SORT
 import api from "./api";
 
 // ============================================================
@@ -79,7 +79,8 @@ export interface ApplicationFilters {
   status?: string;
   search?: string;
   buildingId?: string;
-  forceRefresh?: boolean;
+  nameSort?: string;
+  forceRefresh?: boolean | string;
   _t?: number;
 }
 
@@ -135,9 +136,10 @@ export const getPlans = async (): Promise<Plan[]> => {
   return response.data.data;
 };
 
-// ============ GET ALL APPLICATIONS (PAGINATED) ============
+// ============ GET ALL APPLICATIONS (PAGINATED) - FIXED WITH ABORT SUPPORT + NAME SORT ============
 export const getAllApplications = async (
   filters: ApplicationFilters = {},
+  signal?: AbortSignal,
 ): Promise<PaginatedResponse> => {
   const {
     page = 1,
@@ -145,6 +147,7 @@ export const getAllApplications = async (
     status,
     search,
     buildingId,
+    nameSort,
     forceRefresh = false,
     _t,
   } = filters;
@@ -163,20 +166,30 @@ export const getAllApplications = async (
     params.buildingId = buildingId;
   }
 
-  // Add cache busting
-  if (forceRefresh || _t) {
+  // ✅ Name sort param
+  if (nameSort && nameSort !== "none" && nameSort !== "") {
+    params.nameSort = nameSort;
+  }
+
+  if (forceRefresh === true || forceRefresh === "true" || _t) {
     params.forceRefresh = "true";
     params._t = _t || Date.now();
   }
 
-  console.log("getAllApplications params:", params);
+  console.log("📤 getAllApplications params:", JSON.stringify(params, null, 2));
 
-  const response = await api.get("/applications", { params });
+  // ✅ Pass the abort signal to axios
+  const response = await api.get("/applications", { params, signal });
 
-  // Ensure each item has an _id field
+  console.log("📥 getAllApplications response:", {
+    total: response.data.total,
+    currentPage: response.data.currentPage,
+    totalPages: response.data.totalPages,
+    dataLength: response.data.data?.length,
+  });
+
   if (response.data.data && Array.isArray(response.data.data)) {
     response.data.data = response.data.data.map((item: any) => {
-      // If the item doesn't have _id, try to get it from id or applicationId
       if (!item._id) {
         if (item.id) {
           item._id = item.id;
@@ -202,7 +215,6 @@ export const submitApplication = async (data: ApplicationData) => {
   try {
     const formData = new FormData();
 
-    // Required fields
     formData.append("firstName", data.firstName.trim());
     formData.append("lastName", data.lastName.trim());
     formData.append("email", data.email.trim().toLowerCase());
@@ -214,7 +226,6 @@ export const submitApplication = async (data: ApplicationData) => {
     formData.append("idType", data.idType);
     formData.append("idNumber", data.idNumber.trim());
 
-    // Optional fields - only append if they have values
     if (data.middleName && data.middleName.trim()) {
       formData.append("middleName", data.middleName.trim());
     }
@@ -231,7 +242,6 @@ export const submitApplication = async (data: ApplicationData) => {
       formData.append("macAddress", data.macAddress.trim());
     }
 
-    // ID Image
     if (data.idImage && data.idImage instanceof File) {
       formData.append("idImage", data.idImage);
     }

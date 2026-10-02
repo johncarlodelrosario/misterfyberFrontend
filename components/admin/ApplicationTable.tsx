@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED WITH FETCH DETAILS + NAME SORT
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -8,7 +8,7 @@ import { EditApplicationModal } from "./EditApplicationModal";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { Building, Plan } from "@/services/application";
+import { Building, Plan, getApplication } from "@/services/application";
 
 // Interface definitions
 export interface Application {
@@ -42,6 +42,7 @@ export interface Application {
   serviceStatus?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
+  hasIdImage?: boolean;
 }
 
 export interface StatusOption {
@@ -72,9 +73,11 @@ export interface ApplicationTableProps {
   statusFilter?: string;
   buildingFilter?: string;
   searchQuery?: string;
+  nameSortFilter?: string;
   onStatusFilterChange?: (value: string) => void;
   onBuildingFilterChange?: (value: string) => void;
   onSearchChange?: (value: string) => void;
+  onNameSortChange?: (value: string) => void;
   onSearchSubmit?: () => void;
   statusOptions?: StatusOption[];
 }
@@ -98,9 +101,11 @@ export function ApplicationTable({
   statusFilter = "all",
   buildingFilter = "",
   searchQuery = "",
+  nameSortFilter = "none",
   onStatusFilterChange,
   onBuildingFilterChange,
   onSearchChange,
+  onNameSortChange,
   onSearchSubmit,
   statusOptions = [
     { value: "all", label: "All Status" },
@@ -272,7 +277,6 @@ export function ApplicationTable({
       if (onApprove) {
         await onApprove(id);
       }
-      // Refresh data from server to ensure consistency
       await refreshData();
     } catch (error: any) {
       // Revert optimistic update on error
@@ -306,7 +310,6 @@ export function ApplicationTable({
       if (onReject) {
         await onReject(id);
       }
-      // Refresh data from server to ensure consistency
       await refreshData();
     } catch (error: any) {
       // Revert optimistic update on error
@@ -432,9 +435,47 @@ export function ApplicationTable({
     }
   };
 
-  const handleViewDetails = (application: Application) => {
+  // ✅ FIXED: Fetch full details including idImage when opening modal
+  const handleViewDetails = async (application: Application) => {
     if (isActionInProgress) return;
-    setSelectedApplication(application);
+
+    const appId = getAppId(application);
+    if (!appId) {
+      toast.error("Cannot view: No ID found");
+      return;
+    }
+
+    // ✅ Show loading state
+    setActionLoading(appId);
+
+    try {
+      console.log("📥 Fetching full application details for:", appId);
+
+      // ✅ Always fetch full details to get the idImage data
+      const response = await getApplication(appId);
+      const fullApplication = response.data || response;
+
+      console.log("✅ Full application details loaded");
+
+      // ✅ Merge the full data with existing (preserve list data as fallback)
+      setSelectedApplication({
+        ...application,
+        ...fullApplication,
+        // Ensure ID fields are preserved
+        _id: fullApplication._id || application._id,
+        applicationId:
+          fullApplication.applicationId || application.applicationId,
+      });
+    } catch (error: any) {
+      console.error("❌ Failed to fetch full details:", error);
+      toast.error("Failed to load full details, showing cached data");
+
+      // Fallback to what we have
+      setSelectedApplication(application);
+    } finally {
+      setActionLoading(null);
+    }
+
     setShowDetailsModal(true);
   };
 
@@ -480,6 +521,13 @@ export function ApplicationTable({
   const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (onSearchChange) {
       onSearchChange(e.target.value);
+    }
+  };
+
+  // ✅ Name sort handler
+  const handleNameSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (onNameSortChange) {
+      onNameSortChange(e.target.value);
     }
   };
 
@@ -535,6 +583,18 @@ export function ApplicationTable({
                 {b.buildingName}
               </option>
             ))}
+          </select>
+
+          {/* ✅ Name Sort Filter */}
+          <select
+            value={nameSortFilter}
+            onChange={handleNameSortChange}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px] bg-white"
+            title="Sort by name"
+          >
+            <option value="none">Sort: Default</option>
+            <option value="asc">Name: A → Z</option>
+            <option value="desc">Name: Z → A</option>
           </select>
 
           <button
@@ -769,11 +829,13 @@ export function ApplicationTable({
                       <div className="relative inline-flex items-center gap-1">
                         <button
                           onClick={() => handleViewDetails(app)}
-                          disabled={isActionInProgress}
+                          disabled={
+                            isActionInProgress || actionLoading === appId
+                          }
                           className="px-2 py-1 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
                           title="View Details"
                         >
-                          👁️
+                          {actionLoading === appId ? "⏳" : "👁️"}
                         </button>
                         <button
                           onClick={() => handleEdit(app)}

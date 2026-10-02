@@ -1,7 +1,7 @@
 // components/admin/ApplicationDetails.tsx - COMPLETE FIXED WITH PRODUCTION SUPPORT
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import Image from "next/image";
 import type { Application } from "./ApplicationTable";
 
@@ -146,6 +146,7 @@ export function ApplicationDetails({
       applicationId: application.applicationId,
       firstName: application.firstName,
       lastName: application.lastName,
+      hasIdImage: application.hasIdImage,
     });
 
     if (!image) {
@@ -163,7 +164,24 @@ export function ApplicationDetails({
       image.startsWith("data:") ||
       image.startsWith("https://res.cloudinary.com")
     ) {
-      console.log("✅ Using full URL:", image);
+      // ✅ Calculate size for base64 images (for debugging)
+      if (image.startsWith("data:")) {
+        const sizeInBytes = image.length;
+        const sizeInKB = sizeInBytes / 1024;
+        const sizeInMB = sizeInKB / 1024;
+
+        console.log(
+          `📸 Base64 image size: ${sizeInMB > 1 ? `${sizeInMB.toFixed(2)}MB` : `${sizeInKB.toFixed(0)}KB`}`,
+        );
+
+        if (sizeInMB > 2) {
+          console.warn(
+            "⚠️ Base64 image is VERY large - may cause slow loading. Consider re-uploading with compression.",
+          );
+        }
+      } else {
+        console.log("✅ Using full URL:", image.substring(0, 100) + "...");
+      }
       return image;
     }
 
@@ -191,11 +209,55 @@ export function ApplicationDetails({
       return fallbackUrl;
     }
 
+    // ✅ If it's the "base64" flag (from list view without actual data)
+    if (filename === "base64") {
+      console.warn(
+        "⚠️ Base64 flag detected - full data not loaded. Fetch details endpoint needed.",
+      );
+      return null;
+    }
+
     // Construct URL from filename
     const fullUrl = `${PRODUCTION_URL}/uploads/id-cards/${filename}`;
     console.log("✅ Constructed URL from filename:", fullUrl);
     return fullUrl;
-  }, [application.idImage, application.idImageUrl, application.applicationId]);
+  }, [
+    application.idImage,
+    application.idImageUrl,
+    application.applicationId,
+    application.hasIdImage,
+    application.firstName,
+    application.lastName,
+  ]);
+
+  // ✅ Calculate image size in human-readable format
+  const imageSizeInfo = useMemo(() => {
+    const image = application.idImage || application.idImageUrl;
+    if (!image) return null;
+
+    if (image.startsWith("data:")) {
+      const sizeInBytes = image.length;
+      const sizeInKB = sizeInBytes / 1024;
+      const sizeInMB = sizeInKB / 1024;
+
+      return {
+        isBase64: true,
+        bytes: sizeInBytes,
+        display:
+          sizeInMB > 1
+            ? `${sizeInMB.toFixed(2)}MB`
+            : `${sizeInKB.toFixed(0)}KB`,
+        isLarge: sizeInMB > 2,
+      };
+    }
+
+    return {
+      isBase64: false,
+      bytes: 0,
+      display: "File",
+      isLarge: false,
+    };
+  }, [application.idImage, application.idImageUrl]);
 
   const handleApprove = async () => {
     const appId = getAppIdForApi();
@@ -257,7 +319,7 @@ export function ApplicationDetails({
   };
 
   const idImageUrl = getIdImageUrl();
-  console.log("📸 Final ID Image URL:", idImageUrl);
+  console.log("📸 Final ID Image URL:", idImageUrl ? "Resolved" : "null");
 
   // ============================================================
   // ✅ HANDLE IMAGE LOAD ERROR - Fallback to placeholder
@@ -265,13 +327,17 @@ export function ApplicationDetails({
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
       const target = e.target as HTMLImageElement;
-      console.error("❌ Image failed to load:", idImageUrl);
+      console.error("❌ Image failed to load:", {
+        src: target.src?.substring(0, 100),
+        naturalWidth: target.naturalWidth,
+        naturalHeight: target.naturalHeight,
+      });
       setImageError(true);
       // Try to load placeholder
       target.src = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
       target.onerror = null; // Prevent infinite loop
     },
-    [idImageUrl],
+    [],
   );
 
   return (
@@ -450,7 +516,7 @@ export function ApplicationDetails({
         </div>
 
         {/* ============================================================ */}
-        {/* ✅ ID IMAGE SECTION - FIXED WITH BETTER DEBUGGING */}
+        {/* ✅ ID IMAGE SECTION - WITH SIZE INFO */}
         {/* ============================================================ */}
         <div className="border rounded-lg p-4 md:col-span-2">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -458,6 +524,13 @@ export function ApplicationDetails({
             <span className="text-xs text-gray-400 font-normal">
               ({application.idType || "No ID Type"})
             </span>
+            {imageSizeInfo && imageSizeInfo.isBase64 && (
+              <span
+                className={`text-xs font-normal ${imageSizeInfo.isLarge ? "text-amber-600" : "text-green-600"}`}
+              >
+                • {imageSizeInfo.display}
+              </span>
+            )}
           </h3>
 
           {idImageUrl ? (
@@ -489,15 +562,15 @@ export function ApplicationDetails({
                   <span className="text-amber-600">
                     ⚠️ Image load error - showing placeholder
                   </span>
+                ) : imageSizeInfo?.isLarge ? (
+                  <span className="text-amber-600">
+                    ⚠️ Large image ({imageSizeInfo.display}) - slow loading.
+                    Consider re-uploading.
+                  </span>
                 ) : (
                   <span className="text-green-600">✅ ID Card Uploaded</span>
                 )}
               </div>
-              {idImageUrl && !imageError && (
-                <div className="mt-1 text-xs text-gray-400 truncate max-w-full">
-                  <span className="font-mono text-[10px]">{idImageUrl}</span>
-                </div>
-              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
@@ -624,6 +697,20 @@ export function ApplicationDetails({
                 <span className="font-mono">
                   {application.idNumber || "N/A"}
                 </span>
+                {imageSizeInfo && imageSizeInfo.isBase64 && (
+                  <>
+                    <span className="mx-2">•</span>
+                    <span
+                      className={
+                        imageSizeInfo.isLarge
+                          ? "text-amber-300"
+                          : "text-green-300"
+                      }
+                    >
+                      {imageSizeInfo.display}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
