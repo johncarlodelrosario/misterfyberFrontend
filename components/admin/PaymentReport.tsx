@@ -1,8 +1,9 @@
-// frontend/src/components/admin/PaymentReport.tsx - COMPLETE PAYMENT REPORT WITH BILLING DATE SUMMARY, MONTH FILTER & PAYMENT TYPE FILTER
+// frontend/src/components/admin/PaymentReport.tsx - COMPLETE UPDATED WITH PRO-RATED PAYMENT TYPE FIX
 
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
+import * as XLSX from "xlsx";
 import {
   FiDownload,
   FiFileText,
@@ -14,13 +15,14 @@ import {
   FiUsers,
   FiDollarSign,
   FiHome,
-  FiChevronDown,
-  FiChevronUp,
   FiPrinter,
   FiInfo,
   FiTool,
   FiRepeat,
   FiClock,
+  FiSettings,
+  FiX,
+  FiRefreshCw,
 } from "react-icons/fi";
 import type { Payment as ServicePayment } from "@/services/payment";
 
@@ -67,7 +69,11 @@ interface PaymentReportProps {
 
 // ==================== UTILITY FUNCTIONS ====================
 function formatCurrency(amount: number): string {
-  return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatCurrencyExcel(amount: number): string {
+  return `₱${(amount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatShortDate(dateStr: string): string {
@@ -80,21 +86,55 @@ function formatShortDate(dateStr: string): string {
   });
 }
 
-function formatBillingPeriod(billingPeriod?: {
-  start: string;
-  end: string;
-}): string {
-  if (!billingPeriod?.start || !billingPeriod?.end) return "-";
-  const start = new Date(billingPeriod.start);
-  const end = new Date(billingPeriod.end);
-  return `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
-}
-
 function formatMonthYear(date: Date): string {
   return date.toLocaleDateString("en-PH", {
     month: "long",
     year: "numeric",
   });
+}
+
+// ==================== PAYMENT TYPE HELPERS ====================
+// ✅ FIX: Centralized payment type resolution - matches backend auto-correction
+function resolvePaymentType(payment: Payment): string {
+  const billing = payment.billingId as any;
+
+  // Priority 1: Installation bill
+  if (billing?.isInstallationBill === true) {
+    return "installation";
+  }
+  if (billing?.installationFee && billing.installationFee > 0) {
+    return "installation";
+  }
+
+  // Priority 2: Pro-rated bill
+  if (billing?.isProRated === true) {
+    return "pro_rated";
+  }
+
+  // Priority 3: Explicit paymentType from backend
+  if (payment.paymentType === "pro_rated") return "pro_rated";
+  if (payment.paymentType === "installation") return "installation";
+  if (payment.paymentType === "subscription") return "subscription";
+
+  // Priority 4: Fallback based sa isProRated field ng payment (legacy)
+  if (billing?.isProRated === true) return "pro_rated";
+
+  return "subscription";
+}
+
+function getPaymentTypeLabel(type: string): string {
+  switch (type) {
+    case "subscription":
+      return "Regular Fee (Subscription)";
+    case "installation":
+      return "Installation Fee";
+    case "pro_rated":
+      return "Pro-rated Fee";
+    case "others":
+      return "Other Fees";
+    default:
+      return type.charAt(0).toUpperCase() + type.slice(1);
+  }
 }
 
 // ==================== BILLING DATE HELPERS ====================
@@ -121,6 +161,10 @@ function formatMonthLabel(monthKey: string): string {
     month: "long",
     year: "numeric",
   });
+}
+
+function toSheetName(name: string): string {
+  return name.replace(/[\\\/\?\*\[\]:]/g, "").substring(0, 31);
 }
 
 // ==================== ROBUST BUILDING MATCHING ====================
@@ -177,6 +221,58 @@ function groupMatchesBuilding(
   });
 }
 
+// ==================== EXPORT OPTIONS INTERFACE ====================
+interface ExportOptions {
+  title: string;
+  companyName: string;
+  showGeneratedDate: boolean;
+  showFilters: boolean;
+
+  showSummaryCards: boolean;
+  showTotalCustomers: boolean;
+  showTotalTransactions: boolean;
+  showTotalPaid: boolean;
+  showTotalPending: boolean;
+  showTotalOverall: boolean;
+
+  showBillingPeriodBreakdown: boolean;
+  showBuildingBreakdown: boolean;
+  showPaymentTypeBreakdown: boolean;
+  showCustomerSummary: boolean;
+
+  showRegularFeeSection: boolean;
+  showInstallationFeeSection: boolean;
+  showProRatedFeeSection: boolean;
+  showOtherFeesSection: boolean;
+
+  showFooter: boolean;
+  footerText: string;
+}
+
+const defaultExportOptions: ExportOptions = {
+  title: "Payment Report",
+  companyName: "Misterfyber Network Corporation",
+  showGeneratedDate: true,
+  showFilters: true,
+  showSummaryCards: true,
+  showTotalCustomers: true,
+  showTotalTransactions: true,
+  showTotalPaid: true,
+  showTotalPending: true,
+  showTotalOverall: true,
+  showBillingPeriodBreakdown: true,
+  showBuildingBreakdown: true,
+  showPaymentTypeBreakdown: true,
+  showCustomerSummary: true,
+  showRegularFeeSection: true,
+  showInstallationFeeSection: true,
+  showProRatedFeeSection: true,
+  showOtherFeesSection: true,
+  showFooter: true,
+  footerText:
+    "This report was generated automatically by Misterfyber Payment Management System.",
+};
+
 // ==================== REPORT COMPONENT ====================
 export default function PaymentReport({
   paymentGroups,
@@ -187,21 +283,16 @@ export default function PaymentReport({
   statusFilter,
   paymentTypeFilter,
 }: PaymentReportProps) {
-  const [showDetailedReport, setShowDetailedReport] = useState(false);
-  const [reportType, setReportType] = useState<
-    "summary" | "detailed" | "billing"
-  >("summary");
-
-  // ==================== LOCAL FILTER STATES ====================
-  // Month filter (format: "YYYY-MM" or "" for all)
   const [monthFilter, setMonthFilter] = useState<string>("");
-
-  // Payment type checkboxes (local, independent of prop)
   const [showRegularFee, setShowRegularFee] = useState<boolean>(true);
   const [showProrateFee, setShowProrateFee] = useState<boolean>(true);
   const [showInstallationFee, setShowInstallationFee] = useState<boolean>(true);
 
-  // Resolve the selected building's name for flexible matching
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportOptions, setExportOptions] =
+    useState<ExportOptions>(defaultExportOptions);
+  const [exportFormat, setExportFormat] = useState<"pdf" | "excel">("pdf");
+
   const selectedBuilding = useMemo(() => {
     if (!buildingFilter) return null;
     return buildings.find((b) => b._id === buildingFilter) || null;
@@ -212,7 +303,7 @@ export default function PaymentReport({
     return selectedBuilding.name || selectedBuilding.buildingName || "";
   }, [selectedBuilding]);
 
-  // ==================== AVAILABLE MONTHS (for month filter dropdown) ====================
+  // ==================== AVAILABLE MONTHS ====================
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
     paymentGroups.forEach((group) => {
@@ -226,7 +317,7 @@ export default function PaymentReport({
     return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
   }, [paymentGroups]);
 
-  // ==================== ACTIVE PAYMENT TYPES (based on checkboxes) ====================
+  // ==================== ACTIVE PAYMENT TYPES ====================
   const activePaymentTypes = useMemo(() => {
     const types: string[] = [];
     if (showRegularFee) types.push("subscription");
@@ -239,44 +330,28 @@ export default function PaymentReport({
   const filteredPaymentGroups = useMemo(() => {
     return paymentGroups
       .map((group) => {
-        // Filter individual payments based on status, type, date range, month, and type checkboxes
         const filteredPayments = group.payments.filter((payment) => {
-          // Status filter (from prop)
           if (statusFilter && statusFilter !== "all") {
-            if (payment.status !== statusFilter) {
-              return false;
-            }
+            if (payment.status !== statusFilter) return false;
           }
 
-          // Payment type filter (from prop - used as override)
+          // ✅ FIX: Use resolved payment type (matches backend auto-correction)
+          const resolvedType = resolvePaymentType(payment);
+
           if (paymentTypeFilter && paymentTypeFilter !== "all") {
-            if (payment.paymentType !== paymentTypeFilter) {
-              return false;
-            }
+            if (resolvedType !== paymentTypeFilter) return false;
           }
 
-          // Payment type checkbox filter (local)
-          // If none of the checkboxes are checked, exclude all payments
-          if (activePaymentTypes.length === 0) {
-            return false;
-          }
-          // If the payment type is not in the active list, exclude it
-          if (
-            payment.paymentType &&
-            !activePaymentTypes.includes(payment.paymentType)
-          ) {
+          if (activePaymentTypes.length === 0) return false;
+          if (!activePaymentTypes.includes(resolvedType)) {
             return false;
           }
 
-          // Month filter (local) - based on billing month key
           if (monthFilter) {
             const paymentMonthKey = getBillingMonthKey(payment);
-            if (paymentMonthKey !== monthFilter) {
-              return false;
-            }
+            if (paymentMonthKey !== monthFilter) return false;
           }
 
-          // Date range filter (from props) - based on billing date
           const paymentDate = getBillingDate(payment);
           if (dateRangeStart) {
             const start = new Date(dateRangeStart);
@@ -292,10 +367,8 @@ export default function PaymentReport({
           return true;
         });
 
-        // If no payments match, exclude the group entirely
         if (filteredPayments.length === 0) return null;
 
-        // Recompute totals based on the filtered payments
         const totalAmount = filteredPayments.reduce(
           (sum, p) => sum + (p.amount || 0),
           0,
@@ -373,7 +446,6 @@ export default function PaymentReport({
       totalOverall += group.totalAmount;
       totalTransactions += group.paymentCount;
 
-      // Building breakdown
       const buildingName =
         group.customerInfo.buildingName || "Unknown Building";
       if (!buildingBreakdown[buildingName]) {
@@ -389,9 +461,9 @@ export default function PaymentReport({
       buildingBreakdown[buildingName].count += group.paymentCount;
       buildingBreakdown[buildingName].customers += 1;
 
-      // Payment type breakdown and monthly breakdown
       group.payments.forEach((payment) => {
-        const type = payment.paymentType || "unknown";
+        // ✅ FIX: Use resolved payment type
+        const type = resolvePaymentType(payment);
         if (!paymentTypeBreakdown[type]) {
           paymentTypeBreakdown[type] = {
             amount: 0,
@@ -409,7 +481,6 @@ export default function PaymentReport({
           paymentTypeBreakdown[type].pending += payment.amount || 0;
         }
 
-        // Monthly breakdown based on billing period
         const billingPeriod = (payment.billingId as any)?.billingPeriod;
         let monthKey = "Unknown";
 
@@ -445,117 +516,38 @@ export default function PaymentReport({
     };
   }, [filteredPaymentGroups]);
 
-  // ==================== BILLING DATE GROUPED SUMMARY ====================
-  const billingDateSummary = useMemo(() => {
-    const monthlyData = new Map<
-      string,
-      {
-        monthKey: string;
-        monthLabel: string;
-        billingPeriodStart: string;
-        billingPeriodEnd: string;
-        totalPaid: number;
-        totalPending: number;
-        totalAmount: number;
-        transactionCount: number;
-        customerCount: number;
-        customers: Set<string>;
-      }
-    >();
-
-    filteredPaymentGroups.forEach((group) => {
-      group.payments.forEach((payment) => {
-        const monthKey = getBillingMonthKey(payment);
-        const billingPeriod = (payment.billingId as any)?.billingPeriod;
-
-        if (!monthlyData.has(monthKey)) {
-          monthlyData.set(monthKey, {
-            monthKey,
-            monthLabel: formatMonthLabel(monthKey),
-            billingPeriodStart: billingPeriod?.start || "",
-            billingPeriodEnd: billingPeriod?.end || "",
-            totalPaid: 0,
-            totalPending: 0,
-            totalAmount: 0,
-            transactionCount: 0,
-            customerCount: 0,
-            customers: new Set<string>(),
-          });
-        }
-
-        const monthEntry = monthlyData.get(monthKey)!;
-        const amount = payment.amount || 0;
-
-        monthEntry.transactionCount += 1;
-        monthEntry.totalAmount += amount;
-        monthEntry.customers.add(group.customerId);
-
-        if (payment.status === "completed") {
-          monthEntry.totalPaid += amount;
-        } else if (payment.status === "pending") {
-          monthEntry.totalPending += amount;
-        }
-
-        if (billingPeriod?.start) {
-          const currentStart = monthEntry.billingPeriodStart
-            ? new Date(monthEntry.billingPeriodStart)
-            : null;
-          const newStart = new Date(billingPeriod.start);
-          if (!currentStart || newStart < currentStart) {
-            monthEntry.billingPeriodStart = billingPeriod.start;
-          }
-        }
-        if (billingPeriod?.end) {
-          const currentEnd = monthEntry.billingPeriodEnd
-            ? new Date(monthEntry.billingPeriodEnd)
-            : null;
-          const newEnd = new Date(billingPeriod.end);
-          if (!currentEnd || newEnd > currentEnd) {
-            monthEntry.billingPeriodEnd = billingPeriod.end;
-          }
-        }
-      });
-    });
-
-    const result = Array.from(monthlyData.values()).map((entry) => ({
-      ...entry,
-      customerCount: entry.customers.size,
-    }));
-
-    result.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-
-    return result;
-  }, [filteredPaymentGroups]);
-
   // ==================== SEPARATED PAYMENT TYPE BREAKDOWNS ====================
   const regularFeeBreakdown = useMemo(() => {
-    const data = reportStats.paymentTypeBreakdown["subscription"] || {
-      amount: 0,
-      count: 0,
-      paid: 0,
-      pending: 0,
-    };
-    return data;
+    return (
+      reportStats.paymentTypeBreakdown["subscription"] || {
+        amount: 0,
+        count: 0,
+        paid: 0,
+        pending: 0,
+      }
+    );
   }, [reportStats.paymentTypeBreakdown]);
 
   const installationFeeBreakdown = useMemo(() => {
-    const data = reportStats.paymentTypeBreakdown["installation"] || {
-      amount: 0,
-      count: 0,
-      paid: 0,
-      pending: 0,
-    };
-    return data;
+    return (
+      reportStats.paymentTypeBreakdown["installation"] || {
+        amount: 0,
+        count: 0,
+        paid: 0,
+        pending: 0,
+      }
+    );
   }, [reportStats.paymentTypeBreakdown]);
 
   const proRatedFeeBreakdown = useMemo(() => {
-    const data = reportStats.paymentTypeBreakdown["pro_rated"] || {
-      amount: 0,
-      count: 0,
-      paid: 0,
-      pending: 0,
-    };
-    return data;
+    return (
+      reportStats.paymentTypeBreakdown["pro_rated"] || {
+        amount: 0,
+        count: 0,
+        paid: 0,
+        pending: 0,
+      }
+    );
   }, [reportStats.paymentTypeBreakdown]);
 
   const otherFeeBreakdown = useMemo(() => {
@@ -595,693 +587,908 @@ export default function PaymentReport({
     );
   }, [reportStats.paymentTypeBreakdown]);
 
-  // ==================== EXPORT TO PDF ====================
-  const exportToPDF = useCallback(() => {
-    if (filteredPaymentGroups.length === 0) {
-      alert("No data to export. Please adjust your filters.");
-      return;
-    }
+  // ==================== GROUP PAYMENTS BY MONTH (for Excel tabs) ====================
+  const paymentsByMonth = useMemo(() => {
+    const byMonth = new Map<
+      string,
+      Array<{
+        group: PaymentGroup;
+        payment: Payment;
+        billingPeriod?: { start: string; end: string };
+      }>
+    >();
 
-    const now = new Date();
-    const dateStr = now.toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const buildingName = buildingFilter
-      ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter
-      : "All Buildings";
-
-    const dateRangeStr =
-      dateRangeStart && dateRangeEnd
-        ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
-        : "All Dates";
-
-    const statusStr = statusFilter || "All";
-    const typeStr = paymentTypeFilter || "All";
-
-    const monthStr = monthFilter ? formatMonthLabel(monthFilter) : "All Months";
-
-    // Build summary table rows
-    let summaryRows = "";
-    filteredPaymentGroups.forEach((group, index) => {
-      const hasFree = group.payments.some(
-        (p) => p.paymentDetails?.isFree === true,
-      );
-      summaryRows += `
-        <tr>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-          <td style="padding: 6px; border: 1px solid #ddd;">${group.customerInfo.name}${hasFree ? " 🆓" : ""}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; font-family: monospace;">${group.customerInfo.applicationId}</td>
-          <td style="padding: 6px; border: 1px solid #ddd;">${group.customerInfo.email}</td>
-          <td style="padding: 6px; border: 1px solid #ddd;">${group.customerInfo.buildingName || "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${group.paymentCount}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(group.totalPaidAmount)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${group.totalPendingAmount > 0 ? formatCurrency(group.totalPendingAmount) : "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${formatCurrency(group.totalAmount)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${formatShortDate(group.lastPaymentDate)}</td>
-        </tr>
-      `;
-    });
-
-    // Build billing date summary rows
-    let billingDateRows = "";
-    billingDateSummary.forEach((entry, index) => {
-      const periodDisplay =
-        entry.billingPeriodStart && entry.billingPeriodEnd
-          ? `${formatShortDate(entry.billingPeriodStart)} - ${formatShortDate(entry.billingPeriodEnd)}`
-          : entry.monthLabel;
-
-      billingDateRows += `
-        <tr>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; font-weight: bold; background: #f0f7ff;">${entry.monthLabel}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; font-size: 10px;">${periodDisplay}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${entry.customerCount}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${entry.transactionCount}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #16a34a; font-weight: bold;">${formatCurrency(entry.totalPaid)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${entry.totalPending > 0 ? formatCurrency(entry.totalPending) : "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #1e40af;">${formatCurrency(entry.totalAmount)}</td>
-        </tr>
-      `;
-    });
-
-    // Build billing period breakdown rows
-    let billingRows = "";
-    sortedMonthlyBreakdown.forEach(([month, data], index) => {
-      billingRows += `
-        <tr>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">${month}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${data.count}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #16a34a; font-weight: bold;">${formatCurrency(data.paid)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${formatCurrency(data.paid + data.pending)}</td>
-        </tr>
-      `;
-    });
-
-    // Build building breakdown rows
-    let buildingRows = "";
-    sortedBuildingBreakdown.forEach(([building, data], index) => {
-      buildingRows += `
-        <tr>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">${building}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${data.customers}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${data.count}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #16a34a; font-weight: bold;">${formatCurrency(data.paid)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${formatCurrency(data.paid + data.pending)}</td>
-        </tr>
-      `;
-    });
-
-    // Build separated payment type breakdown rows
-    const buildTypeRow = (
-      label: string,
-      data: typeof regularFeeBreakdown,
-      color: string,
-    ) => {
-      const percentage = (
-        (data.amount / (reportStats.totalOverall || 1)) *
-        100
-      ).toFixed(1);
-      return `
-        <tr>
-          <td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">${label}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${data.count}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #16a34a;">${formatCurrency(data.paid)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: #ca8a04;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${formatCurrency(data.amount)}</td>
-          <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: ${color};">${percentage}%</td>
-        </tr>
-      `;
-    };
-
-    const typeRows: string[] = [];
-    if (showRegularFee) {
-      typeRows.push(
-        buildTypeRow(
-          "Regular Fee (Subscription)",
-          regularFeeBreakdown,
-          "#7c3aed",
-        ),
-      );
-    }
-    if (showInstallationFee) {
-      typeRows.push(
-        buildTypeRow("Installation Fee", installationFeeBreakdown, "#ea580c"),
-      );
-    }
-    if (showProrateFee) {
-      typeRows.push(
-        buildTypeRow("Pro-rated Fee", proRatedFeeBreakdown, "#2563eb"),
-      );
-    }
-    if (otherFeeBreakdown.count > 0) {
-      typeRows.push(buildTypeRow("Other Fees", otherFeeBreakdown, "#6b7280"));
-    }
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Payment Report - Misterfyber</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #333; }
-          .header { text-align: center; margin-bottom: 25px; border-bottom: 3px solid #1e3a8a; padding-bottom: 15px; }
-          .header h1 { color: #1e3a8a; margin: 0; font-size: 28px; }
-          .header .subtitle { color: #6b7280; margin: 5px 0; font-size: 14px; }
-          .header .filters { 
-            background: #f3f4f6; 
-            padding: 10px 15px; 
-            border-radius: 8px; 
-            margin-top: 15px;
-            font-size: 12px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-          }
-          .header .filters span { 
-            background: white; 
-            padding: 4px 12px; 
-            border-radius: 15px;
-            border: 1px solid #d1d5db;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-          }
-          .summary-cards {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 25px;
-          }
-          .summary-card {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 15px;
-            text-align: center;
-          }
-          .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-          .summary-card .value { font-size: 22px; font-weight: bold; margin-top: 5px; }
-          .summary-card .value.green { color: #16a34a; }
-          .summary-card .value.yellow { color: #ca8a04; }
-          .summary-card .value.blue { color: #2563eb; }
-          .summary-card .value.purple { color: #7c3aed; }
-          .section-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #1e3a8a;
-            margin: 25px 0 10px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #e5e7eb;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          }
-          table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            font-size: 11px;
-            margin-bottom: 20px;
-          }
-          th { 
-            background: #f1f5f9; 
-            padding: 8px 6px; 
-            border: 1px solid #ddd; 
-            text-align: left;
-            font-weight: bold;
-            color: #374151;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-          }
-          td { padding: 6px; border: 1px solid #ddd; }
-          .grand-total-row {
-            background: #f0fdf4;
-            font-weight: bold;
-          }
-          .grand-total-row td {
-            border-top: 2px solid #16a34a;
-            font-size: 12px;
-          }
-          .footer { 
-            text-align: center; 
-            margin-top: 30px; 
-            font-size: 11px; 
-            color: #6b7280;
-            border-top: 2px solid #e5e7eb;
-            padding-top: 15px;
-          }
-          .free-badge {
-            background: #22c55e;
-            color: white;
-            padding: 1px 6px;
-            border-radius: 10px;
-            font-size: 9px;
-            font-weight: bold;
-          }
-          .page-break { page-break-before: always; }
-          @media print {
-            .no-print { display: none; }
-            body { padding: 15px; }
-            .summary-cards { grid-template-columns: repeat(4, 1fr); }
-          }
-          @media (max-width: 768px) {
-            .summary-cards { grid-template-columns: repeat(2, 1fr); }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>📊 Payment Report</h1>
-          <p class="subtitle">Misterfyber Network Corporation</p>
-          <p class="subtitle">Generated on: ${dateStr}</p>
-          <div class="filters">
-            <span>🏢 Building: ${buildingName}</span>
-            <span>📅 Date Range: ${dateRangeStr}</span>
-            <span>🗓️ Month: ${monthStr}</span>
-            <span>📌 Status: ${statusStr}</span>
-            <span>📋 Type: ${typeStr}</span>
-          </div>
-        </div>
-
-        <div class="summary-cards">
-          <div class="summary-card">
-            <div class="label">Total Customers</div>
-            <div class="value blue">${reportStats.totalCustomers}</div>
-          </div>
-          <div class="summary-card">
-            <div class="label">Total Transactions</div>
-            <div class="value purple">${reportStats.totalTransactions}</div>
-          </div>
-          <div class="summary-card">
-            <div class="label">Total Paid</div>
-            <div class="value green">${formatCurrency(reportStats.totalPaid)}</div>
-          </div>
-          <div class="summary-card">
-            <div class="label">Total Pending</div>
-            <div class="value yellow">${formatCurrency(reportStats.totalPending)}</div>
-          </div>
-        </div>
-
-        <div class="section-title">📅 Summary by Billing Date (Billing Period)</div>
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align: center; width: 30px;">#</th>
-              <th>Billing Month</th>
-              <th>Billing Period</th>
-              <th style="text-align: center;">Customers</th>
-              <th style="text-align: center;">Transactions</th>
-              <th style="text-align: right;">Paid Amount</th>
-              <th style="text-align: right;">Pending Amount</th>
-              <th style="text-align: right;">Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${billingDateRows || '<tr><td colspan="8" style="text-align: center; padding: 15px; color: #999;">No billing date data available</td></tr>'}
-            <tr class="grand-total-row">
-              <td colspan="3" style="text-align: right;">GRAND TOTAL</td>
-              <td style="text-align: center;">${reportStats.totalCustomers}</td>
-              <td style="text-align: center;">${reportStats.totalTransactions}</td>
-              <td style="text-align: right; color: #16a34a;">${formatCurrency(reportStats.totalPaid)}</td>
-              <td style="text-align: right; color: #ca8a04;">${formatCurrency(reportStats.totalPending)}</td>
-              <td style="text-align: right; color: #1e40af;">${formatCurrency(reportStats.totalOverall)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="page-break"></div>
-
-        <div class="section-title">📈 Billing Period Breakdown</div>
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align: center; width: 40px;">#</th>
-              <th>Billing Period (Month)</th>
-              <th style="text-align: center;">Transactions</th>
-              <th style="text-align: right;">Paid Amount</th>
-              <th style="text-align: right;">Pending Amount</th>
-              <th style="text-align: right;">Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${billingRows || '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #999;">No billing period data available</td></tr>'}
-            <tr class="grand-total-row">
-              <td colspan="2" style="text-align: right;">GRAND TOTAL</td>
-              <td style="text-align: center;">${reportStats.totalTransactions}</td>
-              <td style="text-align: right; color: #16a34a;">${formatCurrency(reportStats.totalPaid)}</td>
-              <td style="text-align: right; color: #ca8a04;">${formatCurrency(reportStats.totalPending)}</td>
-              <td style="text-align: right; color: #1e40af;">${formatCurrency(reportStats.totalOverall)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="section-title">🏢 Building Breakdown</div>
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align: center; width: 40px;">#</th>
-              <th>Building Name</th>
-              <th style="text-align: center;">Customers</th>
-              <th style="text-align: center;">Transactions</th>
-              <th style="text-align: right;">Paid Amount</th>
-              <th style="text-align: right;">Pending Amount</th>
-              <th style="text-align: right;">Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${buildingRows || '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">No building data available</td></tr>'}
-            <tr class="grand-total-row">
-              <td colspan="2" style="text-align: right;">GRAND TOTAL</td>
-              <td style="text-align: center;">${reportStats.totalCustomers}</td>
-              <td style="text-align: center;">${reportStats.totalTransactions}</td>
-              <td style="text-align: right; color: #16a34a;">${formatCurrency(reportStats.totalPaid)}</td>
-              <td style="text-align: right; color: #ca8a04;">${formatCurrency(reportStats.totalPending)}</td>
-              <td style="text-align: right; color: #1e40af;">${formatCurrency(reportStats.totalOverall)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="section-title">💰 Payment Type Breakdown (Separated)</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Payment Type</th>
-              <th style="text-align: center;">Count</th>
-              <th style="text-align: right;">Paid Amount</th>
-              <th style="text-align: right;">Pending Amount</th>
-              <th style="text-align: right;">Total Amount</th>
-              <th style="text-align: right;">Percentage</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${typeRows.join("")}
-            <tr class="grand-total-row">
-              <td style="text-align: right; font-weight: bold;">GRAND TOTAL</td>
-              <td style="text-align: center;">${reportStats.totalTransactions}</td>
-              <td style="text-align: right; color: #16a34a;">${formatCurrency(reportStats.totalPaid)}</td>
-              <td style="text-align: right; color: #ca8a04;">${formatCurrency(reportStats.totalPending)}</td>
-              <td style="text-align: right; color: #1e40af;">${formatCurrency(reportStats.totalOverall)}</td>
-              <td style="text-align: right;">100%</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="page-break"></div>
-
-        <div class="section-title">👥 Customer Summary</div>
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align: center; width: 30px;">#</th>
-              <th>Customer Name</th>
-              <th>Application ID</th>
-              <th>Email</th>
-              <th>Building</th>
-              <th style="text-align: center;">Payments</th>
-              <th style="text-align: right;">Total Paid</th>
-              <th style="text-align: right;">Pending</th>
-              <th style="text-align: right;">Total Amount</th>
-              <th style="text-align: center;">Last Payment</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${summaryRows}
-            <tr class="grand-total-row">
-              <td colspan="5" style="text-align: right;">GRAND TOTAL</td>
-              <td style="text-align: center;">${reportStats.totalTransactions}</td>
-              <td style="text-align: right; color: #16a34a;">${formatCurrency(reportStats.totalPaid)}</td>
-              <td style="text-align: right; color: #ca8a04;">${formatCurrency(reportStats.totalPending)}</td>
-              <td style="text-align: right; color: #1e40af;">${formatCurrency(reportStats.totalOverall)}</td>
-              <td style="text-align: center;">—</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="footer">
-          <p>This report was generated automatically by Misterfyber Payment Management System.</p>
-          <p>Billing dates are based on the billing period start date from each billing record.</p>
-          <p>All amounts are in Philippine Pesos (₱).</p>
-          <p>© ${now.getFullYear()} Misterfyber Network Corporation. All rights reserved.</p>
-        </div>
-
-        <div class="no-print" style="text-align: center; margin-top: 25px; padding: 15px;">
-          <button onclick="window.print()" style="padding: 12px 40px; background: #1e3a8a; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold;">
-            🖨️ Print / Save as PDF
-          </button>
-        </div>
-
-        <script>
-          setTimeout(() => {
-            window.print();
-          }, 500);
-        </script>
-      </body>
-      </html>
-    `;
-
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (printWindow) {
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-      printWindow.focus();
-    } else {
-      alert("Please allow popups to generate PDF report.");
-    }
-  }, [
-    filteredPaymentGroups,
-    buildings,
-    buildingFilter,
-    dateRangeStart,
-    dateRangeEnd,
-    statusFilter,
-    paymentTypeFilter,
-    monthFilter,
-    reportStats,
-    sortedMonthlyBreakdown,
-    sortedBuildingBreakdown,
-    sortedPaymentTypeBreakdown,
-    billingDateSummary,
-    regularFeeBreakdown,
-    installationFeeBreakdown,
-    proRatedFeeBreakdown,
-    otherFeeBreakdown,
-    showRegularFee,
-    showInstallationFee,
-    showProrateFee,
-  ]);
-
-  // ==================== EXPORT TO EXCEL ====================
-  const exportToExcel = useCallback(() => {
-    if (filteredPaymentGroups.length === 0) {
-      alert("No data to export. Please adjust your filters.");
-      return;
-    }
-
-    const now = new Date();
-    const dateStr = now.toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const buildingName = buildingFilter
-      ? buildings.find((b) => b._id === buildingFilter)?.name || buildingFilter
-      : "All Buildings";
-
-    const dateRangeStr =
-      dateRangeStart && dateRangeEnd
-        ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
-        : "All Dates";
-
-    const statusStr = statusFilter || "All";
-    const typeStr = paymentTypeFilter || "All";
-    const monthStr = monthFilter ? formatMonthLabel(monthFilter) : "All Months";
-
-    // Build CSV content
-    let csvContent = "";
-
-    // Header info
-    csvContent += "PAYMENT REPORT\n";
-    csvContent += "Misterfyber Network Corporation\n";
-    csvContent += `Generated: ${dateStr}\n`;
-    csvContent += `Building: ${buildingName}\n`;
-    csvContent += `Date Range: ${dateRangeStr}\n`;
-    csvContent += `Month: ${monthStr}\n`;
-    csvContent += `Status: ${statusStr}\n`;
-    csvContent += `Payment Type: ${typeStr}\n\n`;
-
-    // Summary cards
-    csvContent += "SUMMARY\n";
-    csvContent += `Total Customers,${reportStats.totalCustomers}\n`;
-    csvContent += `Total Transactions,${reportStats.totalTransactions}\n`;
-    csvContent += `Total Paid,${reportStats.totalPaid}\n`;
-    csvContent += `Total Pending,${reportStats.totalPending}\n`;
-    csvContent += `Total Amount,${reportStats.totalOverall}\n\n`;
-
-    // Billing Date Summary
-    if (billingDateSummary.length > 0) {
-      csvContent += "SUMMARY BY BILLING DATE (BILLING PERIOD)\n";
-      csvContent +=
-        "Billing Month,Billing Period Start,Billing Period End,Customers,Transactions,Paid Amount,Pending Amount,Total Amount\n";
-      billingDateSummary.forEach((entry) => {
-        csvContent += `${entry.monthLabel},`;
-        csvContent += `${entry.billingPeriodStart ? formatShortDate(entry.billingPeriodStart) : "—"},`;
-        csvContent += `${entry.billingPeriodEnd ? formatShortDate(entry.billingPeriodEnd) : "—"},`;
-        csvContent += `${entry.customerCount},`;
-        csvContent += `${entry.transactionCount},`;
-        csvContent += `${entry.totalPaid},`;
-        csvContent += `${entry.totalPending},`;
-        csvContent += `${entry.totalAmount}\n`;
-      });
-      csvContent += `GRAND TOTAL,,,${reportStats.totalCustomers},${reportStats.totalTransactions},${reportStats.totalPaid},${reportStats.totalPending},${reportStats.totalOverall}\n\n`;
-    }
-
-    // Billing Period Breakdown
-    if (sortedMonthlyBreakdown.length > 0) {
-      csvContent += "BILLING PERIOD BREAKDOWN\n";
-      csvContent +=
-        "Billing Period (Month),Transactions,Paid Amount,Pending Amount,Total Amount\n";
-      sortedMonthlyBreakdown.forEach(([month, data]) => {
-        csvContent += `${month},`;
-        csvContent += `${data.count},`;
-        csvContent += `${data.paid},`;
-        csvContent += `${data.pending},`;
-        csvContent += `${data.paid + data.pending}\n`;
-      });
-      csvContent += `GRAND TOTAL,${reportStats.totalTransactions},${reportStats.totalPaid},${reportStats.totalPending},${reportStats.totalOverall}\n\n`;
-    }
-
-    // Building Breakdown
-    if (sortedBuildingBreakdown.length > 0) {
-      csvContent += "BUILDING BREAKDOWN\n";
-      csvContent +=
-        "Building Name,Customers,Transactions,Paid Amount,Pending Amount,Total Amount\n";
-      sortedBuildingBreakdown.forEach(([building, data]) => {
-        csvContent += `${building},`;
-        csvContent += `${data.customers},`;
-        csvContent += `${data.count},`;
-        csvContent += `${data.paid},`;
-        csvContent += `${data.pending},`;
-        csvContent += `${data.paid + data.pending}\n`;
-      });
-      csvContent += `GRAND TOTAL,${reportStats.totalCustomers},${reportStats.totalTransactions},${reportStats.totalPaid},${reportStats.totalPending},${reportStats.totalOverall}\n\n`;
-    }
-
-    // Payment Type Breakdown (Separated)
-    csvContent += "PAYMENT TYPE BREAKDOWN (SEPARATED)\n";
-    csvContent +=
-      "Payment Type,Count,Paid Amount,Pending Amount,Total Amount,Percentage\n";
-
-    const typeData: { label: string; data: typeof regularFeeBreakdown }[] = [];
-    if (showRegularFee) {
-      typeData.push({
-        label: "Regular Fee (Subscription)",
-        data: regularFeeBreakdown,
-      });
-    }
-    if (showInstallationFee) {
-      typeData.push({
-        label: "Installation Fee",
-        data: installationFeeBreakdown,
-      });
-    }
-    if (showProrateFee) {
-      typeData.push({
-        label: "Pro-rated Fee",
-        data: proRatedFeeBreakdown,
-      });
-    }
-    if (otherFeeBreakdown.count > 0) {
-      typeData.push({
-        label: "Other Fees",
-        data: otherFeeBreakdown,
-      });
-    }
-
-    typeData.forEach(({ label, data }) => {
-      const percentage = (
-        (data.amount / (reportStats.totalOverall || 1)) *
-        100
-      ).toFixed(1);
-      csvContent += `${label},`;
-      csvContent += `${data.count},`;
-      csvContent += `${data.paid},`;
-      csvContent += `${data.pending},`;
-      csvContent += `${data.amount},`;
-      csvContent += `${percentage}%\n`;
-    });
-    csvContent += `GRAND TOTAL,${reportStats.totalTransactions},${reportStats.totalPaid},${reportStats.totalPending},${reportStats.totalOverall},100%\n\n`;
-
-    // Customer Summary
-    csvContent += "CUSTOMER SUMMARY\n";
-    csvContent +=
-      "Customer Name,Application ID,Email,Building,Payments,Total Paid,Pending,Total Amount,Last Payment Date\n";
     filteredPaymentGroups.forEach((group) => {
-      const hasFree = group.payments.some(
-        (p) => p.paymentDetails?.isFree === true,
-      );
-      csvContent += `"${group.customerInfo.name}${hasFree ? " (Free)" : ""}",`;
-      csvContent += `${group.customerInfo.applicationId},`;
-      csvContent += `${group.customerInfo.email},`;
-      csvContent += `"${group.customerInfo.buildingName || "—"}",`;
-      csvContent += `${group.paymentCount},`;
-      csvContent += `${group.totalPaidAmount},`;
-      csvContent += `${group.totalPendingAmount},`;
-      csvContent += `${group.totalAmount},`;
-      csvContent += `${formatShortDate(group.lastPaymentDate)}\n`;
-    });
-    csvContent += `GRAND TOTAL,,,,${reportStats.totalTransactions},${reportStats.totalPaid},${reportStats.totalPending},${reportStats.totalOverall},—\n`;
+      group.payments.forEach((payment) => {
+        const monthKey = getBillingMonthKey(payment);
+        const billingPeriod = (payment.billingId as any)?.billingPeriod;
 
-    // Create and download the CSV file
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
+        if (!byMonth.has(monthKey)) {
+          byMonth.set(monthKey, []);
+        }
+        byMonth.get(monthKey)!.push({ group, payment, billingPeriod });
+      });
     });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `Payment_Report_${now.toISOString().slice(0, 10)}.csv`,
+
+    const entries = Array.from(byMonth.entries()).sort((a, b) =>
+      b[0].localeCompare(a[0]),
     );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [
-    filteredPaymentGroups,
-    buildings,
-    buildingFilter,
-    dateRangeStart,
-    dateRangeEnd,
-    statusFilter,
-    paymentTypeFilter,
-    monthFilter,
-    reportStats,
-    sortedMonthlyBreakdown,
-    sortedBuildingBreakdown,
-    billingDateSummary,
-    regularFeeBreakdown,
-    installationFeeBreakdown,
-    proRatedFeeBreakdown,
-    otherFeeBreakdown,
-    showRegularFee,
-    showInstallationFee,
-    showProrateFee,
-  ]);
+
+    return entries;
+  }, [filteredPaymentGroups]);
+
+  // ==================== EXPORT FUNCTION ====================
+  const handleExport = useCallback(
+    (format: "pdf" | "excel") => {
+      if (filteredPaymentGroups.length === 0) {
+        alert("No data to export. Please adjust your filters.");
+        return;
+      }
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const buildingName = buildingFilter
+        ? buildings.find((b) => b._id === buildingFilter)?.name ||
+          buildingFilter
+        : "All Buildings";
+
+      const dateRangeStr =
+        dateRangeStart && dateRangeEnd
+          ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
+          : "All Dates";
+
+      const statusStr = statusFilter || "All";
+      const typeStr = paymentTypeFilter || "All";
+      const monthStr = monthFilter
+        ? formatMonthLabel(monthFilter)
+        : "All Months";
+
+      // ============================================================
+      // ============ PDF EXPORT (HTML + print) ====================
+      // ============================================================
+      if (format === "pdf") {
+        let summaryRows = "";
+        if (exportOptions.showCustomerSummary) {
+          filteredPaymentGroups.forEach((group, index) => {
+            const hasFree = group.payments.some(
+              (p) => p.paymentDetails?.isFree === true,
+            );
+            summaryRows += `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${index + 1}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-size: 11px;">${group.customerInfo.name}${hasFree ? " 🆓" : ""}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-family: monospace; font-size: 10px;">${group.customerInfo.applicationId}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-size: 11px;">${group.customerInfo.email}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-size: 11px;">${group.customerInfo.buildingName || "—"}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${group.paymentCount}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; font-weight: bold; color: #16a34a; font-size: 11px;">${formatCurrency(group.totalPaidAmount)}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #ca8a04; font-size: 11px;">${group.totalPendingAmount > 0 ? formatCurrency(group.totalPendingAmount) : "—"}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; font-weight: bold; font-size: 11px;">${formatCurrency(group.totalAmount)}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${formatShortDate(group.lastPaymentDate)}</td>
+              </tr>
+            `;
+          });
+        }
+
+        let billingRows = "";
+        if (exportOptions.showBillingPeriodBreakdown) {
+          sortedMonthlyBreakdown.forEach(([month, data], index) => {
+            billingRows += `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${index + 1}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-weight: bold; font-size: 11px;">${month}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${data.count}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #16a34a; font-weight: bold; font-size: 11px;">${formatCurrency(data.paid)}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #ca8a04; font-size: 11px;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; font-weight: bold; font-size: 11px;">${formatCurrency(data.paid + data.pending)}</td>
+              </tr>
+            `;
+          });
+        }
+
+        let buildingRows = "";
+        if (exportOptions.showBuildingBreakdown) {
+          sortedBuildingBreakdown.forEach(([building, data], index) => {
+            buildingRows += `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${index + 1}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; font-weight: bold; font-size: 11px;">${building}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${data.customers}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${data.count}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #16a34a; font-weight: bold; font-size: 11px;">${formatCurrency(data.paid)}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #ca8a04; font-size: 11px;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
+                <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; font-weight: bold; font-size: 11px;">${formatCurrency(data.paid + data.pending)}</td>
+              </tr>
+            `;
+          });
+        }
+
+        const buildTypeRow = (
+          label: string,
+          data: typeof regularFeeBreakdown,
+          color: string,
+        ) => {
+          const percentage = (
+            (data.amount / (reportStats.totalOverall || 1)) *
+            100
+          ).toFixed(1);
+          return `
+            <tr>
+              <td style="padding: 8px; border: 1px solid #dbeafe; font-weight: bold; font-size: 11px;">${label}</td>
+              <td style="padding: 8px; border: 1px solid #dbeafe; text-align: center; font-size: 11px;">${data.count}</td>
+              <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #16a34a; font-size: 11px;">${formatCurrency(data.paid)}</td>
+              <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: #ca8a04; font-size: 11px;">${data.pending > 0 ? formatCurrency(data.pending) : "—"}</td>
+              <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; font-weight: bold; font-size: 11px;">${formatCurrency(data.amount)}</td>
+              <td style="padding: 8px; border: 1px solid #dbeafe; text-align: right; color: ${color}; font-size: 11px;">${percentage}%</td>
+            </tr>
+          `;
+        };
+
+        const typeRows: string[] = [];
+        if (exportOptions.showPaymentTypeBreakdown) {
+          if (exportOptions.showRegularFeeSection && showRegularFee) {
+            typeRows.push(
+              buildTypeRow(
+                "Regular Fee (Subscription)",
+                regularFeeBreakdown,
+                "#7c3aed",
+              ),
+            );
+          }
+          if (exportOptions.showInstallationFeeSection && showInstallationFee) {
+            typeRows.push(
+              buildTypeRow(
+                "Installation Fee",
+                installationFeeBreakdown,
+                "#ea580c",
+              ),
+            );
+          }
+          if (exportOptions.showProRatedFeeSection && showProrateFee) {
+            typeRows.push(
+              buildTypeRow("Pro-rated Fee", proRatedFeeBreakdown, "#2563eb"),
+            );
+          }
+          if (
+            exportOptions.showOtherFeesSection &&
+            otherFeeBreakdown.count > 0
+          ) {
+            typeRows.push(
+              buildTypeRow("Other Fees", otherFeeBreakdown, "#6b7280"),
+            );
+          }
+        }
+
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>${exportOptions.title} - ${exportOptions.companyName}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+                padding: 0; 
+                color: #1e293b;
+                line-height: 1.5;
+                background: #ffffff;
+              }
+              .header-wrap {
+                background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+                color: white;
+                padding: 40px 40px 30px 40px;
+                text-align: center;
+                position: relative;
+              }
+              .header-wrap::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 6px;
+                background: linear-gradient(90deg, #60a5fa, #93c5fd, #bfdbfe);
+              }
+              .header h1 { 
+                color: #ffffff; 
+                margin: 0; 
+                font-size: 34px; 
+                font-weight: 700;
+                letter-spacing: -0.5px;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.15);
+              }
+              .header .company { 
+                color: #dbeafe; 
+                font-size: 17px; 
+                font-weight: 500;
+                margin-top: 8px;
+              }
+              .header .generated { 
+                color: #bfdbfe; 
+                font-size: 13px; 
+                margin-top: 6px;
+              }
+              .filters { 
+                background: rgba(255,255,255,0.15); 
+                padding: 14px 20px; 
+                border-radius: 10px; 
+                margin-top: 20px;
+                font-size: 12px;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+                border: 1px solid rgba(255,255,255,0.25);
+              }
+              .filters span { 
+                background: rgba(255,255,255,0.95); 
+                padding: 6px 14px; 
+                border-radius: 20px;
+                border: 1px solid #bfdbfe;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-weight: 600;
+                color: #1e40af;
+              }
+              .content {
+                padding: 30px 40px;
+              }
+              .summary-cards {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+                margin-bottom: 30px;
+              }
+              .summary-card {
+                background: white;
+                border: 1px solid #dbeafe;
+                border-radius: 12px;
+                padding: 20px;
+                text-align: center;
+                box-shadow: 0 1px 3px rgba(37,99,235,0.08);
+                border-top: 4px solid #3b82f6;
+              }
+              .summary-card .label { 
+                font-size: 11px; 
+                color: #475569; 
+                text-transform: uppercase; 
+                letter-spacing: 0.5px;
+                font-weight: 700;
+              }
+              .summary-card .value { 
+                font-size: 24px; 
+                font-weight: 700; 
+                margin-top: 8px; 
+                color: #0f172a;
+              }
+              .summary-card .value.green { color: #16a34a; }
+              .summary-card .value.yellow { color: #ca8a04; }
+              .summary-card .value.blue { color: #1e40af; }
+              .summary-card .value.purple { color: #7c3aed; }
+              .section-title {
+                font-size: 16px;
+                font-weight: 700;
+                color: #1e3a8a;
+                margin: 32px 0 16px 0;
+                padding: 12px 16px;
+                background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+                border-left: 5px solid #2563eb;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+              }
+              table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                font-size: 11px;
+                margin-bottom: 24px;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 1px 3px rgba(37,99,235,0.08);
+              }
+              th { 
+                background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+                padding: 12px 10px; 
+                border: 1px solid #1e40af; 
+                text-align: left;
+                font-weight: 700;
+                color: #ffffff;
+                font-size: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+              }
+              td { 
+                padding: 10px 10px; 
+                border: 1px solid #dbeafe;
+                color: #1e293b;
+              }
+              tr:nth-child(even) td { background: #f8fafc; }
+              .grand-total-row {
+                background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+                font-weight: 700;
+              }
+              .grand-total-row td {
+                border-top: 2px solid #16a34a;
+                font-size: 12px;
+                color: #166534;
+                background: transparent !important;
+              }
+              .footer { 
+                text-align: center; 
+                margin-top: 40px; 
+                font-size: 11px; 
+                color: #94a3b8;
+                border-top: 2px solid #dbeafe;
+                padding-top: 20px;
+              }
+              .page-break { page-break-before: always; }
+              @media print {
+                .no-print { display: none; }
+                .content { padding: 20px; }
+                .header-wrap { padding: 25px 20px; }
+                table { box-shadow: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header-wrap">
+              <div class="header">
+                <h1>📊 ${exportOptions.title}</h1>
+                <p class="company">${exportOptions.companyName}</p>
+                ${exportOptions.showGeneratedDate ? `<p class="generated">Generated on: ${dateStr}</p>` : ""}
+                ${
+                  exportOptions.showFilters
+                    ? `
+                  <div class="filters">
+                    <span>🏢 ${buildingName}</span>
+                    <span>📅 ${dateRangeStr}</span>
+                    <span>🗓️ ${monthStr}</span>
+                    <span>📌 ${statusStr}</span>
+                    <span>📋 ${typeStr}</span>
+                  </div>
+                `
+                    : ""
+                }
+              </div>
+            </div>
+
+            <div class="content">
+              ${
+                exportOptions.showSummaryCards
+                  ? `
+                <div class="summary-cards">
+                  ${
+                    exportOptions.showTotalCustomers
+                      ? `
+                    <div class="summary-card">
+                      <div class="label">Total Customers</div>
+                      <div class="value blue">${reportStats.totalCustomers}</div>
+                    </div>
+                  `
+                      : ""
+                  }
+                  ${
+                    exportOptions.showTotalTransactions
+                      ? `
+                    <div class="summary-card">
+                      <div class="label">Total Transactions</div>
+                      <div class="value purple">${reportStats.totalTransactions}</div>
+                    </div>
+                  `
+                      : ""
+                  }
+                  ${
+                    exportOptions.showTotalPaid
+                      ? `
+                    <div class="summary-card">
+                      <div class="label">Total Paid</div>
+                      <div class="value green">${formatCurrency(reportStats.totalPaid)}</div>
+                    </div>
+                  `
+                      : ""
+                  }
+                  ${
+                    exportOptions.showTotalPending
+                      ? `
+                    <div class="summary-card">
+                      <div class="label">Total Pending</div>
+                      <div class="value yellow">${formatCurrency(reportStats.totalPending)}</div>
+                    </div>
+                  `
+                      : ""
+                  }
+                  ${
+                    exportOptions.showTotalOverall
+                      ? `
+                    <div class="summary-card" style="grid-column: span 4; border-top-color: #1e40af;">
+                      <div class="label">🎯 Grand Total</div>
+                      <div class="value blue" style="font-size: 28px;">${formatCurrency(reportStats.totalOverall)}</div>
+                    </div>
+                  `
+                      : ""
+                  }
+                </div>
+              `
+                  : ""
+              }
+
+              ${
+                exportOptions.showBillingPeriodBreakdown
+                  ? `
+                <div class="section-title">📈 Billing Period Breakdown</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="text-align: center; width: 40px;">#</th>
+                      <th>Billing Period (Month)</th>
+                      <th style="text-align: center;">Transactions</th>
+                      <th style="text-align: right;">Paid Amount</th>
+                      <th style="text-align: right;">Pending Amount</th>
+                      <th style="text-align: right;">Total Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${billingRows || '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #94a3b8;">No billing period data available</td></tr>'}
+                    <tr class="grand-total-row">
+                      <td colspan="2" style="text-align: right;">GRAND TOTAL</td>
+                      <td style="text-align: center;">${reportStats.totalTransactions}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPaid)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPending)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalOverall)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `
+                  : ""
+              }
+
+              ${
+                exportOptions.showBuildingBreakdown
+                  ? `
+                <div class="section-title">🏢 Building Breakdown</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="text-align: center; width: 40px;">#</th>
+                      <th>Building Name</th>
+                      <th style="text-align: center;">Customers</th>
+                      <th style="text-align: center;">Transactions</th>
+                      <th style="text-align: right;">Paid Amount</th>
+                      <th style="text-align: right;">Pending Amount</th>
+                      <th style="text-align: right;">Total Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${buildingRows || '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #94a3b8;">No building data available</td></tr>'}
+                    <tr class="grand-total-row">
+                      <td colspan="2" style="text-align: right;">GRAND TOTAL</td>
+                      <td style="text-align: center;">${reportStats.totalCustomers}</td>
+                      <td style="text-align: center;">${reportStats.totalTransactions}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPaid)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPending)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalOverall)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `
+                  : ""
+              }
+
+              ${
+                exportOptions.showPaymentTypeBreakdown && typeRows.length > 0
+                  ? `
+                <div class="section-title">💰 Payment Type Breakdown</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Payment Type</th>
+                      <th style="text-align: center;">Count</th>
+                      <th style="text-align: right;">Paid Amount</th>
+                      <th style="text-align: right;">Pending Amount</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: right;">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${typeRows.join("")}
+                    <tr class="grand-total-row">
+                      <td style="text-align: right; font-weight: 700;">GRAND TOTAL</td>
+                      <td style="text-align: center;">${reportStats.totalTransactions}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPaid)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPending)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalOverall)}</td>
+                      <td style="text-align: right;">100%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `
+                  : ""
+              }
+
+              ${
+                exportOptions.showCustomerSummary
+                  ? `
+                <div class="page-break"></div>
+                <div class="section-title">👥 Customer Summary</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="text-align: center; width: 40px;">#</th>
+                      <th>Customer Name</th>
+                      <th>Application ID</th>
+                      <th>Email</th>
+                      <th>Building</th>
+                      <th style="text-align: center;">Payments</th>
+                      <th style="text-align: right;">Total Paid</th>
+                      <th style="text-align: right;">Pending</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: center;">Last Payment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${summaryRows}
+                    <tr class="grand-total-row">
+                      <td colspan="5" style="text-align: right;">GRAND TOTAL</td>
+                      <td style="text-align: center;">${reportStats.totalTransactions}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPaid)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalPending)}</td>
+                      <td style="text-align: right;">${formatCurrency(reportStats.totalOverall)}</td>
+                      <td style="text-align: center;">—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `
+                  : ""
+              }
+
+              ${
+                exportOptions.showFooter
+                  ? `
+                <div class="footer">
+                  <p>${exportOptions.footerText}</p>
+                  <p style="margin-top: 8px;">All amounts are in Philippine Pesos (₱).</p>
+                  <p style="margin-top: 4px;">© ${now.getFullYear()} ${exportOptions.companyName}. All rights reserved.</p>
+                </div>
+              `
+                  : ""
+              }
+            </div>
+
+            <div class="no-print" style="text-align: center; margin-top: 30px; padding: 20px;">
+              <button onclick="window.print()" style="padding: 14px 48px; background: #1e3a8a; color: white; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 4px 6px rgba(30,58,138,0.3);">
+                🖨️ Print / Save as PDF
+              </button>
+            </div>
+
+            <script>
+              setTimeout(() => { window.print(); }, 800);
+            </script>
+          </body>
+          </html>
+        `;
+
+        const printWindow = window.open("", "_blank", "width=1200,height=800");
+        if (printWindow) {
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+          printWindow.focus();
+        } else {
+          alert("Please allow popups to generate PDF report.");
+        }
+      }
+
+      // ============================================================
+      // ============ EXCEL EXPORT WITH MULTIPLE TABS ==============
+      // ============================================================
+      else {
+        const wb = XLSX.utils.book_new();
+
+        // ------------------------------------------------------------
+        // SHEET 1: SUMMARY
+        // ------------------------------------------------------------
+        const summaryData: any[][] = [];
+
+        summaryData.push([exportOptions.title.toUpperCase()]);
+        summaryData.push([exportOptions.companyName]);
+        if (exportOptions.showGeneratedDate) {
+          summaryData.push([`Generated on: ${dateStr}`]);
+        }
+        summaryData.push([]);
+
+        if (exportOptions.showFilters) {
+          summaryData.push([
+            `Building: ${buildingName}  |  Date Range: ${dateRangeStr}  |  Month: ${monthStr}  |  Status: ${statusStr}  |  Payment Type: ${typeStr}`,
+          ]);
+          summaryData.push([]);
+        }
+
+        if (exportOptions.showSummaryCards) {
+          summaryData.push(["SUMMARY"]);
+          if (exportOptions.showTotalCustomers)
+            summaryData.push(["Total Customers", reportStats.totalCustomers]);
+          if (exportOptions.showTotalTransactions)
+            summaryData.push([
+              "Total Transactions",
+              reportStats.totalTransactions,
+            ]);
+          if (exportOptions.showTotalPaid)
+            summaryData.push([
+              "Total Paid",
+              formatCurrencyExcel(reportStats.totalPaid),
+            ]);
+          if (exportOptions.showTotalPending)
+            summaryData.push([
+              "Total Pending",
+              formatCurrencyExcel(reportStats.totalPending),
+            ]);
+          if (exportOptions.showTotalOverall)
+            summaryData.push([
+              "Grand Total",
+              formatCurrencyExcel(reportStats.totalOverall),
+            ]);
+          summaryData.push([]);
+        }
+
+        if (exportOptions.showBuildingBreakdown) {
+          summaryData.push(["BUILDING BREAKDOWN"]);
+          summaryData.push([
+            "#",
+            "Building Name",
+            "Customers",
+            "Transactions",
+            "Paid Amount",
+            "Pending Amount",
+            "Total Amount",
+          ]);
+          sortedBuildingBreakdown.forEach(([building, data], i) => {
+            summaryData.push([
+              i + 1,
+              building,
+              data.customers,
+              data.count,
+              formatCurrencyExcel(data.paid),
+              formatCurrencyExcel(data.pending),
+              formatCurrencyExcel(data.paid + data.pending),
+            ]);
+          });
+          summaryData.push([
+            "GRAND TOTAL",
+            "",
+            reportStats.totalCustomers,
+            reportStats.totalTransactions,
+            formatCurrencyExcel(reportStats.totalPaid),
+            formatCurrencyExcel(reportStats.totalPending),
+            formatCurrencyExcel(reportStats.totalOverall),
+          ]);
+          summaryData.push([]);
+        }
+
+        if (exportOptions.showPaymentTypeBreakdown) {
+          summaryData.push(["PAYMENT TYPE BREAKDOWN"]);
+          summaryData.push([
+            "Payment Type",
+            "Count",
+            "Paid Amount",
+            "Pending Amount",
+            "Total Amount",
+            "Percentage",
+          ]);
+
+          const pushTypeRow = (
+            label: string,
+            data: typeof regularFeeBreakdown,
+          ) => {
+            const pct = (
+              (data.amount / (reportStats.totalOverall || 1)) *
+              100
+            ).toFixed(1);
+            summaryData.push([
+              label,
+              data.count,
+              formatCurrencyExcel(data.paid),
+              formatCurrencyExcel(data.pending),
+              formatCurrencyExcel(data.amount),
+              `${pct}%`,
+            ]);
+          };
+
+          if (exportOptions.showRegularFeeSection && showRegularFee)
+            pushTypeRow("Regular Fee (Subscription)", regularFeeBreakdown);
+          if (exportOptions.showInstallationFeeSection && showInstallationFee)
+            pushTypeRow("Installation Fee", installationFeeBreakdown);
+          if (exportOptions.showProRatedFeeSection && showProrateFee)
+            pushTypeRow("Pro-rated Fee", proRatedFeeBreakdown);
+          if (exportOptions.showOtherFeesSection && otherFeeBreakdown.count > 0)
+            pushTypeRow("Other Fees", otherFeeBreakdown);
+
+          summaryData.push([
+            "GRAND TOTAL",
+            reportStats.totalTransactions,
+            formatCurrencyExcel(reportStats.totalPaid),
+            formatCurrencyExcel(reportStats.totalPending),
+            formatCurrencyExcel(reportStats.totalOverall),
+            "100%",
+          ]);
+        }
+
+        const summaryWS = XLSX.utils.aoa_to_sheet(summaryData);
+        summaryWS["!cols"] = [
+          { wch: 30 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 15 },
+        ];
+        XLSX.utils.book_append_sheet(wb, summaryWS, "Summary");
+
+        // ------------------------------------------------------------
+        // MONTHLY SHEETS
+        // ------------------------------------------------------------
+        paymentsByMonth.forEach(([monthKey, entries]) => {
+          const monthLabel = formatMonthLabel(monthKey);
+
+          let monthTotalPaid = 0;
+          let monthTotalPending = 0;
+          let monthTotal = 0;
+
+          entries.forEach(({ payment }) => {
+            const amt = payment.amount || 0;
+            monthTotal += amt;
+            if (payment.status === "completed") monthTotalPaid += amt;
+            if (payment.status === "pending") monthTotalPending += amt;
+          });
+
+          const monthData: any[][] = [];
+
+          monthData.push([monthLabel]);
+          monthData.push([
+            `${exportOptions.companyName} — ${exportOptions.title}`,
+          ]);
+          monthData.push([]);
+
+          monthData.push([
+            "Month Total Paid",
+            formatCurrencyExcel(monthTotalPaid),
+          ]);
+          monthData.push([
+            "Month Total Pending",
+            formatCurrencyExcel(monthTotalPending),
+          ]);
+          monthData.push(["Transactions", entries.length]);
+          monthData.push([
+            "Month Grand Total",
+            formatCurrencyExcel(monthTotal),
+          ]);
+          monthData.push([]);
+
+          monthData.push([
+            "#",
+            "Customer Name",
+            "Application ID",
+            "Email",
+            "Building",
+            "Amount",
+            "Status",
+            "Payment Type",
+            "Billing Period",
+            "Reference #",
+            "Payment Date",
+          ]);
+
+          entries.forEach(({ group, payment, billingPeriod }, i) => {
+            const hasFree = payment.paymentDetails?.isFree === true;
+            // ✅ FIX: Use resolved payment type
+            const resolvedType = resolvePaymentType(payment);
+            const isInstallation = resolvedType === "installation";
+            const typeLabel = getPaymentTypeLabel(resolvedType);
+
+            monthData.push([
+              i + 1,
+              `${group.customerInfo.name}${hasFree ? " (FREE)" : ""}`,
+              group.customerInfo.applicationId,
+              group.customerInfo.email,
+              group.customerInfo.buildingName || "—",
+              formatCurrencyExcel(payment.amount),
+              payment.status === "completed" ? "Paid" : payment.status,
+              typeLabel,
+              isInstallation
+                ? "—"
+                : billingPeriod
+                  ? `${formatShortDate(billingPeriod.start)} - ${formatShortDate(billingPeriod.end)}`
+                  : "—",
+              payment.referenceNumber || "—",
+              formatShortDate(payment.createdAt),
+            ]);
+          });
+
+          monthData.push([]);
+          monthData.push([
+            `MONTH TOTAL (${monthLabel})`,
+            "",
+            "",
+            "",
+            "",
+            formatCurrencyExcel(monthTotal),
+            "",
+            "",
+            "",
+            "",
+            "",
+          ]);
+
+          const monthWS = XLSX.utils.aoa_to_sheet(monthData);
+          monthWS["!cols"] = [
+            { wch: 5 },
+            { wch: 25 },
+            { wch: 18 },
+            { wch: 30 },
+            { wch: 25 },
+            { wch: 15 },
+            { wch: 12 },
+            { wch: 18 },
+            { wch: 25 },
+            { wch: 20 },
+            { wch: 15 },
+          ];
+
+          let sheetName = toSheetName(monthLabel);
+          let counter = 1;
+          while (wb.SheetNames.includes(sheetName)) {
+            sheetName = toSheetName(`${monthLabel} (${counter++})`).substring(
+              0,
+              31,
+            );
+          }
+
+          XLSX.utils.book_append_sheet(wb, monthWS, sheetName);
+        });
+
+        // ------------------------------------------------------------
+        // DOWNLOAD THE FILE
+        // ------------------------------------------------------------
+        const fileName = `${exportOptions.title.replace(/\s+/g, "_")}_${now.toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+      }
+
+      setShowExportModal(false);
+    },
+    [
+      filteredPaymentGroups,
+      buildings,
+      buildingFilter,
+      dateRangeStart,
+      dateRangeEnd,
+      statusFilter,
+      paymentTypeFilter,
+      monthFilter,
+      reportStats,
+      sortedMonthlyBreakdown,
+      sortedBuildingBreakdown,
+      regularFeeBreakdown,
+      installationFeeBreakdown,
+      proRatedFeeBreakdown,
+      otherFeeBreakdown,
+      showRegularFee,
+      showInstallationFee,
+      showProrateFee,
+      exportOptions,
+      paymentsByMonth,
+    ],
+  );
 
   // ==================== RENDER ====================
   return (
@@ -1299,13 +1506,19 @@ export default function PaymentReport({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={exportToExcel}
+            onClick={() => {
+              setExportFormat("excel");
+              setShowExportModal(true);
+            }}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 shadow-sm"
           >
             <FiDownload className="w-4 h-4" /> Export Excel
           </button>
           <button
-            onClick={exportToPDF}
+            onClick={() => {
+              setExportFormat("pdf");
+              setShowExportModal(true);
+            }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-sm"
           >
             <FiDownload className="w-4 h-4" /> Download PDF
@@ -1313,7 +1526,7 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* ==================== LOCAL FILTER CONTROLS ==================== */}
+      {/* Filter Controls */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-4">
           <FiFilter className="w-4 h-4 text-blue-600" />
@@ -1321,7 +1534,6 @@ export default function PaymentReport({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Month Filter */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1.5">
               <FiCalendar className="w-3 h-3 inline mr-1" />
@@ -1341,7 +1553,6 @@ export default function PaymentReport({
             </select>
           </div>
 
-          {/* Payment Type Checkboxes */}
           <div className="lg:col-span-3">
             <label className="block text-xs font-medium text-gray-600 mb-1.5">
               <FiFilter className="w-3 h-3 inline mr-1" />
@@ -1387,7 +1598,6 @@ export default function PaymentReport({
                 </span>
               </label>
 
-              {/* Reset button */}
               {(monthFilter ||
                 !showRegularFee ||
                 !showProrateFee ||
@@ -1415,7 +1625,6 @@ export default function PaymentReport({
           </div>
         </div>
 
-        {/* Active filters summary */}
         <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-gray-500 font-medium">Active filters:</span>
           {buildingFilter && (
@@ -1526,320 +1735,7 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* ==================== SUMMARY BY BILLING DATE ==================== */}
-      {billingDateSummary.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex justify-between items-center flex-wrap gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <FiCalendar className="w-5 h-5 text-blue-600" />
-                Summary by Billing Date
-              </h3>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Grouped by billing period (start date) —{" "}
-                {billingDateSummary.length} billing month
-                {billingDateSummary.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-          </div>
-
-          <div className="p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {billingDateSummary.map((entry) => (
-                <div
-                  key={entry.monthKey}
-                  className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-blue-700">
-                      {entry.monthLabel}
-                    </span>
-                    <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
-                      {entry.transactionCount} txn
-                    </span>
-                  </div>
-                  {(entry.billingPeriodStart || entry.billingPeriodEnd) && (
-                    <p className="text-xs text-gray-400 mb-3 flex items-center gap-1">
-                      <FiCalendar className="w-3 h-3" />
-                      {entry.billingPeriodStart &&
-                        formatShortDate(entry.billingPeriodStart)}
-                      {entry.billingPeriodStart &&
-                        entry.billingPeriodEnd &&
-                        " - "}
-                      {entry.billingPeriodEnd &&
-                        formatShortDate(entry.billingPeriodEnd)}
-                    </p>
-                  )}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-gray-500">Customers</span>
-                      <span className="font-semibold text-gray-700">
-                        {entry.customerCount}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-gray-500">Paid</span>
-                      <span className="font-bold text-green-600">
-                        {formatCurrency(entry.totalPaid)}
-                      </span>
-                    </div>
-                    {entry.totalPending > 0 && (
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500">Pending</span>
-                        <span className="font-bold text-yellow-600">
-                          {formatCurrency(entry.totalPending)}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-gray-100">
-                      <span className="text-gray-500 font-medium">Total</span>
-                      <span className="font-bold text-blue-700">
-                        {formatCurrency(entry.totalAmount)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-4 flex-wrap text-sm">
-              <span className="text-gray-600">
-                <span className="font-semibold text-blue-700">
-                  {reportStats.totalCustomers}
-                </span>{" "}
-                customers
-              </span>
-              <span className="text-gray-600">
-                <span className="font-semibold text-purple-700">
-                  {reportStats.totalTransactions}
-                </span>{" "}
-                transactions
-              </span>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap text-sm">
-              <span className="text-green-600 font-semibold">
-                Paid: {formatCurrency(reportStats.totalPaid)}
-              </span>
-              {reportStats.totalPending > 0 && (
-                <span className="text-yellow-600 font-semibold">
-                  Pending: {formatCurrency(reportStats.totalPending)}
-                </span>
-              )}
-              <span className="text-blue-700 font-bold">
-                Grand Total: {formatCurrency(reportStats.totalOverall)}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== SEPARATED PAYMENT TYPE BREAKDOWNS ==================== */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Regular Fee (Subscription) */}
-        {showRegularFee && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-purple-100 border-b border-purple-200">
-              <h3 className="font-semibold text-purple-800 flex items-center gap-2">
-                <FiRepeat className="w-4 h-4" />
-                Regular Fee (Subscription)
-              </h3>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Transactions</span>
-                <span className="font-semibold text-gray-800">
-                  {regularFeeBreakdown.count}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Paid</span>
-                <span className="font-bold text-green-600">
-                  {formatCurrency(regularFeeBreakdown.paid)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Pending</span>
-                <span className="font-bold text-yellow-600">
-                  {regularFeeBreakdown.pending > 0
-                    ? formatCurrency(regularFeeBreakdown.pending)
-                    : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pt-3 border-t border-gray-100">
-                <span className="text-sm font-medium text-gray-600">
-                  Total Amount
-                </span>
-                <span className="font-bold text-purple-700">
-                  {formatCurrency(regularFeeBreakdown.amount)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-400">Percentage</span>
-                <span className="text-xs font-medium text-gray-500">
-                  {(
-                    (regularFeeBreakdown.amount /
-                      (reportStats.totalOverall || 1)) *
-                    100
-                  ).toFixed(1)}
-                  %
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Installation Fee */}
-        {showInstallationFee && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 bg-gradient-to-r from-orange-50 to-orange-100 border-b border-orange-200">
-              <h3 className="font-semibold text-orange-800 flex items-center gap-2">
-                <FiTool className="w-4 h-4" />
-                Installation Fee
-              </h3>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Transactions</span>
-                <span className="font-semibold text-gray-800">
-                  {installationFeeBreakdown.count}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Paid</span>
-                <span className="font-bold text-green-600">
-                  {formatCurrency(installationFeeBreakdown.paid)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Pending</span>
-                <span className="font-bold text-yellow-600">
-                  {installationFeeBreakdown.pending > 0
-                    ? formatCurrency(installationFeeBreakdown.pending)
-                    : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pt-3 border-t border-gray-100">
-                <span className="text-sm font-medium text-gray-600">
-                  Total Amount
-                </span>
-                <span className="font-bold text-orange-700">
-                  {formatCurrency(installationFeeBreakdown.amount)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-400">Percentage</span>
-                <span className="text-xs font-medium text-gray-500">
-                  {(
-                    (installationFeeBreakdown.amount /
-                      (reportStats.totalOverall || 1)) *
-                    100
-                  ).toFixed(1)}
-                  %
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pro-rated Fee */}
-        {showProrateFee && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-blue-100 border-b border-blue-200">
-              <h3 className="font-semibold text-blue-800 flex items-center gap-2">
-                <FiClock className="w-4 h-4" />
-                Pro-rated Fee
-              </h3>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Transactions</span>
-                <span className="font-semibold text-gray-800">
-                  {proRatedFeeBreakdown.count}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Paid</span>
-                <span className="font-bold text-green-600">
-                  {formatCurrency(proRatedFeeBreakdown.paid)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Pending</span>
-                <span className="font-bold text-yellow-600">
-                  {proRatedFeeBreakdown.pending > 0
-                    ? formatCurrency(proRatedFeeBreakdown.pending)
-                    : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pt-3 border-t border-gray-100">
-                <span className="text-sm font-medium text-gray-600">
-                  Total Amount
-                </span>
-                <span className="font-bold text-blue-700">
-                  {formatCurrency(proRatedFeeBreakdown.amount)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-400">Percentage</span>
-                <span className="text-xs font-medium text-gray-500">
-                  {(
-                    (proRatedFeeBreakdown.amount /
-                      (reportStats.totalOverall || 1)) *
-                    100
-                  ).toFixed(1)}
-                  %
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Other Fees (if any) */}
-      {otherFeeBreakdown.count > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-              <FiDollarSign className="w-4 h-4 text-gray-600" />
-              Other Fees
-            </h3>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Transactions</p>
-                <p className="text-lg font-bold text-gray-800">
-                  {otherFeeBreakdown.count}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Paid</p>
-                <p className="text-lg font-bold text-green-600">
-                  {formatCurrency(otherFeeBreakdown.paid)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Pending</p>
-                <p className="text-lg font-bold text-yellow-600">
-                  {otherFeeBreakdown.pending > 0
-                    ? formatCurrency(otherFeeBreakdown.pending)
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total</p>
-                <p className="text-lg font-bold text-gray-700">
-                  {formatCurrency(otherFeeBreakdown.amount)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Billing Period Breakdown */}
+      {/* Billing Period Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -1932,7 +1828,7 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Building Breakdown */}
+      {/* Building Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -2036,7 +1932,7 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Payment Type Breakdown (All Types Combined) */}
+      {/* Payment Type Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -2083,14 +1979,8 @@ export default function PaymentReport({
                 </tr>
               ) : (
                 sortedPaymentTypeBreakdown.map(([type, data], index) => {
-                  const typeLabel =
-                    type === "pro_rated"
-                      ? "Pro-rated"
-                      : type === "subscription"
-                        ? "Regular Fee (Subscription)"
-                        : type === "installation"
-                          ? "Installation Fee"
-                          : type.charAt(0).toUpperCase() + type.slice(1);
+                  // ✅ FIX: Use centralized label helper
+                  const typeLabel = getPaymentTypeLabel(type);
                   const percentage =
                     (data.amount / (reportStats.totalOverall || 1)) * 100;
                   return (
@@ -2150,6 +2040,467 @@ export default function PaymentReport({
           </table>
         </div>
       </div>
+
+      {/* ==================== EXPORT CUSTOMIZATION MODAL ==================== */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white rounded-t-xl z-10">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FiSettings className="w-5 h-5 text-blue-600" />
+                  Customize Export
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Choose what to include in your{" "}
+                  {exportFormat === "pdf" ? "PDF" : "Excel"} report
+                </p>
+              </div>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {/* Format Selector */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Export Format
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setExportFormat("pdf")}
+                    className={`flex-1 px-4 py-3 rounded-lg border-2 transition flex items-center justify-center gap-2 font-medium ${
+                      exportFormat === "pdf"
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <FiFileText className="w-5 h-5" />
+                    PDF Report
+                  </button>
+                  <button
+                    onClick={() => setExportFormat("excel")}
+                    className={`flex-1 px-4 py-3 rounded-lg border-2 transition flex items-center justify-center gap-2 font-medium ${
+                      exportFormat === "excel"
+                        ? "border-green-500 bg-green-50 text-green-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <FiDownload className="w-5 h-5" />
+                    Excel (Multi-Tab)
+                  </button>
+                </div>
+                {exportFormat === "excel" && (
+                  <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
+                    <FiInfo className="w-3 h-3" />
+                    Excel will include a Summary tab + one tab per month.
+                  </p>
+                )}
+              </div>
+
+              {/* Header Options */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <FiFileText className="w-4 h-4 text-blue-600" />
+                  Header Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Report Title
+                    </label>
+                    <input
+                      type="text"
+                      value={exportOptions.title}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          title: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Payment Report"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Company Name
+                    </label>
+                    <input
+                      type="text"
+                      value={exportOptions.companyName}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          companyName: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Misterfyber Network Corporation"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-4 mt-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showGeneratedDate}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showGeneratedDate: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Show generated date
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showFilters}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showFilters: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Show active filters
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Summary Cards Options */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <FiBarChart2 className="w-4 h-4 text-blue-600" />
+                  Summary Cards
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showSummaryCards}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showSummaryCards: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Enable summary cards
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showTotalCustomers}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showTotalCustomers: e.target.checked,
+                        })
+                      }
+                      disabled={!exportOptions.showSummaryCards}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Total customers
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showTotalTransactions}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showTotalTransactions: e.target.checked,
+                        })
+                      }
+                      disabled={!exportOptions.showSummaryCards}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Total transactions
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showTotalPaid}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showTotalPaid: e.target.checked,
+                        })
+                      }
+                      disabled={!exportOptions.showSummaryCards}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-gray-700">Total paid</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showTotalPending}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showTotalPending: e.target.checked,
+                        })
+                      }
+                      disabled={!exportOptions.showSummaryCards}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-gray-700">Total pending</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showTotalOverall}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showTotalOverall: e.target.checked,
+                        })
+                      }
+                      disabled={!exportOptions.showSummaryCards}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-gray-700">Grand total</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Sections Options */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <FiPieChart className="w-4 h-4 text-blue-600" />
+                  Report Sections
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showBillingPeriodBreakdown}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showBillingPeriodBreakdown: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Billing Period Breakdown
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showBuildingBreakdown}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showBuildingBreakdown: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Building Breakdown
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showPaymentTypeBreakdown}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showPaymentTypeBreakdown: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Payment Type Breakdown
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showCustomerSummary}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showCustomerSummary: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Customer Summary Table
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Payment Type Sections */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <FiDollarSign className="w-4 h-4 text-blue-600" />
+                  Payment Type Sections
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showRegularFeeSection}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showRegularFeeSection: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Regular Fee (Subscription)
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showInstallationFeeSection}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showInstallationFeeSection: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Installation Fee
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showProRatedFeeSection}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showProRatedFeeSection: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Pro-rated Fee</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.showOtherFeesSection}
+                      onChange={(e) =>
+                        setExportOptions({
+                          ...exportOptions,
+                          showOtherFeesSection: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Other Fees</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Footer Options */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <FiInfo className="w-4 h-4 text-blue-600" />
+                  Footer
+                </h3>
+                <label className="flex items-center gap-2 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={exportOptions.showFooter}
+                    onChange={(e) =>
+                      setExportOptions({
+                        ...exportOptions,
+                        showFooter: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Show footer text
+                  </span>
+                </label>
+                {exportOptions.showFooter && (
+                  <textarea
+                    value={exportOptions.footerText}
+                    onChange={(e) =>
+                      setExportOptions({
+                        ...exportOptions,
+                        footerText: e.target.value,
+                      })
+                    }
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
+                    placeholder="Enter footer text..."
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center sticky bottom-0 bg-white rounded-b-xl">
+              <button
+                onClick={() => setExportOptions(defaultExportOptions)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition flex items-center gap-2"
+              >
+                <FiRefreshCw className="w-4 h-4" /> Reset to Default
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleExport(exportFormat)}
+                  className={`px-6 py-2 rounded-lg transition font-medium flex items-center gap-2 ${
+                    exportFormat === "pdf"
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "bg-green-600 text-white hover:bg-green-700"
+                  }`}
+                >
+                  <FiDownload className="w-4 h-4" />
+                  Export {exportFormat === "pdf" ? "PDF" : "Excel"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

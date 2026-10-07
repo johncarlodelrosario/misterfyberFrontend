@@ -6,7 +6,7 @@ export interface CreatePaymentData {
   amount: number;
   paymentMethod: string;
   billingId?: string;
-  paymentType?: "subscription" | "installation" | "others";
+  paymentType?: "subscription" | "installation" | "pro_rated" | "others";
   referenceNumber?: string;
   notes?: string;
   customerName?: string;
@@ -79,6 +79,8 @@ export interface GetAllPaymentsResponse {
     monthlyCount: number;
     subscription: number;
     subscriptionCount: number;
+    proRated: number;
+    proRatedCount: number;
     installationFees: number;
     installationFeeCount: number;
     pending: number;
@@ -197,6 +199,8 @@ export const getAllPayments = async (
         monthlyCount: 0,
         subscription: 0,
         subscriptionCount: 0,
+        proRated: 0,
+        proRatedCount: 0,
         installationFees: 0,
         installationFeeCount: 0,
         pending: 0,
@@ -218,6 +222,8 @@ export const getAllPayments = async (
         monthlyCount: 0,
         subscription: 0,
         subscriptionCount: 0,
+        proRated: 0,
+        proRatedCount: 0,
         installationFees: 0,
         installationFeeCount: 0,
         pending: 0,
@@ -242,6 +248,12 @@ export const bulkDeleteCustomerPayments = async (
   return response.data;
 };
 
+// ==================== MIGRATION: FIX PRO-RATED PAYMENT TYPES ====================
+export const fixProRatedPaymentTypes = async (): Promise<any> => {
+  const response = await api.post("/payments/admin/fix-pro-rated-types");
+  return response.data;
+};
+
 // Kept for backward compatibility — no-op now.
 export function clearPaymentsCache(): void {}
 
@@ -257,5 +269,6 @@ export default {
   getAllPayments,
   deletePayment,
   bulkDeleteCustomerPayments,
+  fixProRatedPaymentTypes,
   clearPaymentsCache,
 };
