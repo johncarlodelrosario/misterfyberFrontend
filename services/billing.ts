@@ -1,4 +1,4 @@
-// frontend/src/services/billing.ts - COMPLETE WITH WEBSOCKET ONLY REFRESH AND DELETE BILL
+// frontend/src/services/billing.ts - COMPLETE WITH DISCONNECT/RECONNECT
 
 import api from "./api";
 
@@ -16,7 +16,8 @@ export interface BillingCycle {
     | "paused"
     | "completed"
     | "cancelled"
-    | "pending_activation";
+    | "pending_activation"
+    | "disconnected";
   monthlyRate: number;
   currentProRatedAmount: number;
   proRatedPaid: boolean;
@@ -34,6 +35,8 @@ export interface BillingCycle {
   pauseReason?: string;
   pauseUntil?: string;
   disconnectReason?: string;
+  disconnectedAt?: string;
+  reconnectedAt?: string;
   pendingPlanChange?: {
     newPlanId: any;
     requestedAt: string;
@@ -387,6 +390,7 @@ export const resumeBilling = async (data: any): Promise<any> => {
   }
 };
 
+// ✅ DISCONNECT - Bills preserved, customer stays in table
 export const disconnectClient = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/disconnect", data);
@@ -403,6 +407,7 @@ export const disconnectClient = async (data: any): Promise<any> => {
   }
 };
 
+// ✅ RECONNECT - Restore service
 export const reconnectClient = async (data: any): Promise<any> => {
   try {
     const response = await api.post("/billing/reconnect", data);

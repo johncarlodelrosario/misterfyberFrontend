@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - FILTER WORKS 100% + NAME SORT + REPORT DOWNLOAD
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - FILTER WORKS 100% + NAME SORT + REPORT DOWNLOAD + DISCONNECTED STATUS
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -40,7 +40,8 @@ interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected" | "suspended";
+  // ✅ ADDED "disconnected"
+  status: "pending" | "approved" | "rejected" | "suspended" | "disconnected";
   idType: string;
   idNumber: string;
   macAddress?: string;
@@ -57,6 +58,10 @@ interface Application {
   serviceStatus?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
+  // ✅ ADDED disconnect fields
+  disconnectedAt?: string;
+  disconnectReason?: string;
+  reconnectedAt?: string;
 }
 
 interface Filters {
@@ -402,6 +407,7 @@ export default function AdminApplicationsPage() {
         formatDate(app.submittedAt),
       ]);
 
+      // ✅ ADDED disconnected color
       const getStatusColor = (status: string): [number, number, number] => {
         switch (status) {
           case "approved":
@@ -412,6 +418,8 @@ export default function AdminApplicationsPage() {
             return [220, 38, 38];
           case "suspended":
             return [107, 114, 128];
+          case "disconnected":
+            return [75, 85, 99];
           default:
             return [0, 0, 0];
         }
@@ -804,19 +812,25 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
+  // ✅ ADDED Disconnected
   const statusOptions = [
     { value: "all", label: "All Status" },
     { value: "pending", label: "Pending" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "suspended", label: "Suspended" },
+    { value: "disconnected", label: "Disconnected" },
   ];
 
+  // ✅ ADDED disconnected count
   const stats = useMemo(() => {
     const pending = applications.filter((a) => a.status === "pending").length;
     const approved = applications.filter((a) => a.status === "approved").length;
     const rejected = applications.filter((a) => a.status === "rejected").length;
-    return { total, pending, approved, rejected };
+    const disconnected = applications.filter(
+      (a) => a.status === "disconnected",
+    ).length;
+    return { total, pending, approved, rejected, disconnected };
   }, [applications, total]);
 
   if (error && !loading) {
@@ -910,8 +924,8 @@ export default function AdminApplicationsPage() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      {/* ✅ ADDED Disconnected card - Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Total</p>
           <p className="text-2xl font-bold text-gray-900">{total}</p>
@@ -927,6 +941,13 @@ export default function AdminApplicationsPage() {
         <div className="bg-red-50 rounded-lg shadow p-4 border border-red-100">
           <p className="text-sm text-red-700">Rejected</p>
           <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
+        </div>
+        {/* ✅ ADDED Disconnected card */}
+        <div className="bg-gray-100 rounded-lg shadow p-4 border border-gray-300">
+          <p className="text-sm text-gray-700">🔌 Disconnected</p>
+          <p className="text-2xl font-bold text-gray-700">
+            {stats.disconnected}
+          </p>
         </div>
       </div>
 

@@ -186,6 +186,7 @@ export const useResumeBilling = () => {
 
 /**
  * Hook for disconnecting a client
+ * Bills are hidden but preserved - will reappear on reconnect
  */
 export const useDisconnectClient = () => {
   const queryClient = useQueryClient();
@@ -197,7 +198,7 @@ export const useDisconnectClient = () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["applications"] });
       queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
-      toast.success("🔌 Client disconnected successfully!");
+      toast.success("🔌 Client disconnected! Bills are hidden but preserved.");
     },
     onError: (error: any) => {
       toast.error(
@@ -209,6 +210,7 @@ export const useDisconnectClient = () => {
 
 /**
  * Hook for reconnecting a client
+ * Bills are restored automatically
  */
 export const useReconnectClient = () => {
   const queryClient = useQueryClient();
@@ -221,7 +223,7 @@ export const useReconnectClient = () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["applications"] });
       queryClient.invalidateQueries({ queryKey: ["billingCycles"] });
-      toast.success("🔌 Client reconnected successfully!");
+      toast.success("🔌 Client reconnected! Bills have been restored.");
     },
     onError: (error: any) => {
       toast.error(

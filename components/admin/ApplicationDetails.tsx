@@ -1,4 +1,4 @@
-// components/admin/ApplicationDetails.tsx - COMPLETE FIXED WITH PRODUCTION SUPPORT
+// components/admin/ApplicationDetails.tsx - COMPLETE FIXED WITH PRODUCTION SUPPORT + DISCONNECTED STATUS
 "use client";
 
 import React, { useState, useCallback, useMemo } from "react";
@@ -90,6 +90,7 @@ export function ApplicationDetails({
     return plan?.price || 0;
   };
 
+  // ✅ ADDED disconnected case
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -114,6 +115,13 @@ export function ApplicationDetails({
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
             Suspended
+          </span>
+        );
+      // ✅ ADDED disconnected case
+      case "disconnected":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
+            🔌 Disconnected
           </span>
         );
       default:
@@ -340,6 +348,9 @@ export function ApplicationDetails({
     [],
   );
 
+  // ✅ CHECK IF DISCONNECTED
+  const isDisconnected = application.status === "disconnected";
+
   return (
     <div className="space-y-6">
       {/* Status Header */}
@@ -361,6 +372,26 @@ export function ApplicationDetails({
           ID: {application.applicationId || getApplicationId()}
         </div>
       </div>
+
+      {/* ✅ ADDED: Disconnected info banner */}
+      {isDisconnected && application.disconnectedAt && (
+        <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <span className="text-lg">🔌</span>
+            <div className="flex-1 text-sm text-gray-700">
+              <p className="font-medium">Service is Disconnected</p>
+              <p className="text-xs text-gray-600 mt-1">
+                Disconnected at: {formatDate(application.disconnectedAt)}
+              </p>
+              {application.disconnectReason && (
+                <p className="text-xs text-gray-600 mt-1">
+                  Reason: {application.disconnectReason}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Personal Information */}

@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED WITH FETCH DETAILS + NAME SORT
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED WITH FETCH DETAILS + NAME SORT + DISCONNECTED STATUS
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -25,7 +25,8 @@ export interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected" | "suspended";
+  // ✅ ADDED "disconnected"
+  status: "pending" | "approved" | "rejected" | "suspended" | "disconnected";
   idType: string;
   idNumber: string;
   macAddress?: string;
@@ -43,6 +44,10 @@ export interface Application {
   installationFee?: number;
   installationFeePaid?: boolean;
   hasIdImage?: boolean;
+  // ✅ ADDED disconnect fields
+  disconnectedAt?: string;
+  disconnectReason?: string;
+  reconnectedAt?: string;
 }
 
 export interface StatusOption {
@@ -107,12 +112,14 @@ export function ApplicationTable({
   onSearchChange,
   onNameSortChange,
   onSearchSubmit,
+  // ✅ ADDED "disconnected"
   statusOptions = [
     { value: "all", label: "All Status" },
     { value: "pending", label: "Pending" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "suspended", label: "Suspended" },
+    { value: "disconnected", label: "Disconnected" },
   ],
   total = 0,
   totalPages = 0,
@@ -141,6 +148,7 @@ export function ApplicationTable({
     return app._id || app.id || app.applicationId || "";
   }, []);
 
+  // ✅ ADDED "disconnected" case
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -165,6 +173,13 @@ export function ApplicationTable({
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
             Suspended
+          </span>
+        );
+      // ✅ ADDED disconnected case
+      case "disconnected":
+        return (
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
+            🔌 Disconnected
           </span>
         );
       default:
@@ -226,10 +241,16 @@ export function ApplicationTable({
     }
   }, [onRefresh, isRefreshing, isActionInProgress]);
 
+  // ✅ ADDED "disconnected" type
   const updateApplicationStatus = useCallback(
     (
       id: string,
-      newStatus: "pending" | "approved" | "rejected" | "suspended",
+      newStatus:
+        | "pending"
+        | "approved"
+        | "rejected"
+        | "suspended"
+        | "disconnected",
     ) => {
       setLocalApplications((prev) =>
         prev.map((app) => {
@@ -715,9 +736,7 @@ export function ApplicationTable({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
-              </th>
+
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -769,8 +788,13 @@ export function ApplicationTable({
                 const appId = getAppId(app);
                 const key =
                   appId || app.applicationId || Math.random().toString();
+                // ✅ ADDED: Check if disconnected
+                const isDisconnected = app.status === "disconnected";
                 return (
-                  <tr key={key}>
+                  <tr
+                    key={key}
+                    className={isDisconnected ? "bg-gray-50 opacity-75" : ""}
+                  >
                     {onSelectAll && (
                       <td className="px-4 py-4">
                         <input
@@ -785,7 +809,9 @@ export function ApplicationTable({
                       </td>
                     )}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">
+                      <div
+                        className={`font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}
+                      >
                         {app.firstName} {app.lastName}
                       </div>
                       <div className="text-xs text-gray-500">
@@ -821,6 +847,12 @@ export function ApplicationTable({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(app.status)}
+                      {isDisconnected && app.disconnectedAt && (
+                        <div className="text-[10px] text-gray-500 mt-1">
+                          Since{" "}
+                          {new Date(app.disconnectedAt).toLocaleDateString()}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(app.createdAt)}

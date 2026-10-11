@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED - NO LOOP REFRESH
+// frontend/src/app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH DISCONNECT/RECONNECT
 
 "use client";
 
@@ -42,6 +42,8 @@ import {
   FiZap,
   FiUsers,
   FiPlusCircle,
+  FiUserX,
+  FiUserCheck,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -112,6 +114,11 @@ interface CustomerItem {
   unitNumber?: string;
   floor?: string;
   nextMonthBill?: any;
+  isDisconnected?: boolean;
+  serviceStatus?: string;
+  hiddenBills?: any[];
+  visibleUnpaidBills?: any[];
+  disconnectedAt?: string;
 }
 
 interface Building {
@@ -256,6 +263,14 @@ function AdminBillingPageContent() {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [showDeleteBillConfirmModal, setShowDeleteBillConfirmModal] =
     useState(false);
+  // ✅ Disconnect/Reconnect modal states
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [showReconnectModal, setShowReconnectModal] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState("");
+  const [customerToDisconnect, setCustomerToDisconnect] =
+    useState<CustomerItem | null>(null);
+  const [customerToReconnect, setCustomerToReconnect] =
+    useState<CustomerItem | null>(null);
 
   // Real-time states
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
@@ -267,7 +282,7 @@ function AdminBillingPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
 
-  // ===== WEBSOCKET STATES =====
+  // WebSocket states
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -346,10 +361,40 @@ function AdminBillingPageContent() {
   const { data: plansData = [] } = usePlans();
 
   // ==================== COMPUTED DATA ====================
-  const customers = useMemo(() => {
+  // ✅ ALL customers (including disconnected) para laging visible sa table
+  // ✅ FIX: Explicitly type as CustomerItem[] to avoid implicit any error
+  const allCustomers = useMemo<CustomerItem[]>(() => {
     if (!dashboardData) return [];
-    return dashboardData.customers || [];
+    // Kung ang backend ay nag-return ng allCustomers, gamitin ito
+    if (
+      dashboardData.allCustomers &&
+      Array.isArray(dashboardData.allCustomers)
+    ) {
+      return dashboardData.allCustomers as CustomerItem[];
+    }
+    // Fallback: combine customers + disconnectedCustomers
+    const active = (dashboardData.customers || []) as CustomerItem[];
+    const disconnected = (dashboardData.disconnectedCustomers ||
+      []) as CustomerItem[];
+    return [...active, ...disconnected];
   }, [dashboardData]);
+
+  // ✅ FIX: Explicitly type the callback parameter as CustomerItem
+  const disconnectedCustomers = useMemo<CustomerItem[]>(() => {
+    if (!dashboardData) return [];
+    if (
+      dashboardData.disconnectedCustomers &&
+      Array.isArray(dashboardData.disconnectedCustomers)
+    ) {
+      return dashboardData.disconnectedCustomers as CustomerItem[];
+    }
+    return allCustomers.filter(
+      (c: CustomerItem) =>
+        c.isDisconnected === true ||
+        c.status === "disconnected" ||
+        c.billingCycle?.status === "disconnected",
+    );
+  }, [dashboardData, allCustomers]);
 
   const billingCycles = useMemo(() => {
     if (!dashboardData) return [];
@@ -392,6 +437,7 @@ function AdminBillingPageContent() {
         applicationsWithoutBilling: 0,
         totalInstallationFeesDue: 0,
         installationFeesPaidCount: 0,
+        disconnectedCustomersCount: 0,
       };
     }
     return dashboardData.stats;
@@ -414,7 +460,7 @@ function AdminBillingPageContent() {
     stats,
   ]);
 
-  // ==================== REFRESH FUNCTION - ONLY CALLED ON SERVER CHANGES ====================
+  // ==================== REFRESH FUNCTION ====================
   const refreshData = useCallback(
     async (silent: boolean = false) => {
       if (isRefreshing) return;
@@ -453,7 +499,7 @@ function AdminBillingPageContent() {
     [queryClient, refetch, isRefreshing],
   );
 
-  // ==================== WEBSOCKET SETUP - SINGLE SOURCE OF TRUTH ====================
+  // ==================== WEBSOCKET SETUP ====================
   useEffect(() => {
     if (!isMounted) return;
 
@@ -461,24 +507,18 @@ function AdminBillingPageContent() {
 
     let isFirstConnection = true;
 
-    // Connect WebSocket
     billingEvents.connect();
 
-    // Handler for refresh events - ONLY trigger on actual server changes
     const handleRefresh = (payload: any) => {
       console.log("🔄 Server update received:", payload?.type || "unknown");
-      // Always refresh on server updates - but silently
       refreshData(true);
     };
 
-    // Handler for connected event
     const handleConnected = () => {
       setWebsocketConnected(true);
       console.log("🔌 WebSocket connected!");
-      // Only refresh on first connection
       if (isFirstConnection) {
         isFirstConnection = false;
-        // Check for updates on connection
         refreshData(true);
       }
     };
@@ -488,14 +528,12 @@ function AdminBillingPageContent() {
       console.log("🔌 WebSocket disconnected");
     };
 
-    // Register ALL event listeners - all trigger refresh
     const unsubConnected = billingEvents.on("connected", handleConnected);
     const unsubDisconnected = billingEvents.on(
       "disconnected",
       handleDisconnected,
     );
 
-    // All these events trigger a refresh
     const unsubRefresh = billingEvents.on("refresh", handleRefresh);
     const unsubBillingUpdated = billingEvents.on(
       "billing_updated",
@@ -557,11 +595,9 @@ function AdminBillingPageContent() {
       handleRefresh,
     );
 
-    // Set initial connection state
     setWebsocketConnected(billingEvents.isConnected());
 
     return () => {
-      // Unsubscribe all
       unsubConnected();
       unsubDisconnected();
       unsubRefresh();
@@ -587,20 +623,57 @@ function AdminBillingPageContent() {
 
   // ==================== MUTATIONS ====================
 
+  // ✅ Disconnect Client Mutation
+  const disconnectClientMutation = useMutation({
+    mutationFn: (params: { applicationId: string; reason?: string }) =>
+      disconnectClient(params),
+    onSuccess: (data) => {
+      toast.success(
+        data.message ||
+          "🔌 Client disconnected! Customer remains visible in billing list.",
+      );
+      setShowDisconnectModal(false);
+      setCustomerToDisconnect(null);
+      setDisconnectReason("");
+      clearBillingCache();
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to disconnect client",
+      );
+    },
+  });
+
+  // ✅ Reconnect Client Mutation
+  const reconnectClientMutation = useMutation({
+    mutationFn: (params: { applicationId: string }) => reconnectClient(params),
+    onSuccess: (data) => {
+      toast.success(data.message || "🔌 Client reconnected!");
+      setShowReconnectModal(false);
+      setCustomerToReconnect(null);
+      clearBillingCache();
+      setTimeout(() => refreshData(true), 200);
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to reconnect client",
+      );
+    },
+  });
+
   // Update Bill Price Mutation
   const updateBillPriceMutation = useMutation({
     mutationFn: ({ billId, newPrice }: { billId: string; newPrice: number }) =>
       updateBillPrice(billId, newPrice),
     onSuccess: () => {
       clearBillingCache();
-      // Refresh silently after price update
       setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
       toast.error(
         error.response?.data?.message || "Failed to update bill price",
       );
-      console.error("Price update error:", error);
     },
   });
 
@@ -618,7 +691,6 @@ function AdminBillingPageContent() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to delete bill");
-      console.error("Delete bill error:", error);
     },
   });
 
@@ -632,10 +704,9 @@ function AdminBillingPageContent() {
       setTimeout(() => refreshData(true), 200);
     },
     onError: (error: any) => {
-      const errorMsg =
-        error.response?.data?.message || "Failed to generate early bill";
-      toast.error(errorMsg);
-      console.error("Early bill generation error:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to generate early bill",
+      );
     },
   });
 
@@ -732,34 +803,6 @@ function AdminBillingPageContent() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to resume billing");
-    },
-  });
-
-  // Disconnect Client Mutation
-  const disconnectMutation = useMutation({
-    mutationFn: (params: any) => disconnectClient(params),
-    onSuccess: () => {
-      toast.success("🔌 Client disconnected successfully!");
-      setTimeout(() => refreshData(true), 200);
-    },
-    onError: (error: any) => {
-      toast.error(
-        error.response?.data?.message || "Failed to disconnect client",
-      );
-    },
-  });
-
-  // Reconnect Client Mutation
-  const reconnectMutation = useMutation({
-    mutationFn: (params: any) => reconnectClient(params),
-    onSuccess: () => {
-      toast.success("🔌 Client reconnected successfully!");
-      setTimeout(() => refreshData(true), 200);
-    },
-    onError: (error: any) => {
-      toast.error(
-        error.response?.data?.message || "Failed to reconnect client",
-      );
     },
   });
 
@@ -975,6 +1018,44 @@ function AdminBillingPageContent() {
     });
   };
 
+  // ✅ DISCONNECT HANDLER - open modal
+  const handleDisconnectCustomer = (customer: CustomerItem) => {
+    setCustomerToDisconnect(customer);
+    setDisconnectReason("");
+    setShowDisconnectModal(true);
+  };
+
+  // ✅ CONFIRM DISCONNECT
+  const confirmDisconnect = () => {
+    if (!customerToDisconnect) return;
+    if (!customerToDisconnect.applicationId) {
+      toast.error("No application ID found for this customer");
+      return;
+    }
+    disconnectClientMutation.mutate({
+      applicationId: customerToDisconnect.applicationId,
+      reason: disconnectReason || "Disconnected by admin",
+    });
+  };
+
+  // ✅ RECONNECT HANDLER - open modal
+  const handleReconnectCustomer = (customer: CustomerItem) => {
+    setCustomerToReconnect(customer);
+    setShowReconnectModal(true);
+  };
+
+  // ✅ CONFIRM RECONNECT
+  const confirmReconnect = () => {
+    if (!customerToReconnect) return;
+    if (!customerToReconnect.applicationId) {
+      toast.error("No application ID found for this customer");
+      return;
+    }
+    reconnectClientMutation.mutate({
+      applicationId: customerToReconnect.applicationId,
+    });
+  };
+
   const handleGenerateEarlyBill = async (customer: CustomerItem) => {
     if (!customer.applicationId) {
       toast.error("No application ID found for this customer");
@@ -1066,7 +1147,6 @@ function AdminBillingPageContent() {
         handleRecoverMissingBills(customer);
         break;
       case "start":
-        // Instead of opening start billing modal, open backdated modal
         if (
           customer.billingCycle &&
           customer.billingCycle.status !== "cancelled"
@@ -1076,7 +1156,6 @@ function AdminBillingPageContent() {
           );
           return;
         }
-        // Pre-select this customer in the backdated modal
         setSelectedBackdatedCustomer(customer);
         setBackdatedForm({
           applicationId: customer.applicationId || "",
@@ -1126,48 +1205,22 @@ function AdminBillingPageContent() {
           }
         }
         break;
+
+      // ✅ DISCONNECT ACTION
       case "disconnect":
-        if (customer.type === "application") {
-          const reason = prompt("Enter reason for disconnection:");
-          if (
-            reason !== null &&
-            confirm(`Disconnect ${customer.firstName} ${customer.lastName}?`)
-          ) {
-            disconnectMutation.mutate({
-              applicationId: customer.applicationId,
-              reason,
-            });
-          }
-        } else {
-          const reason = prompt("Enter reason for disconnection:");
-          if (
-            reason !== null &&
-            confirm(`Disconnect ${customer.firstName} ${customer.lastName}?`)
-          ) {
-            disconnectMutation.mutate({ userId: customer._id, reason });
-          }
-        }
+        handleDisconnectCustomer(customer);
         break;
+
+      // ✅ RECONNECT ACTION
       case "reconnect":
-        if (customer.type === "application") {
-          if (
-            confirm(`Reconnect ${customer.firstName} ${customer.lastName}?`)
-          ) {
-            reconnectMutation.mutate({ applicationId: customer.applicationId });
-          }
-        } else {
-          if (
-            confirm(`Reconnect ${customer.firstName} ${customer.lastName}?`)
-          ) {
-            reconnectMutation.mutate({ userId: customer._id });
-          }
-        }
+        handleReconnectCustomer(customer);
         break;
+
       case "stop":
         if (customer.type === "application") {
           if (
             confirm(
-              `Stop billing for ${customer.firstName} ${customer.lastName}?`,
+              `Stop billing for ${customer.firstName} ${customer.lastName}?\n\nThis will cancel the subscription permanently.`,
             )
           ) {
             stopBillingMutation.mutate({
@@ -1470,19 +1523,16 @@ function AdminBillingPageContent() {
   useEffect(() => {
     setIsMounted(true);
 
-    // Load settings only once on mount
     if (!settingsLoaded) {
       loadBillingFlowSettings();
     }
 
-    // Auto-generate bills every 5 minutes
     const autoGenInterval = setInterval(() => {
       if (!autoGenerationRunning && isMounted && settingsLoaded) {
         handleAutoGenerateEarlyBills();
       }
     }, 300000);
 
-    // Clean cache on mount
     try {
       const keys = Object.keys(localStorage);
       keys.forEach((key) => {
@@ -1507,7 +1557,6 @@ function AdminBillingPageContent() {
       console.error("Error cleaning cache:", e);
     }
 
-    // Initial data load - ONLY ONCE
     setTimeout(() => {
       refreshData(true);
     }, 500);
@@ -1531,7 +1580,8 @@ function AdminBillingPageContent() {
       </div>
 
       <BillingTable
-        customers={customers}
+        customers={allCustomers}
+        disconnectedCustomers={disconnectedCustomers}
         billingCycles={billingCycles}
         bills={bills}
         pendingPayments={pendingPayments}
@@ -1593,17 +1643,16 @@ function AdminBillingPageContent() {
       <BillingReportsWithDownload
         isOpen={showReportsModal}
         onClose={() => setShowReportsModal(false)}
-        customers={customers}
+        customers={allCustomers}
         buildings={buildingsData}
         onMarkBillAsPaid={handleMarkBillAsPaid}
         onMarkInstallationBillAsPaid={handleMarkInstallationBillAsPaid}
       />
 
-      {/* Backdated Modal - Extracted Component */}
       <BackdatedModal
         isOpen={showBackdatedModal}
         onClose={() => setShowBackdatedModal(false)}
-        customers={customers}
+        customers={allCustomers}
         selectedBackdatedCustomer={selectedBackdatedCustomer}
         setSelectedBackdatedCustomer={setSelectedBackdatedCustomer}
         backdatedForm={backdatedForm}
@@ -1612,6 +1661,217 @@ function AdminBillingPageContent() {
         onConfirm={handleBackdatedBilling}
         installationFee={billingFlowSettings.installationFee}
       />
+
+      {/* ✅ DISCONNECT CONFIRMATION MODAL */}
+      {showDisconnectModal && customerToDisconnect && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
+                <FiWifiOff className="w-6 h-6" />
+                Disconnect Customer
+              </h2>
+              <button
+                onClick={() => {
+                  setShowDisconnectModal(false);
+                  setCustomerToDisconnect(null);
+                  setDisconnectReason("");
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-amber-800">
+                <strong>⚠️ Important:</strong> Disconnecting will:
+              </p>
+              <ul className="text-xs text-amber-700 mt-2 ml-4 list-disc space-y-1">
+                <li>
+                  Mark the customer as <strong>disconnected</strong>
+                </li>
+                <li>
+                  Customer <strong>stays visible</strong> in billing list
+                </li>
+                <li>
+                  <strong>PRESERVE</strong> all bills in the database
+                </li>
+                <li>
+                  You can <strong>reconnect</strong> anytime to restore service
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <p className="text-sm text-gray-600">Customer:</p>
+                <p className="font-medium text-gray-900">
+                  {customerToDisconnect.firstName}{" "}
+                  {customerToDisconnect.lastName}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {customerToDisconnect.email}
+                </p>
+                {customerToDisconnect.applicationId && (
+                  <p className="text-xs text-gray-400 font-mono">
+                    {customerToDisconnect.applicationId}
+                  </p>
+                )}
+              </div>
+
+              {customerToDisconnect.unpaidBills &&
+                customerToDisconnect.unpaidBills.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <p className="text-xs text-gray-600">
+                      Bills preserved:{" "}
+                      <span className="font-bold">
+                        {customerToDisconnect.unpaidBills.length}
+                      </span>
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Total balance:{" "}
+                      <span className="font-bold text-red-600">
+                        ₱{customerToDisconnect.currentBalance.toLocaleString()}
+                      </span>
+                    </p>
+                  </div>
+                )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason for disconnection (optional)
+              </label>
+              <textarea
+                value={disconnectReason}
+                onChange={(e) => setDisconnectReason(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="e.g., Non-payment, Customer request, Violation..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDisconnectModal(false);
+                  setCustomerToDisconnect(null);
+                  setDisconnectReason("");
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDisconnect}
+                disabled={disconnectClientMutation.isPending}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {disconnectClientMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Disconnecting...
+                  </>
+                ) : (
+                  <>
+                    <FiWifiOff className="w-4 h-4" />
+                    Disconnect
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ RECONNECT CONFIRMATION MODAL */}
+      {showReconnectModal && customerToReconnect && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-green-600 flex items-center gap-2">
+                <FiWifi className="w-6 h-6" />
+                Reconnect Customer
+              </h2>
+              <button
+                onClick={() => {
+                  setShowReconnectModal(false);
+                  setCustomerToReconnect(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-green-800">
+                <strong>✅ Reconnecting will:</strong>
+              </p>
+              <ul className="text-xs text-green-700 mt-2 ml-4 list-disc space-y-1">
+                <li>
+                  Restore the customer's <strong>active</strong> status
+                </li>
+                <li>Resume billing cycle</li>
+                <li>All preserved bills remain visible</li>
+              </ul>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <p className="text-sm text-gray-600">Customer:</p>
+                <p className="font-medium text-gray-900">
+                  {customerToReconnect.firstName} {customerToReconnect.lastName}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {customerToReconnect.email}
+                </p>
+              </div>
+
+              {customerToReconnect.disconnectedAt && (
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-xs text-gray-600">
+                    Disconnected since:{" "}
+                    <span className="font-medium">
+                      {formatDate(customerToReconnect.disconnectedAt)}
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowReconnectModal(false);
+                  setCustomerToReconnect(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReconnect}
+                disabled={reconnectClientMutation.isPending}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {reconnectClientMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Reconnecting...
+                  </>
+                ) : (
+                  <>
+                    <FiWifi className="w-4 h-4" />
+                    Reconnect
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Bill Confirmation Modal */}
       {showDeleteBillConfirmModal && billToDelete && (
@@ -1633,8 +1893,7 @@ function AdminBillingPageContent() {
 
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
               <p className="text-sm text-red-800">
-                <strong>Warning:</strong> This action cannot be undone. The bill
-                and its associated invoice will be permanently deleted.
+                <strong>Warning:</strong> This action cannot be undone.
               </p>
             </div>
 
@@ -1898,7 +2157,6 @@ function AdminBillingPageContent() {
                   </thead>
                   <tbody>
                     {pendingInstallationBills.map((bill: any) => {
-                      // Create a customer object for the bill
                       const billCustomer: CustomerItem = {
                         _id: bill.applicationId || bill._id,
                         firstName: bill.applicationData?.firstName || "Unknown",
@@ -2173,7 +2431,7 @@ function AdminBillingPageContent() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Early Bill Generation (Days before next month)
+                    Early Bill Generation (Days)
                   </label>
                   <input
                     type="number"
@@ -2188,9 +2446,6 @@ function AdminBillingPageContent() {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Bills will auto-generate X days before the next month starts
-                  </p>
                 </div>
               </div>
 
@@ -2313,15 +2568,15 @@ function AdminBillingPageContent() {
                       },
                       payment_confirmation: {
                         subject: "Payment Confirmation - MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards,\nMisterFyber Team`,
+                        message: `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nBest regards,\nMisterFyber Team`,
                       },
                       disconnection: {
                         subject: "Service Disconnection Notice - MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your service has been disconnected due to non-payment.\n\nTo restore your service, please settle your outstanding balance.\n\nBest regards,\nMisterFyber Team`,
+                        message: `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your service has been disconnected.\n\nTo restore your service, please settle your outstanding balance.\n\nBest regards,\nMisterFyber Team`,
                       },
                       welcome: {
                         subject: "Welcome to MisterFyber!",
-                        message: `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nYour account has been successfully set up.\n\nBest regards,\nMisterFyber Team`,
+                        message: `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nBest regards,\nMisterFyber Team`,
                       },
                     };
                     const template = templates[type] || templates.custom;
@@ -2414,7 +2669,6 @@ function AdminBillingPageContent() {
                     <th className="px-4 py-2 text-left">Customer</th>
                     <th className="px-4 py-2 text-left">Email</th>
                     <th className="px-4 py-2 text-left">Plan</th>
-                    <th className="px-4 py-2 text-left">Status</th>
                     <th className="px-4 py-2 text-left">Actions</th>
                   </tr>
                 </thead>
@@ -2426,11 +2680,6 @@ function AdminBillingPageContent() {
                       </td>
                       <td className="px-4 py-2">{c.email}</td>
                       <td className="px-4 py-2">{c.planName}</td>
-                      <td className="px-4 py-2">
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                          Existing
-                        </span>
-                      </td>
                       <td className="px-4 py-2">
                         <button
                           onClick={() => {
@@ -2462,21 +2711,6 @@ function AdminBillingPageContent() {
                         className="px-4 py-8 text-center text-gray-500 text-sm"
                       >
                         No customers without billing found.
-                        <p className="text-xs text-gray-400 mt-1">
-                          Customers will appear here when they are approved.
-                        </p>
-                      </td>
-                    </tr>
-                  )}
-
-                  {stats.applicationsWithoutBilling > 0 && (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-2 text-center text-yellow-700 text-sm bg-yellow-50"
-                      >
-                        Plus {stats.applicationsWithoutBilling} more approved
-                        applications without billing.
                       </td>
                     </tr>
                   )}

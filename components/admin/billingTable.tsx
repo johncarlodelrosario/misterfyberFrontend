@@ -1,14 +1,8 @@
-// components/admin/BillingTable.tsx - COMPLETE FIXED - NO LOOP REFRESH WITH DELETE BILL
+// frontend/src/components/admin/billingTable.tsx - COMPLETE WITH DISCONNECT VISIBLE
 
 "use client";
 
-import React, {
-  useState,
-  useMemo,
-  useCallback,
-  useRef,
-  useEffect,
-} from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   FiX,
   FiPlay,
@@ -26,16 +20,15 @@ import {
   FiArrowUp,
   FiArrowDown,
   FiRefreshCw,
-  FiChevronLeft,
-  FiChevronRight,
   FiSettings,
   FiBell,
   FiClock,
   FiZap,
   FiCheckCircle,
-  FiAlertCircle,
   FiEdit2,
   FiSave,
+  FiUserX,
+  FiUserCheck,
 } from "react-icons/fi";
 
 // Types
@@ -66,6 +59,12 @@ export interface CustomerItem {
   unitNumber?: string;
   floor?: string;
   nextMonthBill?: any;
+  // ✅ Disconnect indicators
+  isDisconnected?: boolean;
+  serviceStatus?: string;
+  hiddenBills?: any[];
+  visibleUnpaidBills?: any[];
+  disconnectedAt?: string;
 }
 
 export interface Building {
@@ -123,6 +122,7 @@ interface BillingTableProps {
     applicationsWithoutBilling: number;
     totalInstallationFeesDue: number;
     installationFeesPaidCount: number;
+    disconnectedCustomersCount?: number;
   };
   onAction: (action: string, customer: CustomerItem, data?: any) => void;
   onRefresh: () => void;
@@ -155,6 +155,7 @@ interface BillingTableProps {
     invoiceNumber: string,
     customer: CustomerItem,
   ) => void;
+  disconnectedCustomers?: CustomerItem[];
 }
 
 // Helper functions
@@ -226,35 +227,6 @@ function getInstallationFeeStatus(customer: CustomerItem): {
       color: "text-green-600",
       isDue: false,
       isPaid: true,
-      amount: fee,
-    };
-  }
-
-  const hasAnyInstallationBill = customer.unpaidBills?.some(
-    (bill: any) => bill.isInstallationBill === true,
-  );
-
-  if (hasAnyInstallationBill) {
-    const paidInstallationBill = customer.unpaidBills?.find(
-      (bill: any) => bill.isInstallationBill === true && bill.status === "paid",
-    );
-    if (paidInstallationBill) {
-      return {
-        display: `₱${fee.toLocaleString()}`,
-        color: "text-green-600",
-        isDue: false,
-        isPaid: true,
-        amount: fee,
-      };
-    }
-  }
-
-  if (!hasAnyInstallationBill && fee > 0) {
-    return {
-      display: `₱${fee.toLocaleString()}`,
-      color: "text-red-600",
-      isDue: true,
-      isPaid: false,
       amount: fee,
     };
   }
@@ -418,6 +390,13 @@ const CustomerRow = React.memo(
     const isPaused = customer.billingCycle?.status === "paused";
     const isPendingActivation =
       customer.billingCycle?.status === "pending_activation";
+
+    // ✅ DETECT DISCONNECTED - multiple sources
+    const isDisconnected =
+      customer.isDisconnected === true ||
+      customer.status === "disconnected" ||
+      customer.billingCycle?.status === "disconnected";
+
     const hasNextMonthBill = !!customer.nextMonthBill;
 
     const installFeeStatus = getInstallationFeeStatus(customer);
@@ -430,7 +409,15 @@ const CustomerRow = React.memo(
       (bill: any) => bill.isInstallationBill && bill.status !== "paid",
     );
 
+    // ✅ Bills stay visible even when disconnected
+    const visibleUnpaidBills = customer.unpaidBills || [];
+
     const getStatusBadge = () => {
+      // ✅ Disconnected takes priority
+      if (isDisconnected) {
+        return "bg-gray-200 text-gray-700";
+      }
+
       if (hasUnpaidInstallationFee) {
         return "bg-amber-100 text-amber-800";
       }
@@ -476,6 +463,11 @@ const CustomerRow = React.memo(
     };
 
     const getStatusText = () => {
+      // ✅ Disconnected takes priority
+      if (isDisconnected) {
+        return "Disconnected";
+      }
+
       if (hasUnpaidInstallationFee) {
         return "Installation Fee Due";
       }
@@ -521,34 +513,45 @@ const CustomerRow = React.memo(
     };
 
     const getBalanceColor = (balance: number) => {
+      if (isDisconnected) return "text-gray-400 line-through";
       if (balance === 0) return "text-green-600";
       if (balance > 1000) return "text-red-600 font-bold";
       return "text-orange-600";
     };
 
-    const hasUnpaidMonthlyBill = customer.unpaidBills?.some(
+    const hasUnpaidMonthlyBill = visibleUnpaidBills.some(
       (bill: any) => !bill.isInstallationBill && bill.status !== "paid",
     );
-    const hasUnpaidInstallationBill = customer.unpaidBills?.some(
+    const hasUnpaidInstallationBill = visibleUnpaidBills.some(
       (bill: any) => bill.isInstallationBill && bill.status !== "paid",
     );
 
     return (
       <tr
-        className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+        className={`${
+          isDisconnected
+            ? "bg-gray-100 opacity-75"
+            : index % 2 === 0
+              ? "bg-white"
+              : "bg-gray-50"
+        } hover:bg-blue-50 transition-colors`}
       >
         <td className="px-3 py-2 text-center text-sm font-medium text-gray-500 sticky left-0 bg-inherit z-10">
           {index + 1}
         </td>
         <td className="px-3 py-2">
           <div className="flex items-center gap-2">
-            {customer.type === "application" ? (
+            {isDisconnected ? (
+              <FiUserX className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+            ) : customer.type === "application" ? (
               <FiFileText className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
             ) : (
               <FiUser className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
             )}
             <div>
-              <p className="text-sm font-medium text-gray-900">
+              <p
+                className={`text-sm font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}
+              >
                 {customer.firstName} {customer.lastName}
               </p>
               <p className="text-xs text-gray-500">{customer.email}</p>
@@ -561,7 +564,9 @@ const CustomerRow = React.memo(
           </div>
         </td>
         <td className="px-3 py-2">
-          <p className="text-sm font-medium text-gray-900">
+          <p
+            className={`text-sm font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}
+          >
             {customer.planName}
           </p>
           <p className="text-xs text-gray-500">
@@ -574,9 +579,14 @@ const CustomerRow = React.memo(
           >
             ₱{customer.currentBalance.toLocaleString()}
           </p>
-          {customer.unpaidBills.length > 0 && (
+          {customer.unpaidBills.length > 0 && !isDisconnected && (
             <p className="text-[10px] text-red-500">
               {customer.unpaidBills.length} unpaid
+            </p>
+          )}
+          {isDisconnected && customer.unpaidBills.length > 0 && (
+            <p className="text-[10px] text-gray-500 italic">
+              {customer.unpaidBills.length} bill(s) preserved
             </p>
           )}
         </td>
@@ -584,18 +594,26 @@ const CustomerRow = React.memo(
           <span
             className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge()}`}
           >
+            {isDisconnected && "🔌 "}
             {getStatusText()}
           </span>
-          {hasNextMonthBill && (
+          {hasNextMonthBill && !isDisconnected && (
             <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded-full">
               Next Month Ready
             </span>
+          )}
+          {isDisconnected && customer.disconnectedAt && (
+            <p className="text-[9px] text-gray-500 mt-0.5">
+              Since {formatDate(customer.disconnectedAt)}
+            </p>
           )}
         </td>
         <td className="px-3 py-2">
           {customer.type === "application" && installFeeStatus.amount > 0 ? (
             <div>
-              {unpaidInstallationBill && onEditInstallationPrice ? (
+              {!isDisconnected &&
+              unpaidInstallationBill &&
+              onEditInstallationPrice ? (
                 <EditablePrice
                   amount={installFeeStatus.amount}
                   billId={unpaidInstallationBill._id}
@@ -604,7 +622,9 @@ const CustomerRow = React.memo(
                   onSave={onEditInstallationPrice}
                 />
               ) : (
-                <p className={`text-sm font-medium ${installFeeStatus.color}`}>
+                <p
+                  className={`text-sm font-medium ${isDisconnected ? "text-gray-400" : installFeeStatus.color}`}
+                >
                   {installFeeStatus.display}
                 </p>
               )}
@@ -623,7 +643,9 @@ const CustomerRow = React.memo(
         <td className="px-3 py-2">
           <div className="flex items-center gap-1">
             <FiHome className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            <span className="text-xs text-gray-600">
+            <span
+              className={`text-xs ${isDisconnected ? "text-gray-400" : "text-gray-600"}`}
+            >
               {getBuildingDisplay(customer)}
             </span>
             {customer.unitNumber && (
@@ -642,238 +664,228 @@ const CustomerRow = React.memo(
             >
               <FiEye className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={() => onAction("email", customer)}
-              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
-              title="Send Email"
-            >
-              <FiMail className="w-3.5 h-3.5" />
-            </button>
 
-            {/* FREE BUTTONS */}
-            {hasUnpaidMonthlyBill && (
+            {/* ✅ RECONNECT BUTTON - kapag disconnected */}
+            {isDisconnected ? (
               <button
-                onClick={() => {
-                  const bill = customer.unpaidBills.find(
-                    (b: any) => !b.isInstallationBill && b.status !== "paid",
-                  );
-                  if (bill) {
-                    onAction("freeBill", customer, { billId: bill._id });
-                  }
-                }}
+                onClick={() => onAction("reconnect", customer)}
                 className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                title="Mark Bill as FREE"
+                title="Reconnect - Restore Service"
               >
-                <FiCheckCircle className="w-3.5 h-3.5" />
+                <FiUserCheck className="w-3.5 h-3.5" />
               </button>
-            )}
-
-            {hasUnpaidInstallationBill && (
-              <button
-                onClick={() => {
-                  const bill = customer.unpaidBills.find(
-                    (b: any) => b.isInstallationBill && b.status !== "paid",
-                  );
-                  if (bill) {
-                    onAction("freeInstallation", customer, {
-                      billId: bill._id,
-                    });
-                  }
-                }}
-                className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                title="Mark Installation Fee as FREE"
-              >
-                <FiCheckCircle className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {/* DELETE BILL BUTTONS */}
-            {hasUnpaidMonthlyBill && onDeleteBill && (
-              <button
-                onClick={() => {
-                  const bill = customer.unpaidBills.find(
-                    (b: any) => !b.isInstallationBill && b.status !== "paid",
-                  );
-                  if (bill) {
-                    onDeleteBill(bill._id, bill.invoiceNumber, customer);
-                  }
-                }}
-                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                title="Delete Bill"
-              >
-                <FiTrash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {hasUnpaidInstallationBill && onDeleteBill && (
-              <button
-                onClick={() => {
-                  const bill = customer.unpaidBills.find(
-                    (b: any) => b.isInstallationBill && b.status !== "paid",
-                  );
-                  if (bill) {
-                    onDeleteBill(bill._id, bill.invoiceNumber, customer);
-                  }
-                }}
-                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                title="Delete Installation Bill"
-              >
-                <FiTrash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {customer.type === "application" && hasBillingCycle && (
-              <button
-                onClick={() => onAction("recover", customer)}
-                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
-                title="Recover Missing Bills"
-              >
-                <FiCalendar className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {customer.type === "application" &&
-              isActive &&
-              !hasNextMonthBill && (
+            ) : (
+              <>
                 <button
-                  onClick={() => onGenerateEarlyBill?.(customer)}
-                  className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                  title="Generate Next Month Bill"
+                  onClick={() => onAction("email", customer)}
+                  className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+                  title="Send Email"
                 >
-                  <FiClock className="w-3.5 h-3.5" />
+                  <FiMail className="w-3.5 h-3.5" />
                 </button>
-              )}
-            {customer.type === "application" && (
-              <>
-                {!hasBillingCycle && (
+
+                {/* FREE BUTTONS */}
+                {hasUnpaidMonthlyBill && (
                   <button
-                    onClick={() => onAction("start", customer)}
+                    onClick={() => {
+                      const bill = visibleUnpaidBills.find(
+                        (b: any) =>
+                          !b.isInstallationBill && b.status !== "paid",
+                      );
+                      if (bill) {
+                        onAction("freeBill", customer, { billId: bill._id });
+                      }
+                    }}
                     className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Start Billing"
+                    title="Mark Bill as FREE"
                   >
-                    <FiPlay className="w-3.5 h-3.5" />
+                    <FiCheckCircle className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {isActive && (
+
+                {hasUnpaidInstallationBill && (
                   <button
-                    onClick={() => onAction("pause", customer)}
-                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                    title="Pause Billing"
-                  >
-                    <FiPause className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {isPaused && (
-                  <button
-                    onClick={() => onAction("resume", customer)}
+                    onClick={() => {
+                      const bill = visibleUnpaidBills.find(
+                        (b: any) => b.isInstallationBill && b.status !== "paid",
+                      );
+                      if (bill) {
+                        onAction("freeInstallation", customer, {
+                          billId: bill._id,
+                        });
+                      }
+                    }}
                     className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Resume Billing"
+                    title="Mark Installation Fee as FREE"
                   >
-                    <FiPlay className="w-3.5 h-3.5" />
+                    <FiCheckCircle className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {(isActive || isPendingActivation) && (
+
+                {onDeleteBill &&
+                  (hasUnpaidMonthlyBill || hasUnpaidInstallationBill) && (
+                    <button
+                      onClick={() => {
+                        let bill = visibleUnpaidBills.find(
+                          (b: any) =>
+                            !b.isInstallationBill && b.status !== "paid",
+                        );
+                        if (!bill) {
+                          bill = visibleUnpaidBills.find(
+                            (b: any) =>
+                              b.isInstallationBill && b.status !== "paid",
+                          );
+                        }
+                        if (bill) {
+                          onDeleteBill(bill._id, bill.invoiceNumber, customer);
+                        }
+                      }}
+                      className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                      title="Delete Bill"
+                    >
+                      <FiTrash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                {customer.type === "application" && hasBillingCycle && (
                   <button
-                    onClick={() => onAction("disconnect", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Disconnect"
+                    onClick={() => onAction("recover", customer)}
+                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                    title="Recover Missing Bills"
                   >
-                    <FiWifiOff className="w-3.5 h-3.5" />
+                    <FiCalendar className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {customer.status === "suspended" && (
-                  <button
-                    onClick={() => onAction("reconnect", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Reconnect"
-                  >
-                    <FiWifi className="w-3.5 h-3.5" />
-                  </button>
+                {customer.type === "application" &&
+                  isActive &&
+                  !hasNextMonthBill && (
+                    <button
+                      onClick={() => onGenerateEarlyBill?.(customer)}
+                      className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                      title="Generate Next Month Bill"
+                    >
+                      <FiClock className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                {customer.type === "application" && (
+                  <>
+                    {!hasBillingCycle && (
+                      <button
+                        onClick={() => onAction("start", customer)}
+                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                        title="Start Billing"
+                      >
+                        <FiPlay className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {isActive && (
+                      <button
+                        onClick={() => onAction("pause", customer)}
+                        className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                        title="Pause Billing"
+                      >
+                        <FiPause className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {isPaused && (
+                      <button
+                        onClick={() => onAction("resume", customer)}
+                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                        title="Resume Billing"
+                      >
+                        <FiPlay className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* ✅ DISCONNECT BUTTON - kapag active/pending */}
+                    {(isActive || isPendingActivation) && (
+                      <button
+                        onClick={() => onAction("disconnect", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Disconnect - Preserve bills, mark customer as disconnected"
+                      >
+                        <FiWifiOff className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {hasBillingCycle && (
+                      <button
+                        onClick={() => onAction("stop", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Cancel Subscription"
+                      >
+                        <FiX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {hasBillingCycle && (
+                      <button
+                        onClick={() => onAction("delete", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Billing Cycle"
+                      >
+                        <FiTrash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </>
                 )}
-                {hasBillingCycle && (
-                  <button
-                    onClick={() => onAction("stop", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Cancel Subscription"
-                  >
-                    <FiX className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {hasBillingCycle && (
-                  <button
-                    onClick={() => onAction("delete", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Delete Billing Cycle"
-                  >
-                    <FiTrash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </>
-            )}
-            {customer.type === "user" && (
-              <>
-                {(!customer.billingCycle ||
-                  customer.billingCycle?.status === "cancelled") && (
-                  <button
-                    onClick={() => onAction("start", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Start Billing"
-                  >
-                    <FiPlay className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.billingCycle?.status === "active" && (
-                  <button
-                    onClick={() => onAction("pause", customer)}
-                    className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
-                    title="Pause Billing"
-                  >
-                    <FiPause className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.billingCycle?.status === "paused" && (
-                  <button
-                    onClick={() => onAction("resume", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Resume Billing"
-                  >
-                    <FiPlay className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.billingCycle?.status === "active" && (
-                  <button
-                    onClick={() => onAction("stop", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Cancel Subscription"
-                  >
-                    <FiX className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.status === "active" && (
-                  <button
-                    onClick={() => onAction("disconnect", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Disconnect"
-                  >
-                    <FiWifiOff className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.status === "suspended" && (
-                  <button
-                    onClick={() => onAction("reconnect", customer)}
-                    className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                    title="Reconnect"
-                  >
-                    <FiWifi className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {customer.billingCycle && (
-                  <button
-                    onClick={() => onAction("delete", customer)}
-                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                    title="Delete Billing Cycle"
-                  >
-                    <FiTrash2 className="w-3.5 h-3.5" />
-                  </button>
+                {customer.type === "user" && (
+                  <>
+                    {(!customer.billingCycle ||
+                      customer.billingCycle?.status === "cancelled") && (
+                      <button
+                        onClick={() => onAction("start", customer)}
+                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                        title="Start Billing"
+                      >
+                        <FiPlay className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {customer.billingCycle?.status === "active" && (
+                      <button
+                        onClick={() => onAction("pause", customer)}
+                        className="p-1 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 rounded transition-colors"
+                        title="Pause Billing"
+                      >
+                        <FiPause className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {customer.billingCycle?.status === "paused" && (
+                      <button
+                        onClick={() => onAction("resume", customer)}
+                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                        title="Resume Billing"
+                      >
+                        <FiPlay className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {customer.billingCycle?.status === "active" && (
+                      <button
+                        onClick={() => onAction("stop", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Cancel Subscription"
+                      >
+                        <FiX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {customer.status === "active" && (
+                      <button
+                        onClick={() => onAction("disconnect", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Disconnect - Preserve bills"
+                      >
+                        <FiWifiOff className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {customer.billingCycle && (
+                      <button
+                        onClick={() => onAction("delete", customer)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Billing Cycle"
+                      >
+                        <FiTrash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -924,16 +936,16 @@ export default function BillingTable({
   onEditBillPrice,
   onEditInstallationPrice,
   onDeleteBill,
+  disconnectedCustomers = [],
 }: BillingTableProps) {
   const [displayCustomers, setDisplayCustomers] = useState(customers);
 
-  // Update when customers prop changes (from parent refresh)
+  // ✅ FIX: Sync state with props (customers now includes ALL)
   useEffect(() => {
     setDisplayCustomers(customers);
   }, [customers]);
 
-  // NO AUTO-REFRESH INTERVALS - REMOVED
-
+  // ✅ FIX: DON'T filter out disconnected - they stay visible
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...displayCustomers];
 
@@ -957,6 +969,21 @@ export default function BillingTable({
 
     if (statusFilter !== "all") {
       filtered = filtered.filter((c) => {
+        const isDisc =
+          c.isDisconnected === true ||
+          c.status === "disconnected" ||
+          c.billingCycle?.status === "disconnected";
+
+        // ✅ OPTIONAL filter by disconnected
+        if (statusFilter === "disconnected") {
+          return isDisc;
+        }
+
+        // Hide disconnected when filtering other statuses (optional UX)
+        if (isDisc && statusFilter !== "all") {
+          return false;
+        }
+
         if (statusFilter === "has_balance") return c.currentBalance > 0;
         if (statusFilter === "overdue") return c.overdueBills.length > 0;
         if (statusFilter === "active") return c.status === "active";
@@ -994,6 +1021,12 @@ export default function BillingTable({
           break;
         case "status":
           const getStatusText = (c: CustomerItem) => {
+            if (
+              c.isDisconnected ||
+              c.status === "disconnected" ||
+              c.billingCycle?.status === "disconnected"
+            )
+              return "Disconnected";
             if (isInstallationFeeDue(c)) return "Installation Fee Due";
             if (c.type === "application")
               return c.billingCycle?.status || "Approved";
@@ -1080,6 +1113,16 @@ export default function BillingTable({
     const hours = Math.floor(minutes / 60);
     return `${hours}h ${minutes % 60}m ago`;
   };
+
+  // ✅ Count disconnected for badge display
+  const disconnectedCount = useMemo(() => {
+    return displayCustomers.filter(
+      (c) =>
+        c.isDisconnected === true ||
+        c.status === "disconnected" ||
+        c.billingCycle?.status === "disconnected",
+    ).length;
+  }, [displayCustomers]);
 
   if (loading && customers.length === 0) {
     return (
@@ -1214,7 +1257,7 @@ export default function BillingTable({
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
           <p className="text-xs text-gray-400 uppercase tracking-wide">
             Total Customers
@@ -1255,6 +1298,16 @@ export default function BillingTable({
             {stats.activeCyclesCount}
           </p>
         </div>
+        {disconnectedCount > 0 && (
+          <div className="bg-gray-100 rounded-lg shadow-sm p-3 border border-gray-300">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              🔌 Disconnected
+            </p>
+            <p className="text-lg font-bold text-gray-700">
+              {disconnectedCount}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -1293,6 +1346,7 @@ export default function BillingTable({
             <option value="active">Active</option>
             <option value="paused">Paused</option>
             <option value="suspended">Suspended</option>
+            <option value="disconnected">🔌 Disconnected</option>
             <option value="pending_activation">Awaiting Payment</option>
             <option value="applications">Applications Only</option>
             <option value="installation_fee_due">Installation Fee Due</option>
@@ -1428,11 +1482,13 @@ export default function BillingTable({
         Showing {currentPageData.length} of {filteredAndSortedCustomers.length}{" "}
         customers ({customers.filter((c) => c.type === "user").length} users,{" "}
         {customers.filter((c) => c.type === "application").length} applications)
+        {disconnectedCount > 0 && (
+          <span className="ml-2 text-gray-600">
+            | 🔌 {disconnectedCount} disconnected
+          </span>
+        )}
         - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})
-        <span className="ml-4 text-blue-600">
-          ⏰ Early bill generation: {stats.activeCyclesCount} active customers
-        </span>
         {lastAutoGenTime && (
           <span className="ml-4 text-gray-400">
             ⚡ Auto-gen last run: {getLastAutoGenText()}

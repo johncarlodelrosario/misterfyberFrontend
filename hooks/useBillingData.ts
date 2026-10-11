@@ -240,6 +240,48 @@ export const useResumeBilling = () => {
   });
 };
 
+// ✅ Disconnect client - bills hidden but preserved
+export const useDisconnectClient = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: disconnectClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["billingSummaryAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["userBillingCycle"] });
+      queryClient.invalidateQueries({ queryKey: ["userBillingSummary"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+      toast.success("🔌 Client disconnected! Bills are hidden but preserved.");
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to disconnect client",
+      );
+    },
+  });
+};
+
+// ✅ Reconnect client - bills restored
+export const useReconnectClient = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: reconnectClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["billingSummaryAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["userBillingCycle"] });
+      queryClient.invalidateQueries({ queryKey: ["userBillingSummary"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+      toast.success("🔌 Client reconnected! Bills have been restored.");
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Failed to reconnect client",
+      );
+    },
+  });
+};
+
 // Mark bill as paid
 export const useMarkBillAsPaid = () => {
   const queryClient = useQueryClient();
@@ -408,46 +450,6 @@ export const useDeleteBillingCycle = () => {
     onError: (error: any) => {
       toast.error(
         error.response?.data?.message || "Failed to delete billing cycle",
-      );
-    },
-  });
-};
-
-// Disconnect client
-export const useDisconnectClient = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: disconnectClient,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["billingSummaryAdmin"] });
-      queryClient.invalidateQueries({ queryKey: ["userBillingCycle"] });
-      queryClient.invalidateQueries({ queryKey: ["userBillingSummary"] });
-      toast.success("🔌 Client disconnected!");
-    },
-    onError: (error: any) => {
-      toast.error(
-        error.response?.data?.message || "Failed to disconnect client",
-      );
-    },
-  });
-};
-
-// Reconnect client
-export const useReconnectClient = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: reconnectClient,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["billingSummaryAdmin"] });
-      queryClient.invalidateQueries({ queryKey: ["userBillingCycle"] });
-      queryClient.invalidateQueries({ queryKey: ["userBillingSummary"] });
-      toast.success("🔌 Client reconnected!");
-    },
-    onError: (error: any) => {
-      toast.error(
-        error.response?.data?.message || "Failed to reconnect client",
       );
     },
   });
@@ -744,12 +746,7 @@ export const useUpdateBillPrice = () => {
 
 // ============ HOOK TO USE BILLING EVENTS ============
 export const useBillingEvents = () => {
-  // This hook can be used to subscribe to WebSocket events
-  // Usage: const { on, off } = useBillingEvents();
-  // on('refresh', (data) => console.log('Refresh event:', data));
-
   const subscribe = (eventType: string, callback: (data: any) => void) => {
-    // Import billingEvents dynamically to avoid circular dependencies
     const { billingEvents } = require("@/services/billing");
     return billingEvents.on(eventType, callback);
   };
