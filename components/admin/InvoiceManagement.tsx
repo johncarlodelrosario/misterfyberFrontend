@@ -1,5 +1,3 @@
-// isp-frontend/components/admin/InvoiceManagement.tsx
-
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -81,14 +79,12 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
     try {
       toast.loading("Sending invoice...", { id: "send-invoice" });
       const result = await invoiceService.sendInvoiceWithPDF(invoiceId);
-      if (result.emailSent) {
+      if (result.emailSent)
         toast.success("Invoice sent successfully!", { id: "send-invoice" });
-      } else {
+      else
         toast.error("Invoice created but email failed to send", {
           id: "send-invoice",
-          icon: "⚠️",
         });
-      }
       fetchInvoices();
     } catch (error) {
       console.error("Error sending invoice:", error);
@@ -98,7 +94,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
 
   const handleMarkAsPaid = async () => {
     if (!selectedInvoice) return;
-
     try {
       toast.loading("Marking as paid...", { id: "mark-paid" });
       await invoiceService.markInvoiceAsPaid(
@@ -120,7 +115,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
 
   const handleDeleteInvoice = async (invoiceId: string) => {
     if (!confirm("Are you sure you want to delete this invoice?")) return;
-
     try {
       toast.loading("Deleting invoice...", { id: "delete-invoice" });
       await invoiceService.deleteInvoice(invoiceId);
@@ -156,7 +150,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
 
   const getTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
-      monthly: "bg-indigo-100 text-indigo-700",
+      monthly: "bg-blue-100 text-blue-700",
       "pro-rated": "bg-yellow-100 text-yellow-700",
       installation: "bg-purple-100 text-purple-700",
       combined: "bg-pink-100 text-pink-700",
@@ -185,36 +179,31 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
     return labels[type] || type;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-PH", {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
       minimumFractionDigits: 2,
     }).format(amount);
-  };
-
   const formatDate = (date: Date | string) => {
     if (!date) return "N/A";
-    const d = new Date(date);
-    return d.toLocaleDateString("en-US", {
+    return new Date(date).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
     });
   };
 
-  // Render loading state
   if (loading && invoices.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      {/* Filters */}
       <div className="p-4 border-b border-gray-200 bg-gray-50">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
@@ -222,7 +211,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
               Status
             </label>
             <select
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={filters.status || ""}
               onChange={(e) => handleFilterChange("status", e.target.value)}
             >
@@ -239,7 +228,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
               Type
             </label>
             <select
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={filters.invoiceType || ""}
               onChange={(e) =>
                 handleFilterChange("invoiceType", e.target.value)
@@ -258,7 +247,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
             </label>
             <input
               type="date"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={filters.startDate || ""}
               onChange={(e) => handleFilterChange("startDate", e.target.value)}
             />
@@ -269,7 +258,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
             </label>
             <input
               type="date"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={filters.endDate || ""}
               onChange={(e) => handleFilterChange("endDate", e.target.value)}
             />
@@ -277,7 +266,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
         </div>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -309,7 +297,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
             {invoices.map((invoice) => (
               <tr key={invoice._id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-indigo-600">
+                  <div className="text-sm font-medium text-blue-600">
                     {invoice.invoiceNumber}
                   </div>
                 </td>
@@ -351,7 +339,7 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
                       <>
                         <button
                           onClick={() => handleGeneratePDF(invoice._id)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          className="text-blue-600 hover:text-blue-900"
                           title="Generate PDF"
                         >
                           <svg
@@ -465,7 +453,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
         </table>
       </div>
 
-      {/* Empty State */}
       {invoices.length === 0 && (
         <div className="text-center py-12">
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -490,7 +477,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
         </div>
       )}
 
-      {/* Pagination */}
       {pagination.pages > 1 && (
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="text-sm text-gray-600">
@@ -517,7 +503,6 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
         </div>
       )}
 
-      {/* Mark as Paid Modal */}
       {showMarkPaidModal && selectedInvoice && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen px-4">
@@ -525,12 +510,10 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
               className="fixed inset-0 bg-black opacity-50"
               onClick={() => setShowMarkPaidModal(false)}
             ></div>
-
             <div className="relative bg-white rounded-lg max-w-md w-full p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Mark Invoice as Paid
               </h3>
-
               <div className="mb-4">
                 <p className="text-sm text-gray-600">
                   <strong>Invoice:</strong> {selectedInvoice.invoiceNumber}
@@ -543,33 +526,30 @@ const InvoiceManagement: React.FC<InvoiceManagementProps> = ({
                   <strong>Customer:</strong> {selectedInvoice.customerName}
                 </p>
               </div>
-
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Reference Number (Optional)
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter reference number"
                   value={referenceNumber}
                   onChange={(e) => setReferenceNumber(e.target.value)}
                 />
               </div>
-
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes (Optional)
                 </label>
                 <textarea
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={3}
                   placeholder="Enter payment notes"
                   value={paymentNotes}
                   onChange={(e) => setPaymentNotes(e.target.value)}
                 />
               </div>
-
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowMarkPaidModal(false)}

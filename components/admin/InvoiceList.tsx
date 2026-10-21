@@ -1,5 +1,3 @@
-// isp-frontend/components/InvoiceList.tsx
-
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -87,8 +85,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
 
   const formatDate = (date: Date | string) => {
     if (!date) return "N/A";
-    const d = new Date(date);
-    return d.toLocaleDateString("en-US", {
+    return new Date(date).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -103,7 +100,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   if (loading) {
     return (
       <div className="flex justify-center items-center h-32">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -118,12 +115,11 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      {/* Filter */}
       <div className="p-4 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center gap-4">
           <label className="text-sm font-medium text-gray-700">Filter:</label>
           <select
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
@@ -135,14 +131,13 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         </div>
       </div>
 
-      {/* Invoice List */}
       <ul className="divide-y divide-gray-200">
         {filteredInvoices.map((invoice) => (
           <li key={invoice._id} className="p-4 hover:bg-gray-50">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-3">
-                  <span className="font-medium text-indigo-600 text-sm">
+                  <span className="font-medium text-blue-600 text-sm">
                     {invoice.invoiceNumber}
                   </span>
                   <span

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   FiEye,
   FiEdit2,
@@ -65,13 +64,9 @@ export default function UserTable({
     }
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Loading users...</div>;
-  }
-
-  if (users.length === 0) {
+  if (loading) return <div className="text-center py-8">Loading users...</div>;
+  if (users.length === 0)
     return <div className="text-center py-8 text-gray-500">No users found</div>;
-  }
 
   return (
     <>
@@ -110,8 +105,8 @@ export default function UserTable({
               <tr key={user._id}>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
-                    <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                      <span className="text-primary-600 font-semibold text-sm">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-600 font-semibold text-sm">
                         {user.firstName?.[0]}
                         {user.lastName?.[0]}
                       </span>
@@ -197,7 +192,6 @@ export default function UserTable({
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="px-6 py-4 border-t flex items-center justify-between">
           <button

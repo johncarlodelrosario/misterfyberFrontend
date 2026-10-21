@@ -1,6 +1,21 @@
-// services/emailService.ts - FIXED
+// services/emailService.ts - COMPLETE FIXED VERSION WITH ALL EXPORTS
 
 import api from "./api";
+
+// ==================== TYPE EXPORTS ====================
+
+export type SenderType =
+  | "admin"
+  | "collection"
+  | "workselpueblo"
+  | "fbsilkresidence";
+
+export interface SenderOption {
+  value: SenderType;
+  label: string;
+  email: string;
+  icon?: string;
+}
 
 export interface Customer {
   _id: string;
@@ -61,7 +76,7 @@ export interface EmailSentRecord {
   billType?: string;
   billCount: number;
   error?: string;
-  senderType: "admin" | "collection";
+  senderType: SenderType;
   location: string;
   collectionEmail?: string;
   isScheduled: boolean;
@@ -76,9 +91,11 @@ export interface ScheduledEmail {
   message: string;
   richTextContent?: string;
   includeBilling: boolean;
+  billIds?: string[];
   billType?: "unpaid" | "latest" | "installation";
   sendCopyToAdmin: boolean;
   useAdminSender: boolean;
+  senderType?: SenderType;
   scheduledFor: string;
   status: "pending" | "processing" | "sent" | "failed" | "cancelled";
   sentCount: number;
@@ -113,8 +130,55 @@ export interface ScheduleStats {
   }>;
 }
 
+// ==================== SERVICE CLASS ====================
+
 class EmailService {
-  // ✅ Customer methods - NO custom headers (cache busting via query param only)
+  // ✅ Get sender options from backend
+  async getSenderOptions(location?: string): Promise<SenderOption[]> {
+    try {
+      const params = new URLSearchParams();
+      if (location) params.append("location", location);
+      params.append("_t", Date.now().toString());
+
+      const response = await api.get(
+        `/manual-email/sender-options?${params.toString()}`,
+      );
+      return response.data.data || [];
+    } catch (error) {
+      console.error("Failed to get sender options:", error);
+      // Fallback to defaults if endpoint fails
+      return [
+        {
+          value: "collection",
+          label: "Collection",
+          email: location
+            ? `collection.${location}@misterfyber.com`
+            : "admin@misterfyber.com",
+          icon: "📍",
+        },
+        {
+          value: "admin",
+          label: "Admin",
+          email: "admin@misterfyber.com",
+          icon: "👤",
+        },
+        {
+          value: "workselpueblo",
+          label: "Workselpueblo",
+          email: "workselpueblo@gmail.com",
+          icon: "🏢",
+        },
+        {
+          value: "fbsilkresidence",
+          label: "FB Silk Residence",
+          email: "fbsilkresidence@gmail.com",
+          icon: "🏠",
+        },
+      ];
+    }
+  }
+
+  // ✅ Customer methods
   async getCustomers(params?: {
     search?: string;
     status?: string;
@@ -158,7 +222,8 @@ class EmailService {
     }
   }
 
-  // Send email methods
+  // ==================== SEND EMAIL METHODS ====================
+
   async sendEmail(data: {
     applicationId: string;
     subject: string;
@@ -168,6 +233,7 @@ class EmailService {
     billIds?: string[];
     sendCopyToAdmin?: boolean;
     useAdminSender?: boolean;
+    senderType?: SenderType;
   }): Promise<any> {
     try {
       const response = await api.post("/manual-email/send", data);
@@ -187,6 +253,7 @@ class EmailService {
     billType: "unpaid" | "latest" | "installation";
     sendCopyToAdmin?: boolean;
     useAdminSender?: boolean;
+    senderType?: SenderType;
     locationFilter?: string;
   }): Promise<any> {
     try {
@@ -202,12 +269,14 @@ class EmailService {
     customMessage?: string,
     includeDueDateReminder?: boolean,
     useAdminSender?: boolean,
+    senderType?: SenderType,
   ): Promise<any> {
     try {
       const response = await api.post("/manual-email/send-reminder-unpaid", {
         customMessage,
         includeDueDateReminder,
         useAdminSender,
+        senderType,
       });
       return response.data;
     } catch (error) {
@@ -216,7 +285,8 @@ class EmailService {
     }
   }
 
-  // Template methods
+  // ==================== TEMPLATE METHODS ====================
+
   async getTemplates(): Promise<EmailTemplate[]> {
     try {
       const response = await api.get(
@@ -279,7 +349,8 @@ class EmailService {
     }
   }
 
-  // Sent records methods
+  // ==================== SENT RECORDS METHODS ====================
+
   async getSentRecords(params?: {
     scheduleId?: string;
     isScheduled?: boolean;
@@ -315,7 +386,8 @@ class EmailService {
     }
   }
 
-  // Preview
+  // ==================== PREVIEW METHOD ====================
+
   async previewEmail(data: {
     subject: string;
     message: string;
@@ -324,6 +396,7 @@ class EmailService {
     applicationId: string;
     billIds?: string[];
     useAdminSender?: boolean;
+    senderType?: SenderType;
   }): Promise<any> {
     try {
       const response = await api.post("/manual-email/preview", data);
@@ -334,7 +407,20 @@ class EmailService {
     }
   }
 
-  // Scheduling methods
+  // ==================== SCHEDULING METHODS ====================
+
+  /**
+   * ✅ FIXED: Schedule email with proper timezone handling
+   *
+   * The frontend sends the datetime-local string (which is LOCAL time).
+   * The backend will parse it correctly and store as UTC.
+   *
+   * We send the raw ISO string from the local Date object, which JavaScript
+   * correctly converts to UTC when calling .toISOString().
+   *
+   * IMPORTANT: The `scheduledFor` parameter should be a proper ISO string
+   * that represents the UTC equivalent of the local time selected.
+   */
   async scheduleEmail(data: {
     name: string;
     applicationIds: string[];
@@ -342,9 +428,11 @@ class EmailService {
     message: string;
     richTextContent?: string;
     includeBilling: boolean;
+    billIds?: string[];
     billType?: "unpaid" | "latest" | "installation";
     sendCopyToAdmin?: boolean;
     useAdminSender?: boolean;
+    senderType?: SenderType;
     scheduledFor: string;
     locationFilter?: "all" | "breeze" | "sil" | "other";
     recurring?: {
@@ -355,6 +443,8 @@ class EmailService {
     };
   }): Promise<any> {
     try {
+      // ✅ FIX: Parse the datetime-local string as local time, then convert to ISO
+      // The scheduledFor coming in is already a proper ISO string from the component
       const response = await api.post("/manual-email/schedule", data);
       return response.data;
     } catch (error) {
@@ -395,9 +485,11 @@ class EmailService {
       message?: string;
       richTextContent?: string;
       includeBilling?: boolean;
+      billIds?: string[];
       billType?: "unpaid" | "latest" | "installation";
       sendCopyToAdmin?: boolean;
       useAdminSender?: boolean;
+      senderType?: SenderType;
       scheduledFor?: string;
       locationFilter?: "all" | "breeze" | "sil" | "other";
       recurring?: {
@@ -455,6 +547,19 @@ class EmailService {
       throw error;
     }
   }
+
+  async forceProcessSchedules(): Promise<any> {
+    try {
+      const response = await api.post("/manual-email/schedules/process");
+      return response.data;
+    } catch (error) {
+      console.error("Failed to process schedules:", error);
+      throw error;
+    }
+  }
 }
 
-export default new EmailService();
+// ==================== SINGLETON EXPORT ====================
+
+const emailService = new EmailService();
+export default emailService;

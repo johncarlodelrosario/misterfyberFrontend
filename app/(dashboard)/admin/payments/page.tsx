@@ -1,5 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - COMPLETE FIXED - INSTANT LOAD, NO CACHE, REALTIME
-
+// frontend/src/app/admin/payments/page.tsx - UNIFIED DESIGN PATTERN
 "use client";
 
 import React, {
@@ -20,22 +19,20 @@ import {
 } from "@/services/payment";
 import {
   FiSearch,
-  FiEye,
   FiRefreshCw,
   FiClock,
   FiX,
   FiFileText,
-  FiInfo,
-  FiMail,
-  FiPhone,
-  FiDollarSign,
-  FiFilter,
   FiCalendar,
   FiTrash2,
   FiHome,
   FiBarChart2,
   FiCheckCircle,
-  FiDownload,
+  FiFilter,
+  FiTrendingUp,
+  FiChevronDown,
+  FiChevronUp,
+  FiCreditCard,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -100,8 +97,10 @@ function formatShortDate(dateStr: string): string {
   });
 }
 
-function formatCurrency(amount: number): string {
-  return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+function formatCurrency(amount: any): string {
+  const num = Number(amount);
+  if (!isFinite(num)) return "₱0.00";
+  return `₱${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function getStatusColor(status: string): string {
@@ -132,12 +131,57 @@ function getPaymentTypeColor(type: string): string {
   }
 }
 
-// ==================== SYNCHRONOUS CUSTOMER INFO EXTRACTION ====================
-// NO API CALLS - Uses data already enriched by the backend
+function getCurrentMonthString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function monthToRange(monthStr: string): { start: string; end: string } {
+  if (!monthStr) return { start: "", end: "" };
+  const [yStr, mStr] = monthStr.split("-");
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10) - 1;
+  if (isNaN(y) || isNaN(m)) return { start: "", end: "" };
+  const start = new Date(y, m, 1);
+  const end = new Date(y, m + 1, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toISO = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { start: toISO(start), end: toISO(end) };
+}
+
+// ==================== STRICT BILLING-PERIOD HELPERS ====================
+function getBillingPeriodStart(payment: any): Date | null {
+  const bp = (payment?.billingId as any)?.billingPeriod;
+  if (!bp?.start) return null;
+  const d = new Date(bp.start);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+function paymentBelongsInBillingRange(
+  payment: any,
+  startISO: string,
+  endISO: string,
+): boolean {
+  if (!startISO || !endISO) return true;
+
+  const billingStart = getBillingPeriodStart(payment);
+  if (!billingStart) return false;
+
+  const rangeStart = new Date(`${startISO}T00:00:00`);
+  const rangeEnd = new Date(`${endISO}T23:59:59.999`);
+  if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) return true;
+
+  return billingStart >= rangeStart && billingStart <= rangeEnd;
+}
+
+// ==================== CUSTOMER INFO EXTRACTION ====================
 function extractCustomerInfoSync(payment: Payment): CustomerInfo {
   let appId = "";
 
-  // Try to get applicationId from various sources (already enriched by backend)
   if (payment.applicationId) {
     if (typeof payment.applicationId === "string") {
       appId = payment.applicationId;
@@ -156,7 +200,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     appId = payment.paymentDetails.gatewayResponse.applicationId;
   }
 
-  // Building info - already enriched by backend
   let buildingId: any = (payment as any).buildingId || "";
   let buildingName = (payment as any).buildingName || "";
 
@@ -171,7 +214,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
       buildingName = appObj.buildingName;
   }
 
-  // ====== PRIORITY: use the already-enriched application object from backend ======
   if (
     payment.applicationId &&
     typeof payment.applicationId === "object" &&
@@ -193,7 +235,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     }
   }
 
-  // ====== Use enriched "application" property if present ======
   if ((payment as any).application) {
     const app = (payment as any).application;
     const firstName = app.firstName || "";
@@ -209,7 +250,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     };
   }
 
-  // ====== Use enriched "user" property if present ======
   if ((payment as any).user) {
     const user = (payment as any).user;
     const firstName = user.firstName || "";
@@ -227,7 +267,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     }
   }
 
-  // ====== Use payment.customerName directly (enriched by backend) ======
   if (payment.customerName && payment.customerName.trim() !== "") {
     const name = payment.customerName.trim();
     if (!/^[A-Z]{3}\d+$/.test(name)) {
@@ -242,7 +281,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     }
   }
 
-  // ====== Fallback: use userId if it's an object ======
   if (payment.userId && typeof payment.userId === "object") {
     const user = payment.userId as any;
     const firstName = user.firstName || "";
@@ -260,7 +298,6 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
     }
   }
 
-  // ====== Final fallback ======
   return {
     name: payment.customerName || appId || "Unknown Customer",
     email: payment.customerEmail || "—",
@@ -271,8 +308,7 @@ function extractCustomerInfoSync(payment: Payment): CustomerInfo {
   };
 }
 
-// ==================== SYNCHRONOUS PAYMENT GROUPING ====================
-// NO async/await - pure sync operation = instant
+// ==================== PAYMENT GROUPING ====================
 function groupPaymentsSync(payments: Payment[]): PaymentGroup[] {
   const groups = new Map<string, PaymentGroup>();
 
@@ -309,13 +345,13 @@ function groupPaymentsSync(payments: Payment[]): PaymentGroup[] {
 
     const group = groups.get(customerId)!;
     group.payments.push(payment);
-    group.totalAmount += payment.amount || 0;
+    group.totalAmount += Number(payment.amount) || 0;
     group.paymentCount++;
 
     if (payment.status === "completed") {
-      group.totalPaidAmount += payment.amount || 0;
+      group.totalPaidAmount += Number(payment.amount) || 0;
     } else if (payment.status === "pending") {
-      group.totalPendingAmount += payment.amount || 0;
+      group.totalPendingAmount += Number(payment.amount) || 0;
       group.hasPendingPayments = true;
     }
 
@@ -330,7 +366,7 @@ function groupPaymentsSync(payments: Payment[]): PaymentGroup[] {
   return Array.from(groups.values());
 }
 
-// ==================== CUSTOMER DETAILS COMPONENT ====================
+// ==================== CUSTOMER DETAILS ====================
 const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
   const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
   const isFree = payment.paymentDetails?.isFree === true;
@@ -443,7 +479,7 @@ const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
 
 CustomerDetails.displayName = "CustomerDetails";
 
-// ==================== PENDING PAYMENT ROW COMPONENT ====================
+// ==================== PENDING PAYMENT ROW ====================
 const PendingPaymentRow = React.memo(
   ({
     payment,
@@ -555,7 +591,7 @@ const PendingPaymentRow = React.memo(
 
 PendingPaymentRow.displayName = "PendingPaymentRow";
 
-// ==================== MAIN PAGE COMPONENT ====================
+// ==================== MAIN PAGE ====================
 export default function AdminPaymentsPage() {
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
   const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
@@ -566,7 +602,6 @@ export default function AdminPaymentsPage() {
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
   const [buildingFilter, setBuildingFilter] = useState("");
   const [buildings, setBuildings] = useState<Building[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -576,27 +611,28 @@ export default function AdminPaymentsPage() {
     "payments",
   );
 
+  const [monthFilter, setMonthFilter] = useState(getCurrentMonthString());
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
-  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
-  const [stats, setStats] = useState({
-    totalAmount: 0,
-    totalCount: 0,
-    monthlyAmount: 0,
-    monthlyCount: 0,
-    subscriptionAmount: 0,
-    subscriptionCount: 0,
-    installationFees: 0,
-    installationFeeCount: 0,
-    pendingAmount: 0,
-    pendingCount: 0,
-  });
-  const [showFilters, setShowFilters] = useState(false);
+  // Full raw payment list from the last successful API call
+  const [allPayments, setAllPayments] = useState<Payment[]>([]);
 
   const isMountedRef = useRef(true);
 
-  // ==================== FETCH BUILDINGS ONCE ====================
+  const effectiveStart = useMemo(() => {
+    if (dateRangeStart && dateRangeEnd) return dateRangeStart;
+    if (monthFilter) return monthToRange(monthFilter).start;
+    return "";
+  }, [dateRangeStart, dateRangeEnd, monthFilter]);
+
+  const effectiveEnd = useMemo(() => {
+    if (dateRangeStart && dateRangeEnd) return dateRangeEnd;
+    if (monthFilter) return monthToRange(monthFilter).end;
+    return "";
+  }, [dateRangeStart, dateRangeEnd, monthFilter]);
+
   useEffect(() => {
     isMountedRef.current = true;
     api
@@ -612,21 +648,18 @@ export default function AdminPaymentsPage() {
     };
   }, []);
 
-  // ==================== LOAD PAYMENTS (REALTIME, NO CACHE) ====================
+  // ==================== LOAD PAYMENTS ====================
   const loadPayments = useCallback(
     async (isRefresh = false) => {
       if (!isMountedRef.current) return;
 
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
 
       try {
         const params: any = {
           limit: "all" as const,
-          forceRefresh: true, // ALWAYS fresh data — no cache
+          forceRefresh: true,
         };
 
         if (statusFilter && statusFilter !== "all" && statusFilter !== "") {
@@ -646,25 +679,21 @@ export default function AdminPaymentsPage() {
         ) {
           params.buildingId = buildingFilter;
         }
-        if (dateRangeStart && dateRangeEnd) {
-          params.startDate = dateRangeStart;
-          params.endDate = dateRangeEnd;
-        }
-        if (search && search.trim()) {
-          params.search = search.trim();
-        }
 
         const allPaymentsResult = await getAllPayments(params);
 
         if (!isMountedRef.current) return;
 
-        const paymentsList: Payment[] = allPaymentsResult.data || [];
+        const rawList: Payment[] = allPaymentsResult.data || [];
 
-        // INSTANT sync grouping — no async, no API calls
-        const grouped = groupPaymentsSync(paymentsList);
+        const filteredByBilling = rawList.filter((p) =>
+          paymentBelongsInBillingRange(p, effectiveStart, effectiveEnd),
+        );
+
+        setAllPayments(filteredByBilling);
+        const grouped = groupPaymentsSync(filteredByBilling);
         setPaymentGroups(grouped);
 
-        // Fetch pending payments in parallel
         let pendingList: Payment[] = [];
         if (
           !statusFilter ||
@@ -710,27 +739,15 @@ export default function AdminPaymentsPage() {
                 return false;
               });
             }
+
+            pendingList = pendingList.filter((p) =>
+              paymentBelongsInBillingRange(p, effectiveStart, effectiveEnd),
+            );
           } catch {
             // ignore
           }
         }
         setPendingPayments(pendingList);
-
-        if (allPaymentsResult.stats) {
-          setStats({
-            totalAmount: allPaymentsResult.stats.total || 0,
-            totalCount: allPaymentsResult.stats.totalCount || 0,
-            monthlyAmount: allPaymentsResult.stats.monthly || 0,
-            monthlyCount: allPaymentsResult.stats.monthlyCount || 0,
-            subscriptionAmount: allPaymentsResult.stats.subscription || 0,
-            subscriptionCount: allPaymentsResult.stats.subscriptionCount || 0,
-            installationFees: allPaymentsResult.stats.installationFees || 0,
-            installationFeeCount:
-              allPaymentsResult.stats.installationFeeCount || 0,
-            pendingAmount: allPaymentsResult.stats.pending || 0,
-            pendingCount: allPaymentsResult.stats.pendingCount || 0,
-          });
-        }
       } catch (error: any) {
         console.error("Failed to load payments:", error);
         if (isRefresh) toast.error("Failed to refresh payments");
@@ -745,39 +762,119 @@ export default function AdminPaymentsPage() {
       statusFilter,
       paymentTypeFilter,
       buildingFilter,
-      dateRangeStart,
-      dateRangeEnd,
-      search,
+      effectiveStart,
+      effectiveEnd,
     ],
   );
 
-  // ==================== LOAD ON FILTER CHANGE (DEBOUNCED FOR SEARCH) ====================
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // ==================== RELOAD WHEN NON-SEARCH FILTERS CHANGE ====================
   useEffect(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(
-      () => {
-        loadPayments(false);
-      },
-      search ? 400 : 0,
-    );
-    return () => {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    };
+    loadPayments(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     statusFilter,
     paymentTypeFilter,
     buildingFilter,
-    dateRangeStart,
-    dateRangeEnd,
-    search,
+    effectiveStart,
+    effectiveEnd,
   ]);
+
+  // ==================== STATS THAT FOLLOW SEARCH ====================
+  const searchedPayments = useMemo(() => {
+    const trimmed = (search || "").trim().toLowerCase();
+    if (!trimmed) return allPayments;
+
+    return allPayments.filter((p) => {
+      const info = extractCustomerInfoSync(p);
+      return (
+        (info.name || "").toLowerCase().includes(trimmed) ||
+        (info.email || "").toLowerCase().includes(trimmed) ||
+        (info.applicationId || "").toLowerCase().includes(trimmed) ||
+        (info.phone || "").toLowerCase().includes(trimmed) ||
+        (p.referenceNumber || "").toLowerCase().includes(trimmed)
+      );
+    });
+  }, [allPayments, search]);
+
+  const searchedStats = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    let totalAmount = 0;
+    let totalCount = 0;
+    let monthlyAmount = 0;
+    let monthlyCount = 0;
+    let pendingAmount = 0;
+    let pendingCount = 0;
+
+    for (const p of searchedPayments) {
+      const amt = Number(p.amount) || 0;
+      totalAmount += amt;
+      totalCount += 1;
+
+      const billingStart = getBillingPeriodStart(p);
+      if (
+        billingStart &&
+        billingStart >= monthStart &&
+        billingStart <= monthEnd
+      ) {
+        monthlyAmount += amt;
+        monthlyCount += 1;
+      }
+
+      if (p.status === "pending") {
+        pendingAmount += amt;
+        pendingCount += 1;
+      }
+    }
+
+    return {
+      totalAmount,
+      totalCount,
+      monthlyAmount,
+      monthlyCount,
+      pendingAmount,
+      pendingCount,
+    };
+  }, [searchedPayments]);
+
+  const searchedPendingPayments = useMemo(() => {
+    const trimmed = (search || "").trim().toLowerCase();
+    if (!trimmed) return pendingPayments;
+    return pendingPayments.filter((p) => {
+      const info = extractCustomerInfoSync(p);
+      return (
+        (info.name || "").toLowerCase().includes(trimmed) ||
+        (info.email || "").toLowerCase().includes(trimmed) ||
+        (info.applicationId || "").toLowerCase().includes(trimmed) ||
+        (info.phone || "").toLowerCase().includes(trimmed) ||
+        (p.referenceNumber || "").toLowerCase().includes(trimmed)
+      );
+    });
+  }, [pendingPayments, search]);
 
   // ==================== HANDLERS ====================
   const handleRefresh = () => {
     loadPayments(true);
+  };
+
+  const clearAllFilters = () => {
+    setSearch("");
+    setStatusFilter("");
+    setPaymentTypeFilter("");
+    setBuildingFilter("");
+    setMonthFilter("");
+    setDateRangeStart("");
+    setDateRangeEnd("");
   };
 
   const handleConfirmPayment = async (paymentId: string) => {
@@ -862,7 +959,7 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  // ==================== EXPORT TO PDF ====================
+  // ==================== EXPORT PDF ====================
   const exportToPDF = () => {
     const exportData = paymentGroups;
 
@@ -878,10 +975,10 @@ export default function AdminPaymentsPage() {
     let totalTransactions = 0;
 
     exportData.forEach((group) => {
-      grandTotalPaid += group.totalPaidAmount;
-      grandTotalPending += group.totalPendingAmount;
-      grandTotalOverall += group.totalAmount;
-      totalTransactions += group.paymentCount;
+      grandTotalPaid += Number(group.totalPaidAmount) || 0;
+      grandTotalPending += Number(group.totalPendingAmount) || 0;
+      grandTotalOverall += Number(group.totalAmount) || 0;
+      totalTransactions += Number(group.paymentCount) || 0;
     });
 
     const now = new Date();
@@ -898,8 +995,8 @@ export default function AdminPaymentsPage() {
       : "All Buildings";
 
     const dateRangeStr =
-      dateRangeStart && dateRangeEnd
-        ? `${formatShortDate(dateRangeStart)} to ${formatShortDate(dateRangeEnd)}`
+      effectiveStart && effectiveEnd
+        ? `${formatShortDate(effectiveStart)} to ${formatShortDate(effectiveEnd)} (by billing period)`
         : "All Dates";
 
     const statusStr = statusFilter || "All";
@@ -939,32 +1036,12 @@ export default function AdminPaymentsPage() {
           .header h1 { color: #1e3a8a; margin: 0; }
           .header p { color: #6b7280; margin: 5px 0; }
           .header .filters { 
-            background: #f3f4f6; 
-            padding: 10px; 
-            border-radius: 5px; 
-            margin-top: 10px;
-            font-size: 13px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 15px;
+            background: #f3f4f6; padding: 10px; border-radius: 5px;
+            margin-top: 10px; font-size: 13px; display: flex; flex-wrap: wrap;
+            justify-content: center; gap: 15px;
           }
-          .header .filters span { 
-            background: white; 
-            padding: 3px 10px; 
-            border-radius: 15px;
-            border: 1px solid #d1d5db;
-          }
-          .summary { 
-            background: #eff6ff; 
-            border: 1px solid #bfdbfe; 
-            border-radius: 8px; 
-            padding: 15px; 
-            margin-bottom: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-          }
+          .header .filters span { background: white; padding: 3px 10px; border-radius: 15px; border: 1px solid #d1d5db; }
+          .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; flex-wrap: wrap; justify-content: space-between; }
           .summary-item { padding: 5px 10px; font-size: 14px; }
           .summary-item strong { color: #1e40af; }
           .summary-item .paid { color: #16a34a; font-weight: bold; }
@@ -1052,6 +1129,14 @@ export default function AdminPaymentsPage() {
     }
   };
 
+  const hasActiveFilters =
+    !!statusFilter ||
+    !!paymentTypeFilter ||
+    !!buildingFilter ||
+    !!monthFilter ||
+    (!!dateRangeStart && !!dateRangeEnd) ||
+    !!search;
+
   if (loading && paymentGroups.length === 0 && pendingPayments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1064,17 +1149,19 @@ export default function AdminPaymentsPage() {
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="mb-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Payment Management
-            </h1>
-            <p className="text-gray-600">
-              View, confirm, and manage customer payments
-            </p>
-          </div>
+    <div className="p-4 sm:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Payment Management
+          </h1>
+          <p className="text-gray-600">
+            View, confirm, and manage customer payments
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 bg-white rounded-lg p-1 shadow-sm border border-gray-200">
             <button
               onClick={() => setActiveView("payments")}
@@ -1100,196 +1187,180 @@ export default function AdminPaymentsPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-          <div className="flex items-center justify-between">
+      {/* STATS — follow search */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-500">Total Revenue</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(stats.totalAmount)}
+              <p className="text-sm font-medium text-gray-600">
+                Total Amount
+                {search && (
+                  <span className="ml-1 text-xs text-blue-600 font-normal">
+                    (filtered)
+                  </span>
+                )}
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {formatCurrency(searchedStats.totalAmount)}
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                {searchedStats.totalCount} transaction
+                {searchedStats.totalCount !== 1 ? "s" : ""}
               </p>
             </div>
-            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-              <FiDollarSign className="w-5 h-5 text-green-600" />
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+              <FiCreditCard className="w-6 h-6 text-gray-600" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.totalCount} transactions
-          </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-          <div className="flex items-center justify-between">
+
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-500">Monthly Revenue</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {formatCurrency(stats.monthlyAmount)}
+              <p className="text-sm font-medium text-gray-600">
+                This Month's Total
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {formatCurrency(searchedStats.monthlyAmount)}
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                {searchedStats.monthlyCount} payment
+                {searchedStats.monthlyCount !== 1 ? "s" : ""} this month (by
+                billing period)
               </p>
             </div>
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <FiClock className="w-5 h-5 text-blue-600" />
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+              <FiTrendingUp className="w-6 h-6 text-gray-600" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.monthlyCount} this month
-          </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-          <div className="flex items-center justify-between">
+
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-500">Subscription Revenue</p>
-              <p className="text-2xl font-bold text-purple-600">
-                {formatCurrency(stats.subscriptionAmount)}
+              <p className="text-sm font-medium text-gray-600">
+                Pending Payments
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {formatCurrency(searchedStats.pendingAmount)}
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                {searchedStats.pendingCount} payment
+                {searchedStats.pendingCount !== 1 ? "s" : ""} awaiting
+                confirmation
               </p>
             </div>
-            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-              <FiClock className="w-5 h-5 text-purple-600" />
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+              <FiClock className="w-6 h-6 text-gray-600" />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.subscriptionCount} subscriptions
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Installation Fees</p>
-              <p className="text-2xl font-bold text-orange-600">
-                {formatCurrency(stats.installationFees)}
-              </p>
-            </div>
-            <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-              <FiFileText className="w-5 h-5 text-orange-600" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">
-            {stats.installationFeeCount} installations
-          </p>
         </div>
       </div>
 
-      {/* Pending Alert */}
-      {pendingPayments.length > 0 && activeView === "payments" && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <FiClock className="w-6 h-6 text-yellow-600" />
-            <div className="flex-1">
-              <p className="font-semibold text-yellow-800">
-                {pendingPayments.length} Pending Payment
-                {pendingPayments.length !== 1 ? "s" : ""}
-              </p>
-              <p className="text-sm text-yellow-700">
-                Total:{" "}
-                {formatCurrency(
-                  pendingPayments.reduce((sum, p) => sum + (p.amount || 0), 0),
-                )}
-              </p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition disabled:opacity-50"
-            >
-              <FiRefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-              />{" "}
-              Refresh
-            </button>
+      {/* Filter Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative">
+            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or application ID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
+
+          <div className="flex items-center gap-2">
+            <FiCalendar className="w-4 h-4 text-gray-400" />
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={(e) => {
+                setMonthFilter(e.target.value);
+                if (e.target.value) {
+                  setDateRangeStart("");
+                  setDateRangeEnd("");
+                }
+              }}
+              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
+
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <FiRefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+
+          <button
+            onClick={() => setShowMoreFilters((v) => !v)}
+            className={`px-4 py-2.5 rounded-lg border transition flex items-center gap-2 text-sm font-medium ${
+              showMoreFilters
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <FiFilter className="w-4 h-4" />
+            {showMoreFilters ? "Less Filters" : "More Filters"}
+            {showMoreFilters ? (
+              <FiChevronUp className="w-4 h-4" />
+            ) : (
+              <FiChevronDown className="w-4 h-4" />
+            )}
+            {hasActiveFilters && !showMoreFilters && (
+              <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+            )}
+          </button>
         </div>
-      )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-200">
-        <div className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name, email, application ID..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
-                showFilters
-                  ? "bg-blue-100 border-blue-300 text-blue-700"
-                  : "bg-gray-100 border-gray-300"
-              }`}
-            >
-              <FiFilter /> Filters
-              {(statusFilter || paymentTypeFilter || buildingFilter) && (
-                <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
-              )}
-            </button>
-            <button
-              onClick={() => setShowDateFilter(!showDateFilter)}
-              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 border ${
-                showDateFilter || (dateRangeStart && dateRangeEnd)
-                  ? "bg-blue-100 border-blue-300 text-blue-700"
-                  : "bg-gray-100 border-gray-300"
-              }`}
-            >
-              <FiCalendar /> Date Range
-              {dateRangeStart && dateRangeEnd && (
-                <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
-              )}
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition border border-gray-300 disabled:opacity-50"
-            >
-              <FiRefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-              />{" "}
-              Refresh
-            </button>
-          </div>
-
-          {showFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-600">
-                  Status:
+        {showMoreFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Status
                 </label>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                 >
-                  <option value="">All Status</option>
+                  <option value="">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="completed">Completed</option>
                   <option value="failed">Failed</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-600">
-                  Type:
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Payment Type
                 </label>
                 <select
                   value={paymentTypeFilter}
                   onChange={(e) => setPaymentTypeFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="">All Types</option>
                   <option value="subscription">Subscription</option>
                   <option value="installation">Installation</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-600">
-                  Building:
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Building
                 </label>
                 <select
                   value={buildingFilter}
                   onChange={(e) => setBuildingFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="">All Buildings</option>
                   {buildings.map((building) => (
@@ -1301,115 +1372,188 @@ export default function AdminPaymentsPage() {
                   ))}
                 </select>
               </div>
-              {(statusFilter || paymentTypeFilter || buildingFilter) && (
-                <button
-                  onClick={() => {
-                    setStatusFilter("");
-                    setPaymentTypeFilter("");
-                    setBuildingFilter("");
-                  }}
-                  className="px-3 py-2 text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
-                >
-                  <FiX className="w-4 h-4" /> Clear Filters
-                </button>
-              )}
             </div>
-          )}
 
-          {showDateFilter && (
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center">
-              <label className="text-sm font-medium text-gray-700">
-                Date Range:
+            <div className="flex flex-wrap items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+              <label className="text-xs font-medium text-gray-600">
+                Specific Date Range:
               </label>
               <input
                 type="date"
                 value={dateRangeStart}
-                onChange={(e) => setDateRangeStart(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => {
+                  setDateRangeStart(e.target.value);
+                  if (e.target.value) setMonthFilter("");
+                }}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                 max={dateRangeEnd || undefined}
               />
-              <span className="text-gray-500">to</span>
+              <span className="text-gray-400 text-sm">to</span>
               <input
                 type="date"
                 value={dateRangeEnd}
-                onChange={(e) => setDateRangeEnd(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => {
+                  setDateRangeEnd(e.target.value);
+                  if (e.target.value) setMonthFilter("");
+                }}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                 min={dateRangeStart || undefined}
                 max={new Date().toISOString().split("T")[0]}
               />
-              {(dateRangeStart || dateRangeEnd) && (
-                <button
-                  onClick={() => {
-                    setDateRangeStart("");
-                    setDateRangeEnd("");
-                  }}
-                  className="px-3 py-2 text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
-                >
-                  <FiX className="w-4 h-4" /> Clear Dates
-                </button>
-              )}
+              <span className="text-xs text-gray-400">
+                (overrides month picker above, filters by billing period)
+              </span>
             </div>
-          )}
-        </div>
+
+            {hasActiveFilters && (
+              <div className="flex justify-end">
+                <button
+                  onClick={clearAllFilters}
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 flex items-center gap-1 hover:bg-red-50 rounded-lg transition"
+                >
+                  <FiX className="w-4 h-4" /> Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasActiveFilters && !showMoreFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Active filters:</span>
+            {monthFilter && !dateRangeStart && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📅 {monthFilter}
+              </span>
+            )}
+            {dateRangeStart && dateRangeEnd && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📅 {formatShortDate(dateRangeStart)} →{" "}
+                {formatShortDate(dateRangeEnd)}
+              </span>
+            )}
+            {statusFilter && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📌 {statusFilter}
+              </span>
+            )}
+            {paymentTypeFilter && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📋 {paymentTypeFilter}
+              </span>
+            )}
+            {buildingFilter && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🏢{" "}
+                {buildings.find((b) => b._id === buildingFilter)?.name ||
+                  buildingFilter}
+              </span>
+            )}
+            {search && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🔍 {search}
+              </span>
+            )}
+            <button
+              onClick={clearAllFilters}
+              className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded-full transition"
+            >
+              ✕ Clear
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Content */}
+      {/* Pending banner */}
+      {searchedPendingPayments.length > 0 && activeView === "payments" && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3 flex-wrap">
+          <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <FiClock className="w-5 h-5 text-yellow-600" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <p className="font-semibold text-gray-900">
+              {searchedPendingPayments.length} Pending Payment
+              {searchedPendingPayments.length !== 1 ? "s" : ""}
+            </p>
+            <p className="text-sm text-gray-500">
+              Total:{" "}
+              {formatCurrency(
+                searchedPendingPayments.reduce(
+                  (sum, p) => sum + (Number(p.amount) || 0),
+                  0,
+                ),
+              )}
+            </p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <FiRefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </button>
+        </div>
+      )}
+
       {activeView === "payments" ? (
         <>
-          {pendingPayments.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold mb-4">
-                Pending Confirmation ({pendingPayments.length})
-              </h2>
-              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-yellow-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          #
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Customer Name
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Application ID
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Building
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Amount
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Billing Period
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white">
-                      {pendingPayments.map((payment, index) => (
-                        <PendingPaymentRow
-                          key={payment._id}
-                          payment={payment}
-                          index={index}
-                          onConfirm={handleConfirmPayment}
-                          onReject={handleRejectPayment}
-                          onView={setSelectedPayment}
-                          onDelete={handleDeletePayment}
-                          confirming={confirming}
-                          rejecting={rejecting}
-                          deleting={deleting}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          {searchedPendingPayments.length > 0 && (
+            <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Pending Confirmation ({searchedPendingPayments.length})
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        #
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Customer Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Application ID
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Building
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Billing Period
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {searchedPendingPayments.map((payment, index) => (
+                      <PendingPaymentRow
+                        key={payment._id}
+                        payment={payment}
+                        index={index}
+                        onConfirm={handleConfirmPayment}
+                        onReject={handleRejectPayment}
+                        onView={setSelectedPayment}
+                        onDelete={handleDeletePayment}
+                        confirming={confirming}
+                        rejecting={rejecting}
+                        deleting={deleting}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -1419,8 +1563,8 @@ export default function AdminPaymentsPage() {
             search={search}
             buildingFilter={buildingFilter}
             buildings={buildings}
-            dateRangeStart={dateRangeStart}
-            dateRangeEnd={dateRangeEnd}
+            dateRangeStart={effectiveStart}
+            dateRangeEnd={effectiveEnd}
             onView={setSelectedPayment}
             onDelete={handleDeletePayment}
             onBulkDelete={handleBulkDeleteCustomerPayments}
@@ -1434,14 +1578,13 @@ export default function AdminPaymentsPage() {
           paymentGroups={paymentGroups}
           buildings={buildings}
           buildingFilter={buildingFilter}
-          dateRangeStart={dateRangeStart}
-          dateRangeEnd={dateRangeEnd}
+          dateRangeStart={effectiveStart}
+          dateRangeEnd={effectiveEnd}
           statusFilter={statusFilter}
           paymentTypeFilter={paymentTypeFilter}
         />
       )}
 
-      {/* Payment Modal */}
       {selectedPayment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">

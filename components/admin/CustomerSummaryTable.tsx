@@ -1,5 +1,4 @@
-// frontend/src/components/admin/CustomerSummaryTable.tsx - FIXED BUILDING FILTER
-
+// frontend/src/components/admin/CustomerSummaryTable.tsx - UNIFIED DESIGN PATTERN
 "use client";
 
 import React, { useState, Fragment, useMemo } from "react";
@@ -50,6 +49,55 @@ interface Building {
   buildingName?: string;
 }
 
+// ==================== SAFE NUMBER / CURRENCY ====================
+function formatCurrency(amount: any): string {
+  const num = Number(amount);
+  if (!isFinite(num)) {
+    return "₱0.00";
+  }
+  return `₱${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function safeGroupTotals(group: PaymentGroup) {
+  const rawPaid = Number(group.totalPaidAmount);
+  const rawPending = Number(group.totalPendingAmount);
+  const rawTotal = Number(group.totalAmount);
+
+  if (
+    isFinite(rawPaid) &&
+    isFinite(rawPending) &&
+    isFinite(rawTotal) &&
+    !isNaN(rawPaid) &&
+    !isNaN(rawPending) &&
+    !isNaN(rawTotal)
+  ) {
+    return {
+      totalPaidAmount: rawPaid,
+      totalPendingAmount: rawPending,
+      totalAmount: rawTotal,
+      paymentCount: Number(group.paymentCount) || group.payments?.length || 0,
+    };
+  }
+
+  let paid = 0;
+  let pending = 0;
+  let total = 0;
+  let count = 0;
+  for (const p of group.payments || []) {
+    const amt = Number(p.amount) || 0;
+    total += amt;
+    count += 1;
+    if (p.status === "completed") paid += amt;
+    else if (p.status === "pending") pending += amt;
+  }
+  return {
+    totalPaidAmount: paid,
+    totalPendingAmount: pending,
+    totalAmount: total,
+    paymentCount: count,
+  };
+}
+
 // ==================== HELPER FUNCTIONS ====================
 function formatBillingPeriod(billingPeriod?: {
   start: string;
@@ -75,10 +123,6 @@ function formatShortDate(dateStr: string): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatCurrency(amount: number): string {
-  return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
 function getStatusColor(status: string): string {
@@ -186,7 +230,7 @@ function groupMatchesBuilding(
   });
 }
 
-// ==================== CUSTOMER SUMMARY ROW COMPONENT ====================
+// ==================== CUSTOMER SUMMARY ROW ====================
 const CustomerSummaryRow = React.memo(
   ({
     group,
@@ -209,9 +253,12 @@ const CustomerSummaryRow = React.memo(
     deleting: boolean;
     bulkDeleting: boolean;
   }) => {
-    const hasMultiple = group.paymentCount > 1;
     const [showDeleteMenu, setShowDeleteMenu] = useState(false);
-    const hasFreePayment = group.payments.some(
+
+    const safeTotals = useMemo(() => safeGroupTotals(group), [group]);
+
+    const hasMultiple = safeTotals.paymentCount > 1;
+    const hasFreePayment = (group.payments || []).some(
       (p) => p.paymentDetails?.isFree === true,
     );
 
@@ -242,7 +289,9 @@ const CustomerSummaryRow = React.memo(
                   )}
                 </button>
               )}
-              <span className="font-semibold">{group.customerInfo.name}</span>
+              <span className="font-semibold">
+                {group.customerInfo?.name || "Unknown Customer"}
+              </span>
               {hasFreePayment && (
                 <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full flex items-center gap-0.5">
                   <FiCheckCircle className="w-3 h-3" /> FREE
@@ -251,36 +300,36 @@ const CustomerSummaryRow = React.memo(
             </div>
           </td>
           <td className="px-4 py-4 font-mono text-sm">
-            {group.customerInfo.applicationId}
+            {group.customerInfo?.applicationId || "—"}
           </td>
           <td className="px-4 py-4">
             <div className="flex items-center gap-1 text-sm">
               <FiMail className="w-3 h-3 text-gray-400" />{" "}
-              {group.customerInfo.email}
+              {group.customerInfo?.email || "—"}
             </div>
-            {group.customerInfo.phone !== "—" && (
+            {group.customerInfo?.phone && group.customerInfo.phone !== "—" && (
               <div className="flex items-center gap-1 text-xs text-gray-400">
                 <FiPhone className="w-3 h-3" /> {group.customerInfo.phone}
               </div>
             )}
           </td>
           <td className="px-4 py-4 text-sm">
-            {group.customerInfo.buildingName || "—"}
+            {group.customerInfo?.buildingName || "—"}
           </td>
           <td className="px-4 py-4 text-center">
             <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-              {group.paymentCount}
+              {safeTotals.paymentCount}
             </span>
           </td>
           <td className="px-4 py-4 text-right">
             <span className="font-bold text-green-600">
-              {formatCurrency(group.totalPaidAmount)}
+              {formatCurrency(safeTotals.totalPaidAmount)}
             </span>
           </td>
           <td className="px-4 py-4 text-right">
-            {group.totalPendingAmount > 0 ? (
+            {safeTotals.totalPendingAmount > 0 ? (
               <span className="text-yellow-600 font-medium">
-                {formatCurrency(group.totalPendingAmount)}
+                {formatCurrency(safeTotals.totalPendingAmount)}
               </span>
             ) : (
               "—"
@@ -293,31 +342,31 @@ const CustomerSummaryRow = React.memo(
             <div className="flex items-center justify-center gap-2">
               <button
                 onClick={() => onView(group.payments[0])}
-                className="text-blue-600 hover:text-blue-800"
+                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                 title="View Details"
               >
-                <FiEye className="w-5 h-5" />
+                <FiEye className="w-4 h-4" />
               </button>
               <div className="relative">
                 <button
                   onClick={() => setShowDeleteMenu(!showDeleteMenu)}
-                  className="text-red-600 hover:text-red-800"
+                  className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                   title="Delete Options"
                 >
-                  <FiTrash2 className="w-5 h-5" />
+                  <FiTrash2 className="w-4 h-4" />
                 </button>
                 {showDeleteMenu && (
                   <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
                     <div className="p-2">
                       <p className="text-xs text-gray-500 px-3 py-1 border-b border-gray-100">
-                        Delete options for {group.customerInfo.name}
+                        Delete options for {group.customerInfo?.name}
                       </p>
                       <button
                         onClick={() => {
                           setShowDeleteMenu(false);
                           onBulkDelete(
                             group.customerId,
-                            group.customerInfo.name,
+                            group.customerInfo?.name || "Customer",
                           );
                         }}
                         disabled={bulkDeleting}
@@ -329,7 +378,7 @@ const CustomerSummaryRow = React.memo(
                       <button
                         onClick={() => {
                           setShowDeleteMenu(false);
-                          const pendingPayments = group.payments.filter(
+                          const pendingPayments = (group.payments || []).filter(
                             (p) => p.status === "pending",
                           );
                           if (pendingPayments.length === 0) {
@@ -340,7 +389,7 @@ const CustomerSummaryRow = React.memo(
                           }
                           if (
                             !confirm(
-                              `Delete ${pendingPayments.length} pending payment(s) for ${group.customerInfo.name}?`,
+                              `Delete ${pendingPayments.length} pending payment(s) for ${group.customerInfo?.name}?`,
                             )
                           )
                             return;
@@ -366,10 +415,10 @@ const CustomerSummaryRow = React.memo(
             <td colSpan={10} className="px-4 py-4 pl-12">
               <div className="border-l-4 border-blue-400 pl-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  Payment History ({group.payments.length} payments)
+                  Payment History ({(group.payments || []).length} payments)
                 </p>
                 <div className="space-y-3">
-                  {group.payments.map((p, idx) => {
+                  {(group.payments || []).map((p, idx) => {
                     const billingPeriod = (p.billingId as any)?.billingPeriod;
                     const isInstallation =
                       p.paymentType === "installation" ||
@@ -414,9 +463,7 @@ const CustomerSummaryRow = React.memo(
                           </div>
                           <div>
                             <p className="text-xs text-gray-400">Amount</p>
-                            <p
-                              className={`font-bold ${isFree ? "text-green-600" : "text-green-600"}`}
-                            >
+                            <p className={`font-bold text-green-600`}>
                               {formatCurrency(p.amount)}
                               {isFree && (
                                 <span className="ml-1 text-xs text-green-500">
@@ -538,7 +585,6 @@ export default function CustomerSummaryTable({
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentTablePage, setCurrentTablePage] = useState(1);
 
-  // Resolve the selected building's name and id for flexible matching
   const selectedBuilding = useMemo(() => {
     if (!buildingFilter) return null;
     return buildings.find((b) => b._id === buildingFilter) || null;
@@ -551,26 +597,29 @@ export default function CustomerSummaryTable({
 
   const selectedBuildingId = buildingFilter || "";
 
-  // ==================== MEMOIZED DATA ====================
   const filteredGroups = useMemo(() => {
-    return paymentGroups.filter((group) => {
-      const info = group.customerInfo;
+    return (paymentGroups || []).filter((group) => {
+      const info = group.customerInfo || {
+        name: "",
+        email: "",
+        applicationId: "",
+        phone: "",
+      };
 
-      // Search filter
       let matchesSearch = true;
-      if (search.trim()) {
-        const searchLower = search.toLowerCase();
+      const trimmed = (search || "").trim();
+      if (trimmed) {
+        const searchLower = trimmed.toLowerCase();
         matchesSearch =
-          info.name.toLowerCase().includes(searchLower) ||
-          info.email.toLowerCase().includes(searchLower) ||
-          info.applicationId.toLowerCase().includes(searchLower) ||
-          info.phone.toLowerCase().includes(searchLower) ||
-          group.payments.some((p) =>
-            p.referenceNumber?.toLowerCase().includes(searchLower),
+          (info.name || "").toLowerCase().includes(searchLower) ||
+          (info.email || "").toLowerCase().includes(searchLower) ||
+          (info.applicationId || "").toLowerCase().includes(searchLower) ||
+          (info.phone || "").toLowerCase().includes(searchLower) ||
+          (group.payments || []).some((p) =>
+            (p.referenceNumber || "").toLowerCase().includes(searchLower),
           );
       }
 
-      // Building filter (robust matching)
       const matchesBuilding = groupMatchesBuilding(
         group,
         buildingFilter,
@@ -593,24 +642,26 @@ export default function CustomerSummaryTable({
       let aVal: any, bVal: any;
       switch (sortField) {
         case "customerInfo":
-          aVal = a.customerInfo.name;
-          bVal = b.customerInfo.name;
+          aVal = (a.customerInfo?.name || "").toLowerCase();
+          bVal = (b.customerInfo?.name || "").toLowerCase();
           break;
-        case "totalAmount":
-          aVal = a.totalAmount;
-          bVal = b.totalAmount;
+        case "totalAmount": {
+          aVal = safeGroupTotals(a).totalAmount;
+          bVal = safeGroupTotals(b).totalAmount;
           break;
-        case "paymentCount":
-          aVal = a.paymentCount;
-          bVal = b.paymentCount;
+        }
+        case "paymentCount": {
+          aVal = safeGroupTotals(a).paymentCount;
+          bVal = safeGroupTotals(b).paymentCount;
           break;
+        }
         case "lastPaymentDate":
-          aVal = new Date(a.lastPaymentDate).getTime();
-          bVal = new Date(b.lastPaymentDate).getTime();
+          aVal = new Date(a.lastPaymentDate || 0).getTime();
+          bVal = new Date(b.lastPaymentDate || 0).getTime();
           break;
         default:
-          aVal = a[sortField];
-          bVal = b[sortField];
+          aVal = (a as any)[sortField];
+          bVal = (b as any)[sortField];
       }
       if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
       if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
@@ -625,28 +676,6 @@ export default function CustomerSummaryTable({
 
   const totalFilteredCount = filteredGroups.length;
   const totalPagesCount = Math.ceil(totalFilteredCount / itemsPerPage) || 1;
-
-  const grandTotals = useMemo(() => {
-    let totalPaid = 0;
-    let totalPending = 0;
-    let totalOverall = 0;
-    let totalTransactions = 0;
-
-    filteredGroups.forEach((group) => {
-      totalPaid += group.totalPaidAmount;
-      totalPending += group.totalPendingAmount;
-      totalOverall += group.totalAmount;
-      totalTransactions += group.paymentCount;
-    });
-
-    return {
-      totalPaid,
-      totalPending,
-      totalOverall,
-      totalTransactions,
-      totalCustomers: filteredGroups.length,
-    };
-  }, [filteredGroups]);
 
   const handleSort = (field: keyof PaymentGroup) => {
     if (sortField === field) {
@@ -668,10 +697,56 @@ export default function CustomerSummaryTable({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Building Filter Debug Info (only shows when filter is active) */}
+    <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Customer Payment Summary ({totalFilteredCount})
+          </h2>
+          <p className="text-sm text-gray-500">
+            Showing {paginatedGroups.length} of {sortedGroups.length} customers
+          </p>
+          {(dateRangeStart || dateRangeEnd) && (
+            <p className="text-xs text-blue-600 mt-1">
+              📅 Filtered by:{" "}
+              {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
+              {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
+            </p>
+          )}
+          {buildingFilter && (
+            <p className="text-xs text-blue-600 mt-1">
+              🏢 Building:{" "}
+              {buildings.find((b) => b._id === buildingFilter)?.name ||
+                buildingFilter}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value));
+              setCurrentTablePage(1);
+            }}
+            className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value={10}>10 per page</option>
+            <option value={25}>25 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
+          </select>
+          <button
+            onClick={onExportPDF}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
+          >
+            <FiPrinter /> Export PDF
+          </button>
+        </div>
+      </div>
+
       {buildingFilter && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 text-sm">
           <p className="text-blue-800">
             <strong>🏢 Filtering by building:</strong>{" "}
             {selectedBuildingName || buildingFilter}{" "}
@@ -692,199 +767,150 @@ export default function CustomerSummaryTable({
         </div>
       )}
 
-      {/* Customer Summary Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">
-              Customer Payment Summary ({totalFilteredCount})
-            </h2>
-            <p className="text-sm text-gray-500">
-              Showing {paginatedGroups.length} of {sortedGroups.length}{" "}
-              customers
-            </p>
-            {(dateRangeStart || dateRangeEnd) && (
-              <p className="text-xs text-blue-600 mt-1">
-                📅 Filtered by:{" "}
-                {dateRangeStart ? formatShortDate(dateRangeStart) : "Start"} to{" "}
-                {dateRangeEnd ? formatShortDate(dateRangeEnd) : "End"}
-              </p>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                #
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("customerInfo")}
+              >
+                Customer Name <SortIcon field="customerInfo" />
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Application ID
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Email / Phone
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Building
+              </th>
+              <th
+                className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("paymentCount")}
+              >
+                Payments <SortIcon field="paymentCount" />
+              </th>
+              <th
+                className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("totalAmount")}
+              >
+                Total Paid <SortIcon field="totalAmount" />
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Pending
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("lastPaymentDate")}
+              >
+                Last Payment <SortIcon field="lastPaymentDate" />
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 bg-white">
+            {paginatedGroups.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={10}
+                  className="px-6 py-12 text-center text-gray-500"
+                >
+                  <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <p>No payment records found</p>
+                  {(dateRangeStart || dateRangeEnd) && (
+                    <p className="text-sm text-gray-400 mt-1">
+                      Try adjusting your date range filters
+                    </p>
+                  )}
+                  {buildingFilter && (
+                    <p className="text-sm text-gray-400 mt-1">
+                      Try removing the building filter or selecting a different
+                      building
+                    </p>
+                  )}
+                </td>
+              </tr>
+            ) : (
+              paginatedGroups.map((group, index) => {
+                const isExpanded = expandedCustomer === group.customerId;
+                const rowNumber =
+                  (currentTablePage - 1) * itemsPerPage + index + 1;
+                return (
+                  <CustomerSummaryRow
+                    key={group.customerId}
+                    group={group}
+                    rowNumber={rowNumber}
+                    isExpanded={isExpanded}
+                    onToggleExpand={(id) =>
+                      setExpandedCustomer(isExpanded ? null : id)
+                    }
+                    onView={onView}
+                    onDelete={onDelete}
+                    onBulkDelete={onBulkDelete}
+                    deleting={deleting}
+                    bulkDeleting={bulkDeleting}
+                  />
+                );
+              })
             )}
-            {buildingFilter && (
-              <p className="text-xs text-blue-600 mt-1">
-                🏢 Building:{" "}
-                {buildings.find((b) => b._id === buildingFilter)?.name ||
-                  buildingFilter}
-              </p>
-            )}
+          </tbody>
+        </table>
+      </div>
+      {totalFilteredCount > 0 && (
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
+          <div className="text-sm text-gray-600">
+            Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
+            {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
+            {totalFilteredCount} entries
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentTablePage(1);
-              }}
-              className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={10}>10 per page</option>
-              <option value={25}>25 per page</option>
-              <option value={50}>50 per page</option>
-              <option value={100}>100 per page</option>
-            </select>
+          <div className="flex gap-2">
             <button
-              onClick={onExportPDF}
-              className="px-3 py-1 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
+              onClick={() => setCurrentTablePage(1)}
+              disabled={currentTablePage === 1}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition text-sm"
             >
-              <FiPrinter /> Export PDF
+              First
+            </button>
+            <button
+              onClick={() =>
+                setCurrentTablePage((prev) => Math.max(1, prev - 1))
+              }
+              disabled={currentTablePage === 1}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition text-sm"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1 text-sm">
+              Page {currentTablePage} of {totalPagesCount}
+            </span>
+            <button
+              onClick={() =>
+                setCurrentTablePage((prev) =>
+                  Math.min(totalPagesCount, prev + 1),
+                )
+              }
+              disabled={currentTablePage === totalPagesCount}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition text-sm"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => setCurrentTablePage(totalPagesCount)}
+              disabled={currentTablePage === totalPagesCount}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition text-sm"
+            >
+              Last
             </button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  #
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("customerInfo")}
-                >
-                  Customer Name <SortIcon field="customerInfo" />
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Application ID
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email / Phone
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Building
-                </th>
-                <th
-                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("paymentCount")}
-                >
-                  Payments <SortIcon field="paymentCount" />
-                </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("totalAmount")}
-                >
-                  Total Paid <SortIcon field="totalAmount" />
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pending
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort("lastPaymentDate")}
-                >
-                  Last Payment <SortIcon field="lastPaymentDate" />
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
-              {paginatedGroups.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-6 py-12 text-center text-gray-500"
-                  >
-                    <FiInfo className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p>No payment records found</p>
-                    {(dateRangeStart || dateRangeEnd) && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Try adjusting your date range filters
-                      </p>
-                    )}
-                    {buildingFilter && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Try removing the building filter or selecting a
-                        different building
-                      </p>
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                paginatedGroups.map((group, index) => {
-                  const isExpanded = expandedCustomer === group.customerId;
-                  const rowNumber =
-                    (currentTablePage - 1) * itemsPerPage + index + 1;
-                  return (
-                    <CustomerSummaryRow
-                      key={group.customerId}
-                      group={group}
-                      rowNumber={rowNumber}
-                      isExpanded={isExpanded}
-                      onToggleExpand={(id) =>
-                        setExpandedCustomer(isExpanded ? null : id)
-                      }
-                      onView={onView}
-                      onDelete={onDelete}
-                      onBulkDelete={onBulkDelete}
-                      deleting={deleting}
-                      bulkDeleting={bulkDeleting}
-                    />
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {totalFilteredCount > 0 && (
-          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-4">
-            <div className="text-sm text-gray-600">
-              Showing {(currentTablePage - 1) * itemsPerPage + 1} to{" "}
-              {Math.min(currentTablePage * itemsPerPage, totalFilteredCount)} of{" "}
-              {totalFilteredCount} entries
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentTablePage(1)}
-                disabled={currentTablePage === 1}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                First
-              </button>
-              <button
-                onClick={() =>
-                  setCurrentTablePage((prev) => Math.max(1, prev - 1))
-                }
-                disabled={currentTablePage === 1}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1 text-sm">
-                Page {currentTablePage} of {totalPagesCount}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentTablePage((prev) =>
-                    Math.min(totalPagesCount, prev + 1),
-                  )
-                }
-                disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => setCurrentTablePage(totalPagesCount)}
-                disabled={currentTablePage === totalPagesCount}
-                className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

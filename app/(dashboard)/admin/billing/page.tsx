@@ -1,5 +1,7 @@
-// frontend/src/app/(dashboard)/admin/billing/page.tsx - COMPLETE WITH DISCONNECT/RECONNECT
-
+// frontend/src/app/(dashboard)/admin/billing/page.tsx - UNIFIED DESIGN PATTERN
+// ✅ FIX: allCustomers now reads from dashboardData.allCustomers which includes
+//         approved applications WITHOUT billing (backend already merges them)
+// ✅ FIX: statusFilter supports "approved_no_billing" for approved apps without billing
 "use client";
 
 import React, {
@@ -44,6 +46,12 @@ import {
   FiPlusCircle,
   FiUserX,
   FiUserCheck,
+  FiFilter,
+  FiChevronDown,
+  FiChevronUp,
+  FiBarChart2,
+  FiTrendingUp,
+  FiCreditCard,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
@@ -52,6 +60,7 @@ import BillingReportsWithDownload from "@/components/BillingReportsWithDownload"
 import BillingTable from "@/components/admin/billingTable";
 import CustomerDetailModal from "@/components/admin/CustomerDetailModal";
 import BackdatedModal from "@/components/billing/BackdatedModal";
+import RichTextEditor from "@/components/RichTextEditor";
 
 // Import services
 import {
@@ -85,6 +94,10 @@ import {
 } from "@/services/billing";
 import { confirmPayment, rejectPayment } from "@/services/payment";
 import api from "@/services/api";
+import emailService, {
+  SenderType,
+  EmailTemplate,
+} from "@/services/emailService";
 
 // Import types
 interface CustomerItem {
@@ -132,6 +145,44 @@ interface Building {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
+// ==================== SENDER OPTIONS ====================
+const SENDER_OPTIONS: {
+  value: SenderType;
+  label: string;
+  email: string;
+  icon: string;
+  color: string;
+}[] = [
+  {
+    value: "collection",
+    label: "Collection",
+    email: "Location-specific",
+    icon: "📍",
+    color: "green",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    email: "admin@misterfyber.com",
+    icon: "👤",
+    color: "blue",
+  },
+  {
+    value: "workselpueblo",
+    label: "Workselpueblo",
+    email: "workselpueblo@gmail.com",
+    icon: "🏢",
+    color: "purple",
+  },
+  {
+    value: "fbsilkresidence",
+    label: "FB Silk Residence",
+    email: "fbsilkresidence@gmail.com",
+    icon: "🏠",
+    color: "orange",
+  },
+];
+
 // ==================== HELPER FUNCTIONS ====================
 
 function formatDate(dateString: string): string {
@@ -146,6 +197,12 @@ function formatDate(dateString: string): string {
   } catch {
     return "-";
   }
+}
+
+function formatCurrency(amount: any): string {
+  const num = Number(amount);
+  if (!isFinite(num)) return "₱0.00";
+  return `₱${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // ==================== QUERY CLIENT SETUP ====================
@@ -178,10 +235,10 @@ const fetchDashboardData = async () => {
   }
 };
 
-const fetchBuildings = async () => {
+const fetchBuildings = async (): Promise<Building[]> => {
   try {
     const response = await api.get("/buildings/active");
-    return response.data.data || [];
+    return (response.data.data || []) as Building[];
   } catch (error) {
     console.error("Error fetching buildings:", error);
     return [];
@@ -198,11 +255,6 @@ const fetchPlans = async () => {
   }
 };
 
-const sendEmail = async (data: any) => {
-  const response = await api.post("/email/send-manual", data);
-  return response.data;
-};
-
 // ==================== CUSTOM HOOKS ====================
 const useDashboardData = () => {
   return useQuery({
@@ -216,7 +268,7 @@ const useDashboardData = () => {
 };
 
 const useBuildings = () => {
-  return useQuery({
+  return useQuery<Building[]>({
     queryKey: ["buildings"],
     queryFn: fetchBuildings,
     staleTime: 5 * 60 * 1000,
@@ -237,10 +289,21 @@ const usePlans = () => {
 function AdminBillingPageContent() {
   const queryClient = useQueryClient();
 
+  // ✅ Function to get current month string (YYYY-MM)
+  const getCurrentMonthString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  };
+
   // ==================== STATE ====================
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState(getCurrentMonthString());
+  const [dateFilter, setDateFilter] = useState("");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -263,7 +326,6 @@ function AdminBillingPageContent() {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [showDeleteBillConfirmModal, setShowDeleteBillConfirmModal] =
     useState(false);
-  // ✅ Disconnect/Reconnect modal states
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [showReconnectModal, setShowReconnectModal] = useState(false);
   const [disconnectReason, setDisconnectReason] = useState("");
@@ -302,7 +364,37 @@ function AdminBillingPageContent() {
     invoiceNumber: string;
     customer: CustomerItem;
   } | null>(null);
+
+  // ==================== EMAIL MODAL STATE ====================
   const [emailCustomer, setEmailCustomer] = useState<CustomerItem | null>(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailRichTextContent, setEmailRichTextContent] = useState("");
+  const [emailSenderType, setEmailSenderType] =
+    useState<SenderType>("collection");
+  const [emailIncludeBilling, setEmailIncludeBilling] = useState(false);
+  const [emailSelectedBillIds, setEmailSelectedBillIds] = useState<string[]>(
+    [],
+  );
+  const [emailCustomerBills, setEmailCustomerBills] = useState<any[]>([]);
+  const [emailSendCopyToAdmin, setEmailSendCopyToAdmin] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailLoadingBills, setEmailLoadingBills] = useState(false);
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState("");
+  const [emailPreviewLocation, setEmailPreviewLocation] = useState("");
+  const [emailPreviewSenderInfo, setEmailPreviewSenderInfo] = useState("");
+  const [emailCustomerLocation, setEmailCustomerLocation] = useState("");
+  const [emailCollectionEmail, setEmailCollectionEmail] = useState("");
+
+  // ✅ NEW: Template + Schedule state
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [emailSelectedTemplateId, setEmailSelectedTemplateId] = useState("");
+  const [emailTemplatesLoading, setEmailTemplatesLoading] = useState(false);
+  const [emailScheduleMode, setEmailScheduleMode] = useState(false);
+  const [emailScheduledFor, setEmailScheduledFor] = useState("");
+  const [emailScheduleName, setEmailScheduleName] = useState("");
+  const [emailScheduling, setEmailScheduling] = useState(false);
 
   // Form states
   const [startDate, setStartDate] = useState("");
@@ -311,10 +403,6 @@ function AdminBillingPageContent() {
   const [includeInstallationFee, setIncludeInstallationFee] = useState(true);
   const [pauseReason, setPauseReason] = useState("");
   const [pauseUntilDate, setPauseUntilDate] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailMessage, setEmailMessage] = useState("");
-  const [emailType, setEmailType] = useState("custom");
-  const [sendingEmail, setSendingEmail] = useState(false);
   const [backdatedLoading, setBackdatedLoading] = useState(false);
   const [selectedBackdatedCustomer, setSelectedBackdatedCustomer] =
     useState<any>(null);
@@ -360,26 +448,354 @@ function AdminBillingPageContent() {
   const { data: buildingsData = [] } = useBuildings();
   const { data: plansData = [] } = usePlans();
 
+  // ==================== EMAIL HELPER FUNCTIONS ====================
+  const getLocationFromBuildingName = useCallback(
+    (buildingName?: string): string => {
+      if (!buildingName) return "other";
+      const name = buildingName.toLowerCase().trim();
+      if (name.includes("breeze")) return "breeze";
+      if (name.includes("sil") || name.includes("silk")) return "sil";
+      return "other";
+    },
+    [],
+  );
+
+  const getCollectionEmailForLocation = useCallback(
+    (location: string): string => {
+      if (location === "breeze") {
+        return (
+          process.env.NEXT_PUBLIC_COLLECTION_EMAIL_BREEZE ||
+          "collection.breeze@misterfyber.com"
+        );
+      } else if (location === "sil") {
+        return (
+          process.env.NEXT_PUBLIC_COLLECTION_EMAIL_SIL ||
+          "collection.silk@misterfyber.com"
+        );
+      }
+      return (
+        process.env.NEXT_PUBLIC_COLLECTION_EMAIL_DEFAULT ||
+        "admin@misterfyber.com"
+      );
+    },
+    [],
+  );
+
+  const getLocationDisplay = useCallback((location: string): string => {
+    if (location === "breeze") return "🌊 Breeze";
+    if (location === "sil") return "🏢 SIL";
+    return "📍 Other";
+  }, []);
+
+  // ==================== COMPUTED DATE RANGE ====================
+  const dateRange = useMemo(() => {
+    if (!monthFilter && !dateFilter) return null;
+
+    if (dateFilter) {
+      const d = new Date(`${dateFilter}T00:00:00`);
+      if (isNaN(d.getTime())) return null;
+      const start = new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        0,
+        0,
+        0,
+        0,
+      );
+      const end = new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        23,
+        59,
+        59,
+        999,
+      );
+      return { start, end };
+    }
+
+    if (monthFilter) {
+      const [yStr, mStr] = monthFilter.split("-");
+      const y = parseInt(yStr, 10);
+      const m = parseInt(mStr, 10) - 1;
+      if (isNaN(y) || isNaN(m)) return null;
+      const start = new Date(y, m, 1, 0, 0, 0, 0);
+      const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+    return null;
+  }, [monthFilter, dateFilter]);
+
+  // ✅ Helper: check if a bill falls in current date range
+  const billInRange = useCallback(
+    (bill: any): boolean => {
+      if (!dateRange) return true;
+      const raw =
+        bill?.billDate ||
+        bill?.createdAt ||
+        bill?.dueDate ||
+        bill?.paidAt ||
+        bill?.paymentDate ||
+        bill?.updatedAt;
+      if (!raw) return false;
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return false;
+      return d >= dateRange.start && d <= dateRange.end;
+    },
+    [dateRange],
+  );
+
   // ==================== COMPUTED DATA ====================
-  // ✅ ALL customers (including disconnected) para laging visible sa table
-  // ✅ FIX: Explicitly type as CustomerItem[] to avoid implicit any error
+  // ✅ FIX: Prefer allCustomers (backend already merges approved-no-billing apps)
+  //         Fall back to merging customers + disconnectedCustomers
   const allCustomers = useMemo<CustomerItem[]>(() => {
     if (!dashboardData) return [];
-    // Kung ang backend ay nag-return ng allCustomers, gamitin ito
+
     if (
       dashboardData.allCustomers &&
-      Array.isArray(dashboardData.allCustomers)
+      Array.isArray(dashboardData.allCustomers) &&
+      dashboardData.allCustomers.length > 0
     ) {
       return dashboardData.allCustomers as CustomerItem[];
     }
-    // Fallback: combine customers + disconnectedCustomers
+
     const active = (dashboardData.customers || []) as CustomerItem[];
     const disconnected = (dashboardData.disconnectedCustomers ||
       []) as CustomerItem[];
-    return [...active, ...disconnected];
+
+    // Dedupe by _id + type
+    const seen = new Set<string>();
+    return [...active, ...disconnected].filter((c) => {
+      const key = `${c.type}-${c._id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [dashboardData]);
 
-  // ✅ FIX: Explicitly type the callback parameter as CustomerItem
+  const buildingFilteredCustomers = useMemo<CustomerItem[]>(() => {
+    let result = allCustomers;
+
+    if (buildingFilter !== "all") {
+      result = result.filter((c) => {
+        const customerBuildingId = c.building?._id || null;
+        return customerBuildingId === buildingFilter;
+      });
+    }
+
+    if (dateRange) {
+      result = result.filter((c) => {
+        const allBills = [
+          ...(c.unpaidBills || []),
+          ...(c.overdueBills || []),
+          ...(c.visibleUnpaidBills || []),
+          ...(c.hiddenBills || []),
+        ];
+        if (c.billingCycle?.bills && Array.isArray(c.billingCycle.bills)) {
+          allBills.push(...c.billingCycle.bills);
+        }
+        if (c.nextMonthBill) allBills.push(c.nextMonthBill);
+        return allBills.some((b) => billInRange(b));
+      });
+    }
+
+    return result;
+  }, [allCustomers, buildingFilter, dateRange, billInRange]);
+
+  const buildingFilteredStats = useMemo(() => {
+    if (buildingFilter === "all" && !dateRange) {
+      if (!dashboardData?.stats) {
+        return {
+          totalCustomers: 0,
+          totalBalance: 0,
+          customersWithBalanceCount: 0,
+          overdueCustomersCount: 0,
+          activeCyclesCount: 0,
+          pausedCyclesCount: 0,
+          pendingProRatedCount: 0,
+          pendingActivationsCount: 0,
+          pendingPaymentsCount: 0,
+          pendingInstallationBillsCount: 0,
+          applicationsWithoutBilling: 0,
+          totalInstallationFeesDue: 0,
+          installationFeesPaidCount: 0,
+          disconnectedCustomersCount: 0,
+          collectibles: 0,
+          totalOverdueAmount: 0,
+          totalUnpaidBillsCount: 0,
+          paidInstallationFeesAmount: 0,
+          monthlyRecurringRevenue: 0,
+          averageBalance: 0,
+        };
+      }
+      const baseStats = dashboardData.stats;
+      const collectibles = allCustomers.reduce(
+        (sum, c) => sum + (c.currentBalance || 0),
+        0,
+      );
+      const totalOverdueAmount = allCustomers.reduce((sum, c) => {
+        const overdue = (c.overdueBills || []).reduce(
+          (s: number, b: any) => s + (b.total || b.amount || 0),
+          0,
+        );
+        return sum + overdue;
+      }, 0);
+      const totalUnpaidBillsCount = allCustomers.reduce(
+        (sum, c) => sum + (c.unpaidBills?.length || 0),
+        0,
+      );
+      const paidInstallationFeesAmount = allCustomers.reduce((sum, c) => {
+        if (c.type === "application" && c.installationFeePaid) {
+          return sum + (c.installationFee || 0);
+        }
+        return sum;
+      }, 0);
+      const monthlyRecurringRevenue = allCustomers.reduce((sum, c) => {
+        if (c.billingCycle?.status === "active" || c.status === "active") {
+          return sum + (c.planPrice || 0);
+        }
+        return sum;
+      }, 0);
+      const averageBalance =
+        baseStats.customersWithBalanceCount > 0
+          ? baseStats.totalBalance / baseStats.customersWithBalanceCount
+          : 0;
+
+      return {
+        ...baseStats,
+        collectibles,
+        totalOverdueAmount,
+        totalUnpaidBillsCount,
+        paidInstallationFeesAmount,
+        monthlyRecurringRevenue,
+        averageBalance,
+      };
+    }
+
+    const filtered = buildingFilteredCustomers;
+    const disconnected = filtered.filter(
+      (c) =>
+        c.isDisconnected === true ||
+        c.status === "disconnected" ||
+        c.billingCycle?.status === "disconnected",
+    );
+    const totalBalance = filtered.reduce(
+      (sum, c) => sum + (c.currentBalance || 0),
+      0,
+    );
+    const customersWithBalanceCount = filtered.filter(
+      (c) => (c.currentBalance || 0) > 0,
+    ).length;
+    const overdueCustomersCount = filtered.filter(
+      (c) => (c.overdueBills?.length || 0) > 0,
+    ).length;
+    const activeCyclesCount = filtered.filter(
+      (c) => c.billingCycle?.status === "active",
+    ).length;
+    const pausedCyclesCount = filtered.filter(
+      (c) => c.billingCycle?.status === "paused",
+    ).length;
+
+    const pendingProRatedCount = filtered.filter(
+      (c) =>
+        c.billingCycle?.status === "pending_activation" &&
+        (c.unpaidBills?.length || 0) > 0 &&
+        c.unpaidBills?.some(
+          (b: any) => b.isProRated === true && b.status !== "paid",
+        ),
+    ).length;
+    const pendingActivationsCount = filtered.filter(
+      (c) => c.billingCycle?.status === "pending_activation",
+    ).length;
+    const pendingPaymentsCount = 0;
+    const pendingInstallationBillsCount = filtered.filter(
+      (c) =>
+        c.type === "application" &&
+        c.installationFeePaid !== true &&
+        (c.installationFee || 0) > 0,
+    ).length;
+
+    const totalInstallationFeesDue = filtered.reduce((sum, c) => {
+      if (c.type === "application" && c.installationFeePaid !== true) {
+        return sum + (c.installationFee || 0);
+      }
+      return sum;
+    }, 0);
+    const paidInstallationFeesAmount = filtered.reduce((sum, c) => {
+      if (c.type === "application" && c.installationFeePaid === true) {
+        return sum + (c.installationFee || 0);
+      }
+      return sum;
+    }, 0);
+    const installationFeesPaidCount = filtered.filter(
+      (c) => c.type === "application" && c.installationFeePaid === true,
+    ).length;
+    const applicationsWithoutBilling = filtered.filter(
+      (c) => c.type === "application" && !c.billingCycle,
+    ).length;
+
+    const collectibles = totalBalance;
+    const totalOverdueAmount = filtered.reduce((sum, c) => {
+      const overdue = (c.overdueBills || []).reduce(
+        (s: number, b: any) => s + (b.total || b.amount || 0),
+        0,
+      );
+      return sum + overdue;
+    }, 0);
+    const totalUnpaidBillsCount = filtered.reduce(
+      (sum, c) => sum + (c.unpaidBills?.length || 0),
+      0,
+    );
+    const monthlyRecurringRevenue = filtered.reduce((sum, c) => {
+      if (c.billingCycle?.status === "active" || c.status === "active") {
+        return sum + (c.planPrice || 0);
+      }
+      return sum;
+    }, 0);
+    const averageBalance =
+      customersWithBalanceCount > 0
+        ? totalBalance / customersWithBalanceCount
+        : 0;
+
+    return {
+      totalCustomers: filtered.length,
+      totalBalance,
+      customersWithBalanceCount,
+      overdueCustomersCount,
+      activeCyclesCount,
+      pausedCyclesCount,
+      pendingProRatedCount,
+      pendingActivationsCount,
+      pendingPaymentsCount,
+      pendingInstallationBillsCount,
+      applicationsWithoutBilling,
+      totalInstallationFeesDue,
+      installationFeesPaidCount,
+      disconnectedCustomersCount: disconnected.length,
+      collectibles,
+      totalOverdueAmount,
+      totalUnpaidBillsCount,
+      paidInstallationFeesAmount,
+      monthlyRecurringRevenue,
+      averageBalance,
+    };
+  }, [
+    buildingFilter,
+    dateRange,
+    buildingFilteredCustomers,
+    allCustomers,
+    dashboardData,
+  ]);
+
+  const activeBuildingName = useMemo<string | null>(() => {
+    if (buildingFilter === "all") return null;
+    const building = buildingsData.find(
+      (b: Building) => b._id === buildingFilter,
+    );
+    return building?.buildingName || null;
+  }, [buildingFilter, buildingsData]);
+
   const disconnectedCustomers = useMemo<CustomerItem[]>(() => {
     if (!dashboardData) return [];
     if (
@@ -467,7 +883,6 @@ function AdminBillingPageContent() {
       setIsRefreshing(true);
 
       try {
-        console.log(`🔄 Refreshing dashboard data... (silent: ${silent})`);
         clearBillingCache();
 
         queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
@@ -488,7 +903,6 @@ function AdminBillingPageContent() {
           if (!silent) {
             toast.success("🔄 Dashboard updated!", { duration: 1500 });
           }
-          console.log("✅ Dashboard data refreshed successfully");
         }
       } catch (error) {
         console.error("❌ Error refreshing data:", error);
@@ -503,20 +917,16 @@ function AdminBillingPageContent() {
   useEffect(() => {
     if (!isMounted) return;
 
-    console.log("🔌 Setting up WebSocket connection...");
-
     let isFirstConnection = true;
 
     billingEvents.connect();
 
     const handleRefresh = (payload: any) => {
-      console.log("🔄 Server update received:", payload?.type || "unknown");
       refreshData(true);
     };
 
     const handleConnected = () => {
       setWebsocketConnected(true);
-      console.log("🔌 WebSocket connected!");
       if (isFirstConnection) {
         isFirstConnection = false;
         refreshData(true);
@@ -525,7 +935,6 @@ function AdminBillingPageContent() {
 
     const handleDisconnected = () => {
       setWebsocketConnected(false);
-      console.log("🔌 WebSocket disconnected");
     };
 
     const unsubConnected = billingEvents.on("connected", handleConnected);
@@ -575,7 +984,6 @@ function AdminBillingPageContent() {
     const unsubSettingsUpdated = billingEvents.on(
       "settings_updated",
       (payload) => {
-        console.log("⚙️ Settings updated - reloading settings");
         if (settingsLoaded) {
           loadBillingFlowSettings();
         }
@@ -623,7 +1031,6 @@ function AdminBillingPageContent() {
 
   // ==================== MUTATIONS ====================
 
-  // ✅ Disconnect Client Mutation
   const disconnectClientMutation = useMutation({
     mutationFn: (params: { applicationId: string; reason?: string }) =>
       disconnectClient(params),
@@ -645,7 +1052,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // ✅ Reconnect Client Mutation
   const reconnectClientMutation = useMutation({
     mutationFn: (params: { applicationId: string }) => reconnectClient(params),
     onSuccess: (data) => {
@@ -662,7 +1068,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Update Bill Price Mutation
   const updateBillPriceMutation = useMutation({
     mutationFn: ({ billId, newPrice }: { billId: string; newPrice: number }) =>
       updateBillPrice(billId, newPrice),
@@ -677,7 +1082,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Delete Bill Mutation
   const deleteBillMutation = useMutation({
     mutationFn: ({ billId, reason }: { billId: string; reason?: string }) =>
       deleteBill(billId, reason),
@@ -694,7 +1098,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Early Bill Generation Mutation
   const generateEarlyBillMutation = useMutation({
     mutationFn: (applicationId: string) =>
       manuallyGenerateEarlyBill({ applicationId }),
@@ -710,7 +1113,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Auto-generate early bills mutation
   const autoGenerateEarlyBillsMutation = useMutation({
     mutationFn: autoGenerateEarlyBills,
     onMutate: () => setAutoGenerationRunning(true),
@@ -733,7 +1135,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Start Billing Mutation
   const startBillingMutation = useMutation({
     mutationFn: (params: any) => startBilling(params),
     onSuccess: () => {
@@ -747,7 +1148,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Start Billing for Application Mutation
   const startBillingForAppMutation = useMutation({
     mutationFn: ({
       applicationId,
@@ -767,7 +1167,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Stop Billing Mutation
   const stopBillingMutation = useMutation({
     mutationFn: (params: any) => stopBilling(params),
     onSuccess: () => {
@@ -779,7 +1178,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Pause Billing Mutation
   const pauseBillingMutation = useMutation({
     mutationFn: (params: any) => pauseBilling(params),
     onSuccess: () => {
@@ -794,7 +1192,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Resume Billing Mutation
   const resumeBillingMutation = useMutation({
     mutationFn: (params: any) => resumeBilling(params),
     onSuccess: () => {
@@ -806,7 +1203,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Delete Billing Cycle Mutation
   const deleteCycleMutation = useMutation({
     mutationFn: (params: any) => deleteBillingCycle(params),
     onSuccess: () => {
@@ -822,7 +1218,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Mark Bill as Paid Mutation
   const markBillPaidMutation = useMutation({
     mutationFn: ({
       billId,
@@ -842,7 +1237,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Mark Bill as Free Mutation
   const markBillFreeMutation = useMutation({
     mutationFn: ({
       billId,
@@ -862,7 +1256,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Mark Installation Bill as Paid Mutation
   const markInstallationPaidMutation = useMutation({
     mutationFn: ({
       billId,
@@ -883,7 +1276,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Mark Installation Bill as Free Mutation
   const markInstallationFreeMutation = useMutation({
     mutationFn: ({
       billId,
@@ -904,7 +1296,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Confirm Payment Mutation
   const confirmPaymentMutation = useMutation({
     mutationFn: (paymentId: string) => confirmPayment(paymentId),
     onSuccess: () => {
@@ -916,7 +1307,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Reject Payment Mutation
   const rejectPaymentMutation = useMutation({
     mutationFn: ({
       paymentId,
@@ -934,7 +1324,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Confirm Pro-rated Payment Mutation
   const confirmProRatedPaymentMutation = useMutation({
     mutationFn: (data: any) => confirmProRatedPayment(data),
     onSuccess: () => {
@@ -948,7 +1337,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // Start Monthly Billing Mutation
   const startMonthlyBillingMutation = useMutation({
     mutationFn: (data: any) => startMonthlyBilling(data),
     onSuccess: () => {
@@ -975,7 +1363,6 @@ function AdminBillingPageContent() {
   };
 
   const handleRefresh = () => {
-    console.log("🔄 Manual refresh triggered");
     refreshData(false);
   };
 
@@ -1018,14 +1405,12 @@ function AdminBillingPageContent() {
     });
   };
 
-  // ✅ DISCONNECT HANDLER - open modal
   const handleDisconnectCustomer = (customer: CustomerItem) => {
     setCustomerToDisconnect(customer);
     setDisconnectReason("");
     setShowDisconnectModal(true);
   };
 
-  // ✅ CONFIRM DISCONNECT
   const confirmDisconnect = () => {
     if (!customerToDisconnect) return;
     if (!customerToDisconnect.applicationId) {
@@ -1038,13 +1423,11 @@ function AdminBillingPageContent() {
     });
   };
 
-  // ✅ RECONNECT HANDLER - open modal
   const handleReconnectCustomer = (customer: CustomerItem) => {
     setCustomerToReconnect(customer);
     setShowReconnectModal(true);
   };
 
-  // ✅ CONFIRM RECONNECT
   const confirmReconnect = () => {
     if (!customerToReconnect) return;
     if (!customerToReconnect.applicationId) {
@@ -1072,10 +1455,7 @@ function AdminBillingPageContent() {
     if (customer.nextMonthBill) {
       toast.success(
         `📄 Already have a bill for next month: ${customer.nextMonthBill.invoiceNumber}`,
-        {
-          icon: "📄",
-          duration: 4000,
-        },
+        { icon: "📄", duration: 4000 },
       );
       return;
     }
@@ -1106,10 +1486,7 @@ function AdminBillingPageContent() {
       if (minutesSince < 5) {
         toast(
           `⏳ Auto-generation already ran ${Math.round(minutesSince)} minutes ago`,
-          {
-            icon: "⏳",
-            duration: 3000,
-          },
+          { icon: "⏳", duration: 3000 },
         );
         return;
       }
@@ -1130,6 +1507,334 @@ function AdminBillingPageContent() {
     }
   }, [refreshData]);
 
+  // ==================== EMAIL HANDLERS ====================
+  const loadEmailCustomerBills = useCallback(async (applicationId: string) => {
+    if (!applicationId) {
+      setEmailCustomerBills([]);
+      return;
+    }
+    setEmailLoadingBills(true);
+    try {
+      const data = await emailService.getCustomerBills(applicationId);
+      const billsData = data?.bills || [];
+      setEmailCustomerBills(billsData);
+      setEmailSelectedBillIds([]);
+    } catch (error) {
+      console.error("Failed to load customer bills for email:", error);
+      setEmailCustomerBills([]);
+      setEmailSelectedBillIds([]);
+    } finally {
+      setEmailLoadingBills(false);
+    }
+  }, []);
+
+  const loadEmailTemplates = useCallback(async () => {
+    setEmailTemplatesLoading(true);
+    try {
+      const data = await emailService.getTemplates();
+      setEmailTemplates(data || []);
+    } catch (error) {
+      console.error("Failed to load email templates:", error);
+      setEmailTemplates([]);
+    } finally {
+      setEmailTemplatesLoading(false);
+    }
+  }, []);
+
+  const handleEmailTemplateSelect = useCallback(
+    (templateId: string) => {
+      setEmailSelectedTemplateId(templateId);
+      if (!templateId) return;
+      const template = emailTemplates.find((t) => t.id === templateId);
+      if (!template) return;
+
+      setEmailSubject(template.subject || "");
+
+      const templateMessage = template.message || "";
+      const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
+
+      if (hasHtml) {
+        setEmailRichTextContent(templateMessage);
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = templateMessage;
+        setEmailMessage(tempDiv.textContent || "");
+      } else {
+        const htmlContent = templateMessage.replace(/\n/g, "<br>");
+        setEmailRichTextContent(htmlContent);
+        setEmailMessage(templateMessage);
+      }
+
+      setEmailIncludeBilling(template.includeBillingDefault || false);
+      if (!template.includeBillingDefault) {
+        setEmailSelectedBillIds([]);
+      }
+    },
+    [emailTemplates],
+  );
+
+  const openEmailModal = useCallback(
+    async (customer: CustomerItem) => {
+      setEmailCustomer(customer);
+      setEmailSubject(`Message from MisterFyber`);
+      setEmailMessage(`Dear ${customer.firstName},\n\n`);
+      setEmailRichTextContent(`<p>Dear ${customer.firstName},</p><p><br></p>`);
+      setEmailIncludeBilling(false);
+      setEmailSelectedBillIds([]);
+      setEmailSendCopyToAdmin(false);
+      setEmailSenderType("collection");
+      setEmailPreviewOpen(false);
+      setEmailPreviewHtml("");
+
+      setEmailSelectedTemplateId("");
+      setEmailScheduleMode(false);
+      setEmailScheduledFor("");
+      setEmailScheduleName("");
+
+      const location = getLocationFromBuildingName(
+        customer.building?.buildingName,
+      );
+      setEmailCustomerLocation(location);
+      setEmailCollectionEmail(getCollectionEmailForLocation(location));
+
+      setShowEmailModal(true);
+
+      void loadEmailTemplates();
+      if (customer.applicationId) {
+        await loadEmailCustomerBills(customer.applicationId);
+      } else {
+        setEmailCustomerBills([]);
+      }
+    },
+    [
+      getLocationFromBuildingName,
+      getCollectionEmailForLocation,
+      loadEmailCustomerBills,
+      loadEmailTemplates,
+    ],
+  );
+
+  const toggleEmailBillSelection = (billId: string) => {
+    setEmailSelectedBillIds((prev) =>
+      prev.includes(billId)
+        ? prev.filter((id) => id !== billId)
+        : [...prev, billId],
+    );
+  };
+
+  const selectAllEmailBills = () => {
+    setEmailSelectedBillIds(emailCustomerBills.map((bill) => bill._id));
+  };
+
+  const deselectAllEmailBills = () => {
+    setEmailSelectedBillIds([]);
+  };
+
+  const handleEmailPreview = async () => {
+    if (!emailCustomer) {
+      toast.error("Please select a customer first");
+      return;
+    }
+    if (
+      !emailSubject.trim() ||
+      !(emailMessage.trim() || emailRichTextContent.trim())
+    ) {
+      toast.error("Please enter subject and message");
+      return;
+    }
+    if (emailIncludeBilling && emailSelectedBillIds.length === 0) {
+      toast.error("Please select at least one bill to include");
+      return;
+    }
+
+    try {
+      const preview = await emailService.previewEmail({
+        subject: emailSubject,
+        message: emailRichTextContent || emailMessage,
+        richTextContent: emailRichTextContent || emailMessage,
+        includeBilling: emailIncludeBilling,
+        applicationId: emailCustomer.applicationId || "",
+        billIds: emailIncludeBilling ? emailSelectedBillIds : undefined,
+        senderType: emailSenderType,
+      });
+      setEmailPreviewHtml(preview.html || "");
+      setEmailPreviewLocation(preview.location || "unknown");
+      setEmailPreviewSenderInfo(preview.senderInfo || "");
+      setEmailPreviewOpen(true);
+    } catch (error: any) {
+      console.error("Failed to generate preview:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to generate preview",
+      );
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailCustomer) {
+      toast.error("Please select a customer");
+      return;
+    }
+    if (!emailCustomer.applicationId) {
+      toast.error("This customer has no application ID — cannot send email");
+      return;
+    }
+    if (
+      !emailSubject.trim() ||
+      !(emailMessage.trim() || emailRichTextContent.trim())
+    ) {
+      toast.error("Please enter subject and message");
+      return;
+    }
+    if (emailIncludeBilling && emailSelectedBillIds.length === 0) {
+      toast.error("Please select at least one bill to include");
+      return;
+    }
+
+    setEmailSending(true);
+    try {
+      const result = await emailService.sendEmail({
+        applicationId: emailCustomer.applicationId,
+        subject: emailSubject,
+        message: emailRichTextContent || emailMessage,
+        richTextContent: emailRichTextContent || emailMessage,
+        includeBilling: emailIncludeBilling,
+        billIds: emailIncludeBilling ? emailSelectedBillIds : undefined,
+        sendCopyToAdmin: emailSendCopyToAdmin,
+        senderType: emailSenderType,
+      });
+
+      const senderDisplay =
+        SENDER_OPTIONS.find((s) => s.value === emailSenderType)?.label ||
+        emailSenderType;
+      const locationDisplay = emailCustomerLocation
+        ? emailCustomerLocation.toUpperCase()
+        : "Unknown";
+      toast.success(
+        `✅ Email sent via ${senderDisplay} to ${emailCustomer.firstName} ${emailCustomer.lastName} (${locationDisplay})`,
+      );
+
+      setShowEmailModal(false);
+      setEmailCustomer(null);
+      setEmailSubject("");
+      setEmailMessage("");
+      setEmailRichTextContent("");
+      setEmailIncludeBilling(false);
+      setEmailSelectedBillIds([]);
+      setEmailCustomerBills([]);
+      setEmailPreviewOpen(false);
+      setEmailPreviewHtml("");
+      setEmailSendCopyToAdmin(false);
+      setEmailSenderType("collection");
+      setEmailCustomerLocation("");
+      setEmailCollectionEmail("");
+      setEmailSelectedTemplateId("");
+      setEmailScheduleMode(false);
+      setEmailScheduledFor("");
+      setEmailScheduleName("");
+
+      setTimeout(() => refreshData(true), 200);
+    } catch (error: any) {
+      console.error("Failed to send email:", error);
+      toast.error(error.response?.data?.message || "Failed to send email");
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const handleScheduleEmail = async () => {
+    if (!emailCustomer) {
+      toast.error("Please select a customer");
+      return;
+    }
+    if (!emailCustomer.applicationId) {
+      toast.error("This customer has no application ID — cannot schedule");
+      return;
+    }
+    if (
+      !emailSubject.trim() ||
+      !(emailMessage.trim() || emailRichTextContent.trim())
+    ) {
+      toast.error("Please enter subject and message");
+      return;
+    }
+    if (emailIncludeBilling && emailSelectedBillIds.length === 0) {
+      toast.error("Please select at least one bill to include");
+      return;
+    }
+    if (!emailScheduledFor) {
+      toast.error("Please choose a date and time to schedule the email");
+      return;
+    }
+
+    const scheduledDate = new Date(emailScheduledFor);
+    if (isNaN(scheduledDate.getTime())) {
+      toast.error("Invalid scheduled date/time");
+      return;
+    }
+    if (scheduledDate.getTime() <= Date.now()) {
+      toast.error("Scheduled date/time must be in the future");
+      return;
+    }
+
+    setEmailScheduling(true);
+    try {
+      const scheduleName =
+        emailScheduleName.trim() ||
+        `Email to ${emailCustomer.firstName} ${emailCustomer.lastName} - ${scheduledDate.toLocaleString()}`;
+
+      await emailService.scheduleEmail({
+        name: scheduleName,
+        applicationIds: [emailCustomer.applicationId],
+        subject: emailSubject,
+        message: emailRichTextContent || emailMessage,
+        richTextContent: emailRichTextContent || emailMessage,
+        includeBilling: emailIncludeBilling,
+        billIds: emailIncludeBilling ? emailSelectedBillIds : undefined,
+        sendCopyToAdmin: emailSendCopyToAdmin,
+        senderType: emailSenderType,
+        scheduledFor: scheduledDate.toISOString(),
+        locationFilter:
+          emailCustomerLocation === "breeze" ||
+          emailCustomerLocation === "sil" ||
+          emailCustomerLocation === "other"
+            ? (emailCustomerLocation as "all" | "breeze" | "sil" | "other")
+            : undefined,
+        recurring: {
+          enabled: false,
+          frequency: "daily",
+          interval: 1,
+        },
+      });
+
+      toast.success(`📅 Email scheduled for ${scheduledDate.toLocaleString()}`);
+
+      setShowEmailModal(false);
+      setEmailCustomer(null);
+      setEmailSubject("");
+      setEmailMessage("");
+      setEmailRichTextContent("");
+      setEmailIncludeBilling(false);
+      setEmailSelectedBillIds([]);
+      setEmailCustomerBills([]);
+      setEmailPreviewOpen(false);
+      setEmailPreviewHtml("");
+      setEmailSendCopyToAdmin(false);
+      setEmailSenderType("collection");
+      setEmailCustomerLocation("");
+      setEmailCollectionEmail("");
+      setEmailSelectedTemplateId("");
+      setEmailScheduleMode(false);
+      setEmailScheduledFor("");
+      setEmailScheduleName("");
+
+      setTimeout(() => refreshData(true), 200);
+    } catch (error: any) {
+      console.error("Failed to schedule email:", error);
+      toast.error(error.response?.data?.message || "Failed to schedule email");
+    } finally {
+      setEmailScheduling(false);
+    }
+  };
+
   const handleAction = (action: string, customer: CustomerItem, data?: any) => {
     switch (action) {
       case "view":
@@ -1137,11 +1842,7 @@ function AdminBillingPageContent() {
         setShowCustomerDetailModal(true);
         break;
       case "email":
-        setEmailCustomer(customer);
-        setEmailType("custom");
-        setEmailSubject("Message from MisterFyber");
-        setEmailMessage(`Dear ${customer.firstName},\n\n`);
-        setShowEmailModal(true);
+        openEmailModal(customer);
         break;
       case "recover":
         handleRecoverMissingBills(customer);
@@ -1205,17 +1906,12 @@ function AdminBillingPageContent() {
           }
         }
         break;
-
-      // ✅ DISCONNECT ACTION
       case "disconnect":
         handleDisconnectCustomer(customer);
         break;
-
-      // ✅ RECONNECT ACTION
       case "reconnect":
         handleReconnectCustomer(customer);
         break;
-
       case "stop":
         if (customer.type === "application") {
           if (
@@ -1447,38 +2143,6 @@ function AdminBillingPageContent() {
     }
   };
 
-  const handleSendEmail = async () => {
-    if (!emailCustomer) return;
-    if (!emailSubject.trim() || !emailMessage.trim()) {
-      toast.error("Please fill in subject and message");
-      return;
-    }
-
-    setSendingEmail(true);
-    try {
-      const result = await sendEmail({
-        email: emailCustomer.email,
-        emailType,
-        subject: emailSubject,
-        message: emailMessage,
-      });
-
-      if (result.success) {
-        toast.success(`📧 Email sent to ${emailCustomer.email}`);
-        setShowEmailModal(false);
-        setEmailCustomer(null);
-        setEmailSubject("");
-        setEmailMessage("");
-      } else {
-        toast.error(result.message || "Failed to send email");
-      }
-    } catch (error: any) {
-      toast.error(error.message || "Failed to send email");
-    } finally {
-      setSendingEmail(false);
-    }
-  };
-
   const loadBillingFlowSettings = useCallback(async () => {
     try {
       const response = await getBillingSettingsAdmin(true);
@@ -1542,9 +2206,6 @@ function AdminBillingPageContent() {
             if (value) {
               const size = new Blob([value]).size;
               if (size > 50 * 1024 * 1024) {
-                console.warn(
-                  `🧹 Cleaning large cache: ${key} (${(size / 1024 / 1024).toFixed(2)}MB)`,
-                );
                 localStorage.removeItem(key);
               }
             }
@@ -1568,64 +2229,335 @@ function AdminBillingPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const hasActiveFilters =
+    !!statusFilter && statusFilter !== "all"
+      ? true
+      : !!buildingFilter && buildingFilter !== "all"
+        ? true
+        : !!monthFilter || !!dateFilter || !!searchTerm;
+
+  const clearAllFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setBuildingFilter("all");
+    setMonthFilter("");
+    setDateFilter("");
+  };
+
   // ==================== RENDER ====================
   return (
-    <div>
-      {/* Status bar */}
-      <div className="text-right text-[10px] text-gray-400 px-4 py-1">
-        {websocketConnected ? "🟢 Live" : "🔴 Offline"}
-        {lastUpdated && ` | Last updated: ${lastUpdated.toLocaleTimeString()}`}
-        {refreshCount > 0 && ` | Refreshes: ${refreshCount}`}
-        {isFetching && " 🔄"}
+    <div className="p-4 sm:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
+          <p className="text-gray-600">
+            Manage customer billing, invoices, and payments
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-600">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                websocketConnected ? "bg-green-500" : "bg-red-500"
+              }`}
+            ></span>
+            {websocketConnected ? "Live" : "Offline"}
+            {lastUpdated && (
+              <span className="text-gray-400 hidden sm:inline">
+                {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={() => setShowReportsModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 shadow-sm"
+          >
+            <FiBarChart2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Reports</span>
+          </button>
+
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          >
+            <FiSettings className="w-4 h-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+
+          <button
+            onClick={handleRefresh}
+            disabled={isFetching || isRefreshing}
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <FiRefreshCw
+              className={`w-4 h-4 ${
+                isFetching || isRefreshing ? "animate-spin" : ""
+              }`}
+            />
+            {isFetching || isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
-      <BillingTable
-        customers={allCustomers}
-        disconnectedCustomers={disconnectedCustomers}
-        billingCycles={billingCycles}
-        bills={bills}
-        pendingPayments={pendingPayments}
-        loading={isLoading}
-        refreshing={isFetching || isRefreshing}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        buildingFilter={buildingFilter}
-        setBuildingFilter={setBuildingFilter}
-        buildingsList={buildingsData}
-        pagination={pagination}
-        setPagination={setPagination}
-        sortField={sortField}
-        setSortField={setSortField}
-        sortDirection={sortDirection}
-        setSortDirection={setSortDirection}
-        stats={stats}
-        onAction={handleAction}
-        onRefresh={handleRefresh}
-        onOpenSettings={() => setShowSettingsModal(true)}
-        onOpenBackdated={() => setShowBackdatedModal(true)}
-        onOpenExistingCustomers={() => {
-          setShowExistingCustomersModal(true);
-        }}
-        onOpenPending={() => {
-          setPendingModalType("pro-rated");
-          setShowPendingModal(true);
-        }}
-        onOpenReports={() => setShowReportsModal(true)}
-        totalPendingCount={totalPendingCount}
-        customersWithoutAccounts={customersWithoutAccounts}
-        applicationsWithoutBillingCount={stats.applicationsWithoutBilling}
-        onGenerateEarlyBill={handleGenerateEarlyBill}
-        onAutoGenerateEarlyBills={handleAutoGenerateEarlyBills}
-        autoGenerationRunning={autoGenerationRunning}
-        lastAutoGenTime={lastAutoGenTime}
-        realtimeUpdateCount={refreshCount}
-        websocketConnected={websocketConnected}
-        onEditBillPrice={handleEditBillPrice}
-        onEditInstallationPrice={handleEditInstallationPrice}
-        onDeleteBill={handleDeleteBill}
-      />
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Total Customers</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {buildingFilteredStats.totalCustomers}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {buildingFilteredStats.activeCyclesCount} active cycles
+          </p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Collectibles</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {formatCurrency(buildingFilteredStats.collectibles)}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {buildingFilteredStats.customersWithBalanceCount} with balance
+          </p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Overdue</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {formatCurrency(buildingFilteredStats.totalOverdueAmount)}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {buildingFilteredStats.overdueCustomersCount} customers
+          </p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Pending</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {totalPendingCount}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">Items need attention</p>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative">
+            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or application ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <FiCalendar className="w-4 h-4 text-gray-400" />
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={(e) => {
+                setMonthFilter(e.target.value);
+                if (e.target.value) {
+                  setDateFilter("");
+                }
+              }}
+              className="px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
+
+          <button
+            onClick={() => setShowMoreFilters((v) => !v)}
+            className={`px-4 py-2.5 rounded-lg border transition flex items-center gap-2 text-sm font-medium ${
+              showMoreFilters
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <FiFilter className="w-4 h-4" />
+            {showMoreFilters ? "Less Filters" : "More Filters"}
+            {showMoreFilters ? (
+              <FiChevronUp className="w-4 h-4" />
+            ) : (
+              <FiChevronDown className="w-4 h-4" />
+            )}
+            {hasActiveFilters && !showMoreFilters && (
+              <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+            )}
+          </button>
+        </div>
+
+        {showMoreFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="disconnected">Disconnected</option>
+                  <option value="pending_activation">Pending Activation</option>
+                  <option value="cancelled">Cancelled</option>
+                  {/* ✅ NEW: approved-no-billing filter */}
+                  <option value="approved_no_billing">
+                    Approved (No Billing)
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Building
+                </label>
+                <select
+                  value={buildingFilter}
+                  onChange={(e) => setBuildingFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="all">All Buildings</option>
+                  {buildingsData.map((building: Building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.buildingName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Specific Date
+                </label>
+                <input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => {
+                    setDateFilter(e.target.value);
+                    if (e.target.value) setMonthFilter("");
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+
+            {hasActiveFilters && (
+              <div className="flex justify-end">
+                <button
+                  onClick={clearAllFilters}
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 flex items-center gap-1 hover:bg-red-50 rounded-lg transition"
+                >
+                  <FiX className="w-4 h-4" /> Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasActiveFilters && !showMoreFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Active filters:</span>
+            {monthFilter && !dateFilter && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📅 {monthFilter}
+              </span>
+            )}
+            {dateFilter && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📅 {formatDate(dateFilter)}
+              </span>
+            )}
+            {statusFilter && statusFilter !== "all" && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📌 {statusFilter}
+              </span>
+            )}
+            {buildingFilter && buildingFilter !== "all" && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🏢{" "}
+                {buildingsData.find((b: Building) => b._id === buildingFilter)
+                  ?.buildingName || buildingFilter}
+              </span>
+            )}
+            {searchTerm && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🔍 {searchTerm}
+              </span>
+            )}
+            <button
+              onClick={clearAllFilters}
+              className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded-full transition"
+            >
+              ✕ Clear
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Billing Table */}
+      <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
+        <BillingTable
+          customers={allCustomers}
+          disconnectedCustomers={disconnectedCustomers}
+          billingCycles={billingCycles}
+          bills={bills}
+          pendingPayments={pendingPayments}
+          loading={isLoading}
+          refreshing={isFetching || isRefreshing}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          buildingFilter={buildingFilter}
+          setBuildingFilter={setBuildingFilter}
+          buildingsList={buildingsData}
+          monthFilter={monthFilter}
+          setMonthFilter={setMonthFilter}
+          dateFilter={dateFilter}
+          setDateFilter={setDateFilter}
+          pagination={pagination}
+          setPagination={setPagination}
+          sortField={sortField}
+          setSortField={setSortField}
+          sortDirection={sortDirection}
+          setSortDirection={setSortDirection}
+          stats={stats}
+          buildingFilteredStats={buildingFilteredStats}
+          activeBuildingName={activeBuildingName}
+          onAction={handleAction}
+          onRefresh={handleRefresh}
+          onOpenSettings={() => setShowSettingsModal(true)}
+          onOpenBackdated={() => setShowBackdatedModal(true)}
+          onOpenExistingCustomers={() => {
+            setShowExistingCustomersModal(true);
+          }}
+          onOpenPending={() => {
+            setPendingModalType("pro-rated");
+            setShowPendingModal(true);
+          }}
+          onOpenReports={() => setShowReportsModal(true)}
+          totalPendingCount={totalPendingCount}
+          customersWithoutAccounts={customersWithoutAccounts}
+          applicationsWithoutBillingCount={stats.applicationsWithoutBilling}
+          onGenerateEarlyBill={handleGenerateEarlyBill}
+          onAutoGenerateEarlyBills={handleAutoGenerateEarlyBills}
+          autoGenerationRunning={autoGenerationRunning}
+          lastAutoGenTime={lastAutoGenTime}
+          realtimeUpdateCount={refreshCount}
+          websocketConnected={websocketConnected}
+          onEditBillPrice={handleEditBillPrice}
+          onEditInstallationPrice={handleEditInstallationPrice}
+          onDeleteBill={handleDeleteBill}
+        />
+      </div>
 
       {/* ==================== MODALS ==================== */}
       <CustomerDetailModal
@@ -1662,7 +2594,7 @@ function AdminBillingPageContent() {
         installationFee={billingFlowSettings.installationFee}
       />
 
-      {/* ✅ DISCONNECT CONFIRMATION MODAL */}
+      {/* DISCONNECT CONFIRMATION MODAL */}
       {showDisconnectModal && customerToDisconnect && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -1785,7 +2717,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* ✅ RECONNECT CONFIRMATION MODAL */}
+      {/* RECONNECT CONFIRMATION MODAL */}
       {showReconnectModal && customerToReconnect && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -2523,76 +3455,143 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* Email Modal */}
+      {/* ==================== EMAIL MODAL ==================== */}
       {showEmailModal && emailCustomer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Send Email</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[95vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <FiMail className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {emailScheduleMode ? "Schedule Email" : "Send Email"}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    To: {emailCustomer.firstName} {emailCustomer.lastName} (
+                    {emailCustomer.email})
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => setShowEmailModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailCustomer(null);
+                  setEmailPreviewOpen(false);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
               >
                 <FiX className="w-6 h-6" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  To
-                </label>
-                <p className="text-gray-700">{emailCustomer.email}</p>
-              </div>
+            <div className="p-6 space-y-4">
+              {emailCustomerLocation && emailCustomerLocation !== "other" && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>📍 Location Detected:</strong>{" "}
+                    {getLocationDisplay(emailCustomerLocation)}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Collection Email: {emailCollectionEmail}
+                  </p>
+                  {emailCustomer.building?.buildingName && (
+                    <p className="text-xs text-blue-600">
+                      Building: {emailCustomer.building.buildingName}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Template
+                  Load Template
                 </label>
-                <select
-                  value={emailType}
-                  onChange={(e) => {
-                    const type = e.target.value;
-                    setEmailType(type);
-                    const templates: Record<
-                      string,
-                      { subject: string; message: string }
-                    > = {
-                      custom: {
-                        subject: "Message from MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\n`,
-                      },
-                      invoice: {
-                        subject: "Invoice Reminder - MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\nThis is a friendly reminder that you have an outstanding balance of ₱${emailCustomer.currentBalance.toLocaleString()}.\n\nPlease log in to your account to view and pay your invoice.\n\nThank you for your prompt payment.\n\nBest regards,\nMisterFyber Team`,
-                      },
-                      payment_confirmation: {
-                        subject: "Payment Confirmation - MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\nThank you for your payment! Your account has been credited.\n\nBest regards,\nMisterFyber Team`,
-                      },
-                      disconnection: {
-                        subject: "Service Disconnection Notice - MisterFyber",
-                        message: `Dear ${emailCustomer.firstName},\n\nThis is to notify you that your service has been disconnected.\n\nTo restore your service, please settle your outstanding balance.\n\nBest regards,\nMisterFyber Team`,
-                      },
-                      welcome: {
-                        subject: "Welcome to MisterFyber!",
-                        message: `Dear ${emailCustomer.firstName},\n\nWelcome to MisterFyber! We're excited to have you as our customer.\n\nBest regards,\nMisterFyber Team`,
-                      },
+                {emailTemplatesLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                    Loading templates...
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value={emailSelectedTemplateId}
+                      onChange={(e) =>
+                        handleEmailTemplateSelect(e.target.value)
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    >
+                      <option value="">None</option>
+                      {emailTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name || "Unnamed"} (
+                          {template.category || "general"})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Loading a template will preserve all formatting
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📧 Send From (Choose Sender Email)
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  {SENDER_OPTIONS.map((option) => {
+                    const isSelected = emailSenderType === option.value;
+                    const isCollection = option.value === "collection";
+                    const disabled = isCollection && !emailCustomerLocation;
+
+                    const colorClasses: Record<string, string> = {
+                      green: isSelected
+                        ? "border-green-500 bg-green-50 text-green-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700",
+                      blue: isSelected
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700",
+                      purple: isSelected
+                        ? "border-purple-500 bg-purple-50 text-purple-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700",
+                      orange: isSelected
+                        ? "border-orange-500 bg-orange-50 text-orange-700"
+                        : "border-gray-300 hover:border-gray-400 text-gray-700",
                     };
-                    const template = templates[type] || templates.custom;
-                    setEmailSubject(template.subject);
-                    setEmailMessage(template.message);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="custom">Custom</option>
-                  <option value="invoice">Invoice Reminder</option>
-                  <option value="payment_confirmation">
-                    Payment Confirmation
-                  </option>
-                  <option value="disconnection">Disconnection Notice</option>
-                  <option value="welcome">Welcome</option>
-                </select>
+
+                    const displayEmail = isCollection
+                      ? emailCustomerLocation
+                        ? emailCollectionEmail
+                        : "No location detected"
+                      : option.email;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          !disabled && setEmailSenderType(option.value)
+                        }
+                        disabled={disabled}
+                        className={`px-4 py-3 rounded-lg border text-sm transition-colors text-left ${
+                          disabled
+                            ? "opacity-50 cursor-not-allowed bg-gray-50"
+                            : colorClasses[option.color]
+                        }`}
+                      >
+                        <span className="block font-medium">
+                          {option.icon} {option.label}
+                        </span>
+                        <span className="text-xs text-gray-500 truncate block">
+                          {displayEmail}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
@@ -2603,7 +3602,8 @@ function AdminBillingPageContent() {
                   type="text"
                   value={emailSubject}
                   onChange={(e) => setEmailSubject(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Enter email subject..."
                 />
               </div>
 
@@ -2611,36 +3611,361 @@ function AdminBillingPageContent() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message
                 </label>
-                <textarea
-                  value={emailMessage}
-                  onChange={(e) => setEmailMessage(e.target.value)}
-                  rows={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                <RichTextEditor
+                  value={emailRichTextContent || emailMessage}
+                  onChange={(content) => {
+                    setEmailRichTextContent(content);
+                    const tempDiv = document.createElement("div");
+                    tempDiv.innerHTML = content;
+                    setEmailMessage(tempDiv.textContent || "");
+                  }}
+                  placeholder="Write your email message here..."
+                  minHeight="200px"
+                  maxHeight="350px"
                 />
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <label className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  checked={emailIncludeBilling}
+                  onChange={(e) => {
+                    setEmailIncludeBilling(e.target.checked);
+                    if (!e.target.checked) {
+                      setEmailSelectedBillIds([]);
+                    }
+                  }}
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Include Billing Information
+                </span>
+              </label>
+
+              {emailIncludeBilling && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Select Bills ({emailSelectedBillIds.length} selected)
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAllEmailBills}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllEmailBills}
+                        className="text-xs text-red-600 hover:text-red-800"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+
+                  {emailLoadingBills ? (
+                    <div className="flex justify-center py-6">
+                      <div className="w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  ) : emailCustomerBills.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                      {emailCustomerBills.map((bill) => (
+                        <label
+                          key={bill._id}
+                          className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${
+                            emailSelectedBillIds.includes(bill._id)
+                              ? "border-purple-500 bg-purple-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            checked={emailSelectedBillIds.includes(bill._id)}
+                            onChange={() => toggleEmailBillSelection(bill._id)}
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium text-gray-900">
+                                {bill.invoiceNumber || "N/A"}
+                              </span>
+                              <span className="text-sm font-bold text-red-600">
+                                ₱{(bill.total || 0).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded-full ${
+                                  bill.status === "paid"
+                                    ? "bg-green-100 text-green-700"
+                                    : bill.status === "overdue"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
+                              >
+                                {bill.status || "N/A"}
+                              </span>
+                              {bill.isInstallationBill && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  Installation
+                                </span>
+                              )}
+                              {bill.isProRated && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                                  Pro-rated
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-500">
+                                Due:{" "}
+                                {new Date(bill.dueDate).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg">
+                      No bills found for this customer.
+                    </p>
+                  )}
+
+                  {emailSelectedBillIds.length > 0 && (
+                    <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">
+                        Selected {emailSelectedBillIds.length} bill(s)
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Total: ₱
+                        {emailCustomerBills
+                          .filter((b) => emailSelectedBillIds.includes(b._id))
+                          .reduce((sum, b) => sum + (b.total || 0), 0)
+                          .toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <label className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  checked={emailSendCopyToAdmin}
+                  onChange={(e) => setEmailSendCopyToAdmin(e.target.checked)}
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Send copy to admin
+                </span>
+              </label>
+
+              <div className="border-t pt-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    checked={emailScheduleMode}
+                    onChange={(e) => {
+                      setEmailScheduleMode(e.target.checked);
+                      if (!e.target.checked) {
+                        setEmailScheduledFor("");
+                        setEmailScheduleName("");
+                      }
+                    }}
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    📅 Schedule for later (instead of sending now)
+                  </span>
+                </label>
+
+                {emailScheduleMode && (
+                  <div className="mt-3 space-y-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Schedule Name (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={emailScheduleName}
+                        onChange={(e) => setEmailScheduleName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder={`Email to ${emailCustomer.firstName} ${emailCustomer.lastName}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Date & Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={emailScheduledFor}
+                        onChange={(e) => setEmailScheduledFor(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                      {emailScheduledFor && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Will be sent on{" "}
+                          {new Date(emailScheduledFor).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2 border-t">
                 <button
-                  onClick={() => setShowEmailModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  onClick={handleEmailPreview}
+                  disabled={
+                    !emailSubject.trim() ||
+                    !(emailMessage.trim() || emailRichTextContent.trim()) ||
+                    (emailIncludeBilling && emailSelectedBillIds.length === 0)
+                  }
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🔍 Preview
+                </button>
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailCustomer(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
+
+                {emailScheduleMode ? (
+                  <button
+                    onClick={handleScheduleEmail}
+                    disabled={
+                      emailScheduling ||
+                      !emailScheduledFor ||
+                      !emailSubject.trim() ||
+                      !(emailMessage.trim() || emailRichTextContent.trim()) ||
+                      (emailIncludeBilling && emailSelectedBillIds.length === 0)
+                    }
+                    className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {emailScheduling ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Scheduling...
+                      </>
+                    ) : (
+                      <>
+                        <FiCalendar className="w-4 h-4" /> Schedule Email
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={
+                      emailSending ||
+                      !emailSubject.trim() ||
+                      !(emailMessage.trim() || emailRichTextContent.trim()) ||
+                      (emailIncludeBilling && emailSelectedBillIds.length === 0)
+                    }
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {emailSending ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <FiMail className="w-4 h-4" /> Send Email
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMAIL PREVIEW MODAL */}
+      {emailPreviewOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                📧 Email Preview
+              </h3>
+              <button
+                onClick={() => setEmailPreviewOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FiX className="w-6 h-6" />
+              </button>
+            </div>
+            {emailPreviewLocation && emailPreviewLocation !== "unknown" && (
+              <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <p className="text-sm text-blue-700">
+                  📍 Location: {getLocationDisplay(emailPreviewLocation)}
+                </p>
+                <p className="text-xs text-blue-600">
+                  {emailPreviewSenderInfo}
+                </p>
+              </div>
+            )}
+            <div className="p-4 overflow-y-auto max-h-[calc(85vh-160px)]">
+              <div dangerouslySetInnerHTML={{ __html: emailPreviewHtml }} />
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => setEmailPreviewOpen(false)}
+                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                Close
+              </button>
+              {emailScheduleMode ? (
                 <button
-                  onClick={handleSendEmail}
-                  disabled={sendingEmail}
-                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={() => {
+                    setEmailPreviewOpen(false);
+                    handleScheduleEmail();
+                  }}
+                  disabled={emailScheduling || !emailScheduledFor}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {sendingEmail ? (
+                  {emailScheduling ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Scheduling...
+                    </>
+                  ) : (
+                    <>
+                      <FiCalendar className="w-4 h-4" /> Schedule
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEmailPreviewOpen(false);
+                    handleSendEmail();
+                  }}
+                  disabled={emailSending}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {emailSending ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       Sending...
                     </>
                   ) : (
-                    "Send Email"
+                    <>
+                      <FiMail className="w-4 h-4" /> Send Now
+                    </>
                   )}
                 </button>
-              </div>
+              )}
             </div>
           </div>
         </div>

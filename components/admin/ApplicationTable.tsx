@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - COMPLETE FIXED WITH FETCH DETAILS + NAME SORT + DISCONNECTED STATUS
+// components/admin/ApplicationTable.tsx - UNIFIED DESIGN PATTERN
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -7,7 +7,14 @@ import AddApplicationModal from "./AddApplicationModal";
 import { EditApplicationModal } from "./EditApplicationModal";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import {
+  TrashIcon,
+  PlusIcon,
+  EyeIcon,
+  PencilIcon,
+  CheckIcon,
+  XCircleIcon,
+} from "@heroicons/react/24/outline";
 import { Building, Plan, getApplication } from "@/services/application";
 
 // Interface definitions
@@ -25,7 +32,6 @@ export interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  // ✅ ADDED "disconnected"
   status: "pending" | "approved" | "rejected" | "suspended" | "disconnected";
   idType: string;
   idNumber: string;
@@ -44,7 +50,6 @@ export interface Application {
   installationFee?: number;
   installationFeePaid?: boolean;
   hasIdImage?: boolean;
-  // ✅ ADDED disconnect fields
   disconnectedAt?: string;
   disconnectReason?: string;
   reconnectedAt?: string;
@@ -103,24 +108,6 @@ export function ApplicationTable({
   onView,
   buildings = [],
   plans = [],
-  statusFilter = "all",
-  buildingFilter = "",
-  searchQuery = "",
-  nameSortFilter = "none",
-  onStatusFilterChange,
-  onBuildingFilterChange,
-  onSearchChange,
-  onNameSortChange,
-  onSearchSubmit,
-  // ✅ ADDED "disconnected"
-  statusOptions = [
-    { value: "all", label: "All Status" },
-    { value: "pending", label: "Pending" },
-    { value: "approved", label: "Approved" },
-    { value: "rejected", label: "Rejected" },
-    { value: "suspended", label: "Suspended" },
-    { value: "disconnected", label: "Disconnected" },
-  ],
   total = 0,
   totalPages = 0,
   currentPage = 1,
@@ -148,43 +135,42 @@ export function ApplicationTable({
     return app._id || app.id || app.applicationId || "";
   }, []);
 
-  // ✅ ADDED "disconnected" case
+  // Status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
             Approved
           </span>
         );
       case "pending":
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
             Pending
           </span>
         );
       case "rejected":
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">
             Rejected
           </span>
         );
       case "suspended":
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
             Suspended
           </span>
         );
-      // ✅ ADDED disconnected case
       case "disconnected":
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
             🔌 Disconnected
           </span>
         );
       default:
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
             {status}
           </span>
         );
@@ -241,7 +227,6 @@ export function ApplicationTable({
     }
   }, [onRefresh, isRefreshing, isActionInProgress]);
 
-  // ✅ ADDED "disconnected" type
   const updateApplicationStatus = useCallback(
     (
       id: string,
@@ -290,7 +275,6 @@ export function ApplicationTable({
     setIsActionInProgress(true);
     setActionLoading(id);
 
-    // Optimistic update
     updateApplicationStatus(id, "approved");
     toast.success("✅ Application approved!");
 
@@ -300,7 +284,6 @@ export function ApplicationTable({
       }
       await refreshData();
     } catch (error: any) {
-      // Revert optimistic update on error
       updateApplicationStatus(id, "pending");
       toast.error(
         error?.response?.data?.message ||
@@ -323,7 +306,6 @@ export function ApplicationTable({
     setIsActionInProgress(true);
     setActionLoading(id);
 
-    // Optimistic update
     updateApplicationStatus(id, "rejected");
     toast.success("❌ Application rejected");
 
@@ -333,7 +315,6 @@ export function ApplicationTable({
       }
       await refreshData();
     } catch (error: any) {
-      // Revert optimistic update on error
       updateApplicationStatus(id, "pending");
       toast.error(
         error?.response?.data?.message ||
@@ -456,7 +437,6 @@ export function ApplicationTable({
     }
   };
 
-  // ✅ FIXED: Fetch full details including idImage when opening modal
   const handleViewDetails = async (application: Application) => {
     if (isActionInProgress) return;
 
@@ -466,23 +446,15 @@ export function ApplicationTable({
       return;
     }
 
-    // ✅ Show loading state
     setActionLoading(appId);
 
     try {
-      console.log("📥 Fetching full application details for:", appId);
-
-      // ✅ Always fetch full details to get the idImage data
       const response = await getApplication(appId);
       const fullApplication = response.data || response;
 
-      console.log("✅ Full application details loaded");
-
-      // ✅ Merge the full data with existing (preserve list data as fallback)
       setSelectedApplication({
         ...application,
         ...fullApplication,
-        // Ensure ID fields are preserved
         _id: fullApplication._id || application._id,
         applicationId:
           fullApplication.applicationId || application.applicationId,
@@ -490,8 +462,6 @@ export function ApplicationTable({
     } catch (error: any) {
       console.error("❌ Failed to fetch full details:", error);
       toast.error("Failed to load full details, showing cached data");
-
-      // Fallback to what we have
       setSelectedApplication(application);
     } finally {
       setActionLoading(null);
@@ -522,37 +492,6 @@ export function ApplicationTable({
     if (onSelectOne) onSelectOne(id, checked);
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onSearchSubmit) onSearchSubmit();
-  };
-
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (onStatusFilterChange) {
-      onStatusFilterChange(e.target.value);
-    }
-  };
-
-  const handleBuildingChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (onBuildingFilterChange) {
-      onBuildingFilterChange(e.target.value);
-    }
-  };
-
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (onSearchChange) {
-      onSearchChange(e.target.value);
-    }
-  };
-
-  // ✅ Name sort handler
-  const handleNameSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (onNameSortChange) {
-      onNameSortChange(e.target.value);
-    }
-  };
-
-  // Helper to ensure application has required _id for EditModal
   const getApplicationForEdit = (app: Application | null) => {
     if (!app) return null;
     const id = app._id || app.id || app.applicationId || "";
@@ -564,111 +503,16 @@ export function ApplicationTable({
 
   return (
     <div className="space-y-4">
-      {/* Filters Toolbar */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <form
-          onSubmit={handleSearchSubmit}
-          className="flex flex-col sm:flex-row gap-4"
-        >
-          <div className="flex-1 relative">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name, email, or ID..."
-              value={searchQuery}
-              onChange={handleSearchInputChange}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-            />
-          </div>
-
-          <select
-            value={statusFilter}
-            onChange={handleStatusChange}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-          >
-            {statusOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={buildingFilter}
-            onChange={handleBuildingChange}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px] bg-white"
-          >
-            <option value="">All Buildings</option>
-            {buildings.map((b) => (
-              <option key={b._id} value={b._id}>
-                {b.buildingName}
-              </option>
-            ))}
-          </select>
-
-          {/* ✅ Name Sort Filter */}
-          <select
-            value={nameSortFilter}
-            onChange={handleNameSortChange}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px] bg-white"
-            title="Sort by name"
-          >
-            <option value="none">Sort: Default</option>
-            <option value="asc">Name: A → Z</option>
-            <option value="desc">Name: Z → A</option>
-          </select>
-
-          <button
-            type="submit"
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-          >
-            Search
-          </button>
-        </form>
-      </div>
-
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <button
-            onClick={refreshData}
-            disabled={isRefreshing || isActionInProgress}
-            className="p-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-          >
-            <svg
-              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
           {selectedIds.length > 0 && (
             <button
               onClick={handleBulkDelete}
               disabled={isActionInProgress}
-              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 flex items-center gap-1 disabled:opacity-50"
+              className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50 transition"
             >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
+              <TrashIcon className="h-4 w-4" />
               Delete ({selectedIds.length})
             </button>
           )}
@@ -678,29 +522,16 @@ export function ApplicationTable({
           <button
             onClick={() => setShowAddModal(true)}
             disabled={isActionInProgress}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 transition text-sm font-medium"
           >
-            <svg
-              className="h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
+            <PlusIcon className="h-4 w-4" />
             Add Application
           </button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -736,9 +567,6 @@ export function ApplicationTable({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
-              </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -748,7 +576,7 @@ export function ApplicationTable({
             {isLoaded && displayApplications.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onSelectAll ? 9 : 8}
+                  colSpan={onSelectAll ? 8 : 7}
                   className="px-6 py-8 text-center"
                 >
                   <div className="flex items-center justify-center">
@@ -779,7 +607,7 @@ export function ApplicationTable({
             ) : displayApplications.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onSelectAll ? 9 : 8}
+                  colSpan={onSelectAll ? 8 : 7}
                   className="px-6 py-8 text-center text-gray-500"
                 >
                   No applications found
@@ -790,12 +618,15 @@ export function ApplicationTable({
                 const appId = getAppId(app);
                 const key =
                   appId || app.applicationId || Math.random().toString();
-                // ✅ ADDED: Check if disconnected
                 const isDisconnected = app.status === "disconnected";
                 return (
                   <tr
                     key={key}
-                    className={isDisconnected ? "bg-gray-50 opacity-75" : ""}
+                    className={
+                      isDisconnected
+                        ? "bg-gray-50 opacity-75"
+                        : "hover:bg-gray-50"
+                    }
                   >
                     {onSelectAll && (
                       <td className="px-4 py-4">
@@ -856,9 +687,6 @@ export function ApplicationTable({
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(app.createdAt)}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="relative inline-flex items-center gap-1">
                         <button
@@ -866,18 +694,22 @@ export function ApplicationTable({
                           disabled={
                             isActionInProgress || actionLoading === appId
                           }
-                          className="px-2 py-1 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
                           title="View Details"
                         >
-                          {actionLoading === appId ? "⏳" : "👁️"}
+                          {actionLoading === appId ? (
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <EyeIcon className="w-4 h-4" />
+                          )}
                         </button>
                         <button
                           onClick={() => handleEdit(app)}
                           disabled={isActionInProgress}
-                          className="px-2 py-1 text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                          className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition-colors disabled:opacity-50"
                           title="Edit Application"
                         >
-                          ✏️
+                          <PencilIcon className="w-4 h-4" />
                         </button>
                         {app.status === "pending" && onApprove && onReject && (
                           <>
@@ -888,10 +720,10 @@ export function ApplicationTable({
                                 isRefreshing ||
                                 isActionInProgress
                               }
-                              className="px-2 py-1 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+                              className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors disabled:opacity-50"
                               title="Approve"
                             >
-                              {actionLoading === appId ? "⏳" : "✅"}
+                              <CheckIcon className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleReject(appId)}
@@ -900,10 +732,10 @@ export function ApplicationTable({
                                 isRefreshing ||
                                 isActionInProgress
                               }
-                              className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                              className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
                               title="Reject"
                             >
-                              {actionLoading === appId ? "⏳" : "❌"}
+                              <XCircleIcon className="w-4 h-4" />
                             </button>
                           </>
                         )}
@@ -914,10 +746,10 @@ export function ApplicationTable({
                             isRefreshing ||
                             isActionInProgress
                           }
-                          className="px-2 py-1 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                          className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
                           title="Delete"
                         >
-                          🗑️
+                          <TrashIcon className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -940,7 +772,7 @@ export function ApplicationTable({
             <button
               onClick={() => onPageChange && onPageChange(currentPage - 1)}
               disabled={currentPage <= 1 || isRefreshing || isActionInProgress}
-              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               Previous
             </button>
@@ -954,7 +786,7 @@ export function ApplicationTable({
               disabled={
                 currentPage >= totalPages || isRefreshing || isActionInProgress
               }
-              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               Next
             </button>

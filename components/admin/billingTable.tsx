@@ -1,5 +1,4 @@
-// frontend/src/components/admin/billingTable.tsx - COMPLETE WITH DISCONNECT VISIBLE
-
+// frontend/src/components/admin/billingTable.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -29,6 +28,15 @@ import {
   FiSave,
   FiUserX,
   FiUserCheck,
+  FiDollarSign,
+  FiAlertCircle,
+  FiActivity,
+  FiTrendingUp,
+  FiCreditCard,
+  FiPieChart,
+  FiChevronDown,
+  FiChevronUp,
+  FiFilter,
 } from "react-icons/fi";
 
 // Types
@@ -59,7 +67,6 @@ export interface CustomerItem {
   unitNumber?: string;
   floor?: string;
   nextMonthBill?: any;
-  // ✅ Disconnect indicators
   isDisconnected?: boolean;
   serviceStatus?: string;
   hiddenBills?: any[];
@@ -83,6 +90,29 @@ export type SortField =
   | "installationFee";
 export type SortDirection = "asc" | "desc";
 
+export interface BillingStatsData {
+  totalCustomers: number;
+  totalBalance: number;
+  customersWithBalanceCount: number;
+  overdueCustomersCount: number;
+  activeCyclesCount: number;
+  pausedCyclesCount: number;
+  pendingProRatedCount: number;
+  pendingActivationsCount: number;
+  pendingPaymentsCount: number;
+  pendingInstallationBillsCount: number;
+  applicationsWithoutBilling: number;
+  totalInstallationFeesDue: number;
+  installationFeesPaidCount: number;
+  disconnectedCustomersCount?: number;
+  collectibles?: number;
+  totalOverdueAmount?: number;
+  totalUnpaidBillsCount?: number;
+  paidInstallationFeesAmount?: number;
+  monthlyRecurringRevenue?: number;
+  averageBalance?: number;
+}
+
 interface BillingTableProps {
   customers: CustomerItem[];
   billingCycles: any[];
@@ -97,6 +127,10 @@ interface BillingTableProps {
   buildingFilter: string;
   setBuildingFilter: (value: string) => void;
   buildingsList: Building[];
+  monthFilter: string;
+  setMonthFilter: (value: string) => void;
+  dateFilter: string;
+  setDateFilter: (value: string) => void;
   pagination: {
     page: number;
     limit: number;
@@ -108,22 +142,9 @@ interface BillingTableProps {
   setSortField: (value: SortField) => void;
   sortDirection: SortDirection;
   setSortDirection: (value: SortDirection) => void;
-  stats: {
-    totalCustomers: number;
-    totalBalance: number;
-    customersWithBalanceCount: number;
-    overdueCustomersCount: number;
-    activeCyclesCount: number;
-    pausedCyclesCount: number;
-    pendingProRatedCount: number;
-    pendingActivationsCount: number;
-    pendingPaymentsCount: number;
-    pendingInstallationBillsCount: number;
-    applicationsWithoutBilling: number;
-    totalInstallationFeesDue: number;
-    installationFeesPaidCount: number;
-    disconnectedCustomersCount?: number;
-  };
+  stats: BillingStatsData;
+  buildingFilteredStats?: BillingStatsData;
+  activeBuildingName?: string | null;
   onAction: (action: string, customer: CustomerItem, data?: any) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
@@ -249,7 +270,6 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
 const EditablePrice = ({
   amount,
   billId,
-  isInstallation,
   customer,
   onSave,
 }: {
@@ -352,7 +372,7 @@ const EditablePrice = ({
   );
 };
 
-// Memoized Row Component
+// ==================== CUSTOMER ROW ====================
 const CustomerRow = React.memo(
   ({
     customer,
@@ -391,7 +411,6 @@ const CustomerRow = React.memo(
     const isPendingActivation =
       customer.billingCycle?.status === "pending_activation";
 
-    // ✅ DETECT DISCONNECTED - multiple sources
     const isDisconnected =
       customer.isDisconnected === true ||
       customer.status === "disconnected" ||
@@ -402,113 +421,80 @@ const CustomerRow = React.memo(
     const installFeeStatus = getInstallationFeeStatus(customer);
     const hasUnpaidInstallationFee = installFeeStatus.isDue;
 
-    const unpaidMonthlyBill = customer.unpaidBills?.find(
-      (bill: any) => !bill.isInstallationBill && bill.status !== "paid",
-    );
     const unpaidInstallationBill = customer.unpaidBills?.find(
       (bill: any) => bill.isInstallationBill && bill.status !== "paid",
     );
 
-    // ✅ Bills stay visible even when disconnected
     const visibleUnpaidBills = customer.unpaidBills || [];
 
+    // ✅ FIXED: getStatusBadge
     const getStatusBadge = () => {
-      // ✅ Disconnected takes priority
-      if (isDisconnected) {
-        return "bg-gray-200 text-gray-700";
-      }
-
-      if (hasUnpaidInstallationFee) {
-        return "bg-amber-100 text-amber-800";
-      }
+      if (isDisconnected) return "bg-gray-200 text-gray-700";
+      if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
 
       if (customer.type === "application") {
+        if (!customer.billingCycle && customer.status === "approved") {
+          return "bg-blue-100 text-blue-800";
+        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           hasUnpaidBills
-        ) {
+        )
           return "bg-purple-100 text-purple-800";
-        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           !hasUnpaidBills
-        ) {
+        )
           return "bg-green-100 text-green-800";
-        }
-        if (customer.billingCycle?.status === "active") {
+        if (customer.billingCycle?.status === "active")
           return "bg-green-100 text-green-800";
-        }
-        if (customer.billingCycle?.status === "paused") {
+        if (customer.billingCycle?.status === "paused")
           return "bg-yellow-100 text-yellow-800";
-        }
-        if (customer.status === "billing_started") {
+        if (customer.status === "billing_started")
           return "bg-indigo-100 text-indigo-800";
-        }
+        if (customer.status === "suspended") return "bg-red-100 text-red-800";
         return "bg-blue-100 text-blue-800";
       }
 
-      if (customer.billingCycle?.status === "paused") {
+      if (customer.billingCycle?.status === "paused")
         return "bg-yellow-100 text-yellow-800";
-      }
-      if (customer.status === "active") {
-        return "bg-green-100 text-green-800";
-      }
-      if (customer.status === "suspended") {
-        return "bg-red-100 text-red-800";
-      }
-      if (customer.status === "pending_activation") {
+      if (customer.status === "active") return "bg-green-100 text-green-800";
+      if (customer.status === "suspended") return "bg-red-100 text-red-800";
+      if (customer.status === "pending_activation")
         return "bg-purple-100 text-purple-800";
-      }
       return "bg-gray-100 text-gray-800";
     };
 
+    // ✅ FIXED: getStatusText
     const getStatusText = () => {
-      // ✅ Disconnected takes priority
-      if (isDisconnected) {
-        return "Disconnected";
-      }
-
-      if (hasUnpaidInstallationFee) {
-        return "Installation Fee Due";
-      }
+      if (isDisconnected) return "Disconnected";
+      if (hasUnpaidInstallationFee) return "Installation Fee Due";
 
       if (customer.type === "application") {
+        if (!customer.billingCycle && customer.status === "approved") {
+          return "Approved";
+        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           hasUnpaidBills
-        ) {
+        )
           return "Awaiting Payment";
-        }
         if (
           customer.billingCycle?.status === "pending_activation" &&
           !hasUnpaidBills
-        ) {
+        )
           return "Active";
-        }
-        if (customer.billingCycle?.status === "active") {
-          return "Active";
-        }
-        if (customer.billingCycle?.status === "paused") {
-          return "Paused";
-        }
-        if (customer.status === "billing_started") {
-          return "Billing Started";
-        }
-        return "Approved";
+        if (customer.billingCycle?.status === "active") return "Active";
+        if (customer.billingCycle?.status === "paused") return "Paused";
+        if (customer.status === "billing_started") return "Billing Started";
+        if (customer.status === "suspended") return "Suspended";
+        return customer.status || "Approved";
       }
 
-      if (customer.billingCycle?.status === "paused") {
-        return "Paused";
-      }
-      if (customer.status === "active") {
-        return "Active";
-      }
-      if (customer.status === "suspended") {
-        return "Suspended";
-      }
-      if (customer.status === "pending_activation") {
-        return "Pending Activation";
-      }
+      if (customer.billingCycle?.status === "paused") return "Paused";
+      if (customer.status === "active") return "Active";
+      if (customer.status === "suspended") return "Suspended";
+      if (customer.status === "pending_activation") return "Pending Activation";
       return customer.status || "Inactive";
     };
 
@@ -529,12 +515,8 @@ const CustomerRow = React.memo(
     return (
       <tr
         className={`${
-          isDisconnected
-            ? "bg-gray-100 opacity-75"
-            : index % 2 === 0
-              ? "bg-white"
-              : "bg-gray-50"
-        } hover:bg-blue-50 transition-colors`}
+          isDisconnected ? "bg-gray-100 opacity-75" : "hover:bg-blue-50"
+        } transition-colors`}
       >
         <td className="px-3 py-2 text-center text-sm font-medium text-gray-500 sticky left-0 bg-inherit z-10">
           {index + 1}
@@ -665,7 +647,6 @@ const CustomerRow = React.memo(
               <FiEye className="w-3.5 h-3.5" />
             </button>
 
-            {/* ✅ RECONNECT BUTTON - kapag disconnected */}
             {isDisconnected ? (
               <button
                 onClick={() => onAction("reconnect", customer)}
@@ -684,7 +665,6 @@ const CustomerRow = React.memo(
                   <FiMail className="w-3.5 h-3.5" />
                 </button>
 
-                {/* FREE BUTTONS */}
                 {hasUnpaidMonthlyBill && (
                   <button
                     onClick={() => {
@@ -797,7 +777,6 @@ const CustomerRow = React.memo(
                       </button>
                     )}
 
-                    {/* ✅ DISCONNECT BUTTON - kapag active/pending */}
                     {(isActive || isPendingActivation) && (
                       <button
                         onClick={() => onAction("disconnect", customer)}
@@ -898,7 +877,7 @@ const CustomerRow = React.memo(
 
 CustomerRow.displayName = "CustomerRow";
 
-// Main Table Component
+// ==================== MAIN COMPONENT ====================
 export default function BillingTable({
   customers,
   loading,
@@ -910,6 +889,10 @@ export default function BillingTable({
   buildingFilter,
   setBuildingFilter,
   buildingsList,
+  monthFilter,
+  setMonthFilter,
+  dateFilter,
+  setDateFilter,
   pagination,
   setPagination,
   sortField,
@@ -917,6 +900,8 @@ export default function BillingTable({
   sortDirection,
   setSortDirection,
   stats,
+  buildingFilteredStats,
+  activeBuildingName,
   onAction,
   onRefresh,
   onOpenSettings,
@@ -938,16 +923,95 @@ export default function BillingTable({
   onDeleteBill,
   disconnectedCustomers = [],
 }: BillingTableProps) {
-  const [displayCustomers, setDisplayCustomers] = useState(customers);
+  const [displayCustomers, setDisplayCustomers] = useState<CustomerItem[]>(
+    customers || [],
+  );
 
-  // ✅ FIX: Sync state with props (customers now includes ALL)
+  const [showAllStats, setShowAllStats] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
   useEffect(() => {
-    setDisplayCustomers(customers);
+    setDisplayCustomers(customers || []);
   }, [customers]);
 
-  // ✅ FIX: DON'T filter out disconnected - they stay visible
+  const dateRange = useMemo(() => {
+    if (!monthFilter && !dateFilter) return null;
+
+    if (dateFilter) {
+      const d = new Date(`${dateFilter}T00:00:00`);
+      if (isNaN(d.getTime())) return null;
+      const start = new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        0,
+        0,
+        0,
+        0,
+      );
+      const end = new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        23,
+        59,
+        59,
+        999,
+      );
+      return { start, end };
+    }
+
+    if (monthFilter) {
+      const [yStr, mStr] = monthFilter.split("-");
+      const y = parseInt(yStr, 10);
+      const m = parseInt(mStr, 10) - 1;
+      if (isNaN(y) || isNaN(m)) return null;
+      const start = new Date(y, m, 1, 0, 0, 0, 0);
+      const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+    return null;
+  }, [monthFilter, dateFilter]);
+
+  const billInRange = (bill: any): boolean => {
+    if (!dateRange) return true;
+    const raw =
+      bill?.billDate ||
+      bill?.createdAt ||
+      bill?.dueDate ||
+      bill?.paidAt ||
+      bill?.paymentDate ||
+      bill?.updatedAt;
+    if (!raw) return false;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return false;
+    return d >= dateRange.start && d <= dateRange.end;
+  };
+
+  // ✅ CRITICAL FIX: Date range filter must not hide customers who have NO bills.
+  // Approved applications without billing must remain visible regardless of month filter.
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...displayCustomers];
+
+    if (dateRange) {
+      filtered = filtered.filter((c) => {
+        const allBills = [
+          ...(c.unpaidBills || []),
+          ...(c.overdueBills || []),
+          ...(c.visibleUnpaidBills || []),
+          ...(c.hiddenBills || []),
+        ];
+        if (c.billingCycle?.bills && Array.isArray(c.billingCycle.bills)) {
+          allBills.push(...c.billingCycle.bills);
+        }
+        if (c.nextMonthBill) allBills.push(c.nextMonthBill);
+
+        // ✅ ITO ANG FIX: Kung walang bills, huwag i-filter out. Ipakita pa rin.
+        if (allBills.length === 0) return true;
+
+        return allBills.some((b) => billInRange(b));
+      });
+    }
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -974,15 +1038,8 @@ export default function BillingTable({
           c.status === "disconnected" ||
           c.billingCycle?.status === "disconnected";
 
-        // ✅ OPTIONAL filter by disconnected
-        if (statusFilter === "disconnected") {
-          return isDisc;
-        }
-
-        // Hide disconnected when filtering other statuses (optional UX)
-        if (isDisc && statusFilter !== "all") {
-          return false;
-        }
+        if (statusFilter === "disconnected") return isDisc;
+        if (isDisc && statusFilter !== "all") return false;
 
         if (statusFilter === "has_balance") return c.currentBalance > 0;
         if (statusFilter === "overdue") return c.overdueBills.length > 0;
@@ -997,6 +1054,14 @@ export default function BillingTable({
         if (statusFilter === "applications") return c.type === "application";
         if (statusFilter === "installation_fee_due") {
           return isInstallationFeeDue(c);
+        }
+        if (statusFilter === "approved_no_billing") {
+          return (
+            c.type === "application" &&
+            !c.billingCycle &&
+            c.status !== "disconnected" &&
+            c.status !== "suspended"
+          );
         }
         return true;
       });
@@ -1019,7 +1084,7 @@ export default function BillingTable({
           aValue = a.currentBalance;
           bValue = b.currentBalance;
           break;
-        case "status":
+        case "status": {
           const getStatusText = (c: CustomerItem) => {
             if (
               c.isDisconnected ||
@@ -1035,7 +1100,8 @@ export default function BillingTable({
           aValue = getStatusText(a);
           bValue = getStatusText(b);
           break;
-        case "installationFee":
+        }
+        case "installationFee": {
           const getInstallFeeSort = (c: CustomerItem) => {
             if (c.type !== "application") return -2;
             const fee = c.installationFee || 0;
@@ -1046,6 +1112,7 @@ export default function BillingTable({
           aValue = getInstallFeeSort(a);
           bValue = getInstallFeeSort(b);
           break;
+        }
         default:
           aValue = `${a.firstName} ${a.lastName}`.toLowerCase();
           bValue = `${b.firstName} ${b.lastName}`.toLowerCase();
@@ -1064,6 +1131,7 @@ export default function BillingTable({
     buildingFilter,
     sortField,
     sortDirection,
+    dateRange,
   ]);
 
   useEffect(() => {
@@ -1114,7 +1182,6 @@ export default function BillingTable({
     return `${hours}h ${minutes % 60}m ago`;
   };
 
-  // ✅ Count disconnected for badge display
   const disconnectedCount = useMemo(() => {
     return displayCustomers.filter(
       (c) =>
@@ -1123,6 +1190,23 @@ export default function BillingTable({
         c.billingCycle?.status === "disconnected",
     ).length;
   }, [displayCustomers]);
+
+  const displayStats = buildingFilteredStats || stats;
+
+  const hasActiveFilters =
+    (statusFilter && statusFilter !== "all") ||
+    (buildingFilter && buildingFilter !== "all") ||
+    !!monthFilter ||
+    !!dateFilter ||
+    !!searchTerm;
+
+  const clearAllFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setBuildingFilter("all");
+    setMonthFilter("");
+    setDateFilter("");
+  };
 
   if (loading && customers.length === 0) {
     return (
@@ -1136,236 +1220,134 @@ export default function BillingTable({
   }
 
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Billing Management
-            </h1>
-            <p className="text-sm text-gray-500">
-              Manage customer balances, bills, payments, and subscriptions
+    <div className="space-y-6 p-4">
+      {/* Table Toolbar */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">
+            Customer Billing List
+          </h2>
+          {websocketConnected && (
+            <p className="text-xs text-green-600 mt-1">
+              🟢 Live
+              {realtimeUpdateCount > 0 && ` · ${realtimeUpdateCount} updates`}
             </p>
-            {realtimeUpdateCount > 0 && (
-              <p className="text-xs text-green-500 mt-1">
-                📨 Updates: {realtimeUpdateCount}
-              </p>
-            )}
-            {websocketConnected && (
-              <p className="text-xs text-green-500 mt-1">🟢 Live</p>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 rounded-lg text-xs">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  websocketConnected
-                    ? "bg-green-500 animate-pulse"
-                    : "bg-red-500"
-                }`}
-              ></span>
-              <span className="text-gray-600">
-                {websocketConnected ? "Live" : "Offline"}
-              </span>
-              {realtimeUpdateCount > 0 && (
-                <span className="text-blue-500 font-medium">
-                  {realtimeUpdateCount} updates
-                </span>
-              )}
-            </div>
+          )}
+        </div>
 
-            {onAutoGenerateEarlyBills && (
-              <button
-                onClick={onAutoGenerateEarlyBills}
-                disabled={autoGenerationRunning}
-                className={`px-3 py-1.5 text-sm rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
-                  autoGenerationRunning
-                    ? "bg-gray-400 text-white cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
-                title={`Last run: ${getLastAutoGenText()}`}
-              >
-                <FiZap
-                  className={`w-3.5 h-3.5 ${autoGenerationRunning ? "animate-pulse" : ""}`}
-                />
-                {autoGenerationRunning
-                  ? "Generating..."
-                  : "Auto-Gen Early Bills"}
-                {lastAutoGenTime && (
-                  <span className="text-[10px] opacity-75 ml-1">
-                    ({getLastAutoGenText()})
-                  </span>
-                )}
-              </button>
-            )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {onAutoGenerateEarlyBills && (
             <button
-              onClick={onOpenReports}
-              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-700 hover:to-indigo-700 transition flex items-center gap-1.5 cursor-pointer shadow-md"
+              onClick={onAutoGenerateEarlyBills}
+              disabled={autoGenerationRunning}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
+              title={`Last run: ${getLastAutoGenText()}`}
             >
-              <FiFileText className="w-3.5 h-3.5" /> Reports
+              <FiZap
+                className={`w-4 h-4 ${autoGenerationRunning ? "animate-pulse" : ""}`}
+              />
+              {autoGenerationRunning ? "Generating..." : "Auto-Gen"}
             </button>
+          )}
+
+          <button
+            onClick={onOpenReports}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shadow-sm"
+          >
+            <FiFileText className="w-4 h-4" />
+            <span className="hidden sm:inline">Reports</span>
+          </button>
+
+          <button
+            onClick={onOpenBackdated}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          >
+            <FiCalendar className="w-4 h-4" />
+            <span className="hidden sm:inline">Backdated</span>
+          </button>
+
+          {(customersWithoutAccounts.length > 0 ||
+            applicationsWithoutBillingCount > 0) && (
             <button
-              onClick={onOpenBackdated}
-              className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 cursor-pointer"
+              onClick={onOpenExistingCustomers}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
             >
-              <FiCalendar className="w-3.5 h-3.5" /> Backdated
-            </button>
-            {(customersWithoutAccounts.length > 0 ||
-              applicationsWithoutBillingCount > 0) && (
-              <button
-                onClick={onOpenExistingCustomers}
-                className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <FiUser className="w-3.5 h-3.5" /> Existing (
+              <FiUser className="w-4 h-4" />
+              <span className="hidden sm:inline">
+                Existing (
                 {customersWithoutAccounts.length +
                   applicationsWithoutBillingCount}
                 )
-              </button>
-            )}
-            {totalPendingCount > 0 && (
-              <button
-                onClick={onOpenPending}
-                className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <FiBell className="w-3.5 h-3.5" /> Pending ({totalPendingCount})
-              </button>
-            )}
-            <button
-              onClick={onOpenSettings}
-              className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <FiSettings className="w-3.5 h-3.5" /> Settings
+              </span>
             </button>
+          )}
+
+          {totalPendingCount > 0 && (
             <button
-              onClick={() => {
-                setDisplayCustomers([...customers]);
-                if (onRefresh) {
-                  onRefresh();
-                }
-              }}
-              disabled={refreshing}
-              className="px-3 py-1.5 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              onClick={onOpenPending}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
             >
-              <FiRefreshCw
-                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-              {refreshing ? "..." : "Refresh"}
+              <FiBell className="w-4 h-4" />
+              <span className="hidden sm:inline">
+                Pending ({totalPendingCount})
+              </span>
             </button>
-          </div>
-        </div>
-      </div>
+          )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            Total Customers
-          </p>
-          <p className="text-lg font-bold text-blue-600">
-            {stats.totalCustomers}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            Total Balance
-          </p>
-          <p className="text-lg font-bold text-red-600">
-            ₱{stats.totalBalance.toLocaleString()}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            With Balance
-          </p>
-          <p className="text-lg font-bold text-orange-600">
-            {stats.customersWithBalanceCount}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            Overdue
-          </p>
-          <p className="text-lg font-bold text-red-600">
-            {stats.overdueCustomersCount}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-gray-100">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            Active Cycles
-          </p>
-          <p className="text-lg font-bold text-green-600">
-            {stats.activeCyclesCount}
-          </p>
-        </div>
-        {disconnectedCount > 0 && (
-          <div className="bg-gray-100 rounded-lg shadow-sm p-3 border border-gray-300">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              🔌 Disconnected
-            </p>
-            <p className="text-lg font-bold text-gray-700">
-              {disconnectedCount}
-            </p>
-          </div>
-        )}
-      </div>
+          <button
+            onClick={onOpenSettings}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          >
+            <FiSettings className="w-4 h-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm p-3 mb-6 border border-gray-100">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm" />
-            <input
-              type="text"
-              placeholder="Search by name, email, or application ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+          <button
+            onClick={() => {
+              setDisplayCustomers([...customers]);
+              if (onRefresh) {
+                onRefresh();
+              }
+            }}
+            disabled={refreshing}
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <FiRefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
             />
-          </div>
-          <select
-            value={buildingFilter}
-            onChange={(e) => setBuildingFilter(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
-          >
-            <option value="all">🏢 All Buildings</option>
-            {buildingsList.map((building) => (
-              <option key={building._id} value={building._id}>
-                🏢 {building.buildingName}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">All Customers</option>
-            <option value="has_balance">With Balance</option>
-            <option value="overdue">Overdue</option>
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="suspended">Suspended</option>
-            <option value="disconnected">🔌 Disconnected</option>
-            <option value="pending_activation">Awaiting Payment</option>
-            <option value="applications">Applications Only</option>
-            <option value="installation_fee_due">Installation Fee Due</option>
-          </select>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
       </div>
+
+      {/* Active building filter indicator */}
+      {activeBuildingName && (
+        <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+          <FiHome className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            Showing stats for: <strong>{activeBuildingName}</strong>
+          </span>
+          <button
+            onClick={() => setBuildingFilter("all")}
+            className="ml-auto text-xs text-blue-600 hover:text-blue-800 underline"
+          >
+            Show All Buildings
+          </button>
+        </div>
+      )}
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-300">
+      <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
         <div
           className="overflow-x-auto"
           style={{ maxHeight: "600px", overflowY: "auto" }}
         >
-          <table className="min-w-full border-collapse">
-            <thead className="sticky top-0 z-10 bg-gray-100">
-              <tr className="border-b border-gray-300">
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-gray-100 sticky left-0 z-20 w-12"></th>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50 sticky top-0 z-10">
+              <tr>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-20 w-12"></th>
                 <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort("name")}
                 >
                   <div className="flex items-center gap-1">
@@ -1373,7 +1355,7 @@ export default function BillingTable({
                   </div>
                 </th>
                 <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort("plan")}
                 >
                   <div className="flex items-center gap-1">
@@ -1381,7 +1363,7 @@ export default function BillingTable({
                   </div>
                 </th>
                 <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort("balance")}
                 >
                   <div className="flex items-center gap-1">
@@ -1389,7 +1371,7 @@ export default function BillingTable({
                   </div>
                 </th>
                 <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort("status")}
                 >
                   <div className="flex items-center gap-1">
@@ -1397,19 +1379,19 @@ export default function BillingTable({
                   </div>
                 </th>
                 <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort("installationFee")}
                 >
                   <div className="flex items-center gap-1">
                     Install Fee <SortIcon field="installationFee" />
                   </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <div className="flex items-center gap-1">
                     <FiHome className="w-3 h-3" /> Building
                   </div>
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -1445,7 +1427,7 @@ export default function BillingTable({
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div className="flex justify-between items-center mt-4 px-4 py-2 bg-white rounded-lg border border-gray-200">
+        <div className="flex justify-between items-center px-4 py-3 bg-white rounded-lg border border-gray-200 flex-wrap gap-3">
           <div className="text-sm text-gray-600">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
@@ -1454,10 +1436,13 @@ export default function BillingTable({
           <div className="flex gap-2">
             <button
               onClick={() =>
-                setPagination((prev: any) => ({ ...prev, page: prev.page - 1 }))
+                setPagination((prev: any) => ({
+                  ...prev,
+                  page: prev.page - 1,
+                }))
               }
               disabled={pagination.page === 1}
-              className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               Previous
             </button>
@@ -1466,10 +1451,13 @@ export default function BillingTable({
             </span>
             <button
               onClick={() =>
-                setPagination((prev: any) => ({ ...prev, page: prev.page + 1 }))
+                setPagination((prev: any) => ({
+                  ...prev,
+                  page: prev.page + 1,
+                }))
               }
               disabled={pagination.page === pagination.totalPages}
-              className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               Next
             </button>
@@ -1478,13 +1466,34 @@ export default function BillingTable({
       )}
 
       {/* Footer */}
-      <div className="mt-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-b-lg text-xs text-gray-500">
+      <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">
         Showing {currentPageData.length} of {filteredAndSortedCustomers.length}{" "}
         customers ({customers.filter((c) => c.type === "user").length} users,{" "}
         {customers.filter((c) => c.type === "application").length} applications)
         {disconnectedCount > 0 && (
           <span className="ml-2 text-gray-600">
             | 🔌 {disconnectedCount} disconnected
+          </span>
+        )}
+        {activeBuildingName && (
+          <span className="ml-2 text-blue-600">| 🏢 {activeBuildingName}</span>
+        )}
+        {dateFilter && (
+          <span className="ml-2 text-indigo-600">
+            | 📅 {formatDate(dateFilter)}
+          </span>
+        )}
+        {!dateFilter && monthFilter && (
+          <span className="ml-2 text-indigo-600">
+            | 🗓️{" "}
+            {new Date(
+              parseInt(monthFilter.split("-")[0], 10),
+              parseInt(monthFilter.split("-")[1], 10) - 1,
+              1,
+            ).toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            })}
           </span>
         )}
         - Sorted by {sortField} (

@@ -39,12 +39,12 @@ export default function Modal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 animate-fadeIn">
-      <div className="modal-backdrop" onClick={onClose}></div>
+    <div className="fixed inset-0 z-50">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
       <div className="fixed inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
           <div
-            className={`${sizeClasses[size]} w-full bg-white rounded-xl shadow-xl animate-scaleIn`}
+            className={`${sizeClasses[size]} w-full bg-white rounded-lg shadow-xl`}
           >
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">{title}</h2>

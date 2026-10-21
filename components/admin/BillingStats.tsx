@@ -1,4 +1,3 @@
-// components/admin/BillingStats.tsx - OPTIMIZED
 import React, { memo } from "react";
 import {
   FiUser,
@@ -6,10 +5,8 @@ import {
   FiAlertCircle,
   FiClock,
   FiActivity,
-  FiPause,
   FiFileText,
   FiHome,
-  FiCheckCircle,
 } from "react-icons/fi";
 
 interface BillingStatsProps {
@@ -115,7 +112,7 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
             Last updated: {lastUpdated.toLocaleTimeString()}
             {realtimeUpdate > 0 && (
               <span className="ml-2 text-green-500">
-                ● Live ({realtimeUpdate} updates)
+                Live ({realtimeUpdate} updates)
               </span>
             )}
           </div>
@@ -123,17 +120,47 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3 mb-6">
           {statCards.map((stat, idx) => {
             const Icon = stat.icon;
-            const colors = {
-              blue: "text-blue-600 bg-blue-50 text-blue-500",
-              red: "text-red-600 bg-red-50 text-red-500",
-              orange: "text-orange-600 bg-orange-50 text-orange-500",
-              green: "text-green-600 bg-green-50 text-green-500",
-              purple: "text-purple-600 bg-purple-50 text-purple-500",
-              amber: "text-amber-600 bg-amber-50 text-amber-500",
-              gray: "text-gray-600 bg-gray-50 text-gray-500",
+            const colors: Record<
+              string,
+              { text: string; bg: string; icon: string }
+            > = {
+              blue: {
+                text: "text-blue-600",
+                bg: "bg-blue-50",
+                icon: "text-blue-500",
+              },
+              red: {
+                text: "text-red-600",
+                bg: "bg-red-50",
+                icon: "text-red-500",
+              },
+              orange: {
+                text: "text-orange-600",
+                bg: "bg-orange-50",
+                icon: "text-orange-500",
+              },
+              green: {
+                text: "text-green-600",
+                bg: "bg-green-50",
+                icon: "text-green-500",
+              },
+              purple: {
+                text: "text-purple-600",
+                bg: "bg-purple-50",
+                icon: "text-purple-500",
+              },
+              amber: {
+                text: "text-amber-600",
+                bg: "bg-amber-50",
+                icon: "text-amber-500",
+              },
+              gray: {
+                text: "text-gray-600",
+                bg: "bg-gray-50",
+                icon: "text-gray-500",
+              },
             };
-            const colorClass =
-              colors[stat.color as keyof typeof colors] || colors.gray;
+            const colorClass = colors[stat.color] || colors.gray;
 
             return (
               <div
@@ -145,9 +172,7 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
                     <p className="text-xs text-gray-400 uppercase tracking-wide truncate">
                       {stat.label}
                     </p>
-                    <p
-                      className={`text-lg font-bold ${colorClass.split(" ")[0]}`}
-                    >
+                    <p className={`text-lg font-bold ${colorClass.text}`}>
                       {stat.value}
                     </p>
                     {stat.subtitle && (
@@ -157,9 +182,9 @@ const BillingStats: React.FC<BillingStatsProps> = memo(
                     )}
                   </div>
                   <div
-                    className={`flex-shrink-0 w-8 h-8 ${colorClass.split(" ")[1]} rounded-lg flex items-center justify-center`}
+                    className={`flex-shrink-0 w-8 h-8 ${colorClass.bg} rounded-lg flex items-center justify-center`}
                   >
-                    <Icon className={`w-4 h-4 ${colorClass.split(" ")[2]}`} />
+                    <Icon className={`w-4 h-4 ${colorClass.icon}`} />
                   </div>
                 </div>
               </div>

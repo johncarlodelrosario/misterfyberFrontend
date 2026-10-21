@@ -1,5 +1,4 @@
 // frontend/src/components/admin/PaymentReport.tsx - COMPLETE UPDATED WITH PRO-RATED PAYMENT TYPE FIX
-
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
@@ -67,7 +66,6 @@ interface PaymentReportProps {
   paymentTypeFilter: string;
 }
 
-// ==================== UTILITY FUNCTIONS ====================
 function formatCurrency(amount: number): string {
   return `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -93,12 +91,9 @@ function formatMonthYear(date: Date): string {
   });
 }
 
-// ==================== PAYMENT TYPE HELPERS ====================
-// ✅ FIX: Centralized payment type resolution - matches backend auto-correction
 function resolvePaymentType(payment: Payment): string {
   const billing = payment.billingId as any;
 
-  // Priority 1: Installation bill
   if (billing?.isInstallationBill === true) {
     return "installation";
   }
@@ -106,17 +101,14 @@ function resolvePaymentType(payment: Payment): string {
     return "installation";
   }
 
-  // Priority 2: Pro-rated bill
   if (billing?.isProRated === true) {
     return "pro_rated";
   }
 
-  // Priority 3: Explicit paymentType from backend
   if (payment.paymentType === "pro_rated") return "pro_rated";
   if (payment.paymentType === "installation") return "installation";
   if (payment.paymentType === "subscription") return "subscription";
 
-  // Priority 4: Fallback based sa isProRated field ng payment (legacy)
   if (billing?.isProRated === true) return "pro_rated";
 
   return "subscription";
@@ -137,7 +129,6 @@ function getPaymentTypeLabel(type: string): string {
   }
 }
 
-// ==================== BILLING DATE HELPERS ====================
 function getBillingDate(payment: Payment): Date {
   const billingPeriod = (payment.billingId as any)?.billingPeriod;
   if (billingPeriod?.start) {
@@ -167,7 +158,6 @@ function toSheetName(name: string): string {
   return name.replace(/[\\\/\?\*\[\]:]/g, "").substring(0, 31);
 }
 
-// ==================== ROBUST BUILDING MATCHING ====================
 function groupMatchesBuilding(
   group: PaymentGroup,
   buildingFilter: string,
@@ -221,30 +211,25 @@ function groupMatchesBuilding(
   });
 }
 
-// ==================== EXPORT OPTIONS INTERFACE ====================
 interface ExportOptions {
   title: string;
   companyName: string;
   showGeneratedDate: boolean;
   showFilters: boolean;
-
   showSummaryCards: boolean;
   showTotalCustomers: boolean;
   showTotalTransactions: boolean;
   showTotalPaid: boolean;
   showTotalPending: boolean;
   showTotalOverall: boolean;
-
   showBillingPeriodBreakdown: boolean;
   showBuildingBreakdown: boolean;
   showPaymentTypeBreakdown: boolean;
   showCustomerSummary: boolean;
-
   showRegularFeeSection: boolean;
   showInstallationFeeSection: boolean;
   showProRatedFeeSection: boolean;
   showOtherFeesSection: boolean;
-
   showFooter: boolean;
   footerText: string;
 }
@@ -273,7 +258,6 @@ const defaultExportOptions: ExportOptions = {
     "This report was generated automatically by Misterfyber Payment Management System.",
 };
 
-// ==================== REPORT COMPONENT ====================
 export default function PaymentReport({
   paymentGroups,
   buildings,
@@ -303,7 +287,6 @@ export default function PaymentReport({
     return selectedBuilding.name || selectedBuilding.buildingName || "";
   }, [selectedBuilding]);
 
-  // ==================== AVAILABLE MONTHS ====================
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
     paymentGroups.forEach((group) => {
@@ -317,7 +300,6 @@ export default function PaymentReport({
     return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
   }, [paymentGroups]);
 
-  // ==================== ACTIVE PAYMENT TYPES ====================
   const activePaymentTypes = useMemo(() => {
     const types: string[] = [];
     if (showRegularFee) types.push("subscription");
@@ -326,7 +308,6 @@ export default function PaymentReport({
     return types;
   }, [showRegularFee, showProrateFee, showInstallationFee]);
 
-  // ==================== APPLY ALL FILTERS ====================
   const filteredPaymentGroups = useMemo(() => {
     return paymentGroups
       .map((group) => {
@@ -335,7 +316,6 @@ export default function PaymentReport({
             if (payment.status !== statusFilter) return false;
           }
 
-          // ✅ FIX: Use resolved payment type (matches backend auto-correction)
           const resolvedType = resolvePaymentType(payment);
 
           if (paymentTypeFilter && paymentTypeFilter !== "all") {
@@ -419,7 +399,6 @@ export default function PaymentReport({
     activePaymentTypes,
   ]);
 
-  // ==================== COMPUTED STATS ====================
   const reportStats = useMemo(() => {
     let totalPaid = 0;
     let totalPending = 0;
@@ -462,7 +441,6 @@ export default function PaymentReport({
       buildingBreakdown[buildingName].customers += 1;
 
       group.payments.forEach((payment) => {
-        // ✅ FIX: Use resolved payment type
         const type = resolvePaymentType(payment);
         if (!paymentTypeBreakdown[type]) {
           paymentTypeBreakdown[type] = {
@@ -516,7 +494,6 @@ export default function PaymentReport({
     };
   }, [filteredPaymentGroups]);
 
-  // ==================== SEPARATED PAYMENT TYPE BREAKDOWNS ====================
   const regularFeeBreakdown = useMemo(() => {
     return (
       reportStats.paymentTypeBreakdown["subscription"] || {
@@ -564,7 +541,6 @@ export default function PaymentReport({
     return otherData;
   }, [reportStats.paymentTypeBreakdown]);
 
-  // ==================== SORTED BREAKDOWNS ====================
   const sortedMonthlyBreakdown = useMemo(() => {
     return Object.entries(reportStats.monthlyBreakdown).sort((a, b) => {
       if (a[0] === "Unknown") return 1;
@@ -587,7 +563,6 @@ export default function PaymentReport({
     );
   }, [reportStats.paymentTypeBreakdown]);
 
-  // ==================== GROUP PAYMENTS BY MONTH (for Excel tabs) ====================
   const paymentsByMonth = useMemo(() => {
     const byMonth = new Map<
       string,
@@ -617,7 +592,6 @@ export default function PaymentReport({
     return entries;
   }, [filteredPaymentGroups]);
 
-  // ==================== EXPORT FUNCTION ====================
   const handleExport = useCallback(
     (format: "pdf" | "excel") => {
       if (filteredPaymentGroups.length === 0) {
@@ -650,9 +624,6 @@ export default function PaymentReport({
         ? formatMonthLabel(monthFilter)
         : "All Months";
 
-      // ============================================================
-      // ============ PDF EXPORT (HTML + print) ====================
-      // ============================================================
       if (format === "pdf") {
         let summaryRows = "";
         if (exportOptions.showCustomerSummary) {
@@ -1185,17 +1156,9 @@ export default function PaymentReport({
         } else {
           alert("Please allow popups to generate PDF report.");
         }
-      }
-
-      // ============================================================
-      // ============ EXCEL EXPORT WITH MULTIPLE TABS ==============
-      // ============================================================
-      else {
+      } else {
         const wb = XLSX.utils.book_new();
 
-        // ------------------------------------------------------------
-        // SHEET 1: SUMMARY
-        // ------------------------------------------------------------
         const summaryData: any[][] = [];
 
         summaryData.push([exportOptions.title.toUpperCase()]);
@@ -1335,9 +1298,6 @@ export default function PaymentReport({
         ];
         XLSX.utils.book_append_sheet(wb, summaryWS, "Summary");
 
-        // ------------------------------------------------------------
-        // MONTHLY SHEETS
-        // ------------------------------------------------------------
         paymentsByMonth.forEach(([monthKey, entries]) => {
           const monthLabel = formatMonthLabel(monthKey);
 
@@ -1391,7 +1351,6 @@ export default function PaymentReport({
 
           entries.forEach(({ group, payment, billingPeriod }, i) => {
             const hasFree = payment.paymentDetails?.isFree === true;
-            // ✅ FIX: Use resolved payment type
             const resolvedType = resolvePaymentType(payment);
             const isInstallation = resolvedType === "installation";
             const typeLabel = getPaymentTypeLabel(resolvedType);
@@ -1457,9 +1416,6 @@ export default function PaymentReport({
           XLSX.utils.book_append_sheet(wb, monthWS, sheetName);
         });
 
-        // ------------------------------------------------------------
-        // DOWNLOAD THE FILE
-        // ------------------------------------------------------------
         const fileName = `${exportOptions.title.replace(/\s+/g, "_")}_${now.toISOString().slice(0, 10)}.xlsx`;
         XLSX.writeFile(wb, fileName);
       }
@@ -1490,10 +1446,8 @@ export default function PaymentReport({
     ],
   );
 
-  // ==================== RENDER ====================
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -1526,7 +1480,6 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Filter Controls */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-4">
           <FiFilter className="w-4 h-4 text-blue-600" />
@@ -1660,7 +1613,6 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* No Data Warning */}
       {filteredPaymentGroups.length === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
           <FiInfo className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
@@ -1679,7 +1631,6 @@ export default function PaymentReport({
         </div>
       )}
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center gap-3">
@@ -1735,7 +1686,6 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Billing Period Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -1828,7 +1778,6 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Building Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -1932,7 +1881,6 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* Payment Type Breakdown Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -1979,7 +1927,6 @@ export default function PaymentReport({
                 </tr>
               ) : (
                 sortedPaymentTypeBreakdown.map(([type, data], index) => {
-                  // ✅ FIX: Use centralized label helper
                   const typeLabel = getPaymentTypeLabel(type);
                   const percentage =
                     (data.amount / (reportStats.totalOverall || 1)) * 100;
@@ -2041,11 +1988,9 @@ export default function PaymentReport({
         </div>
       </div>
 
-      {/* ==================== EXPORT CUSTOMIZATION MODAL ==================== */}
       {showExportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white rounded-t-xl z-10">
               <div>
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -2065,9 +2010,7 @@ export default function PaymentReport({
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6 space-y-6">
-              {/* Format Selector */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">
                   Export Format
@@ -2104,7 +2047,6 @@ export default function PaymentReport({
                 )}
               </div>
 
-              {/* Header Options */}
               <div className="border-t border-gray-200 pt-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <FiFileText className="w-4 h-4 text-blue-600" />
@@ -2182,7 +2124,6 @@ export default function PaymentReport({
                 </div>
               </div>
 
-              {/* Summary Cards Options */}
               <div className="border-t border-gray-200 pt-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <FiBarChart2 className="w-4 h-4 text-blue-600" />
@@ -2287,7 +2228,6 @@ export default function PaymentReport({
                 </div>
               </div>
 
-              {/* Sections Options */}
               <div className="border-t border-gray-200 pt-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <FiPieChart className="w-4 h-4 text-blue-600" />
@@ -2361,7 +2301,6 @@ export default function PaymentReport({
                 </div>
               </div>
 
-              {/* Payment Type Sections */}
               <div className="border-t border-gray-200 pt-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <FiDollarSign className="w-4 h-4 text-blue-600" />
@@ -2431,7 +2370,6 @@ export default function PaymentReport({
                 </div>
               </div>
 
-              {/* Footer Options */}
               <div className="border-t border-gray-200 pt-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <FiInfo className="w-4 h-4 text-blue-600" />
@@ -2470,7 +2408,6 @@ export default function PaymentReport({
               </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center sticky bottom-0 bg-white rounded-b-xl">
               <button
                 onClick={() => setExportOptions(defaultExportOptions)}

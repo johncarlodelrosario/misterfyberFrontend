@@ -18,11 +18,11 @@ export const compressImage = async (
   options: CompressionOptions = {},
 ): Promise<File> => {
   const defaultOptions: CompressionOptions = {
-    maxSizeMB: 0.3, // ✅ 300KB max (mula 6MB, bababa sa ~300KB!)
-    maxWidthOrHeight: 1280, // ✅ Max 1280px (magandang balance)
-    useWebWorker: true, // ✅ Non-blocking UI
-    fileType: "image/jpeg", // ✅ JPEG para efficient
-    initialQuality: 0.75, // ✅ 75% quality (magandang balance)
+    maxSizeMB: 0.3, // 300KB max
+    maxWidthOrHeight: 1280, // Max 1280px
+    useWebWorker: true, // Non-blocking UI
+    fileType: "image/jpeg", // JPEG for efficiency
+    initialQuality: 0.75, // 75% quality
   };
 
   const finalOptions = { ...defaultOptions, ...options };
@@ -76,4 +76,47 @@ export const compressImageToBase64 = async (
     reader.onerror = reject;
     reader.readAsDataURL(compressedFile);
   });
+};
+
+/**
+ * Validate image file before compression
+ */
+export const validateImageFile = (
+  file: File,
+  maxSizeMB: number = 10,
+): { valid: boolean; error?: string } => {
+  const allowedTypes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    return {
+      valid: false,
+      error: "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
+    };
+  }
+
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    return {
+      valid: false,
+      error: `File size must be less than ${maxSizeMB}MB`,
+    };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Get human-readable file size
+ */
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };

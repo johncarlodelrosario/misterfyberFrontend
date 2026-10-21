@@ -1,4 +1,3 @@
-// components/admin/ApplicationReportDownload.tsx - SIMPLE REPORT DOWNLOAD
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -9,10 +8,6 @@ import {
   ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
-
-// ============================================================
-// TYPES
-// ============================================================
 
 interface Building {
   _id: string;
@@ -75,10 +70,6 @@ interface ApplicationReportDownloadProps {
   };
 }
 
-// ============================================================
-// FIELD OPTIONS
-// ============================================================
-
 const FIELD_OPTIONS = [
   { key: "applicationId", label: "Application ID", default: true },
   { key: "fullName", label: "Full Name", default: true },
@@ -112,12 +103,6 @@ const STATUS_OPTIONS = [
   { value: "suspended", label: "Suspended" },
 ];
 
-type FieldKey = (typeof FIELD_OPTIONS)[number]["key"];
-
-// ============================================================
-// COMPONENT
-// ============================================================
-
 export default function ApplicationReportDownload({
   isOpen,
   onClose,
@@ -126,7 +111,6 @@ export default function ApplicationReportDownload({
   onFetchAllApplications,
   currentFilters,
 }: ApplicationReportDownloadProps) {
-  // ============ STATE ============
   const [isGenerating, setIsGenerating] = useState(false);
   const [format, setFormat] = useState<"pdf" | "excel">("pdf");
   const [buildingId, setBuildingId] = useState("");
@@ -145,8 +129,6 @@ export default function ApplicationReportDownload({
   );
 
   const modalRef = useRef<HTMLDivElement>(null);
-
-  // ============ EFFECTS ============
 
   useEffect(() => {
     if (isOpen && currentFilters) {
@@ -170,8 +152,6 @@ export default function ApplicationReportDownload({
       document.body.style.overflow = "unset";
     };
   }, [isOpen]);
-
-  // ============ HELPERS ============
 
   const getBuildingName = useCallback(
     (app: Application): string => {
@@ -223,10 +203,7 @@ export default function ApplicationReportDownload({
   }, []);
 
   const formatCurrency = useCallback((n: number): string => {
-    return `₱${n.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+    return `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, []);
 
   const getStatusLabel = useCallback((s: string): string => {
@@ -247,8 +224,6 @@ export default function ApplicationReportDownload({
         return [0, 0, 0];
     }
   }, []);
-
-  // ============ FIELD HANDLERS ============
 
   const toggleField = (key: string) => {
     setSelectedFields((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -278,8 +253,6 @@ export default function ApplicationReportDownload({
     );
   };
 
-  // ============ FETCH DATA ============
-
   const fetchData = useCallback(async (): Promise<Application[]> => {
     const applications = await onFetchAllApplications({
       buildingId: buildingId && buildingId !== "all" ? buildingId : undefined,
@@ -294,7 +267,6 @@ export default function ApplicationReportDownload({
       from.setHours(0, 0, 0, 0);
       filtered = filtered.filter((a) => new Date(a.createdAt) >= from);
     }
-
     if (dateTo) {
       const to = new Date(dateTo);
       to.setHours(23, 59, 59, 999);
@@ -303,8 +275,6 @@ export default function ApplicationReportDownload({
 
     return filtered;
   }, [buildingId, status, search, dateFrom, dateTo, onFetchAllApplications]);
-
-  // ============ FIELD VALUE GETTER ============
 
   const getFieldValue = useCallback(
     (app: Application, fieldKey: string): string => {
@@ -369,8 +339,6 @@ export default function ApplicationReportDownload({
     ],
   );
 
-  // ============ GENERATE REPORT ============
-
   const handleGenerate = useCallback(async () => {
     const enabledFields = FIELD_OPTIONS.filter((f) => selectedFields[f.key]);
     if (enabledFields.length === 0) {
@@ -381,33 +349,28 @@ export default function ApplicationReportDownload({
     setIsGenerating(true);
     try {
       const applications = await fetchData();
-
       if (applications.length === 0) {
         toast.error("No applications match your filters");
         return;
       }
 
-      // Build table data
       const headers = enabledFields.map((f) => f.label);
       const rows = applications.map((app) =>
         enabledFields.map((f) => getFieldValue(app, f.key)),
       );
 
       if (format === "pdf") {
-        // ===== PDF GENERATION =====
         const { default: jsPDF } = await import("jspdf");
         const { default: autoTable } = await import("jspdf-autotable");
 
         const orientation = enabledFields.length > 8 ? "landscape" : "portrait";
         const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
 
-        // Title
         doc.setFontSize(16);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(37, 99, 235);
         doc.text("Applications Report", 14, 15);
 
-        // Subtitle
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(100);
@@ -420,7 +383,6 @@ export default function ApplicationReportDownload({
         }
         doc.text(info, 14, 22);
 
-        // Table
         const columnStyles: Record<number, any> = {};
         enabledFields.forEach((_, i) => {
           columnStyles[i] = { cellWidth: "auto", halign: "left" };
@@ -478,9 +440,8 @@ export default function ApplicationReportDownload({
 
         const dateStr = new Date().toISOString().split("T")[0];
         doc.save(`applications-report-${dateStr}.pdf`);
-        toast.success(`📄 PDF downloaded (${applications.length} records)`);
+        toast.success(`PDF downloaded (${applications.length} records)`);
       } else {
-        // ===== EXCEL (CSV) GENERATION =====
         const escapeCSV = (v: string): string => {
           if (v.includes(",") || v.includes('"') || v.includes("\n")) {
             return `"${v.replace(/"/g, '""')}"`;
@@ -492,7 +453,6 @@ export default function ApplicationReportDownload({
           headers.map(escapeCSV).join(","),
           ...rows.map((r) => r.map(escapeCSV).join(",")),
         ].join("\n");
-
         const BOM = "\uFEFF";
         const blob = new Blob([BOM + csvContent], {
           type: "text/csv;charset=utf-8;",
@@ -508,12 +468,12 @@ export default function ApplicationReportDownload({
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        toast.success(`📊 Excel downloaded (${applications.length} records)`);
+        toast.success(`Excel downloaded (${applications.length} records)`);
       }
 
       onClose();
     } catch (error) {
-      console.error("❌ Error generating report:", error);
+      console.error("Error generating report:", error);
       toast.error("Failed to generate report");
     } finally {
       setIsGenerating(false);
@@ -537,21 +497,14 @@ export default function ApplicationReportDownload({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
       <div className="flex min-h-full items-center justify-center p-4">
         <div
           ref={modalRef}
-          className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden"
+          className="relative w-full max-w-2xl bg-white rounded-lg shadow-xl overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* ===== HEADER ===== */}
-          <div className="flex items-center justify-between px-5 py-4 bg-blue">
+          <div className="flex items-center justify-between px-5 py-4 bg-blue-600">
             <div className="flex items-center gap-3">
               <DocumentArrowDownIcon className="h-6 w-6 text-white" />
               <div>
@@ -571,9 +524,7 @@ export default function ApplicationReportDownload({
             </button>
           </div>
 
-          {/* ===== BODY ===== */}
           <div className="p-5 max-h-[70vh] overflow-y-auto space-y-5">
-            {/* Format */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Format
@@ -583,7 +534,7 @@ export default function ApplicationReportDownload({
                   onClick={() => setFormat("pdf")}
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
                     format === "pdf"
-                      ? "border-red-300 bg-red-50 text-red-700"
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
                       : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
@@ -594,7 +545,7 @@ export default function ApplicationReportDownload({
                   onClick={() => setFormat("excel")}
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
                     format === "excel"
-                      ? "border-green-300 bg-green-50 text-green-700"
+                      ? "border-green-500 bg-green-50 text-green-700"
                       : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
@@ -604,7 +555,6 @@ export default function ApplicationReportDownload({
               </div>
             </div>
 
-            {/* Filters */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Filters
@@ -622,7 +572,6 @@ export default function ApplicationReportDownload({
                     </option>
                   ))}
                 </select>
-
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
@@ -634,7 +583,6 @@ export default function ApplicationReportDownload({
                     </option>
                   ))}
                 </select>
-
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">
                     From
@@ -646,7 +594,6 @@ export default function ApplicationReportDownload({
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">To</label>
                   <input
@@ -656,7 +603,6 @@ export default function ApplicationReportDownload({
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-
                 <div className="sm:col-span-2">
                   <input
                     type="text"
@@ -669,7 +615,6 @@ export default function ApplicationReportDownload({
               </div>
             </div>
 
-            {/* Fields */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">
@@ -695,11 +640,7 @@ export default function ApplicationReportDownload({
                 {FIELD_OPTIONS.map((field) => (
                   <label
                     key={field.key}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition ${
-                      selectedFields[field.key]
-                        ? "bg-blue-100 text-blue-800"
-                        : "hover:bg-gray-100 text-gray-700"
-                    }`}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition ${selectedFields[field.key] ? "bg-blue-100 text-blue-800" : "hover:bg-gray-100 text-gray-700"}`}
                   >
                     <input
                       type="checkbox"
@@ -714,7 +655,6 @@ export default function ApplicationReportDownload({
             </div>
           </div>
 
-          {/* ===== FOOTER ===== */}
           <div className="flex items-center justify-end gap-3 px-5 py-4 bg-gray-50 border-t border-gray-200">
             <button
               onClick={onClose}
@@ -726,11 +666,7 @@ export default function ApplicationReportDownload({
             <button
               onClick={handleGenerate}
               disabled={isGenerating || enabledCount === 0}
-              className={`flex items-center gap-2 px-5 py-2 text-sm font-medium text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                format === "pdf"
-                  ? "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
-                  : "bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600"
-              }`}
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isGenerating ? (
                 <>

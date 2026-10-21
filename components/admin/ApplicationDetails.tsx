@@ -5,9 +5,6 @@ import React, { useState, useCallback, useMemo } from "react";
 import Image from "next/image";
 import type { Application } from "./ApplicationTable";
 
-// ============================================================
-// PRODUCTION URL CONFIGURATION
-// ============================================================
 const PRODUCTION_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://misterfyberbackend-lvjd.onrender.com";
@@ -35,7 +32,6 @@ export function ApplicationDetails({
   const [showFullImage, setShowFullImage] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  // Get the ID safely - handle both _id and id
   const getApplicationId = useCallback((): string => {
     const id = application._id || application.id;
     if (!id) return "N/A";
@@ -45,7 +41,6 @@ export function ApplicationDetails({
     return String(id).slice(-8).toUpperCase();
   }, [application._id, application.id]);
 
-  // Get the ID for API calls - ensures we always have a string
   const getAppIdForApi = useCallback((): string => {
     const id = application._id || application.id || application.applicationId;
     if (!id) {
@@ -90,7 +85,6 @@ export function ApplicationDetails({
     return plan?.price || 0;
   };
 
-  // ✅ ADDED disconnected case
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -117,7 +111,6 @@ export function ApplicationDetails({
             Suspended
           </span>
         );
-      // ✅ ADDED disconnected case
       case "disconnected":
         return (
           <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
@@ -141,11 +134,7 @@ export function ApplicationDetails({
     }
   };
 
-  // ============================================================
-  // ✅ FIXED: Get the ID image URL - handles all possible formats
-  // ============================================================
   const getIdImageUrl = useCallback(() => {
-    // Check multiple possible sources for the image
     const image = application.idImage || application.idImageUrl;
 
     console.log("🔍 Checking for ID image:", {
@@ -165,14 +154,12 @@ export function ApplicationDetails({
       return null;
     }
 
-    // If it's already a full URL or data URL, return as is
     if (
       image.startsWith("http://") ||
       image.startsWith("https://") ||
       image.startsWith("data:") ||
       image.startsWith("https://res.cloudinary.com")
     ) {
-      // ✅ Calculate size for base64 images (for debugging)
       if (image.startsWith("data:")) {
         const sizeInBytes = image.length;
         const sizeInKB = sizeInBytes / 1024;
@@ -193,31 +180,26 @@ export function ApplicationDetails({
       return image;
     }
 
-    // If it's a relative path starting with /uploads/
     if (image.startsWith("/uploads/")) {
       const fullUrl = `${PRODUCTION_URL}${image}`;
       console.log("✅ Using relative path URL:", fullUrl);
       return fullUrl;
     }
 
-    // If it's a relative path without leading slash
     if (image.startsWith("uploads/")) {
       const fullUrl = `${PRODUCTION_URL}/${image}`;
       console.log("✅ Using uploads path URL:", fullUrl);
       return fullUrl;
     }
 
-    // If it's just a filename, construct the full path
     const filename = image.split(/[\\\/]/).pop() || image;
 
-    // Check if it's the placeholder
     if (filename === "placeholder.jpg" || !filename || filename === "") {
       const fallbackUrl = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
       console.log("📸 Using placeholder URL:", fallbackUrl);
       return fallbackUrl;
     }
 
-    // ✅ If it's the "base64" flag (from list view without actual data)
     if (filename === "base64") {
       console.warn(
         "⚠️ Base64 flag detected - full data not loaded. Fetch details endpoint needed.",
@@ -225,7 +207,6 @@ export function ApplicationDetails({
       return null;
     }
 
-    // Construct URL from filename
     const fullUrl = `${PRODUCTION_URL}/uploads/id-cards/${filename}`;
     console.log("✅ Constructed URL from filename:", fullUrl);
     return fullUrl;
@@ -238,7 +219,6 @@ export function ApplicationDetails({
     application.lastName,
   ]);
 
-  // ✅ Calculate image size in human-readable format
   const imageSizeInfo = useMemo(() => {
     const image = application.idImage || application.idImageUrl;
     if (!image) return null;
@@ -329,9 +309,6 @@ export function ApplicationDetails({
   const idImageUrl = getIdImageUrl();
   console.log("📸 Final ID Image URL:", idImageUrl ? "Resolved" : "null");
 
-  // ============================================================
-  // ✅ HANDLE IMAGE LOAD ERROR - Fallback to placeholder
-  // ============================================================
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
       const target = e.target as HTMLImageElement;
@@ -341,14 +318,12 @@ export function ApplicationDetails({
         naturalHeight: target.naturalHeight,
       });
       setImageError(true);
-      // Try to load placeholder
       target.src = `${PRODUCTION_URL}/uploads/id-cards/placeholder.jpg`;
-      target.onerror = null; // Prevent infinite loop
+      target.onerror = null;
     },
     [],
   );
 
-  // ✅ CHECK IF DISCONNECTED
   const isDisconnected = application.status === "disconnected";
 
   return (
@@ -373,7 +348,6 @@ export function ApplicationDetails({
         </div>
       </div>
 
-      {/* ✅ ADDED: Disconnected info banner */}
       {isDisconnected && application.disconnectedAt && (
         <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
           <div className="flex items-start gap-2">
@@ -546,9 +520,7 @@ export function ApplicationDetails({
           </div>
         </div>
 
-        {/* ============================================================ */}
-        {/* ✅ ID IMAGE SECTION - WITH SIZE INFO */}
-        {/* ============================================================ */}
+        {/* ID IMAGE SECTION */}
         <div className="border rounded-lg p-4 md:col-span-2">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <span>📷 ID Image</span>

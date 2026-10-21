@@ -1,4 +1,3 @@
-// components/admin/EditApplicationModal.tsx - COMPLETE FIXED - REMOVED birthDate AND gender
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -72,17 +71,14 @@ export function EditApplicationModal({
     installationFee: "",
     installationFeePaid: false,
   });
-
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Initialize form with application data when modal opens
   useEffect(() => {
     if (open && application) {
       const buildingId =
         typeof application.buildingId === "string"
           ? application.buildingId
           : application.buildingId?._id || "";
-
       const planId =
         typeof application.planId === "string"
           ? application.planId
@@ -110,16 +106,10 @@ export function EditApplicationModal({
         installationFeePaid: application.installationFeePaid || false,
       });
 
-      // Set ID image preview
-      if (application.idImage) {
-        setIdImagePreview(application.idImage);
-      } else {
-        setIdImagePreview(null);
-      }
+      if (application.idImage) setIdImagePreview(application.idImage);
+      else setIdImagePreview(null);
       setIdImageFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setErrors({});
     }
   }, [open, application]);
@@ -129,11 +119,9 @@ export function EditApplicationModal({
     if (!formData.firstName.trim())
       newErrors.firstName = "First name is required";
     if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
-    if (!formData.email.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    if (!formData.email.trim()) newErrors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(formData.email))
       newErrors.email = "Please enter a valid email address";
-    }
     if (!formData.phoneNumber.trim())
       newErrors.phoneNumber = "Phone number is required";
     if (!formData.buildingId) newErrors.buildingId = "Building is required";
@@ -159,9 +147,7 @@ export function EditApplicationModal({
       }
       setIdImageFile(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setIdImagePreview(reader.result as string);
-      };
+      reader.onloadend = () => setIdImagePreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
@@ -169,9 +155,7 @@ export function EditApplicationModal({
   const removeIdImage = () => {
     setIdImageFile(null);
     setIdImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -180,7 +164,6 @@ export function EditApplicationModal({
 
     setIsLoading(true);
     try {
-      // Build the update data with all fields (removed birthDate and gender)
       const updateData: any = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
@@ -203,37 +186,23 @@ export function EditApplicationModal({
         installationFeePaid: formData.installationFeePaid,
       };
 
-      console.log("📤 Submitting update data:", updateData);
-
-      // Call the API
       await patchApplication(application._id, updateData);
 
-      // Handle image upload if needed
       if (idImageFile) {
         const { updateApplication } = await import("@/services/application");
         await updateApplication(application._id, { idImage: idImageFile });
-        console.log("✅ Image uploaded successfully");
       }
 
       await onSuccess(application._id, updateData);
       toast.success("Application updated successfully!");
       onOpenChange(false);
     } catch (error: any) {
-      console.error("❌ Error updating application:", error);
-
-      // Log the full error response
-      if (error.response) {
-        console.error("❌ Error response data:", error.response.data);
-        console.error("❌ Error response status:", error.response.status);
-      }
-
       const errorMessage =
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
         "Failed to update application";
       toast.error(errorMessage);
-
       if (error?.response?.data?.errors) {
         const backendErrors = error.response.data.errors;
         const newErrors: Record<string, string> = {};
@@ -263,7 +232,6 @@ export function EditApplicationModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Status Section */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Status Information
@@ -306,7 +274,6 @@ export function EditApplicationModal({
             </div>
           </div>
 
-          {/* Personal Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Personal Information
@@ -330,7 +297,6 @@ export function EditApplicationModal({
                   </p>
                 )}
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Last Name <span className="text-red-500">*</span>
@@ -419,7 +385,6 @@ export function EditApplicationModal({
               </div>
             </div>
 
-            {/* ID Image */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 ID Image
@@ -477,7 +442,6 @@ export function EditApplicationModal({
             </div>
           </div>
 
-          {/* Address Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Address Information
@@ -559,7 +523,6 @@ export function EditApplicationModal({
             </div>
           </div>
 
-          {/* Plan Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Plan Information
@@ -641,7 +604,6 @@ export function EditApplicationModal({
             </div>
           </div>
 
-          {/* Notes */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Notes
@@ -676,7 +638,6 @@ export function EditApplicationModal({
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -689,35 +650,9 @@ export function EditApplicationModal({
             <button
               type="submit"
               disabled={isLoading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? (
-                <>
-                  <svg
-                    className="animate-spin h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
+              {isLoading ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>

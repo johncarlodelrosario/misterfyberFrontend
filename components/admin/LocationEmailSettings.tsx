@@ -38,16 +38,13 @@ const LocationEmailSettings: React.FC = () => {
     try {
       setTesting(true);
       setTestResult(null);
-
       const collectionEmail =
         customEmail ||
         emailLocationService.getLocationEmail(selectedLocation, emails);
-
       const result = await emailLocationService.testLocationEmail(
         selectedLocation,
         collectionEmail,
       );
-
       setTestResult({
         location: selectedLocation,
         success: result.success,
@@ -85,7 +82,7 @@ const LocationEmailSettings: React.FC = () => {
   return (
     <div className="bg-white rounded-lg shadow p-6 max-w-2xl">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">
-        📍 Location-Based Collection Emails
+        Location-Based Collection Emails
       </h2>
 
       <div className="space-y-4">
@@ -94,21 +91,14 @@ const LocationEmailSettings: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-gray-700 flex items-center">
-                <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-                Breeze Location
-              </h3>
+              <h3 className="font-semibold text-gray-700">Breeze Location</h3>
               <p className="text-gray-600 font-mono text-sm mt-1">
                 {emails.breeze}
               </p>
             </div>
             <button
               onClick={() => setSelectedLocation("breeze")}
-              className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                selectedLocation === "breeze"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              }`}
+              className={`px-3 py-1 text-sm rounded-lg transition-colors ${selectedLocation === "breeze" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
             >
               Select
             </button>
@@ -116,25 +106,18 @@ const LocationEmailSettings: React.FC = () => {
         </div>
 
         <div
-          className={`p-4 rounded-lg border ${selectedLocation === "sil" ? "bg-purple-50 border-purple-300" : "bg-gray-50 border-gray-200"}`}
+          className={`p-4 rounded-lg border ${selectedLocation === "sil" ? "bg-blue-50 border-blue-300" : "bg-gray-50 border-gray-200"}`}
         >
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-gray-700 flex items-center">
-                <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
-                Sil Location
-              </h3>
+              <h3 className="font-semibold text-gray-700">Sil Location</h3>
               <p className="text-gray-600 font-mono text-sm mt-1">
                 {emails.sil}
               </p>
             </div>
             <button
               onClick={() => setSelectedLocation("sil")}
-              className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                selectedLocation === "sil"
-                  ? "bg-purple-600 text-white"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              }`}
+              className={`px-3 py-1 text-sm rounded-lg transition-colors ${selectedLocation === "sil" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
             >
               Select
             </button>
@@ -150,8 +133,7 @@ const LocationEmailSettings: React.FC = () => {
       </div>
 
       <div className="mt-6 pt-6 border-t border-gray-200">
-        <h3 className="font-semibold text-gray-700 mb-4">📧 Test Email</h3>
-
+        <h3 className="font-semibold text-gray-700 mb-4">Test Email</h3>
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
@@ -188,33 +170,7 @@ const LocationEmailSettings: React.FC = () => {
             disabled={testing}
             className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
           >
-            {testing ? (
-              <span className="flex items-center justify-center">
-                <svg
-                  className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Sending Test Email...
-              </span>
-            ) : (
-              "Send Test Email"
-            )}
+            {testing ? "Sending Test Email..." : "Send Test Email"}
           </button>
         </div>
 
@@ -232,24 +188,24 @@ const LocationEmailSettings: React.FC = () => {
       </div>
 
       <div className="mt-6 pt-6 border-t border-gray-200">
-        <h3 className="font-semibold text-gray-700 mb-2">ℹ️ How It Works</h3>
+        <h3 className="font-semibold text-gray-700 mb-2">How It Works</h3>
         <div className="text-sm text-gray-600 space-y-2">
           <p>
-            💡 <strong>Breeze Location:</strong> Bills sent to users with
-            location "Breeze" will be BCC'd to{" "}
+            <strong>Breeze Location:</strong> Bills sent to users with location
+            "Breeze" will be BCC'd to{" "}
             <code className="bg-gray-100 px-2 py-0.5 rounded text-blue-600">
               {emails.breeze}
             </code>
           </p>
           <p>
-            💡 <strong>Sil Location:</strong> Bills sent to users with location
+            <strong>Sil Location:</strong> Bills sent to users with location
             "Sil" will be BCC'd to{" "}
-            <code className="bg-gray-100 px-2 py-0.5 rounded text-purple-600">
+            <code className="bg-gray-100 px-2 py-0.5 rounded text-blue-600">
               {emails.sil}
             </code>
           </p>
           <p>
-            💡 <strong>Default:</strong> Bills with no location will use{" "}
+            <strong>Default:</strong> Bills with no location will use{" "}
             <code className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">
               {emails.default}
             </code>

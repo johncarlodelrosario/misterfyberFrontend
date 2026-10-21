@@ -1,4 +1,4 @@
-// app/admin/email/page.tsx (Complete Fixed - Full System Auto-Refresh)
+// app/admin/email/page.tsx - COMPLETE FIXED VERSION WITH 4 SENDER OPTIONS
 
 "use client";
 
@@ -8,10 +8,49 @@ import emailService, {
   Customer,
   EmailTemplate,
   EmailSentRecord,
+  SenderType,
 } from "@/services/emailService";
 import RichTextEditor from "@/components/RichTextEditor";
 import ScheduledEmailsTab from "@/components/ScheduledEmailsTab";
 import toast from "react-hot-toast";
+
+// ==================== SENDER OPTIONS ====================
+const SENDER_OPTIONS: {
+  value: SenderType;
+  label: string;
+  email: string;
+  icon: string;
+  color: string;
+}[] = [
+  {
+    value: "collection",
+    label: "Collection",
+    email: "Location-specific",
+    icon: "📍",
+    color: "green",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    email: "admin@misterfyber.com",
+    icon: "👤",
+    color: "blue",
+  },
+  {
+    value: "workselpueblo",
+    label: "Workselpueblo",
+    email: "workselpueblo@gmail.com",
+    icon: "🏢",
+    color: "purple",
+  },
+  {
+    value: "fbsilkresidence",
+    label: "FB Silk Residence",
+    email: "fbsilkresidence@gmail.com",
+    icon: "🏠",
+    color: "orange",
+  },
+];
 
 export default function ManualEmailPage() {
   const { user } = useAuth();
@@ -48,8 +87,8 @@ export default function ManualEmailPage() {
   >("unpaid");
   const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
 
-  // Sender type state
-  const [useAdminSender, setUseAdminSender] = useState(false);
+  // ==================== SENDER TYPE STATE (NEW) ====================
+  const [senderType, setSenderType] = useState<SenderType>("collection");
 
   // Location state
   const [customerLocation, setCustomerLocation] = useState<string>("");
@@ -84,11 +123,6 @@ export default function ManualEmailPage() {
     category: "general",
     includeBillingDefault: false,
   });
-
-  // Reminder dialog
-  const [showReminderDialog, setShowReminderDialog] = useState(false);
-  const [reminderMessage, setReminderMessage] = useState("");
-  const [includeDueDateReminder, setIncludeDueDateReminder] = useState(true);
 
   // Refs
   const isMountedRef = useRef(true);
@@ -263,7 +297,6 @@ export default function ManualEmailPage() {
   );
 
   // ==================== FULL SYSTEM REFRESH ====================
-  // ✅ This refreshes EVERYTHING from the database
   const refreshAllData = useCallback(
     async (options?: {
       preserveSelectedCustomer?: boolean;
@@ -275,7 +308,6 @@ export default function ManualEmailPage() {
       try {
         setRefreshing(true);
 
-        // ✅ Fetch ALL data fresh from database in parallel
         const [freshCustomers, freshSentRecords, freshTemplates] =
           await Promise.all([
             loadCustomers(
@@ -286,19 +318,16 @@ export default function ManualEmailPage() {
             loadTemplates(),
           ]);
 
-        // ✅ If we have a selected customer, update it with fresh data
         if (preserveSelectedCustomer && selectedCustomer) {
           const updatedCustomer = freshCustomers.find(
             (c) => c.applicationId === selectedCustomer.applicationId,
           );
           if (updatedCustomer) {
             setSelectedCustomer(updatedCustomer);
-            // Also refresh bills for this customer
             await loadCustomerBills(updatedCustomer.applicationId);
           }
         }
 
-        // ✅ If we have bulk selections, update them with fresh data
         if (preserveSelection && selectedCustomers.length > 0) {
           const updatedSelections = freshCustomers.filter((c) =>
             selectedCustomers.some(
@@ -331,7 +360,7 @@ export default function ManualEmailPage() {
     ],
   );
 
-  // ==================== INITIAL LOAD (ONE TIME ONLY) ====================
+  // ==================== INITIAL LOAD ====================
   useEffect(() => {
     isMountedRef.current = true;
 
@@ -429,7 +458,7 @@ export default function ManualEmailPage() {
         includeBilling,
         applicationId: selectedCustomer.applicationId,
         billIds: includeBilling ? selectedBillIds : undefined,
-        useAdminSender,
+        senderType,
       });
       setPreviewHtml(preview.html || "");
       setPreviewLocation(preview.location || "unknown");
@@ -470,10 +499,11 @@ export default function ManualEmailPage() {
         includeBilling,
         billIds: includeBilling ? selectedBillIds : undefined,
         sendCopyToAdmin,
-        useAdminSender,
+        senderType,
       });
 
-      const senderDisplay = useAdminSender ? "Admin" : "Collection";
+      const senderDisplay =
+        SENDER_OPTIONS.find((s) => s.value === senderType)?.label || senderType;
       const locationDisplay = customerLocation
         ? customerLocation.toUpperCase()
         : "Unknown";
@@ -481,10 +511,8 @@ export default function ManualEmailPage() {
         `✅ Email sent via ${senderDisplay} to ${selectedCustomer.firstName} ${selectedCustomer.lastName} (${locationDisplay})`,
       );
 
-      // ✅ FULL SYSTEM REFRESH - Fetch EVERYTHING fresh from database
       await refreshAllData({ preserveSelectedCustomer: true });
 
-      // ✅ Clear form for next email
       setSubject("");
       setMessage("");
       setRichTextContent("");
@@ -523,19 +551,18 @@ export default function ManualEmailPage() {
         includeBilling,
         billType: bulkBillType,
         sendCopyToAdmin,
-        useAdminSender,
+        senderType,
         locationFilter: buildingFilter !== "all" ? buildingFilter : undefined,
       });
 
-      const senderDisplay = useAdminSender ? "Admin" : "Collection";
+      const senderDisplay =
+        SENDER_OPTIONS.find((s) => s.value === senderType)?.label || senderType;
       toast.success(
         `✅ Bulk emails sent via ${senderDisplay} - ${result.message}`,
       );
 
-      // ✅ FULL SYSTEM REFRESH
       await refreshAllData({ preserveSelection: false });
 
-      // ✅ Clear form
       setSelectedCustomers([]);
       setSubject("");
       setMessage("");
@@ -549,33 +576,6 @@ export default function ManualEmailPage() {
       toast.error(
         error.response?.data?.message || "Failed to send bulk emails",
       );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendReminderToUnpaid = async () => {
-    try {
-      setLoading(true);
-      const result = await emailService.sendReminderToUnpaid(
-        reminderMessage,
-        includeDueDateReminder,
-        useAdminSender,
-      );
-
-      const senderDisplay = useAdminSender ? "Admin" : "Collection";
-      toast.success(
-        `✅ Reminders sent via ${senderDisplay} - ${result.message}`,
-      );
-
-      setShowReminderDialog(false);
-      setReminderMessage("");
-
-      // ✅ FULL SYSTEM REFRESH
-      await refreshAllData();
-    } catch (error: any) {
-      console.error("Failed to send reminders:", error);
-      toast.error(error.response?.data?.message || "Failed to send reminders");
     } finally {
       setLoading(false);
     }
@@ -704,7 +704,7 @@ export default function ManualEmailPage() {
     }
   };
 
-  // ✅ MANUAL REFRESH - Full system refresh
+  // ✅ MANUAL REFRESH
   const handleRefresh = async () => {
     try {
       await refreshAllData({ preserveSelectedCustomer: true });
@@ -773,6 +773,86 @@ export default function ManualEmailPage() {
       minute: "2-digit",
     });
   };
+
+  // ==================== SENDER SELECTOR COMPONENT ====================
+  const SenderSelector = () => (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        📧 Send From (Choose Sender Email)
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        {SENDER_OPTIONS.map((option) => {
+          const isSelected = senderType === option.value;
+          const isCollection = option.value === "collection";
+          const disabled = isCollection && !customerLocation;
+
+          // Color classes based on option color
+          const colorClasses: Record<string, string> = {
+            green: isSelected
+              ? "border-green-500 bg-green-50 text-green-700"
+              : "border-gray-300 hover:border-gray-400 text-gray-700",
+            blue: isSelected
+              ? "border-blue-500 bg-blue-50 text-blue-700"
+              : "border-gray-300 hover:border-gray-400 text-gray-700",
+            purple: isSelected
+              ? "border-purple-500 bg-purple-50 text-purple-700"
+              : "border-gray-300 hover:border-gray-400 text-gray-700",
+            orange: isSelected
+              ? "border-orange-500 bg-orange-50 text-orange-700"
+              : "border-gray-300 hover:border-gray-400 text-gray-700",
+          };
+
+          // Display email for collection
+          const displayEmail = isCollection
+            ? customerLocation
+              ? collectionEmail
+              : "No location detected"
+            : option.email;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => !disabled && setSenderType(option.value)}
+              disabled={disabled}
+              className={`px-4 py-3 rounded-lg border text-sm transition-colors text-left ${
+                disabled
+                  ? "opacity-50 cursor-not-allowed bg-gray-50"
+                  : colorClasses[option.color]
+              }`}
+            >
+              <span className="block font-medium">
+                {option.icon} {option.label}
+              </span>
+              <span className="text-xs text-gray-500 truncate block">
+                {displayEmail}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {senderType === "collection" && customerLocation && (
+        <p className="text-xs text-green-600 mt-2">
+          ✅ Using location-specific collection email: {collectionEmail}
+        </p>
+      )}
+      {senderType === "workselpueblo" && (
+        <p className="text-xs text-purple-600 mt-2">
+          📧 Using workselpueblo@gmail.com as sender
+        </p>
+      )}
+      {senderType === "fbsilkresidence" && (
+        <p className="text-xs text-orange-600 mt-2">
+          📧 Using fbsilkresidence@gmail.com as sender
+        </p>
+      )}
+      {senderType === "admin" && (
+        <p className="text-xs text-blue-600 mt-2">
+          📧 Using admin@misterfyber.com as sender
+        </p>
+      )}
+    </div>
+  );
 
   // ==================== RENDER ====================
   return (
@@ -1120,46 +1200,8 @@ export default function ManualEmailPage() {
                   </div>
                 )}
 
-                {/* Sender Type Selector */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    📧 Send From
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setUseAdminSender(false)}
-                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                        !useAdminSender
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-300 hover:border-gray-400 text-gray-700"
-                      }`}
-                    >
-                      <span className="block font-medium">Collection</span>
-                      <span className="text-xs text-gray-500 truncate">
-                        {selectedCustomer &&
-                        customerLocation &&
-                        customerLocation !== "other"
-                          ? collectionEmail
-                          : "No location detected"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUseAdminSender(true)}
-                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                        useAdminSender
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-300 hover:border-gray-400 text-gray-700"
-                      }`}
-                    >
-                      <span className="block font-medium">Admin</span>
-                      <span className="text-xs text-gray-500">
-                        admin@misterfyber.com
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                {/* ==================== SENDER SELECTOR (NEW) ==================== */}
+                <SenderSelector />
 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1543,42 +1585,8 @@ export default function ManualEmailPage() {
                   )}
                 </div>
 
-                {/* Sender Type Selector */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    📧 Send From
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setUseAdminSender(false)}
-                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                        !useAdminSender
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-300 hover:border-gray-400 text-gray-700"
-                      }`}
-                    >
-                      <span className="block font-medium">Collection</span>
-                      <span className="text-xs text-gray-500">
-                        Location-specific
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUseAdminSender(true)}
-                      className={`px-4 py-3 rounded-lg border text-sm transition-colors ${
-                        useAdminSender
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-300 hover:border-gray-400 text-gray-700"
-                      }`}
-                    >
-                      <span className="block font-medium">Admin</span>
-                      <span className="text-xs text-gray-500">
-                        admin@misterfyber.com
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                {/* ==================== SENDER SELECTOR (NEW) ==================== */}
+                <SenderSelector />
 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1801,72 +1809,84 @@ export default function ManualEmailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sentRecords.map((record) => (
-                        <tr
-                          key={record.id}
-                          className="border-b hover:bg-gray-50"
-                        >
-                          <td className="py-3 px-4 text-gray-600">
-                            {formatDate(record.sentAt)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <p className="font-medium text-gray-900">
-                              {record.customerName}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {record.customerEmail}
-                            </p>
-                          </td>
-                          <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
-                            {record.subject}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${
-                                record.senderType === "admin"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {record.senderType === "admin"
-                                ? "Admin"
-                                : "Collection"}
-                            </span>
-                            {record.location && (
-                              <span className="ml-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
-                                {record.location}
+                      {sentRecords.map((record) => {
+                        const senderOption = SENDER_OPTIONS.find(
+                          (s) => s.value === record.senderType,
+                        );
+                        const senderLabel = senderOption?.label || "Collection";
+                        const senderIcon = senderOption?.icon || "📍";
+                        const senderColor = senderOption?.color || "green";
+
+                        const senderColorClasses: Record<string, string> = {
+                          green: "bg-green-100 text-green-700",
+                          blue: "bg-blue-100 text-blue-700",
+                          purple: "bg-purple-100 text-purple-700",
+                          orange: "bg-orange-100 text-orange-700",
+                        };
+
+                        return (
+                          <tr
+                            key={record.id}
+                            className="border-b hover:bg-gray-50"
+                          >
+                            <td className="py-3 px-4 text-gray-600">
+                              {formatDate(record.sentAt)}
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-medium text-gray-900">
+                                {record.customerName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {record.customerEmail}
+                              </p>
+                            </td>
+                            <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
+                              {record.subject}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${senderColorClasses[senderColor]}`}
+                              >
+                                {senderIcon} {senderLabel}
                               </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${
-                                record.status === "sent"
-                                  ? "bg-green-100 text-green-700"
-                                  : record.status === "failed"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                              }`}
-                            >
-                              {record.status}
-                            </span>
-                            {record.isBulk && (
-                              <span className="ml-1 px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700">
-                                Bulk ({record.recipientCount})
+                              {record.location && (
+                                <span className="ml-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                  {record.location}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${
+                                  record.status === "sent"
+                                    ? "bg-green-100 text-green-700"
+                                    : record.status === "failed"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
+                              >
+                                {record.status}
                               </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => handleDeleteSentRecord(record.id)}
-                              className="text-red-500 hover:text-red-700 transition-colors"
-                              title="Delete record"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                              {record.isBulk && (
+                                <span className="ml-1 px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700">
+                                  Bulk ({record.recipientCount})
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                onClick={() =>
+                                  handleDeleteSentRecord(record.id)
+                                }
+                                className="text-red-500 hover:text-red-700 transition-colors"
+                                title="Delete record"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2156,94 +2176,6 @@ export default function ManualEmailPage() {
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <span>💾</span> Update Template
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reminder Dialog */}
-      {showReminderDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full">
-            <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold">
-                Send Reminder to Unpaid Customers
-              </h3>
-            </div>
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-gray-600">
-                This will send payment reminders to all customers with unpaid
-                bills.
-              </p>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📧 Send From
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(false)}
-                    className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
-                      !useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Collection</span>
-                    <span className="text-xs text-gray-500">
-                      Location-specific
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUseAdminSender(true)}
-                    className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
-                      useAdminSender
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-300 hover:border-gray-400 text-gray-700"
-                    }`}
-                  >
-                    <span className="block font-medium">Admin</span>
-                    <span className="text-xs text-gray-500">
-                      admin@misterfyber.com
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <textarea
-                rows={3}
-                placeholder="Custom Message (Optional)"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={reminderMessage}
-                onChange={(e) => setReminderMessage(e.target.value)}
-              />
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                  checked={includeDueDateReminder}
-                  onChange={(e) => setIncludeDueDateReminder(e.target.checked)}
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Include due date information
-                </span>
-              </label>
-            </div>
-            <div className="p-4 border-t flex gap-3">
-              <button
-                onClick={() => setShowReminderDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSendReminderToUnpaid}
-                className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-              >
-                Send Reminders
               </button>
             </div>
           </div>

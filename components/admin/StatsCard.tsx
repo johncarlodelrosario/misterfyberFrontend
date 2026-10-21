@@ -13,26 +13,10 @@ interface StatsCardProps {
 }
 
 const colorClasses = {
-  primary: {
-    bg: "bg-primary-100",
-    text: "text-primary-600",
-    iconBg: "bg-primary-50",
-  },
-  green: {
-    bg: "bg-green-100",
-    text: "text-green-600",
-    iconBg: "bg-green-50",
-  },
-  blue: {
-    bg: "bg-blue-100",
-    text: "text-blue-600",
-    iconBg: "bg-blue-50",
-  },
-  red: {
-    bg: "bg-red-100",
-    text: "text-red-600",
-    iconBg: "bg-red-50",
-  },
+  primary: { bg: "bg-blue-100", text: "text-blue-600", iconBg: "bg-blue-50" },
+  green: { bg: "bg-green-100", text: "text-green-600", iconBg: "bg-green-50" },
+  blue: { bg: "bg-blue-100", text: "text-blue-600", iconBg: "bg-blue-50" },
+  red: { bg: "bg-red-100", text: "text-red-600", iconBg: "bg-red-50" },
   yellow: {
     bg: "bg-yellow-100",
     text: "text-yellow-600",
@@ -91,7 +75,7 @@ export default function StatsCard({
         : value.toLocaleString();
 
   return (
-    <div className="card p-6 hover-lift card-hover animate-slideUp">
+    <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between">
         <div className="flex-1">
           <p className="text-sm text-gray-500 mb-1">{title}</p>
@@ -104,15 +88,15 @@ export default function StatsCard({
             <div
               className={`flex items-center gap-1 mt-2 text-xs font-medium ${change >= 0 ? "text-green-600" : "text-red-600"}`}
             >
-              <span className="text-lg">{change >= 0 ? "↑" : "↓"}</span>
+              <span>{change >= 0 ? "↑" : "↓"}</span>
               <span>{Math.abs(change)}% from last month</span>
             </div>
           )}
         </div>
         <div
-          className={`w-14 h-14 ${colorClasses[color].iconBg} rounded-xl flex items-center justify-center shadow-sm`}
+          className={`w-12 h-12 ${colorClasses[color].iconBg} rounded-lg flex items-center justify-center`}
         >
-          <Icon className={`w-7 h-7 ${colorClasses[color].text}`} />
+          <Icon className={`w-6 h-6 ${colorClasses[color].text}`} />
         </div>
       </div>
     </div>

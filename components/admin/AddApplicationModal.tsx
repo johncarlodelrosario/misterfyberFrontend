@@ -1,4 +1,3 @@
-// components/admin/AddApplicationModal.tsx - COMPLETE FIXED WITH IMAGE COMPRESSION
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -51,7 +50,6 @@ const AddApplicationModal = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Load data when modal opens
   useEffect(() => {
     if (open) {
       const loadData = async () => {
@@ -72,7 +70,6 @@ const AddApplicationModal = ({
       };
       loadData();
 
-      // Reset form
       setFormData({
         firstName: "",
         lastName: "",
@@ -104,12 +101,9 @@ const AddApplicationModal = ({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.firstName.trim()) {
+    if (!formData.firstName.trim())
       newErrors.firstName = "First name is required";
-    }
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = "Last name is required";
-    }
+    if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
@@ -120,59 +114,41 @@ const AddApplicationModal = ({
     } else if (!/^[0-9+\-\s()]{7,15}$/.test(formData.phoneNumber.trim())) {
       newErrors.phoneNumber = "Please enter a valid phone number";
     }
-    if (!formData.buildingId) {
-      newErrors.buildingId = "Building is required";
-    }
-    if (!formData.floor.trim()) {
-      newErrors.floor = "Floor is required";
-    }
-    if (!formData.unitNumber.trim()) {
+    if (!formData.buildingId) newErrors.buildingId = "Building is required";
+    if (!formData.floor.trim()) newErrors.floor = "Floor is required";
+    if (!formData.unitNumber.trim())
       newErrors.unitNumber = "Unit number is required";
-    }
-    if (!formData.planId) {
-      newErrors.planId = "Plan is required";
-    }
-    if (!formData.idNumber.trim()) {
-      newErrors.idNumber = "ID number is required";
-    }
+    if (!formData.planId) newErrors.planId = "Plan is required";
+    if (!formData.idNumber.trim()) newErrors.idNumber = "ID number is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // ✅ FIXED: Compress image before setting state
   const handleIdImageChange = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // ✅ Check muna ang original size bago compress
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Image size should be less than 10MB");
       return;
     }
-
     if (!file.type.startsWith("image/")) {
       toast.error("Please upload an image file");
       return;
     }
 
-    // ✅ Show compressing state
     setIsCompressing(true);
-    const loadingToast = toast.loading("🗜️ Compressing image...");
+    const loadingToast = toast.loading("Compressing image...");
 
     try {
-      // ✅ Compress the image
       const compressedFile = await compressImage(file);
-
-      // ✅ Track sizes for display
       setOriginalSize(`${(file.size / 1024 / 1024).toFixed(2)}MB`);
       setCompressedSize(`${(compressedFile.size / 1024).toFixed(0)}KB`);
-
       setIdImageFile(compressedFile);
 
-      // Generate preview from compressed file
       const reader = new FileReader();
       reader.onloadend = () => {
         setIdImagePreview(reader.result as string);
@@ -183,9 +159,8 @@ const AddApplicationModal = ({
         (1 - compressedFile.size / file.size) *
         100
       ).toFixed(0);
-
       toast.success(
-        `✅ Compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024).toFixed(0)}KB (-${savedPercent}%)`,
+        `Compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024).toFixed(0)}KB (-${savedPercent}%)`,
         { id: loadingToast },
       );
     } catch (error) {
@@ -193,8 +168,6 @@ const AddApplicationModal = ({
       toast.error("Failed to compress image, using original", {
         id: loadingToast,
       });
-
-      // Fallback: use original
       setIdImageFile(file);
       setOriginalSize(`${(file.size / 1024 / 1024).toFixed(2)}MB`);
       setCompressedSize("original");
@@ -248,17 +221,9 @@ const AddApplicationModal = ({
         idImage: idImageFile || undefined,
       };
 
-      console.log("📤 Submitting application data:", {
-        ...applicationData,
-        idImage: idImageFile ? `File (${compressedSize})` : "No file",
-      });
-
       const response = await submitApplication(applicationData);
+      console.log("Application submitted:", response);
 
-      // Success!
-      console.log("✅ Application submitted:", response);
-
-      // Reset form
       setFormData({
         firstName: "",
         lastName: "",
@@ -284,16 +249,15 @@ const AddApplicationModal = ({
       }
       setErrors({});
 
-      toast.success("✅ Application submitted successfully!");
+      toast.success("Application submitted successfully!");
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      console.error("❌ Submit error:", error);
+      console.error("Submit error:", error);
 
       if (error.status === 409) {
         const message =
           error.data?.message || "This application already exists.";
-
         if (message.includes("email")) {
           setSubmitError(
             "This email address is already registered. Please use a different email.",
@@ -318,13 +282,10 @@ const AddApplicationModal = ({
           error.message || "Please check your input and try again.";
         setSubmitError(message);
         toast.error(message);
-
         if (error.errors && Array.isArray(error.errors)) {
           const fieldErrors: Record<string, string> = {};
           error.errors.forEach((err: any) => {
-            if (err.field) {
-              fieldErrors[err.field] = err.message;
-            }
+            if (err.field) fieldErrors[err.field] = err.message;
           });
           setErrors(fieldErrors);
         }
@@ -348,9 +309,7 @@ const AddApplicationModal = ({
         return newErrors;
       });
     }
-    if (submitError) {
-      setSubmitError(null);
-    }
+    if (submitError) setSubmitError(null);
   };
 
   if (!open) return null;
@@ -375,7 +334,6 @@ const AddApplicationModal = ({
             </div>
           )}
 
-          {/* Personal Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Personal Information
@@ -391,9 +349,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     handleFieldChange("firstName", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${
-                    errors.firstName ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="Juan"
                 />
                 {errors.firstName && (
@@ -402,7 +358,6 @@ const AddApplicationModal = ({
                   </p>
                 )}
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Last Name <span className="text-red-500">*</span>
@@ -413,9 +368,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     handleFieldChange("lastName", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${
-                    errors.lastName ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="Dela Cruz"
                 />
                 {errors.lastName && (
@@ -433,9 +386,7 @@ const AddApplicationModal = ({
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleFieldChange("email", e.target.value)}
-                  className={`w-full px-3 py-2 border ${
-                    errors.email ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="customer@email.com"
                 />
                 {errors.email && (
@@ -452,9 +403,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     handleFieldChange("phoneNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${
-                    errors.phoneNumber ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="09123456789"
                 />
                 {errors.phoneNumber && (
@@ -473,7 +422,7 @@ const AddApplicationModal = ({
                 <select
                   value={formData.idType}
                   onChange={(e) => handleFieldChange("idType", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Passport">Passport</option>
                   <option value="Driver License">Driver License</option>
@@ -493,9 +442,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     handleFieldChange("idNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${
-                    errors.idNumber ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.idNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="Enter ID number"
                 />
                 {errors.idNumber && (
@@ -504,7 +451,6 @@ const AddApplicationModal = ({
               </div>
             </div>
 
-            {/* ✅ ID Image with Compression */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 ID Image
@@ -527,7 +473,7 @@ const AddApplicationModal = ({
                       : "cursor-pointer hover:bg-gray-50"
                   }`}
                 >
-                  {isCompressing ? "🗜️ Compressing..." : "Choose Image"}
+                  {isCompressing ? "Compressing..." : "Choose Image"}
                 </label>
                 <span className="text-sm text-gray-500">
                   {idImageFile ? (
@@ -570,7 +516,6 @@ const AddApplicationModal = ({
             </div>
           </div>
 
-          {/* Address Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Address Information
@@ -584,9 +529,7 @@ const AddApplicationModal = ({
                 onChange={(e) =>
                   handleFieldChange("buildingId", e.target.value)
                 }
-                className={`w-full px-3 py-2 border ${
-                  errors.buildingId ? "border-red-500" : "border-gray-300"
-                } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                className={`w-full px-3 py-2 border ${errors.buildingId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -612,7 +555,7 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.tower}
                   onChange={(e) => handleFieldChange("tower", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., A, B, C"
                 />
               </div>
@@ -624,9 +567,7 @@ const AddApplicationModal = ({
                   type="text"
                   value={formData.floor}
                   onChange={(e) => handleFieldChange("floor", e.target.value)}
-                  className={`w-full px-3 py-2 border ${
-                    errors.floor ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.floor ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="e.g., 2nd Floor"
                 />
                 {errors.floor && (
@@ -643,9 +584,7 @@ const AddApplicationModal = ({
                   onChange={(e) =>
                     handleFieldChange("unitNumber", e.target.value)
                   }
-                  className={`w-full px-3 py-2 border ${
-                    errors.unitNumber ? "border-red-500" : "border-gray-300"
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  className={`w-full px-3 py-2 border ${errors.unitNumber ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="e.g., 201"
                 />
                 {errors.unitNumber && (
@@ -657,7 +596,6 @@ const AddApplicationModal = ({
             </div>
           </div>
 
-          {/* Plan Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
               Plan Information
@@ -669,9 +607,7 @@ const AddApplicationModal = ({
               <select
                 value={formData.planId}
                 onChange={(e) => handleFieldChange("planId", e.target.value)}
-                className={`w-full px-3 py-2 border ${
-                  errors.planId ? "border-red-500" : "border-gray-300"
-                } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                className={`w-full px-3 py-2 border ${errors.planId ? "border-red-500" : "border-gray-300"} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 disabled={loadingData}
               >
                 <option value="">
@@ -699,13 +635,12 @@ const AddApplicationModal = ({
                 onChange={(e) =>
                   handleFieldChange("macAddress", e.target.value)
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="e.g., 00:1A:2B:3C:4D:5E"
               />
             </div>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Notes (Optional)
@@ -713,12 +648,11 @@ const AddApplicationModal = ({
             <textarea
               value={formData.notes}
               onChange={(e) => handleFieldChange("notes", e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[80px]"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
               placeholder="Additional notes about this application..."
             />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -733,35 +667,11 @@ const AddApplicationModal = ({
               disabled={isLoading || loadingData || isCompressing}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {isLoading ? (
-                <>
-                  <svg
-                    className="animate-spin h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Submitting...
-                </>
-              ) : isCompressing ? (
-                <>🗜️ Compressing...</>
-              ) : (
-                "Submit Application"
-              )}
+              {isLoading
+                ? "Submitting..."
+                : isCompressing
+                  ? "Compressing..."
+                  : "Submit Application"}
             </button>
           </div>
         </form>

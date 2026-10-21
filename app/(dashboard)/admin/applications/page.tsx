@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED - FILTER WORKS 100% + NAME SORT + REPORT DOWNLOAD + DISCONNECTED STATUS
+// app/(dashboard)/admin/applications/page.tsx - UNIFIED DESIGN PATTERN
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -8,6 +8,10 @@ import {
   ArrowDownTrayIcon,
   DocumentArrowDownIcon,
   TableCellsIcon,
+  FunnelIcon,
+  XMarkIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
@@ -40,8 +44,7 @@ interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  // ✅ ADDED "disconnected"
-  status: "pending" | "approved" | "rejected" | "suspended" | "disconnected";
+  status: "pending" | "approved" | "rejected" | "suspended";
   idType: string;
   idNumber: string;
   macAddress?: string;
@@ -58,10 +61,6 @@ interface Application {
   serviceStatus?: string;
   installationFee?: number;
   installationFeePaid?: boolean;
-  // ✅ ADDED disconnect fields
-  disconnectedAt?: string;
-  disconnectReason?: string;
-  reconnectedAt?: string;
 }
 
 interface Filters {
@@ -96,6 +95,7 @@ export default function AdminApplicationsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   // Refs
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -189,8 +189,6 @@ export default function AdminApplicationsPage() {
       status?: string;
       search?: string;
     }): Promise<Application[]> => {
-      console.log("📊 Fetching ALL applications for report...");
-
       const params: any = {
         page: 1,
         limit: 10000,
@@ -207,10 +205,6 @@ export default function AdminApplicationsPage() {
       }
 
       const response = await getAllApplications(params);
-      console.log(
-        `✅ Fetched ${response.data?.length || 0} applications for report`,
-      );
-
       return response.data || [];
     },
     [],
@@ -407,7 +401,6 @@ export default function AdminApplicationsPage() {
         formatDate(app.submittedAt),
       ]);
 
-      // ✅ ADDED disconnected color
       const getStatusColor = (status: string): [number, number, number] => {
         switch (status) {
           case "approved":
@@ -418,8 +411,6 @@ export default function AdminApplicationsPage() {
             return [220, 38, 38];
           case "suspended":
             return [107, 114, 128];
-          case "disconnected":
-            return [75, 85, 99];
           default:
             return [0, 0, 0];
         }
@@ -812,30 +803,48 @@ export default function AdminApplicationsPage() {
     [fetchApplications],
   );
 
-  // ✅ ADDED Disconnected
   const statusOptions = [
     { value: "all", label: "All Status" },
     { value: "pending", label: "Pending" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "suspended", label: "Suspended" },
-    { value: "disconnected", label: "Disconnected" },
   ];
 
-  // ✅ ADDED disconnected count
   const stats = useMemo(() => {
     const pending = applications.filter((a) => a.status === "pending").length;
     const approved = applications.filter((a) => a.status === "approved").length;
     const rejected = applications.filter((a) => a.status === "rejected").length;
-    const disconnected = applications.filter(
-      (a) => a.status === "disconnected",
-    ).length;
-    return { total, pending, approved, rejected, disconnected };
+    return { total, pending, approved, rejected };
   }, [applications, total]);
+
+  const activeBuildingName = useMemo(() => {
+    if (!filters.buildingId) return null;
+    return (
+      buildings.find((b) => b._id === filters.buildingId)?.buildingName || null
+    );
+  }, [filters.buildingId, buildings]);
+
+  const hasActiveFilters =
+    (filters.status && filters.status !== "all") ||
+    !!filters.buildingId ||
+    !!filters.search ||
+    (filters.nameSort && filters.nameSort !== "none");
+
+  const clearAllFilters = () => {
+    setFilters((prev) => ({
+      ...prev,
+      status: "all",
+      buildingId: "",
+      search: "",
+      nameSort: "none",
+      page: 1,
+    }));
+  };
 
   if (error && !loading) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
           <p className="text-red-600 font-medium">Error loading applications</p>
           <p className="text-red-500 text-sm mt-2">{error}</p>
@@ -853,12 +862,10 @@ export default function AdminApplicationsPage() {
   return (
     <div className="p-4 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage all customer applications
-          </p>
+          <p className="text-gray-600">Manage all customer applications</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -866,7 +873,7 @@ export default function AdminApplicationsPage() {
           <button
             onClick={() => setShowReportModal(true)}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue rounded-lg hover:from-blue-700 hover:to-emerald-700 transition disabled:opacity-50 shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 shadow-sm"
           >
             <DocumentArrowDownIcon className="h-4 w-4" />
             <span className="hidden sm:inline">Download Report</span>
@@ -915,40 +922,206 @@ export default function AdminApplicationsPage() {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing || loading}
-            className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition disabled:opacity-50"
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
           >
             <ArrowPathIcon
-              className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
+              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
             />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
 
-      {/* ✅ ADDED Disconnected card - Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-900">{total}</p>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Total</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">{total}</p>
+          <p className="text-xs text-gray-500 mt-2">All applications</p>
         </div>
-        <div className="bg-yellow-50 rounded-lg shadow p-4 border border-yellow-100">
-          <p className="text-sm text-yellow-700">Pending</p>
-          <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
-        </div>
-        <div className="bg-green-50 rounded-lg shadow p-4 border border-green-100">
-          <p className="text-sm text-green-700">Approved</p>
-          <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
-        </div>
-        <div className="bg-red-50 rounded-lg shadow p-4 border border-red-100">
-          <p className="text-sm text-red-700">Rejected</p>
-          <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
-        </div>
-        {/* ✅ ADDED Disconnected card */}
-        <div className="bg-gray-100 rounded-lg shadow p-4 border border-gray-300">
-          <p className="text-sm text-gray-700">🔌 Disconnected</p>
-          <p className="text-2xl font-bold text-gray-700">
-            {stats.disconnected}
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Pending</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {stats.pending}
           </p>
+          <p className="text-xs text-gray-500 mt-2">Awaiting review</p>
         </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Approved</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {stats.approved}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">On this page</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Rejected</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {stats.rejected}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">On this page</p>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative">
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by name, email, or application ID..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange("search", e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing || loading}
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <ArrowPathIcon
+              className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+
+          <button
+            onClick={() => setShowMoreFilters((v) => !v)}
+            className={`px-4 py-2.5 rounded-lg border transition flex items-center gap-2 text-sm font-medium ${
+              showMoreFilters
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <FunnelIcon className="w-4 h-4" />
+            {showMoreFilters ? "Less Filters" : "More Filters"}
+            {showMoreFilters ? (
+              <ChevronUpIcon className="w-4 h-4" />
+            ) : (
+              <ChevronDownIcon className="w-4 h-4" />
+            )}
+            {hasActiveFilters && !showMoreFilters && (
+              <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+            )}
+          </button>
+        </div>
+
+        {showMoreFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Status
+                </label>
+                <select
+                  value={filters.status}
+                  onChange={(e) => handleFilterChange("status", e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  {statusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Building
+                </label>
+                <select
+                  value={filters.buildingId}
+                  onChange={(e) =>
+                    handleFilterChange("buildingId", e.target.value)
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="">All Buildings</option>
+                  {buildings.map((building) => (
+                    <option key={building._id} value={building._id}>
+                      {building.buildingName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Sort by Name
+                </label>
+                <select
+                  value={filters.nameSort}
+                  onChange={(e) =>
+                    handleFilterChange("nameSort", e.target.value)
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="none">Default</option>
+                  <option value="asc">A → Z</option>
+                  <option value="desc">Z → A</option>
+                </select>
+              </div>
+            </div>
+
+            {hasActiveFilters && (
+              <div className="flex justify-end">
+                <button
+                  onClick={clearAllFilters}
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 flex items-center gap-1 hover:bg-red-50 rounded-lg transition"
+                >
+                  <XMarkIcon className="w-4 h-4" /> Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasActiveFilters && !showMoreFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Active filters:</span>
+            {filters.status && filters.status !== "all" && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                📌 {filters.status}
+              </span>
+            )}
+            {filters.buildingId && activeBuildingName && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🏢 {activeBuildingName}
+              </span>
+            )}
+            {filters.nameSort && filters.nameSort !== "none" && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🔤 Name {filters.nameSort === "asc" ? "A→Z" : "Z→A"}
+              </span>
+            )}
+            {filters.search && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                🔍 {filters.search}
+              </span>
+            )}
+            <button
+              onClick={clearAllFilters}
+              className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded-full transition"
+            >
+              ✕ Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table */}

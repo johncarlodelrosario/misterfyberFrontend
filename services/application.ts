@@ -1,5 +1,6 @@
-// services/application.ts - COMPLETE FIXED WITH PRODUCTION SUPPORT + NAME SORT
+// services/application.ts - COMPLETE FIXED WITH PRODUCTION SUPPORT + NAME SORT + COMPRESSION
 import api from "./api";
+import { compressImage } from "@/lib/imageCompression";
 
 // ============================================================
 // PRODUCTION URL CONFIGURATION
@@ -93,6 +94,33 @@ export interface PaginatedResponse {
   limit: number;
 }
 
+// ============================================================
+// ✅ HELPER: Compress a File and return renamed .jpg File
+// ============================================================
+const prepareCompressedImage = async (
+  file: File,
+  context: string = "upload",
+): Promise<File> => {
+  console.log(`🗜️ [${context}] Compressing image...`);
+  console.log(`   Original: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+
+  const compressedFile = await compressImage(file, {
+    maxSizeMB: 0.3, // 300 KB max
+    maxWidthOrHeight: 1280,
+    useWebWorker: true,
+    fileType: "image/jpeg",
+    initialQuality: 0.75,
+  });
+
+  console.log(`   Compressed: ${(compressedFile.size / 1024).toFixed(2)}KB`);
+
+  return new File(
+    [compressedFile],
+    file.name.replace(/\.[^/.]+$/, "") + ".jpg",
+    { type: "image/jpeg" },
+  );
+};
+
 // ============ ADDRESS ENDPOINTS ============
 export const getRegions = async (): Promise<Region[]> => {
   const response = await api.get("/applications/address/regions");
@@ -136,7 +164,7 @@ export const getPlans = async (): Promise<Plan[]> => {
   return response.data.data;
 };
 
-// ============ GET ALL APPLICATIONS (PAGINATED) - FIXED WITH ABORT SUPPORT + NAME SORT ============
+// ============ GET ALL APPLICATIONS (PAGINATED) ============
 export const getAllApplications = async (
   filters: ApplicationFilters = {},
   signal?: AbortSignal,
@@ -166,7 +194,6 @@ export const getAllApplications = async (
     params.buildingId = buildingId;
   }
 
-  // ✅ Name sort param
   if (nameSort && nameSort !== "none" && nameSort !== "") {
     params.nameSort = nameSort;
   }
@@ -178,7 +205,6 @@ export const getAllApplications = async (
 
   console.log("📤 getAllApplications params:", JSON.stringify(params, null, 2));
 
-  // ✅ Pass the abort signal to axios
   const response = await api.get("/applications", { params, signal });
 
   console.log("📥 getAllApplications response:", {
@@ -210,7 +236,7 @@ export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
   return response.data.data;
 };
 
-// ============ SUBMIT APPLICATION ============
+// ============ SUBMIT APPLICATION - WITH IMAGE COMPRESSION ============
 export const submitApplication = async (data: ApplicationData) => {
   try {
     const formData = new FormData();
@@ -242,14 +268,25 @@ export const submitApplication = async (data: ApplicationData) => {
       formData.append("macAddress", data.macAddress.trim());
     }
 
+    // ✅ COMPRESS IMAGE BEFORE UPLOAD
     if (data.idImage && data.idImage instanceof File) {
-      formData.append("idImage", data.idImage);
+      try {
+        const compressed = await prepareCompressedImage(data.idImage, "submit");
+        formData.append("idImage", compressed);
+      } catch (compressionError) {
+        console.error(
+          "❌ Compression failed, using original:",
+          compressionError,
+        );
+        formData.append("idImage", data.idImage);
+      }
     }
 
     const response = await api.post("/applications", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
+      timeout: 60000, // 60 seconds
     });
 
     return response.data;
@@ -334,7 +371,7 @@ export const bulkDeleteApplications = async (applicationIds: string[]) => {
   return response.data;
 };
 
-// ============ UPDATE APPLICATION - PUT (FULL UPDATE) ============
+// ============ UPDATE APPLICATION - PUT (FULL UPDATE) WITH COMPRESSION ============
 export const updateApplication = async (
   id: string,
   data: Partial<ApplicationData>,
@@ -366,14 +403,22 @@ export const updateApplication = async (
   if (data.installationFeePaid !== undefined)
     formData.append("installationFeePaid", String(data.installationFeePaid));
 
+  // ✅ COMPRESS IMAGE BEFORE UPLOAD
   if (data.idImage instanceof File) {
-    formData.append("idImage", data.idImage);
+    try {
+      const compressed = await prepareCompressedImage(data.idImage, "update");
+      formData.append("idImage", compressed);
+    } catch (compressionError) {
+      console.error("❌ Compression failed, using original:", compressionError);
+      formData.append("idImage", data.idImage);
+    }
   }
 
   const response = await api.put(`/applications/${id}`, formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },
+    timeout: 60000,
   });
 
   return response.data;
