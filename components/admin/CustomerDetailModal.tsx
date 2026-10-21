@@ -1,9 +1,12 @@
+// components/admin/CustomerDetailModal.tsx - COMPLETE WITH DELETE BILL
+
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { FiX, FiEdit2, FiSave, FiTrash2 } from "react-icons/fi";
+import React, { useEffect, useState, useMemo } from "react";
+import { FiX, FiEdit2, FiSave, FiCheckCircle, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
+// Types
 export interface CustomerItem {
   _id: string;
   firstName: string;
@@ -57,6 +60,8 @@ interface CustomerDetailModalProps {
   ) => void;
 }
 
+// ==================== HELPER FUNCTIONS ====================
+
 function formatDate(dateString: string): string {
   if (!dateString) return "-";
   try {
@@ -73,21 +78,30 @@ function formatDate(dateString: string): string {
 
 function formatBillPeriod(bill: any): string {
   if (!bill.billingPeriod?.start || !bill.billingPeriod?.end) return "-";
+
   let start = new Date(bill.billingPeriod.start);
   let end = new Date(bill.billingPeriod.end);
+
   if (!bill.isProRated && !bill.isInstallationBill) {
     const startDay = start.getUTCDate();
+    const startMonth = start.getUTCMonth();
     const endMonth = end.getUTCMonth();
+
     if (startDay === 31 && endMonth === 7) {
       start = new Date(Date.UTC(2026, 7, 1));
     }
   }
-  return `${formatDate(start.toISOString())} - ${formatDate(end.toISOString())}`;
+
+  const startStr = formatDate(start.toISOString());
+  const endStr = formatDate(end.toISOString());
+  return `${startStr} - ${endStr}`;
 }
 
+// ==================== BILL PRICE EDIT COMPONENT ====================
 const EditablePrice = ({
   amount,
   billId,
+  isInstallation,
   customer,
   onSave,
 }: {
@@ -105,7 +119,9 @@ const EditablePrice = ({
   useEffect(() => {
     setDisplayAmount(amount);
     setEditValue(amount.toString());
-    if (isEditing) setIsEditing(false);
+    if (isEditing) {
+      setIsEditing(false);
+    }
   }, [amount]);
 
   const handleSave = () => {
@@ -123,12 +139,13 @@ const EditablePrice = ({
     onSave(billId, newPrice, customer);
     setIsSaving(false);
     setIsEditing(false);
-    toast.success(`Price updated to ₱${newPrice.toLocaleString()}!`);
+    toast.success(`✅ Price updated to ₱${newPrice.toLocaleString()}!`);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSave();
-    else if (e.key === "Escape") {
+    if (e.key === "Enter") {
+      handleSave();
+    } else if (e.key === "Escape") {
       setEditValue(displayAmount.toString());
       setIsEditing(false);
     }
@@ -198,6 +215,7 @@ const EditablePrice = ({
   );
 };
 
+// ==================== MAIN COMPONENT ====================
 export default function CustomerDetailModal({
   isOpen,
   customer,
@@ -214,18 +232,23 @@ export default function CustomerDetailModal({
   );
 
   useEffect(() => {
-    if (customer) setLocalCustomer(customer);
+    if (customer) {
+      setLocalCustomer(customer);
+    }
   }, [customer]);
 
   const handleEditBillPriceLocal = (
     billId: string,
     newPrice: number,
-    cust: CustomerItem,
+    customer: CustomerItem,
   ) => {
     if (localCustomer) {
-      const updatedUnpaidBills = localCustomer.unpaidBills.map((bill: any) =>
-        bill._id === billId ? { ...bill, total: newPrice } : bill,
-      );
+      const updatedUnpaidBills = localCustomer.unpaidBills.map((bill: any) => {
+        if (bill._id === billId) {
+          return { ...bill, total: newPrice };
+        }
+        return bill;
+      });
       setLocalCustomer({
         ...localCustomer,
         unpaidBills: updatedUnpaidBills,
@@ -235,20 +258,21 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onEditBillPrice(billId, newPrice, cust);
+    onEditBillPrice(billId, newPrice, customer);
   };
 
   const handleEditInstallationPriceLocal = (
     billId: string,
     newPrice: number,
-    cust: CustomerItem,
+    customer: CustomerItem,
   ) => {
     if (localCustomer) {
-      const updatedUnpaidBills = localCustomer.unpaidBills.map((bill: any) =>
-        bill._id === billId
-          ? { ...bill, total: newPrice, installationFee: newPrice }
-          : bill,
-      );
+      const updatedUnpaidBills = localCustomer.unpaidBills.map((bill: any) => {
+        if (bill._id === billId) {
+          return { ...bill, total: newPrice, installationFee: newPrice };
+        }
+        return bill;
+      });
       setLocalCustomer({
         ...localCustomer,
         unpaidBills: updatedUnpaidBills,
@@ -259,10 +283,10 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onEditInstallationPrice(billId, newPrice, cust);
+    onEditInstallationPrice(billId, newPrice, customer);
   };
 
-  const handleMarkBillAsPaidLocal = (bill: any, cust: CustomerItem) => {
+  const handleMarkBillAsPaidLocal = (bill: any, customer: CustomerItem) => {
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -276,12 +300,12 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onMarkBillAsPaid(bill, cust);
+    onMarkBillAsPaid(bill, customer);
   };
 
   const handleMarkInstallationBillAsPaidLocal = (
     bill: any,
-    cust: CustomerItem,
+    customer: CustomerItem,
   ) => {
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
@@ -297,10 +321,10 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onMarkInstallationBillAsPaid(bill, cust);
+    onMarkInstallationBillAsPaid(bill, customer);
   };
 
-  const handleFreeBillLocal = (bill: any, cust: CustomerItem) => {
+  const handleFreeBillLocal = (bill: any, customer: CustomerItem) => {
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -314,10 +338,10 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onAction("freeBill", cust, { billId: bill._id });
+    onAction("freeBill", customer, { billId: bill._id });
   };
 
-  const handleFreeInstallationLocal = (bill: any, cust: CustomerItem) => {
+  const handleFreeInstallationLocal = (bill: any, customer: CustomerItem) => {
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -332,10 +356,10 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onAction("freeInstallation", cust, { billId: bill._id });
+    onAction("freeInstallation", customer, { billId: bill._id });
   };
 
-  const handleDeleteBillLocal = (bill: any, cust: CustomerItem) => {
+  const handleDeleteBillLocal = (bill: any, customer: CustomerItem) => {
     if (!onDeleteBill) return;
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
@@ -350,10 +374,11 @@ export default function CustomerDetailModal({
         ),
       });
     }
-    onDeleteBill(bill._id, bill.invoiceNumber, cust);
+    onDeleteBill(bill._id, bill.invoiceNumber, customer);
   };
 
   const displayCustomer = localCustomer || customer;
+
   if (!isOpen || !displayCustomer) return null;
 
   return (
