@@ -39,7 +39,7 @@ const SENDER_OPTIONS: {
   {
     value: "workselpueblo",
     label: "Workselpueblo",
-    email: "workselpueblo@gmail.com",
+    email: "workselpueblo@fyberblizz.com",
     icon: "🏢",
     color: "purple",
   },
@@ -838,7 +838,7 @@ export default function ManualEmailPage() {
       )}
       {senderType === "workselpueblo" && (
         <p className="text-xs text-purple-600 mt-2">
-          📧 Using workselpueblo@gmail.com as sender
+          📧 Using workselpueblo@fyberblizz.com as sender
         </p>
       )}
       {senderType === "fbsilkresidence" && (

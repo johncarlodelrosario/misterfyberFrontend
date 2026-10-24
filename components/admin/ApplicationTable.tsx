@@ -550,6 +550,9 @@ export function ApplicationTable({
                 </th>
               )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                #
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Customer
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -576,7 +579,7 @@ export function ApplicationTable({
             {isLoaded && displayApplications.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onSelectAll ? 8 : 7}
+                  colSpan={onSelectAll ? 9 : 8}
                   className="px-6 py-8 text-center"
                 >
                   <div className="flex items-center justify-center">
@@ -607,14 +610,14 @@ export function ApplicationTable({
             ) : displayApplications.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onSelectAll ? 8 : 7}
+                  colSpan={onSelectAll ? 9 : 8}
                   className="px-6 py-8 text-center text-gray-500"
                 >
                   No applications found
                 </td>
               </tr>
             ) : (
-              displayApplications.map((app) => {
+              displayApplications.map((app, index) => {
                 const appId = getAppId(app);
                 const key =
                   appId || app.applicationId || Math.random().toString();
@@ -641,6 +644,13 @@ export function ApplicationTable({
                         />
                       </td>
                     )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div
+                        className={`text-sm font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}
+                      >
+                        {(currentPage - 1) * 10 + index + 1}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div
                         className={`font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}

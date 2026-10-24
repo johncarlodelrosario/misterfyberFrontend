@@ -33,7 +33,7 @@ const SENDER_OPTIONS: {
   {
     value: "workselpueblo",
     label: "Workselpueblo",
-    email: "workselpueblo@gmail.com",
+    email: "workselpueblo@fyberblizz.com",
     icon: "🏢",
   },
   {

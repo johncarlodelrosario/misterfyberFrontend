@@ -170,14 +170,14 @@ const SENDER_OPTIONS: {
   {
     value: "workselpueblo",
     label: "Workselpueblo",
-    email: "workselpueblo@gmail.com",
+    email: "workselpueblo@fyberblizz.com",
     icon: "🏢",
     color: "purple",
   },
   {
     value: "fbsilkresidence",
     label: "FB Silk Residence",
-    email: "fbsilkresidence@gmail.com",
+    email: "fbsilkresidence@fyberblizz.com",
     icon: "🏠",
     color: "orange",
   },
