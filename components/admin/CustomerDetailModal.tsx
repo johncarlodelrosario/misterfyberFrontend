@@ -1,9 +1,9 @@
-// components/admin/CustomerDetailModal.tsx - COMPLETE WITH DELETE BILL
+// components/admin/CustomerDetailModal.tsx - COMPLETE WITH DELETE BILL + TIMEZONE FIX
 
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
-import { FiX, FiEdit2, FiSave, FiCheckCircle, FiTrash2 } from "react-icons/fi";
+import React, { useEffect, useState } from "react";
+import { FiX, FiEdit2, FiSave, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
 // Types
@@ -60,17 +60,16 @@ interface CustomerDetailModalProps {
   ) => void;
 }
 
-// ==================== HELPER FUNCTIONS ====================
+// ==================== TAMANG TIMEZONE-SAFE HELPER ====================
 
 function formatDate(dateString: string): string {
   if (!dateString) return "-";
   try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return "-";
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
-    const year = date.getUTCFullYear();
-    return `${month}/${day}/${year}`;
+    // Kunin lang yung YYYY-MM-DD, iwasan ang new Date() para walang shift
+    const datePart = dateString.split("T")[0];
+    const [year, month, day] = datePart.split("-");
+    if (!year || !month || !day) return "-";
+    return `${parseInt(month, 10)}/${parseInt(day, 10)}/${year}`;
   } catch {
     return "-";
   }
@@ -79,21 +78,9 @@ function formatDate(dateString: string): string {
 function formatBillPeriod(bill: any): string {
   if (!bill.billingPeriod?.start || !bill.billingPeriod?.end) return "-";
 
-  let start = new Date(bill.billingPeriod.start);
-  let end = new Date(bill.billingPeriod.end);
+  const startStr = formatDate(bill.billingPeriod.start);
+  const endStr = formatDate(bill.billingPeriod.end);
 
-  if (!bill.isProRated && !bill.isInstallationBill) {
-    const startDay = start.getUTCDate();
-    const startMonth = start.getUTCMonth();
-    const endMonth = end.getUTCMonth();
-
-    if (startDay === 31 && endMonth === 7) {
-      start = new Date(Date.UTC(2026, 7, 1));
-    }
-  }
-
-  const startStr = formatDate(start.toISOString());
-  const endStr = formatDate(end.toISOString());
   return `${startStr} - ${endStr}`;
 }
 
