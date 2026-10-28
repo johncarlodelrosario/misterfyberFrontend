@@ -1,11 +1,8 @@
+// app/(dashboard)/user/transactions/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-  getUserBillingHistory,
-  getInvoice,
-  downloadInvoice,
-} from "@/services/user";
+import { getBillingHistory } from "@/services/billing";
 import {
   FiFileText,
   FiDownload,
@@ -13,39 +10,65 @@ import {
   FiClock,
   FiRefreshCw,
   FiAlertCircle,
+  FiX,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
 
+interface Transaction {
+  id: string;
+  paidDate: string;
+  month: string;
+  amount: number;
+  status: "paid" | "pending" | "failed";
+  invoiceNumber: string;
+  isProRated: boolean;
+  billingPeriod?: {
+    start: string;
+    end: string;
+  };
+}
+
 export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
 
   const loadTransactions = async () => {
     setLoading(true);
     try {
-      const response = await getUserBillingHistory();
-      // Fixed: response.data.billingHistory ang tamang path
-      const billingHistory = response?.data?.billingHistory || [];
+      const response = await getBillingHistory({ page: 1, limit: 100 });
+      console.log("Billing history response:", response);
 
-      // Transform billing history to transaction format
-      const formattedTransactions = billingHistory.map((bill: any) => ({
-        id: bill._id,
-        paidDate: bill.updatedAt || bill.createdAt,
-        month: bill.billingPeriod
-          ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
-          : "Monthly Subscription",
-        amount: bill.total || 0,
-        status:
-          bill.status === "paid"
-            ? "paid"
-            : bill.status === "pending_confirmation"
-              ? "pending"
-              : "completed",
-        invoiceNumber: bill.invoiceNumber,
-        isProRated: bill.isProRated || false,
-      }));
+      const billingHistory = response?.billingHistory || response?.data || [];
+
+      const formattedTransactions: Transaction[] = billingHistory.map(
+        (bill: any) => ({
+          id: bill._id,
+          paidDate: bill.paidAt || bill.updatedAt || bill.createdAt,
+          month: bill.billingPeriod
+            ? `${new Date(bill.billingPeriod.start).toLocaleDateString()} - ${new Date(bill.billingPeriod.end).toLocaleDateString()}`
+            : "Monthly Subscription",
+          amount: bill.total || 0,
+          status:
+            bill.status === "paid"
+              ? "paid"
+              : bill.status === "pending_confirmation"
+                ? "pending"
+                : bill.status === "cancelled"
+                  ? "failed"
+                  : "pending",
+          invoiceNumber: bill.invoiceNumber || "N/A",
+          isProRated: bill.isProRated || false,
+          billingPeriod: bill.billingPeriod,
+        }),
+      );
+
+      // Sort by date descending
+      formattedTransactions.sort(
+        (a, b) =>
+          new Date(b.paidDate).getTime() - new Date(a.paidDate).getTime(),
+      );
 
       setTransactions(formattedTransactions);
     } catch (error: any) {
@@ -62,41 +85,39 @@ export default function TransactionsPage() {
     loadTransactions();
   }, []);
 
-  const handleDownloadInvoice = async (
-    invoiceNumber: string,
-    billId: string,
-  ) => {
-    if (!billId) {
-      toast.error("Invalid invoice ID");
-      return;
-    }
-
-    setDownloading(billId);
+  const handleDownloadInvoice = async (transaction: Transaction) => {
+    setDownloading(transaction.id);
     try {
-      // Try to get invoice data first
-      const invoiceData = await getInvoice(billId);
-      if (invoiceData) {
-        // Create a blob and trigger download
-        const blob = new Blob([JSON.stringify(invoiceData, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `invoice_${invoiceNumber}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.success(`Invoice ${invoiceNumber} downloaded successfully!`);
-      } else {
-        toast.error("No invoice data found");
-      }
+      // Create a simple text invoice
+      const invoiceContent = `
+===========================================
+           INVOICE
+===========================================
+Invoice Number: ${transaction.invoiceNumber}
+Date: ${new Date(transaction.paidDate).toLocaleDateString()}
+Period: ${transaction.month}
+${transaction.isProRated ? "Type: Pro-rated Bill\n" : ""}
+-------------------------------------------
+Amount: ₱${transaction.amount.toLocaleString()}
+Status: ${transaction.status.toUpperCase()}
+-------------------------------------------
+Thank you for your payment!
+===========================================
+      `.trim();
+
+      const blob = new Blob([invoiceContent], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice_${transaction.invoiceNumber}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Invoice ${transaction.invoiceNumber} downloaded!`);
     } catch (error: any) {
       console.error("Download failed:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to download invoice",
-      );
+      toast.error("Failed to download invoice");
     } finally {
       setDownloading(null);
     }
@@ -113,14 +134,14 @@ export default function TransactionsPage() {
     if (status === "pending") {
       return {
         color: "bg-yellow-100 text-yellow-700",
-        text: "Pending Confirmation",
+        text: "Pending",
         icon: FiClock,
       };
     }
     return {
       color: "bg-red-100 text-red-700",
-      text: "Failed",
-      icon: FiAlertCircle,
+      text: "Failed/Cancelled",
+      icon: FiX,
     };
   };
 
@@ -140,8 +161,9 @@ export default function TransactionsPage() {
   return (
     <UserLayout>
       <div>
+        {/* Header */}
         <div className="mb-8">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
               <p className="text-gray-600">View your payment history</p>
@@ -156,6 +178,7 @@ export default function TransactionsPage() {
           </div>
         </div>
 
+        {/* Transactions Table */}
         {transactions.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
             <FiFileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -172,22 +195,22 @@ export default function TransactionsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Invoice #
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Period
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Action
                     </th>
                   </tr>
@@ -199,8 +222,11 @@ export default function TransactionsPage() {
                     const isDownloading = downloading === transaction.id;
 
                     return (
-                      <tr key={transaction.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-900">
+                      <tr
+                        key={transaction.id}
+                        className="hover:bg-gray-50 transition"
+                      >
+                        <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
                           {transaction.paidDate
                             ? new Date(
                                 transaction.paidDate,
@@ -208,15 +234,15 @@ export default function TransactionsPage() {
                             : "-"}
                         </td>
                         <td className="px-6 py-4 text-sm font-mono text-gray-900">
-                          {transaction.invoiceNumber || "-"}
+                          {transaction.invoiceNumber}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {transaction.month}
                         </td>
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
                           ₱{transaction.amount.toLocaleString()}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}
                           >
@@ -229,14 +255,9 @@ export default function TransactionsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <button
-                            onClick={() =>
-                              handleDownloadInvoice(
-                                transaction.invoiceNumber,
-                                transaction.id,
-                              )
-                            }
+                            onClick={() => handleDownloadInvoice(transaction)}
                             disabled={isDownloading}
                             className="flex items-center gap-1 px-3 py-1 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -258,6 +279,20 @@ export default function TransactionsPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Summary Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t flex justify-between items-center flex-wrap gap-2">
+              <p className="text-sm text-gray-500">
+                Total: {transactions.length} transaction(s)
+              </p>
+              <p className="text-sm font-semibold text-gray-900">
+                Total Paid: ₱
+                {transactions
+                  .filter((t) => t.status === "paid")
+                  .reduce((sum, t) => sum + t.amount, 0)
+                  .toLocaleString()}
+              </p>
             </div>
           </div>
         )}

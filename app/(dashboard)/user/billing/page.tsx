@@ -7,6 +7,7 @@ import {
   getBillingHistory,
   submitProRatedPayment,
   submitMonthlyPayment,
+  getUserBillingCycle,
 } from "@/services/billing";
 import {
   FiClipboard,
@@ -17,16 +18,54 @@ import {
   FiAlertTriangle,
   FiUpload,
   FiInfo,
+  FiX,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
 
+interface Bill {
+  _id: string;
+  invoiceNumber: string;
+  total: number;
+  dueDate: string;
+  status: string;
+  isProRated: boolean;
+  isInstallationBill?: boolean;
+  billingPeriod?: {
+    start: string;
+    end: string;
+  };
+  items?: Array<{
+    description: string;
+    quantity: number;
+    rate: number;
+    amount: number;
+  }>;
+  createdAt?: string;
+  updatedAt?: string;
+  paidAt?: string;
+}
+
+interface BillingCycle {
+  _id: string;
+  billingStartDate: string;
+  billingEndDate: string;
+  nextBillingDate: string;
+  status: string;
+  monthlyRate: number;
+  currentProRatedAmount: number;
+  proRatedPaid: boolean;
+  isAfterCutoff: boolean;
+  planId?: any;
+}
+
 export default function BillingPage() {
-  const [billingData, setBillingData] = useState<any>(null);
-  const [billingHistory, setBillingHistory] = useState<any[]>([]);
+  const [currentBill, setCurrentBill] = useState<Bill | null>(null);
+  const [billingHistory, setBillingHistory] = useState<Bill[]>([]);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
@@ -34,17 +73,19 @@ export default function BillingPage() {
   const loadBilling = async () => {
     setLoading(true);
     try {
-      const [currentResult, historyResult] = await Promise.all([
+      const [currentBillData, historyData, cycleData] = await Promise.all([
         getCurrentBill(),
         getBillingHistory({ page: 1, limit: 50 }),
+        getUserBillingCycle(),
       ]);
 
-      console.log("✅ Current Billing:", currentResult);
-      console.log("✅ Billing History:", historyResult);
+      console.log("✅ Current Bill:", currentBillData);
+      console.log("✅ Billing History:", historyData);
+      console.log("✅ Billing Cycle:", cycleData);
 
-      // Handle different response structures
-      setBillingData(currentResult || null);
-      setBillingHistory(historyResult?.billingHistory || historyResult || []);
+      setCurrentBill(currentBillData || null);
+      setBillingHistory(historyData?.billingHistory || historyData?.data || []);
+      setBillingCycle(cycleData || null);
     } catch (error: any) {
       console.error("Failed to load billing:", error);
       toast.error(error.response?.data?.message || "Failed to load billing");
@@ -58,7 +99,7 @@ export default function BillingPage() {
   }, []);
 
   const handleSubmitProRatedPayment = async (billId: string) => {
-    if (!paymentReference) {
+    if (!paymentReference.trim()) {
       toast.error("Please enter a reference number");
       return;
     }
@@ -67,8 +108,8 @@ export default function BillingPage() {
     try {
       await submitProRatedPayment({
         billId,
-        referenceNumber: paymentReference,
-        notes: paymentNotes,
+        referenceNumber: paymentReference.trim(),
+        notes: paymentNotes.trim(),
       });
 
       toast.success("Payment submitted! Awaiting admin confirmation.");
@@ -76,7 +117,7 @@ export default function BillingPage() {
       setPaymentReference("");
       setPaymentNotes("");
       setSelectedBill(null);
-      loadBilling();
+      await loadBilling();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit payment");
     } finally {
@@ -85,7 +126,7 @@ export default function BillingPage() {
   };
 
   const handleSubmitMonthlyPayment = async (billId: string) => {
-    if (!paymentReference) {
+    if (!paymentReference.trim()) {
       toast.error("Please enter a reference number");
       return;
     }
@@ -94,8 +135,8 @@ export default function BillingPage() {
     try {
       await submitMonthlyPayment({
         billId,
-        referenceNumber: paymentReference,
-        notes: paymentNotes,
+        referenceNumber: paymentReference.trim(),
+        notes: paymentNotes.trim(),
       });
 
       toast.success("Payment submitted! Awaiting admin confirmation.");
@@ -103,7 +144,7 @@ export default function BillingPage() {
       setPaymentReference("");
       setPaymentNotes("");
       setSelectedBill(null);
-      loadBilling();
+      await loadBilling();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit payment");
     } finally {
@@ -111,7 +152,20 @@ export default function BillingPage() {
     }
   };
 
-  const getDaysUntilDue = (dueDate: string) => {
+  const handleSubmitPayment = async () => {
+    if (!selectedBill) return;
+
+    if (selectedBill.isProRated) {
+      await handleSubmitProRatedPayment(selectedBill._id);
+    } else if (selectedBill.isInstallationBill) {
+      // Installation bills are handled through monthly payment for now
+      await handleSubmitMonthlyPayment(selectedBill._id);
+    } else {
+      await handleSubmitMonthlyPayment(selectedBill._id);
+    }
+  };
+
+  const getDaysUntilDue = (dueDate: string): number | null => {
     if (!dueDate) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -145,6 +199,13 @@ export default function BillingPage() {
         icon: FiClock,
       };
     }
+    if (normalizedStatus === "cancelled") {
+      return {
+        color: "bg-gray-100 text-gray-700",
+        text: "Cancelled",
+        icon: FiX,
+      };
+    }
     if (dueDate) {
       const daysLeft = getDaysUntilDue(dueDate);
       if (daysLeft !== null && daysLeft <= 1 && daysLeft >= 0) {
@@ -165,23 +226,21 @@ export default function BillingPage() {
     return { color: "bg-blue-100 text-blue-700", text: "Sent", icon: FiClock };
   };
 
-  const currentBill = billingData?.currentBill || null;
-  const needsFirstPayment = billingData?.needsFirstPayment === true;
-  const isAfterCutoff = billingData?.isAfterCutoff || false;
-  const billingCycle = billingData?.billingCycle || null;
+  const needsFirstPayment =
+    billingCycle?.proRatedPaid === false && currentBill?.isProRated === true;
+  const isAfterCutoff = billingCycle?.isAfterCutoff || false;
 
   const unpaidBills = billingHistory.filter(
-    (bill: any) => bill.status !== "paid" && bill.status !== "cancelled",
+    (bill: Bill) => bill.status !== "paid" && bill.status !== "cancelled",
   );
 
   const paidBills = billingHistory.filter(
-    (bill: any) => bill.status === "paid",
+    (bill: Bill) => bill.status === "paid",
   );
 
-  const hasOverdue = unpaidBills.some((bill: any) => {
-    const dueDate = bill.dueDate;
-    if (dueDate) {
-      const daysLeft = getDaysUntilDue(dueDate);
+  const hasOverdue = unpaidBills.some((bill: Bill) => {
+    if (bill.dueDate) {
+      const daysLeft = getDaysUntilDue(bill.dueDate);
       return daysLeft !== null && daysLeft < 0;
     }
     return false;
@@ -221,6 +280,7 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* Billing Cycle Info */}
         {billingCycle && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-6 border border-blue-100">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -261,12 +321,16 @@ export default function BillingPage() {
                       ? "bg-green-100 text-green-800"
                       : billingCycle.status === "pending_activation"
                         ? "bg-purple-100 text-purple-800"
-                        : "bg-gray-100 text-gray-800"
+                        : billingCycle.status === "disconnected"
+                          ? "bg-red-100 text-red-800"
+                          : "bg-gray-100 text-gray-800"
                   }`}
                 >
                   {billingCycle.status === "pending_activation"
                     ? "Awaiting First Payment"
-                    : billingCycle.status || "Unknown"}
+                    : billingCycle.status === "disconnected"
+                      ? "Disconnected"
+                      : billingCycle.status || "Unknown"}
                 </span>
               </div>
             </div>
@@ -281,6 +345,7 @@ export default function BillingPage() {
           </div>
         )}
 
+        {/* Pro-rated Payment Required Alert */}
         {needsFirstPayment && currentBill && currentBill.isProRated && (
           <div className="mb-6 bg-purple-50 border border-purple-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
@@ -292,8 +357,10 @@ export default function BillingPage() {
                 <p className="text-sm text-purple-600 mb-3">
                   Your pro-rated payment of ₱
                   {(currentBill.total || 0).toLocaleString()} is due on{" "}
-                  {new Date(currentBill.dueDate).toLocaleDateString()}. Once
-                  paid, your service will be fully activated.
+                  {currentBill.dueDate
+                    ? new Date(currentBill.dueDate).toLocaleDateString()
+                    : "N/A"}
+                  . Once paid, your service will be fully activated.
                 </p>
                 <button
                   onClick={() => {
@@ -309,6 +376,7 @@ export default function BillingPage() {
           </div>
         )}
 
+        {/* Overdue Alert */}
         {hasOverdue && !needsFirstPayment && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
             <FiAlertTriangle className="w-6 h-6 text-red-600" />
@@ -322,13 +390,14 @@ export default function BillingPage() {
           </div>
         )}
 
+        {/* Unpaid Bills */}
         {unpaidBills.length > 0 && !needsFirstPayment && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Pending Payments ({unpaidBills.length})
             </h2>
             <div className="space-y-4">
-              {unpaidBills.map((bill: any) => {
+              {unpaidBills.map((bill: Bill) => {
                 const daysLeft = bill.dueDate
                   ? getDaysUntilDue(bill.dueDate)
                   : null;
@@ -345,16 +414,23 @@ export default function BillingPage() {
                   >
                     <div className="flex flex-wrap justify-between items-start gap-4">
                       <div className="flex-1">
-                        <p className="text-sm text-gray-500">
-                          Invoice #{bill.invoiceNumber}
-                        </p>
-                        {bill.isProRated && (
-                          <span className="inline-block text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full mt-1">
-                            Pro-rated Bill
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm text-gray-500">
+                            Invoice #{bill.invoiceNumber}
+                          </p>
+                          {bill.isProRated && (
+                            <span className="inline-block text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                              Pro-rated Bill
+                            </span>
+                          )}
+                          {bill.isInstallationBill && (
+                            <span className="inline-block text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                              Installation Fee
+                            </span>
+                          )}
+                        </div>
                         <p className="text-2xl font-bold text-gray-900 mt-1">
-                          ₱{bill.total?.toLocaleString()}
+                          ₱{(bill.total || 0).toLocaleString()}
                         </p>
                         <div className="flex flex-wrap items-center gap-4 mt-2">
                           <span
@@ -365,7 +441,7 @@ export default function BillingPage() {
                           </span>
                           {bill.dueDate && isOverdue && (
                             <span className="text-xs text-red-600">
-                              Overdue by {Math.abs(daysLeft)} day(s)
+                              Overdue by {Math.abs(daysLeft!)} day(s)
                             </span>
                           )}
                           {bill.dueDate &&
@@ -378,9 +454,21 @@ export default function BillingPage() {
                               </span>
                             )}
                         </div>
+                        {bill.billingPeriod && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Period:{" "}
+                            {new Date(
+                              bill.billingPeriod.start,
+                            ).toLocaleDateString()}{" "}
+                            -{" "}
+                            {new Date(
+                              bill.billingPeriod.end,
+                            ).toLocaleDateString()}
+                          </p>
+                        )}
                         {bill.items && bill.items.length > 0 && (
                           <div className="mt-2 text-xs text-gray-500">
-                            {bill.items.map((item: any, idx: number) => (
+                            {bill.items.map((item, idx) => (
                               <p key={idx}>{item.description}</p>
                             ))}
                           </div>
@@ -421,6 +509,20 @@ export default function BillingPage() {
           </div>
         )}
 
+        {/* No Unpaid Bills State */}
+        {unpaidBills.length === 0 && !needsFirstPayment && (
+          <div className="mb-8 bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+            <FiCheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-green-800">
+              All Caught Up!
+            </h3>
+            <p className="text-green-600">
+              You have no pending payments at the moment.
+            </p>
+          </div>
+        )}
+
+        {/* Payment History */}
         <div className="bg-white rounded-xl shadow-sm border">
           <h2 className="text-lg font-semibold text-gray-900 p-6 border-b">
             Payment History {paidBills.length > 0 && `(${paidBills.length})`}
@@ -448,14 +550,16 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {paidBills.map((bill: any) => (
+                  {paidBills.map((bill: Bill) => (
                     <tr key={bill._id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {bill.updatedAt
-                          ? new Date(bill.updatedAt).toLocaleDateString()
+                        {bill.paidAt || bill.updatedAt
+                          ? new Date(
+                              bill.paidAt || bill.updatedAt || "",
+                            ).toLocaleDateString()
                           : "-"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
+                      <td className="px-6 py-4 text-sm font-mono text-gray-900">
                         {bill.invoiceNumber}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
@@ -464,7 +568,7 @@ export default function BillingPage() {
                           : "-"}
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                        ₱{bill.total?.toLocaleString()}
+                        ₱{(bill.total || 0).toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
@@ -484,6 +588,7 @@ export default function BillingPage() {
           )}
         </div>
 
+        {/* Billing Information */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800">
             <strong>📌 Billing Information:</strong> Bills are generated at the
@@ -494,6 +599,7 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Payment Modal */}
       {showPaymentModal && selectedBill && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6">
@@ -502,13 +608,21 @@ export default function BillingPage() {
             </h2>
             <p className="text-gray-600 mb-4">
               Invoice #{selectedBill.invoiceNumber} - ₱
-              {selectedBill.total?.toLocaleString()}
+              {(selectedBill.total || 0).toLocaleString()}
             </p>
             {selectedBill.isProRated && (
               <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
                 <p className="text-sm text-purple-800">
                   <strong>Pro-rated Bill:</strong> This payment will activate
                   your service.
+                </p>
+              </div>
+            )}
+            {selectedBill.isInstallationBill && (
+              <div className="mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <p className="text-sm text-orange-800">
+                  <strong>Installation Fee:</strong> This is your one-time
+                  installation fee.
                 </p>
               </div>
             )}
@@ -564,14 +678,8 @@ export default function BillingPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    if (selectedBill.isProRated) {
-                      handleSubmitProRatedPayment(selectedBill._id);
-                    } else {
-                      handleSubmitMonthlyPayment(selectedBill._id);
-                    }
-                  }}
-                  disabled={submitting || !paymentReference}
+                  onClick={handleSubmitPayment}
+                  disabled={submitting || !paymentReference.trim()}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? (

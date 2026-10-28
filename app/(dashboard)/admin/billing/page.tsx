@@ -1,7 +1,4 @@
-// frontend/src/app/(dashboard)/admin/billing/page.tsx - UNIFIED DESIGN PATTERN
-// ✅ FIX: allCustomers now reads from dashboardData.allCustomers which includes
-//         approved applications WITHOUT billing (backend already merges them)
-// ✅ FIX: statusFilter supports "approved_no_billing" for approved apps without billing
+// frontend/src/app/(dashboard)/admin/billing/page.tsx - COMPLETE FIXED
 "use client";
 
 import React, {
@@ -604,6 +601,14 @@ function AdminBillingPageContent() {
   }, [allCustomers, buildingFilter, dateRange, billInRange]);
 
   const buildingFilteredStats = useMemo(() => {
+    // Count disconnected from current allCustomers
+    const disconnectedCount = allCustomers.filter(
+      (c) =>
+        c.isDisconnected === true ||
+        c.status === "disconnected" ||
+        c.billingCycle?.status === "disconnected",
+    ).length;
+
     if (buildingFilter === "all" && !dateRange) {
       if (!dashboardData?.stats) {
         return {
@@ -662,8 +667,16 @@ function AdminBillingPageContent() {
           ? baseStats.totalBalance / baseStats.customersWithBalanceCount
           : 0;
 
+      // ✅ Total customers should EXCLUDE disconnected
+      const totalActiveCustomers = Math.max(
+        0,
+        (baseStats.totalCustomers || 0) - disconnectedCount,
+      );
+
       return {
         ...baseStats,
+        totalCustomers: totalActiveCustomers,
+        disconnectedCustomersCount: disconnectedCount,
         collectibles,
         totalOverdueAmount,
         totalUnpaidBillsCount,
@@ -679,6 +692,14 @@ function AdminBillingPageContent() {
         c.isDisconnected === true ||
         c.status === "disconnected" ||
         c.billingCycle?.status === "disconnected",
+    );
+    const nonDisconnected = filtered.filter(
+      (c) =>
+        !(
+          c.isDisconnected === true ||
+          c.status === "disconnected" ||
+          c.billingCycle?.status === "disconnected"
+        ),
     );
     const totalBalance = filtered.reduce(
       (sum, c) => sum + (c.currentBalance || 0),
@@ -759,7 +780,8 @@ function AdminBillingPageContent() {
         : 0;
 
     return {
-      totalCustomers: filtered.length,
+      // ✅ Total customers should EXCLUDE disconnected
+      totalCustomers: nonDisconnected.length,
       totalBalance,
       customersWithBalanceCount,
       overdueCustomersCount,
@@ -2271,13 +2293,7 @@ function AdminBillingPageContent() {
             )}
           </div>
 
-          <button
-            onClick={() => setShowReportsModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 shadow-sm"
-          >
-            <FiBarChart2 className="w-4 h-4" />
-            <span className="hidden sm:inline">Reports</span>
-          </button>
+          {/* Reports button removed as requested */}
 
           <button
             onClick={() => setShowSettingsModal(true)}
@@ -2332,11 +2348,13 @@ function AdminBillingPageContent() {
           </p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
-          <p className="text-sm font-medium text-gray-600">Pending</p>
+          <p className="text-sm font-medium text-gray-600">Disconnected</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">
-            {totalPendingCount}
+            {buildingFilteredStats.disconnectedCustomersCount || 0}
           </p>
-          <p className="text-xs text-gray-500 mt-2">Items need attention</p>
+          <p className="text-xs text-gray-500 mt-2">
+            Customers with preserved bills
+          </p>
         </div>
       </div>
 
@@ -2408,7 +2426,6 @@ function AdminBillingPageContent() {
                   <option value="disconnected">Disconnected</option>
                   <option value="pending_activation">Pending Activation</option>
                   <option value="cancelled">Cancelled</option>
-                  {/* ✅ NEW: approved-no-billing filter */}
                   <option value="approved_no_billing">
                     Approved (No Billing)
                   </option>

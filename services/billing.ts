@@ -767,13 +767,29 @@ export const getCurrentBill = async (): Promise<Bill | null> => {
   }
 };
 
+// ✅ FIXED: Laging array ang ibinabalik para hindi mag-crash ang .filter()
 export const getBillingHistory = async (params?: any): Promise<any> => {
   try {
     const response = await api.get("/billing/user/history", { params });
-    return response.data;
+
+    // I-check kung array o object na may data
+    const responseData = response.data;
+
+    if (Array.isArray(responseData)) {
+      return responseData;
+    }
+    if (responseData && Array.isArray(responseData.data)) {
+      return responseData.data;
+    }
+    if (responseData && Array.isArray(responseData.billingHistory)) {
+      return responseData.billingHistory;
+    }
+
+    // Fallback kung walang mahanap
+    return [];
   } catch (error) {
     console.error("Error fetching billing history:", error);
-    return { data: [], totalPages: 0, currentPage: 1, total: 0 };
+    return [];
   }
 };
 

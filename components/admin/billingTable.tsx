@@ -1250,13 +1250,7 @@ export default function BillingTable({
             </button>
           )}
 
-          <button
-            onClick={onOpenReports}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shadow-sm"
-          >
-            <FiFileText className="w-4 h-4" />
-            <span className="hidden sm:inline">Reports</span>
-          </button>
+          {/* Reports button removed from table toolbar */}
 
           <button
             onClick={onOpenBackdated}

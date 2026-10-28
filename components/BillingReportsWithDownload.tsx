@@ -8,16 +8,15 @@ import {
   FiHome,
   FiFileText,
   FiCheckCircle,
-  FiClock,
   FiAlertCircle,
-  FiUser,
-  FiMail,
   FiPrinter,
   FiFilter,
   FiTrendingUp,
   FiDollarSign,
   FiBarChart2,
   FiCalendar,
+  FiUsers,
+  FiLoader,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import * as XLSX from "xlsx";
@@ -26,8 +25,9 @@ import * as XLSX from "xlsx";
 let jsPDF: any = null;
 let autoTable: any = null;
 
-// ==================== TYPES ====================
-// This matches the CustomerItem type from the main page exactly
+// ============================================================================
+// Types
+// ============================================================================
 interface CustomerItem {
   _id: string;
   firstName: string;
@@ -35,7 +35,7 @@ interface CustomerItem {
   email: string;
   username?: string;
   phoneNumber: string;
-  status: string; // Made required to match main page
+  status: string;
   type: "user" | "application";
   planName: string;
   planPrice: number;
@@ -73,7 +73,9 @@ interface BillingReportsWithDownloadProps {
   onMarkInstallationBillAsPaid: (bill: any, customer: CustomerItem) => void;
 }
 
-// ==================== HELPERS ====================
+// ============================================================================
+// Helpers
+// ============================================================================
 function formatDateFixed(dateStr: string): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -99,7 +101,9 @@ function getBuildingName(customer: CustomerItem): string {
   return "-";
 }
 
-// ==================== MAIN COMPONENT ====================
+// ============================================================================
+// Component
+// ============================================================================
 export default function BillingReportsWithDownload({
   isOpen,
   onClose,
@@ -108,7 +112,6 @@ export default function BillingReportsWithDownload({
   onMarkBillAsPaid,
   onMarkInstallationBillAsPaid,
 }: BillingReportsWithDownloadProps) {
-  // ==================== STATE ====================
   const [reportType, setReportType] = useState<
     "unpaid" | "overdue" | "all" | "byBuilding" | "installation"
   >("unpaid");
@@ -129,7 +132,21 @@ export default function BillingReportsWithDownload({
 
   const tableRef = useRef<HTMLDivElement>(null);
 
-  // ==================== LOAD PDF LIBRARIES DYNAMICALLY ====================
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? "hidden" : "unset";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [isOpen]);
+
   const loadPdfLibraries = async () => {
     if (!jsPDF) {
       try {
@@ -146,11 +163,9 @@ export default function BillingReportsWithDownload({
     }
   };
 
-  // ==================== FILTERED DATA ====================
   const filteredData = useMemo(() => {
     let filtered = [...customers];
 
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -162,7 +177,6 @@ export default function BillingReportsWithDownload({
       );
     }
 
-    // Building filter
     if (selectedBuilding !== "all") {
       filtered = filtered.filter(
         (c) =>
@@ -171,12 +185,10 @@ export default function BillingReportsWithDownload({
       );
     }
 
-    // Customer type filter
     if (customerTypeFilter !== "all") {
       filtered = filtered.filter((c) => c.type === customerTypeFilter);
     }
 
-    // Report type filter
     switch (reportType) {
       case "unpaid":
         filtered = filtered.filter((c) => c.currentBalance > 0);
@@ -193,14 +205,12 @@ export default function BillingReportsWithDownload({
         );
         break;
       case "byBuilding":
-        // Already filtered by building
         break;
       case "all":
       default:
         break;
     }
 
-    // Status filter (on bills)
     if (statusFilter !== "all") {
       filtered = filtered.filter((c) => {
         const bills = c.unpaidBills.filter((b) => {
@@ -214,7 +224,6 @@ export default function BillingReportsWithDownload({
       });
     }
 
-    // Date range filter (on bills due date)
     if (dateRange.start || dateRange.end) {
       filtered = filtered.filter((c) => {
         return c.unpaidBills.some((bill) => {
@@ -227,9 +236,7 @@ export default function BillingReportsWithDownload({
       });
     }
 
-    // Sort by balance (highest first)
     filtered.sort((a, b) => b.currentBalance - a.currentBalance);
-
     return filtered;
   }, [
     customers,
@@ -241,7 +248,6 @@ export default function BillingReportsWithDownload({
     dateRange,
   ]);
 
-  // ==================== CALCULATE TOTALS ====================
   const totals = useMemo(() => {
     const totalBalance = filteredData.reduce(
       (sum, c) => sum + c.currentBalance,
@@ -264,7 +270,6 @@ export default function BillingReportsWithDownload({
       )
       .reduce((sum, c) => sum + (c.installationFee || 0), 0);
 
-    // Get all unpaid bills for detailed view
     const allUnpaidBills: any[] = [];
     filteredData.forEach((customer) => {
       const billsToShow = showPaidBills
@@ -285,7 +290,6 @@ export default function BillingReportsWithDownload({
       });
     });
 
-    // Sort bills by due date (oldest first)
     allUnpaidBills.sort(
       (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
     );
@@ -300,7 +304,6 @@ export default function BillingReportsWithDownload({
     };
   }, [filteredData, showPaidBills]);
 
-  // ==================== RESET FILTERS ====================
   const resetFilters = () => {
     setSearchTerm("");
     setSelectedBuilding("all");
@@ -311,9 +314,6 @@ export default function BillingReportsWithDownload({
     setShowPaidBills(false);
   };
 
-  // ==================== DOWNLOAD FUNCTIONS ====================
-
-  // Download as CSV
   const downloadCSV = () => {
     setLoading(true);
     try {
@@ -359,7 +359,6 @@ export default function BillingReportsWithDownload({
         ]);
       });
 
-      // Add summary rows with totals
       rows.push([]);
       rows.push(["===== SUMMARY ====="]);
       rows.push(["Total Customers", totals.totalCustomers.toString()]);
@@ -382,7 +381,7 @@ export default function BillingReportsWithDownload({
       XLSX.utils.book_append_sheet(wb, ws, "Billing Report");
       const fileName = `billing_report_${new Date().toISOString().split("T")[0]}.csv`;
       XLSX.writeFile(wb, fileName, { bookType: "csv" });
-      toast.success(`✅ Downloaded ${fileName}`);
+      toast.success(`Downloaded ${fileName}`);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download CSV");
@@ -391,7 +390,6 @@ export default function BillingReportsWithDownload({
     }
   };
 
-  // Download as Excel (XLSX) with totals
   const downloadExcel = () => {
     setLoading(true);
     try {
@@ -420,7 +418,6 @@ export default function BillingReportsWithDownload({
         "Application ID": c.applicationId || "-",
       }));
 
-      // Add summary sheet with totals
       const summaryData = [
         { Metric: "Report Generated", Value: new Date().toLocaleString() },
         { Metric: "Report Type", Value: reportType },
@@ -448,26 +445,24 @@ export default function BillingReportsWithDownload({
       const ws1 = XLSX.utils.json_to_sheet(data);
       const ws2 = XLSX.utils.json_to_sheet(summaryData);
 
-      // Set column widths for main sheet
-      const colWidths = [
-        { wch: 25 }, // Customer
-        { wch: 30 }, // Email
-        { wch: 15 }, // Phone
-        { wch: 12 }, // Type
-        { wch: 20 }, // Building
-        { wch: 10 }, // Unit
-        { wch: 10 }, // Floor
-        { wch: 20 }, // Plan
-        { wch: 12 }, // Plan Price
-        { wch: 15 }, // Balance
-        { wch: 12 }, // Unpaid Bills
-        { wch: 12 }, // Overdue Bills
-        { wch: 18 }, // Installation Fee
-        { wch: 18 }, // Installation Paid
-        { wch: 18 }, // Billing Status
-        { wch: 30 }, // Application ID
+      ws1["!cols"] = [
+        { wch: 25 },
+        { wch: 30 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 20 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 20 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 30 },
       ];
-      ws1["!cols"] = colWidths;
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws1, "Customers");
@@ -475,7 +470,7 @@ export default function BillingReportsWithDownload({
 
       const fileName = `billing_report_${new Date().toISOString().split("T")[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
-      toast.success(`✅ Downloaded ${fileName}`);
+      toast.success(`Downloaded ${fileName}`);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download Excel");
@@ -484,11 +479,9 @@ export default function BillingReportsWithDownload({
     }
   };
 
-  // Download as PDF with totals (with dynamic import)
   const downloadPDF = async () => {
     setLoading(true);
     try {
-      // Load PDF libraries
       await loadPdfLibraries();
 
       if (!jsPDF || !autoTable) {
@@ -503,12 +496,10 @@ export default function BillingReportsWithDownload({
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
 
-      // Title
       doc.setFontSize(18);
       doc.setTextColor(44, 62, 80);
       doc.text("Billing Report", pageWidth / 2, 15, { align: "center" });
 
-      // Subtitle
       doc.setFontSize(11);
       doc.setTextColor(100, 100, 100);
       const reportTypeLabels: Record<string, string> = {
@@ -525,7 +516,6 @@ export default function BillingReportsWithDownload({
         { align: "center" },
       );
 
-      // Summary with totals
       const summaryY = 30;
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
@@ -550,13 +540,7 @@ export default function BillingReportsWithDownload({
         14,
         summaryY + 24,
       );
-      doc.text(
-        `Average Balance: ${formatCurrency(totals.totalBalance / (totals.totalCustomers || 1))}`,
-        14,
-        summaryY + 30,
-      );
 
-      // Building filter info
       if (selectedBuilding !== "all") {
         const buildingName =
           buildings.find((b) => b._id === selectedBuilding)?.buildingName ||
@@ -564,7 +548,6 @@ export default function BillingReportsWithDownload({
         doc.text(`Building Filter: ${buildingName}`, 120, summaryY);
       }
 
-      // Customer table
       const tableData = filteredData.map((c) => [
         `${c.firstName} ${c.lastName}`,
         c.email,
@@ -606,26 +589,13 @@ export default function BillingReportsWithDownload({
           fontSize: 7,
         },
         alternateRowStyles: { fillColor: [240, 245, 248] },
-        columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 40 },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 20 },
-          4: { cellWidth: 30 },
-          5: { cellWidth: 30 },
-          6: { cellWidth: 25 },
-          7: { cellWidth: 18 },
-          8: { cellWidth: 18 },
-          9: { cellWidth: 25 },
-        },
         didDrawPage: (data: any) => {
-          // Footer with totals
           const pageCount = doc.getNumberOfPages();
           for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
             doc.setFontSize(8);
             doc.setTextColor(150, 150, 150);
-            const footerText = `Page ${i} of ${pageCount} | MisterFyber Billing Report | Total Balance: ${formatCurrency(totals.totalBalance)} | Total Customers: ${totals.totalCustomers}`;
+            const footerText = `Page ${i} of ${pageCount} | Billing Report | Total Balance: ${formatCurrency(totals.totalBalance)} | Total Customers: ${totals.totalCustomers}`;
             doc.text(footerText, pageWidth / 2, pageHeight - 8, {
               align: "center",
             });
@@ -635,18 +605,15 @@ export default function BillingReportsWithDownload({
 
       const fileName = `billing_report_${new Date().toISOString().split("T")[0]}.pdf`;
       doc.save(fileName);
-      toast.success(`✅ Downloaded ${fileName}`);
+      toast.success(`Downloaded ${fileName}`);
     } catch (error) {
       console.error("Download error:", error);
-      toast.error(
-        "Failed to download PDF. Please install: npm install jspdf jspdf-autotable",
-      );
+      toast.error("Failed to download PDF");
     } finally {
       setLoading(false);
     }
   };
 
-  // Download detailed bills report (shows each unpaid bill with totals)
   const downloadDetailedBills = () => {
     setLoading(true);
     try {
@@ -683,7 +650,6 @@ export default function BillingReportsWithDownload({
         "Installation Fee": bill.installationFee || 0,
       }));
 
-      // Add summary with totals
       const summaryData = [
         { Metric: "Report Generated", Value: new Date().toLocaleString() },
         { Metric: "Total Unpaid Bills", Value: totals.totalUnpaidBills },
@@ -708,34 +674,13 @@ export default function BillingReportsWithDownload({
       const ws1 = XLSX.utils.json_to_sheet(billsData);
       const ws2 = XLSX.utils.json_to_sheet(summaryData);
 
-      // Set column widths
-      const colWidths = [
-        { wch: 15 },
-        { wch: 25 },
-        { wch: 30 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 10 },
-        { wch: 10 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 18 },
-      ];
-      ws1["!cols"] = colWidths;
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws1, "Unpaid Bills");
       XLSX.utils.book_append_sheet(wb, ws2, "Summary");
 
       const fileName = `unpaid_bills_detail_${new Date().toISOString().split("T")[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
-      toast.success(`✅ Downloaded ${fileName}`);
+      toast.success(`Downloaded ${fileName}`);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download detailed bills");
@@ -744,7 +689,6 @@ export default function BillingReportsWithDownload({
     }
   };
 
-  // ==================== RENDER ====================
   if (!isOpen) return null;
 
   const reportTypeLabels: Record<string, string> = {
@@ -756,26 +700,26 @@ export default function BillingReportsWithDownload({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl max-w-7xl w-full max-h-[95vh] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-7xl w-full max-h-[95vh] flex flex-col shadow-2xl">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
+        <div className="flex justify-between items-center px-6 py-4 border-b bg-white rounded-t-2xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
               <FiDollarSign className="w-5 h-5 text-white" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">
-                Billing Reports
+                Billing Report
               </h2>
               <p className="text-xs text-gray-500">
-                Financial Analytics & Unpaid Bills Report
+                Financial analytics & unpaid bills report
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100"
           >
             <FiX className="w-6 h-6" />
           </button>
@@ -788,7 +732,7 @@ export default function BillingReportsWithDownload({
               onClick={() => setActiveTab("summary")}
               className={`py-3 px-4 font-medium text-sm transition-colors border-b-2 ${
                 activeTab === "summary"
-                  ? "border-blue-500 text-blue-600"
+                  ? "border-emerald-500 text-emerald-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -799,7 +743,7 @@ export default function BillingReportsWithDownload({
               onClick={() => setActiveTab("details")}
               className={`py-3 px-4 font-medium text-sm transition-colors border-b-2 ${
                 activeTab === "details"
-                  ? "border-blue-500 text-blue-600"
+                  ? "border-emerald-500 text-emerald-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -810,7 +754,7 @@ export default function BillingReportsWithDownload({
               onClick={() => setActiveTab("buildings")}
               className={`py-3 px-4 font-medium text-sm transition-colors border-b-2 ${
                 activeTab === "buildings"
-                  ? "border-blue-500 text-blue-600"
+                  ? "border-emerald-500 text-emerald-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -820,174 +764,220 @@ export default function BillingReportsWithDownload({
           </div>
         </div>
 
-        {/* Controls */}
+        {/* Filter Bar */}
         <div className="p-4 border-b bg-gray-50">
-          <div className="flex flex-wrap gap-3 items-center">
-            {/* Report Type */}
-            <div className="flex gap-1 bg-white rounded-lg border p-1">
-              {(
-                [
-                  "all",
-                  "unpaid",
-                  "overdue",
-                  "byBuilding",
-                  "installation",
-                ] as const
-              ).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setReportType(type)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    reportType === type
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  {type === "all" && "All"}
-                  {type === "unpaid" && "Unpaid"}
-                  {type === "overdue" && "Overdue"}
-                  {type === "byBuilding" && "By Building"}
-                  {type === "installation" && "Install Fees"}
-                </button>
-              ))}
-            </div>
-
-            {/* Building Filter */}
-            <select
-              value={selectedBuilding}
-              onChange={(e) => setSelectedBuilding(e.target.value)}
-              className="px-3 py-1.5 text-sm border rounded-lg bg-white"
-            >
-              <option value="all">🏢 All Buildings</option>
-              {buildings.map((b) => (
-                <option key={b._id} value={b._id}>
-                  🏢 {b.buildingName}
-                </option>
-              ))}
-            </select>
-
-            {/* Customer Type Filter */}
-            <select
-              value={customerTypeFilter}
-              onChange={(e) => setCustomerTypeFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm border rounded-lg bg-white"
-            >
-              <option value="all">All Types</option>
-              <option value="user">Users</option>
-              <option value="application">Applications</option>
-            </select>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm border rounded-lg bg-white"
-            >
-              <option value="all">All Status</option>
-              <option value="overdue">Overdue</option>
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-            </select>
-
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1 relative">
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search customers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-sm border rounded-lg bg-white"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
               />
             </div>
 
-            {/* Show Paid Bills Toggle */}
-            <label className="flex items-center gap-2 text-sm whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={showPaidBills}
-                onChange={(e) => setShowPaidBills(e.target.checked)}
-                className="rounded"
-              />
-              Show paid bills
-            </label>
-
-            {/* Reset Filters */}
             <button
-              onClick={resetFilters}
-              className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 transition"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`px-4 py-2.5 rounded-lg border transition flex items-center gap-2 text-sm font-medium ${
+                showFilters
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                  : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              Reset
+              <FiFilter className="w-4 h-4" />
+              {showFilters ? "Less Filters" : "More Filters"}
             </button>
 
-            {/* Download Buttons */}
-            <div className="flex gap-1 ml-auto">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={downloadCSV}
                 disabled={loading || filteredData.length === 0}
-                className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition flex items-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-2.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition flex items-center gap-1.5 disabled:opacity-50 font-medium"
               >
-                <FiDownload className="w-3.5 h-3.5" /> CSV
+                <FiDownload className="w-4 h-4" /> CSV
               </button>
               <button
                 onClick={downloadExcel}
                 disabled={loading || filteredData.length === 0}
-                className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center gap-1.5 disabled:opacity-50 font-medium"
               >
-                <FiDownload className="w-3.5 h-3.5" /> Excel
+                <FiDownload className="w-4 h-4" /> Excel
               </button>
               <button
                 onClick={downloadPDF}
                 disabled={loading || filteredData.length === 0}
-                className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition flex items-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-2.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition flex items-center gap-1.5 disabled:opacity-50 font-medium"
               >
-                <FiDownload className="w-3.5 h-3.5" /> PDF
+                <FiDownload className="w-4 h-4" /> PDF
               </button>
               <button
                 onClick={downloadDetailedBills}
                 disabled={loading || totals.allUnpaidBills.length === 0}
-                className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-2.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition flex items-center gap-1.5 disabled:opacity-50 font-medium"
               >
-                <FiFileText className="w-3.5 h-3.5" /> Detailed Bills
+                <FiFileText className="w-4 h-4" /> Bills
               </button>
             </div>
           </div>
+
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <select
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">All Customers</option>
+                  <option value="unpaid">Unpaid Bills</option>
+                  <option value="overdue">Overdue Bills</option>
+                  <option value="byBuilding">By Building</option>
+                  <option value="installation">Installation Fees</option>
+                </select>
+
+                <select
+                  value={selectedBuilding}
+                  onChange={(e) => setSelectedBuilding(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">All Buildings</option>
+                  {buildings.map((b) => (
+                    <option key={b._id} value={b._id}>
+                      {b.buildingName}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={customerTypeFilter}
+                  onChange={(e) => setCustomerTypeFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">All Types</option>
+                  <option value="user">Users</option>
+                  <option value="application">Applications</option>
+                </select>
+
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">All Status</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-lg border border-gray-200">
+                <label className="text-xs font-medium text-gray-600">
+                  Date Range:
+                </label>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) =>
+                    setDateRange({ ...dateRange, start: e.target.value })
+                  }
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+                <span className="text-gray-400 text-sm">to</span>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) =>
+                    setDateRange({ ...dateRange, end: e.target.value })
+                  }
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+                <label className="flex items-center gap-2 text-sm ml-4">
+                  <input
+                    type="checkbox"
+                    checked={showPaidBills}
+                    onChange={(e) => setShowPaidBills(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  Show paid bills
+                </label>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={resetFilters}
+                  className="px-3 py-1.5 text-sm text-red-600 hover:text-red-800 flex items-center gap-1 hover:bg-red-50 rounded-lg transition"
+                >
+                  <FiX className="w-4 h-4" /> Clear All Filters
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-gray-50 border-b">
-          <div className="bg-white rounded-lg p-3 shadow-sm">
-            <p className="text-xs text-gray-500">Customers</p>
-            <p className="text-lg font-bold text-blue-600">
-              {totals.totalCustomers}
-            </p>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <FiUsers className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Customers</p>
+                <p className="text-lg font-bold text-blue-600">
+                  {totals.totalCustomers}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg p-3 shadow-sm">
-            <p className="text-xs text-gray-500">Total Balance</p>
-            <p className="text-lg font-bold text-red-600">
-              {formatCurrency(totals.totalBalance)}
-            </p>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                <FiDollarSign className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Total Balance</p>
+                <p className="text-lg font-bold text-red-600">
+                  {formatCurrency(totals.totalBalance)}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg p-3 shadow-sm">
-            <p className="text-xs text-gray-500">Unpaid Bills</p>
-            <p className="text-lg font-bold text-orange-600">
-              {totals.totalUnpaidBills}
-            </p>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                <FiAlertCircle className="w-4 h-4 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Unpaid Bills</p>
+                <p className="text-lg font-bold text-orange-600">
+                  {totals.totalUnpaidBills}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg p-3 shadow-sm">
-            <p className="text-xs text-gray-500">Install Fees Due</p>
-            <p className="text-lg font-bold text-amber-600">
-              {formatCurrency(totals.totalInstallationFeesDue)}
-            </p>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                <FiBarChart2 className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Install Fees Due</p>
+                <p className="text-lg font-bold text-amber-600">
+                  {formatCurrency(totals.totalInstallationFeesDue)}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Content */}
         <div className="flex-1 overflow-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
-                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <FiLoader className="w-12 h-12 animate-spin text-emerald-600 mx-auto mb-4" />
                 <p className="text-gray-600">Loading report data...</p>
               </div>
             </div>
@@ -1112,34 +1102,34 @@ export default function BillingReportsWithDownload({
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-100 sticky top-0 z-10">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                           #
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                           Customer
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                           Building
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                           Plan
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
                           Balance
                         </th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">
                           Unpaid
                         </th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">
                           Overdue
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
                           Install Fee
                         </th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">
                           Status
                         </th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">
                           Actions
                         </th>
                       </tr>
@@ -1164,12 +1154,12 @@ export default function BillingReportsWithDownload({
                           return (
                             <tr
                               key={`${customer.type}-${customer._id}`}
-                              className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                              className={`hover:bg-emerald-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                             >
-                              <td className="px-3 py-2 text-xs text-gray-500">
+                              <td className="px-3 py-3 text-xs text-gray-500">
                                 {idx + 1}
                               </td>
-                              <td className="px-3 py-2">
+                              <td className="px-3 py-3">
                                 <div>
                                   <p className="font-medium text-gray-900">
                                     {customer.firstName} {customer.lastName}
@@ -1184,7 +1174,7 @@ export default function BillingReportsWithDownload({
                                   )}
                                 </div>
                               </td>
-                              <td className="px-3 py-2">
+                              <td className="px-3 py-3">
                                 <div className="flex items-center gap-1">
                                   <FiHome className="w-3 h-3 text-gray-400" />
                                   <span className="text-sm">
@@ -1199,7 +1189,7 @@ export default function BillingReportsWithDownload({
                                   </p>
                                 )}
                               </td>
-                              <td className="px-3 py-2">
+                              <td className="px-3 py-3">
                                 <p className="text-sm font-medium">
                                   {customer.planName}
                                 </p>
@@ -1207,7 +1197,7 @@ export default function BillingReportsWithDownload({
                                   ₱{customer.planPrice.toLocaleString()}/mo
                                 </p>
                               </td>
-                              <td className="px-3 py-2 text-right font-bold">
+                              <td className="px-3 py-3 text-right font-bold">
                                 <span
                                   className={
                                     customer.currentBalance > 1000
@@ -1220,12 +1210,12 @@ export default function BillingReportsWithDownload({
                                   {formatCurrency(customer.currentBalance)}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-3 text-center">
                                 <span className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-800">
                                   {customer.unpaidBills.length}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-3 text-center">
                                 <span
                                   className={`px-2 py-0.5 text-xs rounded-full ${
                                     customer.overdueBills.length > 0
@@ -1236,7 +1226,7 @@ export default function BillingReportsWithDownload({
                                   {customer.overdueBills.length}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-right">
+                              <td className="px-3 py-3 text-right">
                                 {customer.type === "application" ? (
                                   <div>
                                     <p className="text-sm font-medium">
@@ -1262,7 +1252,7 @@ export default function BillingReportsWithDownload({
                                   </span>
                                 )}
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-3 text-center">
                                 <span
                                   className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
                                     hasUnpaidInstallation
@@ -1291,7 +1281,7 @@ export default function BillingReportsWithDownload({
                                             "Inactive"}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-3 text-center">
                                 <div className="flex gap-1 justify-center">
                                   {customer.type === "application" &&
                                     hasUnpaidInstallation && (
@@ -1307,7 +1297,7 @@ export default function BillingReportsWithDownload({
                                               customer,
                                             );
                                         }}
-                                        className="px-2 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
+                                        className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
                                       >
                                         Mark Paid
                                       </button>
@@ -1327,7 +1317,7 @@ export default function BillingReportsWithDownload({
                                         if (bill)
                                           onMarkBillAsPaid(bill, customer);
                                       }}
-                                      className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
                                     >
                                       Mark Paid
                                     </button>
@@ -1339,30 +1329,29 @@ export default function BillingReportsWithDownload({
                         })
                       )}
                     </tbody>
-                    {/* Footer with totals */}
                     {filteredData.length > 0 && (
                       <tfoot className="bg-gray-100 sticky bottom-0">
                         <tr>
                           <td
                             colSpan={4}
-                            className="px-3 py-2 text-right font-semibold"
+                            className="px-3 py-3 text-right font-semibold"
                           >
                             TOTALS:
                           </td>
-                          <td className="px-3 py-2 text-right font-bold text-red-600">
+                          <td className="px-3 py-3 text-right font-bold text-red-600">
                             {formatCurrency(totals.totalBalance)}
                           </td>
-                          <td className="px-3 py-2 text-center font-semibold text-orange-600">
+                          <td className="px-3 py-3 text-center font-semibold text-orange-600">
                             {totals.totalUnpaidBills}
                           </td>
-                          <td className="px-3 py-2 text-center font-semibold text-red-600">
+                          <td className="px-3 py-3 text-center font-semibold text-red-600">
                             {totals.totalOverdueBills}
                           </td>
-                          <td className="px-3 py-2 text-right font-semibold text-amber-600">
+                          <td className="px-3 py-3 text-right font-semibold text-amber-600">
                             {formatCurrency(totals.totalInstallationFeesDue)}
                           </td>
                           <td
-                            className="px-3 py-2 text-center font-semibold"
+                            className="px-3 py-3 text-center font-semibold"
                             colSpan={2}
                           >
                             {totals.totalCustomers} customers
@@ -1377,7 +1366,6 @@ export default function BillingReportsWithDownload({
               {activeTab === "buildings" && (
                 <div>
                   {(() => {
-                    // Group customers by building
                     const buildingGroups = filteredData.reduce(
                       (acc: any, customer) => {
                         const buildingName = getBuildingName(customer);
@@ -1401,7 +1389,6 @@ export default function BillingReportsWithDownload({
                       {},
                     );
 
-                    // Sort buildings by total balance
                     const sortedBuildings = Object.entries(buildingGroups).sort(
                       (a: any, b: any) => b[1].totalBalance - a[1].totalBalance,
                     );
@@ -1524,7 +1511,6 @@ export default function BillingReportsWithDownload({
                                     </tr>
                                   ),
                                 )}
-                                {/* Building totals row */}
                                 <tr className="bg-gray-100 font-semibold">
                                   <td className="px-3 py-2" colSpan={2}>
                                     BUILDING TOTALS
@@ -1555,22 +1541,10 @@ export default function BillingReportsWithDownload({
           )}
         </div>
 
-        {/* Records count */}
-        <div className="p-3 border-t bg-gray-50 flex justify-between items-center rounded-b-lg">
+        {/* Footer */}
+        <div className="p-3 border-t bg-gray-50 flex justify-between items-center rounded-b-2xl">
           <div className="text-xs text-gray-500">
             Showing {filteredData.length} of {customers.length} customers
-            {selectedBuilding !== "all" && (
-              <span className="ml-2">
-                | Building:{" "}
-                {
-                  buildings.find((b) => b._id === selectedBuilding)
-                    ?.buildingName
-                }
-              </span>
-            )}
-            {searchTerm && (
-              <span className="ml-2">| Search: "{searchTerm}"</span>
-            )}
             {totals.totalBalance > 0 && (
               <span className="ml-2">
                 | Total Balance:{" "}

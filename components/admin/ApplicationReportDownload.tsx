@@ -1,14 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  XMarkIcon,
-  DocumentArrowDownIcon,
-  TableCellsIcon,
-  ArrowPathIcon,
-} from "@heroicons/react/24/outline";
+  FiX,
+  FiDownload,
+  FiFileText,
+  FiUsers,
+  FiHome,
+  FiCalendar,
+  FiSearch,
+  FiFilter,
+  FiCheckCircle,
+  FiBarChart2,
+  FiLoader,
+} from "react-icons/fi";
 import { toast } from "sonner";
 
+// ============================================================================
+// Types
+// ============================================================================
 interface Building {
   _id: string;
   buildingName: string;
@@ -70,6 +80,9 @@ interface ApplicationReportDownloadProps {
   };
 }
 
+// ============================================================================
+// Field Options
+// ============================================================================
 const FIELD_OPTIONS = [
   { key: "applicationId", label: "Application ID", default: true },
   { key: "fullName", label: "Full Name", default: true },
@@ -103,6 +116,46 @@ const STATUS_OPTIONS = [
   { value: "suspended", label: "Suspended" },
 ];
 
+// ============================================================================
+// Helpers
+// ============================================================================
+const formatDate = (d?: string): string => {
+  if (!d) return "N/A";
+  try {
+    return new Date(d).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "N/A";
+  }
+};
+
+const formatCurrency = (n: number): string =>
+  `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const getStatusLabel = (s: string): string =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
+
+const getStatusColor = (s: string): [number, number, number] => {
+  switch (s?.toLowerCase()) {
+    case "approved":
+      return [22, 163, 74];
+    case "pending":
+      return [202, 138, 4];
+    case "rejected":
+      return [220, 38, 38];
+    case "suspended":
+      return [107, 114, 128];
+    default:
+      return [0, 0, 0];
+  }
+};
+
+// ============================================================================
+// Component
+// ============================================================================
 export default function ApplicationReportDownload({
   isOpen,
   onClose,
@@ -118,6 +171,7 @@ export default function ApplicationReportDownload({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [selectedFields, setSelectedFields] = useState<Record<string, boolean>>(
     FIELD_OPTIONS.reduce(
       (acc, f) => {
@@ -189,42 +243,6 @@ export default function ApplicationReportDownload({
     [plans],
   );
 
-  const formatDate = useCallback((d?: string): string => {
-    if (!d) return "N/A";
-    try {
-      return new Date(d).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch {
-      return "N/A";
-    }
-  }, []);
-
-  const formatCurrency = useCallback((n: number): string => {
-    return `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }, []);
-
-  const getStatusLabel = useCallback((s: string): string => {
-    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
-  }, []);
-
-  const getStatusColor = useCallback((s: string): [number, number, number] => {
-    switch (s?.toLowerCase()) {
-      case "approved":
-        return [22, 163, 74];
-      case "pending":
-        return [202, 138, 4];
-      case "rejected":
-        return [220, 38, 38];
-      case "suspended":
-        return [107, 114, 128];
-      default:
-        return [0, 0, 0];
-    }
-  }, []);
-
   const toggleField = (key: string) => {
     setSelectedFields((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -251,6 +269,14 @@ export default function ApplicationReportDownload({
         {} as Record<string, boolean>,
       ),
     );
+  };
+
+  const resetFilters = () => {
+    setBuildingId("");
+    setStatus("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearch("");
   };
 
   const fetchData = useCallback(async (): Promise<Application[]> => {
@@ -329,14 +355,7 @@ export default function ApplicationReportDownload({
           return "";
       }
     },
-    [
-      getBuildingName,
-      getPlanName,
-      getPlanPrice,
-      formatCurrency,
-      formatDate,
-      getStatusLabel,
-    ],
+    [getBuildingName, getPlanName, getPlanPrice],
   );
 
   const handleGenerate = useCallback(async () => {
@@ -486,8 +505,6 @@ export default function ApplicationReportDownload({
     status,
     buildingId,
     buildings,
-    getStatusLabel,
-    getStatusColor,
     onClose,
   ]);
 
@@ -496,74 +513,94 @@ export default function ApplicationReportDownload({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div
-          ref={modalRef}
-          className="relative w-full max-w-2xl bg-white rounded-lg shadow-xl overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between px-5 py-4 bg-blue-600">
-            <div className="flex items-center gap-3">
-              <DocumentArrowDownIcon className="h-6 w-6 text-white" />
-              <div>
-                <h2 className="text-lg font-bold text-white">
-                  Download Report
-                </h2>
-                <p className="text-xs text-white/80">
-                  Export applications as PDF or Excel
-                </p>
-              </div>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div
+        ref={modalRef}
+        className="bg-white rounded-2xl max-w-7xl w-full max-h-[95vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center px-6 py-4 border-b bg-white rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+              <FiFileText className="w-5 h-5 text-white" />
             </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Application Report
+              </h2>
+              <p className="text-xs text-gray-500">
+                Export applications as PDF or Excel
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100"
+          >
+            <FiX className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="p-4 border-b bg-gray-50">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1 relative">
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by name, email, ID..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+
             <button
-              onClick={onClose}
-              className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`px-4 py-2.5 rounded-lg border transition flex items-center gap-2 text-sm font-medium ${
+                showFilters
+                  ? "bg-blue-50 border-blue-300 text-blue-700"
+                  : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              <XMarkIcon className="h-5 w-5" />
+              <FiFilter className="w-4 h-4" />
+              {showFilters ? "Less Filters" : "More Filters"}
             </button>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFormat("pdf")}
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
+                  format === "pdf"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiFileText className="h-4 w-4" />
+                PDF
+              </button>
+              <button
+                onClick={() => setFormat("excel")}
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
+                  format === "excel"
+                    ? "border-green-500 bg-green-50 text-green-700"
+                    : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiDownload className="h-4 w-4" />
+                Excel
+              </button>
+            </div>
           </div>
 
-          <div className="p-5 max-h-[70vh] overflow-y-auto space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Format
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setFormat("pdf")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
-                    format === "pdf"
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <DocumentArrowDownIcon className="h-4 w-4" />
-                  PDF
-                </button>
-                <button
-                  onClick={() => setFormat("excel")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition ${
-                    format === "excel"
-                      ? "border-green-500 bg-green-50 text-green-700"
-                      : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <TableCellsIcon className="h-4 w-4" />
-                  Excel
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filters
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <select
                   value={buildingId}
                   onChange={(e) => setBuildingId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">All Buildings</option>
                   {buildings.map((b) => (
@@ -575,7 +612,7 @@ export default function ApplicationReportDownload({
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                 >
                   {STATUS_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -591,7 +628,7 @@ export default function ApplicationReportDownload({
                     type="date"
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -600,62 +637,79 @@ export default function ApplicationReportDownload({
                     type="date"
                     value={dateTo}
                     onChange={(e) => setDateTo(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div className="sm:col-span-2">
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by name, email, ID..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
+              </div>
+              <div className="flex justify-end mt-3">
+                <button
+                  onClick={resetFilters}
+                  className="px-3 py-1.5 text-sm text-red-600 hover:text-red-800 flex items-center gap-1 hover:bg-red-50 rounded-lg transition"
+                >
+                  <FiX className="w-4 h-4" /> Clear Filters
+                </button>
               </div>
             </div>
+          )}
+        </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Fields to Include ({enabledCount}/{FIELD_OPTIONS.length})
+        {/* Main Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <FiCheckCircle className="w-4 h-4 text-blue-600" />
+                Fields to Include ({enabledCount}/{FIELD_OPTIONS.length})
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={selectAll}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Select All
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={deselectAll}
+                  className="text-xs text-gray-600 hover:text-gray-700 font-medium"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 p-4 border border-gray-200 rounded-lg bg-gray-50 max-h-72 overflow-y-auto">
+              {FIELD_OPTIONS.map((field) => (
+                <label
+                  key={field.key}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition ${
+                    selectedFields[field.key]
+                      ? "bg-blue-100 text-blue-800"
+                      : "hover:bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFields[field.key]}
+                    onChange={() => toggleField(field.key)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="truncate">{field.label}</span>
                 </label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={selectAll}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Select All
-                  </button>
-                  <span className="text-gray-300">|</span>
-                  <button
-                    onClick={deselectAll}
-                    className="text-xs text-gray-600 hover:text-gray-700 font-medium"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50 max-h-56 overflow-y-auto">
-                {FIELD_OPTIONS.map((field) => (
-                  <label
-                    key={field.key}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition ${selectedFields[field.key] ? "bg-blue-100 text-blue-800" : "hover:bg-gray-100 text-gray-700"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedFields[field.key]}
-                      onChange={() => toggleField(field.key)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="truncate">{field.label}</span>
-                  </label>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center justify-end gap-3 px-5 py-4 bg-gray-50 border-t border-gray-200">
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-6 py-4 bg-gray-50 border-t rounded-b-2xl">
+          <div className="text-xs text-gray-500">
+            Format:{" "}
+            <span className="font-semibold text-gray-700">
+              {format.toUpperCase()}
+            </span>{" "}
+            | {enabledCount} field{enabledCount !== 1 ? "s" : ""} selected
+          </div>
+          <div className="flex gap-3">
             <button
               onClick={onClose}
               disabled={isGenerating}
@@ -670,12 +724,12 @@ export default function ApplicationReportDownload({
             >
               {isGenerating ? (
                 <>
-                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                  <FiLoader className="h-4 w-4 animate-spin" />
                   Generating...
                 </>
               ) : (
                 <>
-                  <DocumentArrowDownIcon className="h-4 w-4" />
+                  <FiDownload className="h-4 w-4" />
                   Download {format.toUpperCase()}
                 </>
               )}

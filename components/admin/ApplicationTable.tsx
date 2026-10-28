@@ -1,4 +1,4 @@
-// components/admin/ApplicationTable.tsx - UNIFIED DESIGN PATTERN
+// components/admin/ApplicationTable.tsx - COMPLETE FIXED
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -125,17 +125,14 @@ export function ApplicationTable({
   const [localApplications, setLocalApplications] =
     useState<Application[]>(initialApplications);
 
-  // Update local applications when initialApplications changes
   useEffect(() => {
     setLocalApplications(initialApplications);
   }, [initialApplications]);
 
-  // Get unique ID for an application
   const getAppId = useCallback((app: Application): string => {
     return app._id || app.id || app.applicationId || "";
   }, []);
 
-  // Status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -196,23 +193,48 @@ export function ApplicationTable({
     [buildings],
   );
 
-  const getPlanName = (
-    plan: string | { _id: string; name: string; price: number },
-  ) => {
-    if (!plan) return "N/A";
-    if (typeof plan === "string") return plan;
-    return plan?.name || "N/A";
-  };
+  const getPlanName = useCallback(
+    (
+      plan:
+        | string
+        | { _id: string; name: string; price: number }
+        | null
+        | undefined,
+    ) => {
+      if (!plan) return "N/A";
+      if (typeof plan === "object" && plan !== null && "name" in plan) {
+        return plan.name || "N/A";
+      }
+      if (typeof plan === "string") {
+        const found = plans.find((p) => p._id === plan);
+        return found ? found.name : "N/A";
+      }
+      return "N/A";
+    },
+    [plans],
+  );
 
-  const getPlanPrice = (
-    plan: string | { _id: string; name: string; price: number },
-  ) => {
-    if (!plan) return 0;
-    if (typeof plan === "string") return 0;
-    return plan?.price || 0;
-  };
+  const getPlanPrice = useCallback(
+    (
+      plan:
+        | string
+        | { _id: string; name: string; price: number }
+        | null
+        | undefined,
+    ) => {
+      if (!plan) return 0;
+      if (typeof plan === "object" && plan !== null && "price" in plan) {
+        return plan.price || 0;
+      }
+      if (typeof plan === "string") {
+        const found = plans.find((p) => p._id === plan);
+        return found ? found.price || 0 : 0;
+      }
+      return 0;
+    },
+    [plans],
+  );
 
-  // Helper function to refresh data
   const refreshData = useCallback(async () => {
     if (isRefreshing || isActionInProgress) return;
     setIsRefreshing(true);

@@ -418,19 +418,41 @@ export default function InvoiceDetailPage() {
         <h3 className="text-sm font-medium text-gray-500 mb-3">
           Payment Instructions
         </h3>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-700">
-            <span className="font-medium">Bank Name:</span>{" "}
-            {invoice.bankName || "BDO"}
-          </p>
-          <p className="text-sm text-gray-700">
-            <span className="font-medium">Account Name:</span>{" "}
-            {invoice.accountName || "FYBERBLIZZ NETWORK CORPORATION"}
-          </p>
-          <p className="text-sm text-gray-700">
-            <span className="font-medium">Account Number:</span>{" "}
-            {invoice.accountNumber || "013448002421"}
-          </p>
+        <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+          {/* El Pueblo Account */}
+          <div>
+            <p className="text-sm font-semibold text-gray-800">El Pueblo</p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Bank Name:</span>{" "}
+              {invoice.bankName || "BDO"}
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Account Name:</span> RANDY D
+              MANZANARES AND ANGELA C TAPEL
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Account Number:</span> 013448003711
+            </p>
+          </div>
+
+          {/* Main Account */}
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-semibold text-gray-800">
+              NEW ACCOUNT FOR PAYMENT
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Bank Name:</span>{" "}
+              {invoice.bankName || "BDO"}
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Account Name:</span> RANDY
+              MANZANARES AND ANGELA TAPEL
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">Account Number:</span> 013448003703
+            </p>
+          </div>
+
           <p className="text-sm text-gray-600 mt-2">
             Kindly send your proof of payment via Viber {invoice.companyContact}{" "}
             or at {invoice.companyEmail}

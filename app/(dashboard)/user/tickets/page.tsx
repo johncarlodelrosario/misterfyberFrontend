@@ -1,3 +1,4 @@
+// app/(dashboard)/user/tickets/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -9,6 +10,10 @@ import {
   FiPhone,
   FiSend,
   FiX,
+  FiRefreshCw,
+  FiClock,
+  FiCheckCircle,
+  FiAlertCircle,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
@@ -51,18 +56,21 @@ export default function TicketsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.subject || !formData.message) {
+    if (!formData.subject.trim() || !formData.message.trim()) {
       toast.error("Please fill in all fields");
       return;
     }
 
     setSubmitting(true);
     try {
-      await createSupportTicket(formData);
+      await createSupportTicket({
+        subject: formData.subject.trim(),
+        message: formData.message.trim(),
+      });
       toast.success("Ticket created successfully!");
       setShowModal(false);
       setFormData({ subject: "", message: "" });
-      loadTickets();
+      await loadTickets();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to create ticket");
     } finally {
@@ -71,12 +79,37 @@ export default function TicketsPage() {
   };
 
   const getStatusBadge = (status: string) => {
-    const styles = {
-      open: "bg-yellow-100 text-yellow-700",
-      "in-progress": "bg-blue-100 text-blue-700",
-      closed: "bg-green-100 text-green-700",
+    const configs: Record<
+      string,
+      { color: string; bg: string; icon: any; text: string }
+    > = {
+      open: {
+        color: "text-yellow-700",
+        bg: "bg-yellow-100",
+        icon: FiAlertCircle,
+        text: "Open",
+      },
+      "in-progress": {
+        color: "text-blue-700",
+        bg: "bg-blue-100",
+        icon: FiClock,
+        text: "In Progress",
+      },
+      closed: {
+        color: "text-green-700",
+        bg: "bg-green-100",
+        icon: FiCheckCircle,
+        text: "Closed",
+      },
     };
-    return styles[status as keyof typeof styles] || styles.open;
+    return (
+      configs[status] || {
+        color: "text-gray-700",
+        bg: "bg-gray-100",
+        icon: FiAlertCircle,
+        text: status,
+      }
+    );
   };
 
   if (loading) {
@@ -95,6 +128,7 @@ export default function TicketsPage() {
   return (
     <UserLayout>
       <div>
+        {/* Header */}
         <div className="mb-8 flex justify-between items-center flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
@@ -104,15 +138,25 @@ export default function TicketsPage() {
               View and manage your support requests
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition"
-          >
-            <FiPlus className="w-4 h-4" />
-            New Ticket
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={loadTickets}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            >
+              <FiRefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition"
+            >
+              <FiPlus className="w-4 h-4" />
+              New Ticket
+            </button>
+          </div>
         </div>
 
+        {/* Tickets List */}
         {tickets.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
             <FiMessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -131,34 +175,44 @@ export default function TicketsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {tickets.map((ticket) => (
-              <div
-                key={ticket._id}
-                className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition"
-              >
-                <div className="flex justify-between items-start flex-wrap gap-4 mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {ticket.subject}
-                  </h3>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(ticket.status)}`}
-                  >
-                    {ticket.status.charAt(0).toUpperCase() +
-                      ticket.status.slice(1)}
-                  </span>
+            {tickets.map((ticket) => {
+              const statusInfo = getStatusBadge(ticket.status);
+              const StatusIcon = statusInfo.icon;
+              return (
+                <div
+                  key={ticket._id}
+                  className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition"
+                >
+                  <div className="flex justify-between items-start flex-wrap gap-4 mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {ticket.subject}
+                    </h3>
+                    <span
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${statusInfo.bg} ${statusInfo.color}`}
+                    >
+                      <StatusIcon className="w-3 h-3" />
+                      {statusInfo.text}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-3 whitespace-pre-wrap">
+                    {ticket.message}
+                  </p>
+                  <div className="flex justify-between items-center text-xs text-gray-400 flex-wrap gap-2">
+                    <span>
+                      Created: {new Date(ticket.createdAt).toLocaleDateString()}{" "}
+                      {new Date(ticket.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <span>
+                      Last updated:{" "}
+                      {new Date(ticket.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-gray-600 text-sm mb-3">{ticket.message}</p>
-                <div className="flex justify-between items-center text-xs text-gray-400">
-                  <span>
-                    Created: {new Date(ticket.createdAt).toLocaleDateString()}
-                  </span>
-                  <span>
-                    Last updated:{" "}
-                    {new Date(ticket.updatedAt).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -170,7 +224,7 @@ export default function TicketsPage() {
           <p className="text-gray-600 text-sm mb-4">
             For urgent issues, please contact us directly
           </p>
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             <a
               href="tel:+63212345678"
               className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
@@ -197,7 +251,10 @@ export default function TicketsPage() {
                   Create Support Ticket
                 </h2>
                 <button
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setFormData({ subject: "", message: "" });
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <FiX className="w-5 h-5" />

@@ -217,12 +217,29 @@ export default function CustomerDetailModal({
   const [localCustomer, setLocalCustomer] = useState<CustomerItem | null>(
     customer,
   );
+  // Fake UI state: track locally removed bill IDs so the UI immediately
+  // reflects paid/free/delete actions even before the parent refetches.
+  const [removedBillIds, setRemovedBillIds] = useState<Set<string>>(new Set());
+  // Fake UI state: track locally "paid" installation fee
+  const [localInstallationFeePaid, setLocalInstallationFeePaid] =
+    useState<boolean>(false);
 
   useEffect(() => {
     if (customer) {
       setLocalCustomer(customer);
+      // Reset fake-UI tracking whenever a fresh customer object comes in.
+      setRemovedBillIds(new Set());
+      setLocalInstallationFeePaid(!!customer.installationFeePaid);
     }
   }, [customer]);
+
+  const markBillRemoved = (billId: string) => {
+    setRemovedBillIds((prev) => {
+      const next = new Set(prev);
+      next.add(billId);
+      return next;
+    });
+  };
 
   const handleEditBillPriceLocal = (
     billId: string,
@@ -239,10 +256,9 @@ export default function CustomerDetailModal({
       setLocalCustomer({
         ...localCustomer,
         unpaidBills: updatedUnpaidBills,
-        currentBalance: updatedUnpaidBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        ),
+        currentBalance: updatedUnpaidBills
+          .filter((b: any) => !removedBillIds.has(b._id))
+          .reduce((sum: number, bill: any) => sum + (bill.total || 0), 0),
       });
     }
     onEditBillPrice(billId, newPrice, customer);
@@ -264,16 +280,16 @@ export default function CustomerDetailModal({
         ...localCustomer,
         unpaidBills: updatedUnpaidBills,
         installationFee: newPrice,
-        currentBalance: updatedUnpaidBills.reduce(
-          (sum: number, bill: any) => sum + (bill.total || 0),
-          0,
-        ),
+        currentBalance: updatedUnpaidBills
+          .filter((b: any) => !removedBillIds.has(b._id))
+          .reduce((sum: number, bill: any) => sum + (bill.total || 0), 0),
       });
     }
     onEditInstallationPrice(billId, newPrice, customer);
   };
 
   const handleMarkBillAsPaidLocal = (bill: any, customer: CustomerItem) => {
+    markBillRemoved(bill._id);
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -287,6 +303,7 @@ export default function CustomerDetailModal({
         ),
       });
     }
+    toast.success(`✅ Bill ${bill.invoiceNumber || ""} marked as paid!`);
     onMarkBillAsPaid(bill, customer);
   };
 
@@ -294,6 +311,8 @@ export default function CustomerDetailModal({
     bill: any,
     customer: CustomerItem,
   ) => {
+    markBillRemoved(bill._id);
+    setLocalInstallationFeePaid(true);
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -308,10 +327,14 @@ export default function CustomerDetailModal({
         ),
       });
     }
+    toast.success(
+      `✅ Installation bill ${bill.invoiceNumber || ""} marked as paid!`,
+    );
     onMarkInstallationBillAsPaid(bill, customer);
   };
 
   const handleFreeBillLocal = (bill: any, customer: CustomerItem) => {
+    markBillRemoved(bill._id);
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -325,10 +348,13 @@ export default function CustomerDetailModal({
         ),
       });
     }
+    toast.success(`🎁 Bill ${bill.invoiceNumber || ""} set to free!`);
     onAction("freeBill", customer, { billId: bill._id });
   };
 
   const handleFreeInstallationLocal = (bill: any, customer: CustomerItem) => {
+    markBillRemoved(bill._id);
+    setLocalInstallationFeePaid(true);
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -343,11 +369,15 @@ export default function CustomerDetailModal({
         ),
       });
     }
+    toast.success(
+      `🎁 Installation bill ${bill.invoiceNumber || ""} set to free!`,
+    );
     onAction("freeInstallation", customer, { billId: bill._id });
   };
 
   const handleDeleteBillLocal = (bill: any, customer: CustomerItem) => {
     if (!onDeleteBill) return;
+    markBillRemoved(bill._id);
     if (localCustomer) {
       const updatedUnpaidBills = localCustomer.unpaidBills.filter(
         (b: any) => b._id !== bill._id,
@@ -361,12 +391,28 @@ export default function CustomerDetailModal({
         ),
       });
     }
+    toast.success(`🗑️ Bill ${bill.invoiceNumber || ""} deleted!`);
     onDeleteBill(bill._id, bill.invoiceNumber, customer);
   };
 
   const displayCustomer = localCustomer || customer;
 
   if (!isOpen || !displayCustomer) return null;
+
+  // Compute the visible bills: filter out locally removed ones for the fake UI.
+  const visibleUnpaidBills = displayCustomer.unpaidBills.filter(
+    (bill: any) => !removedBillIds.has(bill._id),
+  );
+
+  // Effective installation fee paid (merge server value with local fake-UI state)
+  const effectiveInstallationFeePaid =
+    localInstallationFeePaid || !!displayCustomer.installationFeePaid;
+
+  // Effective balance based on visible bills (fake UI)
+  const effectiveBalance = visibleUnpaidBills.reduce(
+    (sum: number, bill: any) => sum + (bill.total || 0),
+    0,
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -376,6 +422,8 @@ export default function CustomerDetailModal({
           <button
             onClick={() => {
               setLocalCustomer(null);
+              setRemovedBillIds(new Set());
+              setLocalInstallationFeePaid(false);
               onClose();
             }}
             className="text-gray-400 hover:text-gray-600"
@@ -415,12 +463,12 @@ export default function CustomerDetailModal({
               <p className="text-gray-500">Balance</p>
               <p
                 className={
-                  displayCustomer.currentBalance > 1000
+                  effectiveBalance > 1000
                     ? "text-red-600 font-bold"
                     : "text-orange-600"
                 }
               >
-                ₱{displayCustomer.currentBalance.toLocaleString()}
+                ₱{effectiveBalance.toLocaleString()}
               </p>
             </div>
             <div>
@@ -446,13 +494,12 @@ export default function CustomerDetailModal({
                     ₱{(displayCustomer.installationFee || 0).toLocaleString()}
                     <span
                       className={
-                        displayCustomer.installationFeePaid
+                        effectiveInstallationFeePaid
                           ? "text-green-600 ml-2"
                           : "text-red-600 ml-2"
                       }
                     >
-                      ({displayCustomer.installationFeePaid ? "Paid" : "Unpaid"}
-                      )
+                      ({effectiveInstallationFeePaid ? "Paid" : "Unpaid"})
                     </span>
                   </p>
                 </div>
@@ -467,10 +514,10 @@ export default function CustomerDetailModal({
           </div>
         </div>
 
-        {displayCustomer.unpaidBills.length > 0 && (
+        {visibleUnpaidBills.length > 0 && (
           <div className="mb-4">
             <h3 className="font-semibold text-sm mb-2">
-              Unpaid Bills ({displayCustomer.unpaidBills.length})
+              Unpaid Bills ({visibleUnpaidBills.length})
             </h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-xs">
@@ -485,7 +532,7 @@ export default function CustomerDetailModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {displayCustomer.unpaidBills.map((bill: any) => (
+                  {visibleUnpaidBills.map((bill: any) => (
                     <tr key={bill._id}>
                       <td className="px-3 py-2 font-mono">
                         {bill.invoiceNumber}
@@ -521,7 +568,7 @@ export default function CustomerDetailModal({
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap gap-1">
                           {bill.isInstallationBill &&
-                            !bill.installationFeePaid && (
+                            !effectiveInstallationFeePaid && (
                               <>
                                 <button
                                   onClick={() =>
@@ -611,10 +658,20 @@ export default function CustomerDetailModal({
           </div>
         )}
 
+        {visibleUnpaidBills.length === 0 && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+            <p className="text-sm text-green-700 font-medium">
+              ✅ No unpaid bills — all clear!
+            </p>
+          </div>
+        )}
+
         <div className="flex justify-end">
           <button
             onClick={() => {
               setLocalCustomer(null);
+              setRemovedBillIds(new Set());
+              setLocalInstallationFeePaid(false);
               onClose();
             }}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"

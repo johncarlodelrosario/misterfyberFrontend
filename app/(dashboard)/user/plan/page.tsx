@@ -1,12 +1,9 @@
+// app/(dashboard)/user/plan/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { getPlans } from "@/services/plan";
-import {
-  getUserProfile,
-  changeUserPlan,
-  requestPlanChange,
-} from "@/services/user";
+import { getUserProfile, requestPlanChange } from "@/services/user";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   FiWifi,
@@ -16,6 +13,8 @@ import {
   FiArrowDown,
   FiPhone,
   FiMail,
+  FiX,
+  FiRefreshCw,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import UserLayout from "@/components/User/UserLayout";
@@ -42,10 +41,7 @@ export default function PlanPage() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
-
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -54,9 +50,16 @@ export default function PlanPage() {
         getPlans(),
         getUserProfile(),
       ]);
-      setPlans(plansData.filter((p) => p.isActive));
+
+      const activePlans = plansData.filter((p) => p.isActive);
+      setPlans(activePlans);
+
       if (userProfile.planId) {
-        const current = plansData.find((p) => p._id === userProfile.planId);
+        const planId =
+          typeof userProfile.planId === "string"
+            ? userProfile.planId
+            : userProfile.planId._id;
+        const current = plansData.find((p) => p._id === planId);
         setCurrentPlan(current || null);
       }
     } catch (error) {
@@ -67,24 +70,16 @@ export default function PlanPage() {
     }
   };
 
-  const handleChangePlan = async (planId: string) => {
-    setChangingPlan(planId);
-    try {
-      await changeUserPlan(planId);
-      toast.success("Plan changed successfully!");
-      await loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to change plan");
-    } finally {
-      setChangingPlan(null);
-    }
-  };
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const handleRequestPlanChange = async () => {
     if (!selectedPlan) return;
 
+    setSubmitting(true);
     try {
-      await requestPlanChange(selectedPlan._id, requestMessage);
+      await requestPlanChange(selectedPlan._id, requestMessage.trim());
       toast.success(
         "Plan change request submitted successfully! Our team will contact you soon.",
       );
@@ -93,11 +88,18 @@ export default function PlanPage() {
       setSelectedPlan(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit request");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const isCurrentPlan = (planId: string) => {
-    return currentPlan?._id === planId;
+    if (!currentPlan) return false;
+    return currentPlan._id === planId;
+  };
+
+  const isUpgrade = (plan: Plan) => {
+    return plan.price > (currentPlan?.price || 0);
   };
 
   if (loading) {
@@ -116,9 +118,23 @@ export default function PlanPage() {
   return (
     <UserLayout>
       <div>
+        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">My Plan</h1>
-          <p className="text-gray-600">View and manage your internet plan</p>
+          <div className="flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">My Plan</h1>
+              <p className="text-gray-600">
+                View and manage your internet plan
+              </p>
+            </div>
+            <button
+              onClick={loadData}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            >
+              <FiRefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Current Plan Card */}
@@ -145,6 +161,32 @@ export default function PlanPage() {
                 </span>
               </div>
             </div>
+            {currentPlan.features && currentPlan.features.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-white/20">
+                <div className="flex flex-wrap gap-3">
+                  {currentPlan.features.map((feature, idx) => (
+                    <div key={idx} className="flex items-center gap-1 text-sm">
+                      <FiCheck className="w-4 h-4 text-green-300" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* No Current Plan State */}
+        {!currentPlan && (
+          <div className="mb-8 bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
+            <FiWifi className="w-12 h-12 text-yellow-500 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-yellow-800">
+              No Active Plan
+            </h3>
+            <p className="text-yellow-600">
+              You don't have an active plan yet. Please contact support to get
+              started.
+            </p>
           </div>
         )}
 
@@ -155,6 +197,7 @@ export default function PlanPage() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {plans.map((plan) => {
             const isCurrent = isCurrentPlan(plan._id);
+            const upgrade = isUpgrade(plan);
 
             return (
               <div
@@ -171,12 +214,14 @@ export default function PlanPage() {
                       <h3 className="text-xl font-bold text-gray-900">
                         {plan.name}
                       </h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {plan.description}
-                      </p>
+                      {plan.description && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          {plan.description}
+                        </p>
+                      )}
                     </div>
                     {isCurrent && (
-                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full flex-shrink-0">
                         Current
                       </span>
                     )}
@@ -195,44 +240,45 @@ export default function PlanPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2 mb-6">
-                    {plan.features.slice(0, 4).map((feature, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 text-sm text-gray-600"
-                      >
-                        <FiCheck className="w-4 h-4 text-green-500" />
-                        <span>{feature}</span>
-                      </div>
-                    ))}
-                    {plan.features.length > 4 && (
-                      <p className="text-xs text-gray-400">
-                        +{plan.features.length - 4} more features
-                      </p>
-                    )}
-                  </div>
+                  {plan.features && plan.features.length > 0 && (
+                    <div className="space-y-2 mb-6">
+                      {plan.features.slice(0, 4).map((feature, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2 text-sm text-gray-600"
+                        >
+                          <FiCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <span>{feature}</span>
+                        </div>
+                      ))}
+                      {plan.features.length > 4 && (
+                        <p className="text-xs text-gray-400">
+                          +{plan.features.length - 4} more features
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {!isCurrent && (
                     <div className="space-y-2">
                       <button
-                        onClick={() => handleChangePlan(plan._id)}
-                        disabled={changingPlan === plan._id}
-                        className="w-full py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
+                        onClick={() => {
+                          setSelectedPlan(plan);
+                          setShowRequestModal(true);
+                        }}
+                        className={`w-full py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
+                          upgrade
+                            ? "bg-gradient-to-r from-blue-600 to-emerald-600 text-white hover:shadow-lg"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
                       >
-                        {changingPlan === plan._id ? (
-                          <>Processing...</>
+                        {upgrade ? (
+                          <>
+                            <FiArrowUp className="w-4 h-4" /> Upgrade Plan
+                          </>
                         ) : (
                           <>
-                            {plan.price > (currentPlan?.price || 0) ? (
-                              <>
-                                <FiArrowUp className="w-4 h-4" /> Upgrade Now
-                              </>
-                            ) : (
-                              <>
-                                <FiArrowDown className="w-4 h-4" /> Downgrade
-                                Now
-                              </>
-                            )}
+                            <FiArrowDown className="w-4 h-4" /> Downgrade Plan
                           </>
                         )}
                       </button>
@@ -241,10 +287,17 @@ export default function PlanPage() {
                           setSelectedPlan(plan);
                           setShowRequestModal(true);
                         }}
-                        className="w-full py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                        className="w-full py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition text-sm"
                       >
-                        Request via Support
+                        Request Plan Change
                       </button>
+                    </div>
+                  )}
+
+                  {isCurrent && (
+                    <div className="text-center py-2 text-sm text-green-600 bg-green-50 rounded-lg">
+                      <FiCheck className="w-4 h-4 inline mr-1" />
+                      You are currently on this plan
                     </div>
                   )}
                 </div>
@@ -253,18 +306,72 @@ export default function PlanPage() {
           })}
         </div>
 
+        {/* No Plans Available */}
+        {plans.length === 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+            <FiWifi className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              No Plans Available
+            </h3>
+            <p className="text-gray-500">
+              There are currently no active plans. Please check back later.
+            </p>
+          </div>
+        )}
+
         {/* Request Modal */}
         {showRequestModal && selectedPlan && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Request Plan Change
-              </h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Request Plan Change
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRequestModal(false);
+                    setSelectedPlan(null);
+                    setRequestMessage("");
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="w-5 h-5" />
+                </button>
+              </div>
+
               <p className="text-gray-600 mb-4">
                 You are requesting to change to{" "}
                 <strong>{selectedPlan.name}</strong> (₱
                 {selectedPlan.price.toLocaleString()}/month)
               </p>
+
+              {currentPlan && (
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Current Plan:</span>
+                    <span className="font-medium">{currentPlan.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span className="text-gray-500">New Plan:</span>
+                    <span className="font-medium">{selectedPlan.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span className="text-gray-500">Price Difference:</span>
+                    <span
+                      className={`font-medium ${
+                        isUpgrade(selectedPlan)
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {isUpgrade(selectedPlan) ? "+" : ""}₱
+                      {(
+                        selectedPlan.price - (currentPlan?.price || 0)
+                      ).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -281,12 +388,6 @@ export default function PlanPage() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={handleRequestPlanChange}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition"
-                >
-                  Submit Request
-                </button>
-                <button
                   onClick={() => {
                     setShowRequestModal(false);
                     setSelectedPlan(null);
@@ -295,6 +396,13 @@ export default function PlanPage() {
                   className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-50 transition"
                 >
                   Cancel
+                </button>
+                <button
+                  onClick={handleRequestPlanChange}
+                  disabled={submitting}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-emerald-600 text-white py-2 rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Submit Request"}
                 </button>
               </div>
 

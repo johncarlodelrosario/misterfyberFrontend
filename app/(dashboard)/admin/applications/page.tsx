@@ -1,4 +1,4 @@
-// app/(dashboard)/admin/applications/page.tsx - UNIFIED DESIGN PATTERN
+// app/(dashboard)/admin/applications/page.tsx - COMPLETE FIXED
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -16,7 +16,6 @@ import {
 import { toast } from "sonner";
 
 import { ApplicationTable } from "@/components/admin/ApplicationTable";
-import ApplicationReportDownload from "@/components/admin/ApplicationReportDownload";
 import {
   getAllApplications,
   approveApplication,
@@ -27,9 +26,11 @@ import {
 } from "@/services/application";
 import { getActiveBuildings } from "@/services/building";
 import { getPlans } from "@/services/plan";
-import { Building, Plan } from "@/services/application";
+import type { Building, Plan } from "@/services/application";
 
-// Types
+// ============================================================
+// Local Application interface with "disconnected" status.
+// ============================================================
 interface Application {
   _id: string;
   id?: string;
@@ -44,7 +45,7 @@ interface Application {
   floor: string;
   unitNumber: string;
   planId: string | { _id: string; name: string; price: number };
-  status: "pending" | "approved" | "rejected" | "suspended";
+  status: "pending" | "approved" | "rejected" | "suspended" | "disconnected";
   idType: string;
   idNumber: string;
   macAddress?: string;
@@ -94,8 +95,18 @@ export default function AdminApplicationsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+
+  // ✅ DYNAMIC STATS
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    suspended: 0,
+    disconnected: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   // Refs
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -182,33 +193,47 @@ export default function AdminApplicationsPage() {
     }
   }, []);
 
-  // Fetch ALL applications for report (no limit)
-  const fetchAllApplicationsForReport = useCallback(
-    async (reportFilters?: {
-      buildingId?: string;
-      status?: string;
-      search?: string;
-    }): Promise<Application[]> => {
+  // ============================================================
+  // ✅ FETCH DYNAMIC STATS
+  // Kinukuha lahat ng records (limit 10000) para makuha ang tamang
+  // counts, at inaapplyan ng search at building filter kung meron.
+  // ============================================================
+  const fetchDynamicStats = useCallback(async (currentFilters: Filters) => {
+    setStatsLoading(true);
+    try {
       const params: any = {
         page: 1,
-        limit: 10000,
+        limit: 10000, // Kunin lahat para mabilang nang tama
       };
 
-      if (reportFilters?.buildingId) {
-        params.buildingId = reportFilters.buildingId;
+      // Apply search and building filters. (Status filter is intentionally omitted
+      // here so we can count ALL statuses within the current building/search scope).
+      if (currentFilters.search && currentFilters.search.trim()) {
+        params.search = currentFilters.search.trim();
       }
-      if (reportFilters?.status && reportFilters.status !== "all") {
-        params.status = reportFilters.status;
-      }
-      if (reportFilters?.search) {
-        params.search = reportFilters.search;
+      if (currentFilters.buildingId && currentFilters.buildingId !== "") {
+        params.buildingId = currentFilters.buildingId;
       }
 
       const response = await getAllApplications(params);
-      return response.data || [];
-    },
-    [],
-  );
+      const all = (response.data || []) as Application[];
+
+      const counts = {
+        total: all.length,
+        pending: all.filter((a) => a.status === "pending").length,
+        approved: all.filter((a) => a.status === "approved").length,
+        rejected: all.filter((a) => a.status === "rejected").length,
+        suspended: all.filter((a) => a.status === "suspended").length,
+        disconnected: all.filter((a) => a.status === "disconnected").length,
+      };
+
+      setStats(counts);
+    } catch (err) {
+      console.error("❌ Error fetching dynamic stats:", err);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
   // Quick export Excel (current page only)
   const handleExportExcel = useCallback(() => {
@@ -411,6 +436,8 @@ export default function AdminApplicationsPage() {
             return [220, 38, 38];
           case "suspended":
             return [107, 114, 128];
+          case "disconnected":
+            return [75, 85, 99];
           default:
             return [0, 0, 0];
         }
@@ -500,7 +527,7 @@ export default function AdminApplicationsPage() {
     formatDate,
   ]);
 
-  // Fetch applications
+  // Fetch applications (RESPECTS FILTERS)
   const fetchApplications = useCallback(
     async (refresh = false, overrideFilters?: Partial<Filters>) => {
       if (abortControllerRef.current) {
@@ -562,7 +589,7 @@ export default function AdminApplicationsPage() {
           return app;
         });
 
-        setApplications(mappedData);
+        setApplications(mappedData as Application[]);
         setTotal(response.total || 0);
         setTotalPages(response.totalPages || 0);
         setCurrentPage(response.currentPage || 1);
@@ -603,13 +630,20 @@ export default function AdminApplicationsPage() {
     }
   }, []);
 
-  // Initial load
+  // ============================================================
+  // ✅ INITIAL LOAD
+  // Kinukuha ang applications, metadata, at stats sa unang load.
+  // ============================================================
   useEffect(() => {
     fetchApplications();
     fetchMetadata();
+    fetchDynamicStats(filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filter changes
+  // ============================================================
+  // ✅ FILTER CHANGES -> REFETCH TABLE
+  // ============================================================
   useEffect(() => {
     if (!hasInitialLoadRef.current) return;
 
@@ -628,7 +662,9 @@ export default function AdminApplicationsPage() {
     };
   }, [filters.page, filters.status, filters.buildingId, filters.nameSort]);
 
-  // Search debounce
+  // ============================================================
+  // ✅ SEARCH DEBOUNCE -> REFETCH TABLE
+  // ============================================================
   useEffect(() => {
     if (!hasInitialLoadRef.current) return;
 
@@ -647,6 +683,20 @@ export default function AdminApplicationsPage() {
     };
   }, [filters.search]);
 
+  // ============================================================
+  // ✅ TRIGGER DYNAMIC STATS UPDATE
+  // Kapag nagbago ang search o building filter, i-update ang stats.
+  // ============================================================
+  useEffect(() => {
+    if (!hasInitialLoadRef.current) return;
+
+    const timer = setTimeout(() => {
+      fetchDynamicStats(filters);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [filters.search, filters.buildingId, fetchDynamicStats]);
+
   // Handlers
   const handleFilterChange = (key: keyof Filters, value: any) => {
     setFilters((prev) => ({
@@ -657,8 +707,8 @@ export default function AdminApplicationsPage() {
   };
 
   const handleRefresh = useCallback(async () => {
-    await fetchApplications(true);
-  }, [fetchApplications]);
+    await Promise.all([fetchApplications(true), fetchDynamicStats(filters)]);
+  }, [fetchApplications, fetchDynamicStats, filters]);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -687,10 +737,6 @@ export default function AdminApplicationsPage() {
     router.push(`/admin/applications/${id}`);
   };
 
-  const handleEditApplication = (id: string) => {
-    router.push(`/admin/applications/${id}/edit`);
-  };
-
   const handleApprove = useCallback(
     async (id: string) => {
       if (!id) {
@@ -700,7 +746,10 @@ export default function AdminApplicationsPage() {
       try {
         await approveApplication(id);
         toast.success("✅ Application approved successfully!");
-        await fetchApplications(true);
+        await Promise.all([
+          fetchApplications(true),
+          fetchDynamicStats(filters),
+        ]);
       } catch (error: any) {
         const message =
           error?.response?.data?.message ||
@@ -710,7 +759,7 @@ export default function AdminApplicationsPage() {
         throw error;
       }
     },
-    [fetchApplications],
+    [fetchApplications, fetchDynamicStats, filters],
   );
 
   const handleReject = useCallback(
@@ -722,7 +771,10 @@ export default function AdminApplicationsPage() {
       try {
         await rejectApplication(id);
         toast.success("❌ Application rejected successfully!");
-        await fetchApplications(true);
+        await Promise.all([
+          fetchApplications(true),
+          fetchDynamicStats(filters),
+        ]);
       } catch (error: any) {
         const message =
           error?.response?.data?.message ||
@@ -732,7 +784,7 @@ export default function AdminApplicationsPage() {
         throw error;
       }
     },
-    [fetchApplications],
+    [fetchApplications, fetchDynamicStats, filters],
   );
 
   const handleDelete = useCallback(
@@ -745,7 +797,10 @@ export default function AdminApplicationsPage() {
         await deleteApplication(id);
         setSelectedIds((prev) => prev.filter((item) => item !== id));
         toast.success("🗑️ Application deleted successfully!");
-        await fetchApplications(true);
+        await Promise.all([
+          fetchApplications(true),
+          fetchDynamicStats(filters),
+        ]);
       } catch (error: any) {
         const message =
           error?.response?.data?.message ||
@@ -755,7 +810,7 @@ export default function AdminApplicationsPage() {
         throw error;
       }
     },
-    [fetchApplications],
+    [fetchApplications, fetchDynamicStats, filters],
   );
 
   const handleBulkDelete = useCallback(
@@ -768,7 +823,10 @@ export default function AdminApplicationsPage() {
         await bulkDeleteApplications(ids);
         setSelectedIds([]);
         toast.success(`🗑️ ${ids.length} applications deleted successfully!`);
-        await fetchApplications(true);
+        await Promise.all([
+          fetchApplications(true),
+          fetchDynamicStats(filters),
+        ]);
       } catch (error: any) {
         const message =
           error?.response?.data?.message ||
@@ -778,7 +836,7 @@ export default function AdminApplicationsPage() {
         throw error;
       }
     },
-    [fetchApplications],
+    [fetchApplications, fetchDynamicStats, filters],
   );
 
   const handleEdit = useCallback(
@@ -790,7 +848,10 @@ export default function AdminApplicationsPage() {
       try {
         await patchApplication(id, data);
         toast.success("✅ Application updated successfully!");
-        await fetchApplications(true);
+        await Promise.all([
+          fetchApplications(true),
+          fetchDynamicStats(filters),
+        ]);
       } catch (error: any) {
         const message =
           error?.response?.data?.message ||
@@ -800,7 +861,7 @@ export default function AdminApplicationsPage() {
         throw error;
       }
     },
-    [fetchApplications],
+    [fetchApplications, fetchDynamicStats, filters],
   );
 
   const statusOptions = [
@@ -809,14 +870,8 @@ export default function AdminApplicationsPage() {
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "suspended", label: "Suspended" },
+    { value: "disconnected", label: "Disconnected" },
   ];
-
-  const stats = useMemo(() => {
-    const pending = applications.filter((a) => a.status === "pending").length;
-    const approved = applications.filter((a) => a.status === "approved").length;
-    const rejected = applications.filter((a) => a.status === "rejected").length;
-    return { total, pending, approved, rejected };
-  }, [applications, total]);
 
   const activeBuildingName = useMemo(() => {
     if (!filters.buildingId) return null;
@@ -869,16 +924,6 @@ export default function AdminApplicationsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Report Download Button */}
-          <button
-            onClick={() => setShowReportModal(true)}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 shadow-sm"
-          >
-            <DocumentArrowDownIcon className="h-4 w-4" />
-            <span className="hidden sm:inline">Download Report</span>
-          </button>
-
           {/* Quick Export Dropdown */}
           <div className="relative" ref={exportMenuRef}>
             <button
@@ -932,33 +977,39 @@ export default function AdminApplicationsPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — Naka-base na ito sa kasalukuyang filters */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <p className="text-sm font-medium text-gray-600">Total</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{total}</p>
-          <p className="text-xs text-gray-500 mt-2">All applications</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {statsLoading ? "…" : stats.total}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {activeBuildingName
+              ? `In ${activeBuildingName}`
+              : "All applications"}
+          </p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <p className="text-sm font-medium text-gray-600">Pending</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">
-            {stats.pending}
+            {statsLoading ? "…" : stats.pending}
           </p>
           <p className="text-xs text-gray-500 mt-2">Awaiting review</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <p className="text-sm font-medium text-gray-600">Approved</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">
-            {stats.approved}
+            {statsLoading ? "…" : stats.approved}
           </p>
-          <p className="text-xs text-gray-500 mt-2">On this page</p>
+          <p className="text-xs text-gray-500 mt-2">Active</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
-          <p className="text-sm font-medium text-gray-600">Rejected</p>
+          <p className="text-sm font-medium text-gray-600">Disconnected</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">
-            {stats.rejected}
+            {statsLoading ? "…" : stats.disconnected}
           </p>
-          <p className="text-xs text-gray-500 mt-2">On this page</p>
+          <p className="text-xs text-gray-500 mt-2">No active service</p>
         </div>
       </div>
 
@@ -1166,20 +1217,6 @@ export default function AdminApplicationsPage() {
           onPageChange={handlePageChange}
         />
       </div>
-
-      {/* Report Modal */}
-      <ApplicationReportDownload
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        buildings={buildings}
-        plans={plans}
-        onFetchAllApplications={fetchAllApplicationsForReport}
-        currentFilters={{
-          status: filters.status,
-          buildingId: filters.buildingId,
-          search: filters.search,
-        }}
-      />
     </div>
   );
 }

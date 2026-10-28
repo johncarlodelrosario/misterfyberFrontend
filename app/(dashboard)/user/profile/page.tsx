@@ -1,3 +1,4 @@
+// app/(dashboard)/user/profile/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,7 +8,14 @@ import * as yup from "yup";
 import toast from "react-hot-toast";
 import { getUserProfile, updateUserProfile } from "@/services/user";
 import { useAuth } from "@/contexts/AuthContext";
-import { FiSave, FiRefreshCw } from "react-icons/fi";
+import {
+  FiSave,
+  FiRefreshCw,
+  FiUser,
+  FiMail,
+  FiPhone,
+  FiMapPin,
+} from "react-icons/fi";
 import UserLayout from "@/components/User/UserLayout";
 import { getActiveBuildings, Building } from "@/services/building";
 
@@ -15,7 +23,7 @@ const schema = yup.object({
   firstName: yup.string().required("First name is required"),
   lastName: yup.string().required("Last name is required"),
   phoneNumber: yup.string().required("Phone number is required"),
-  buildingId: yup.string().required("Please select a building"),
+  buildingId: yup.string(),
 });
 
 type FormData = yup.InferType<typeof schema>;
@@ -29,6 +37,7 @@ export default function UserProfilePage() {
     null,
   );
   const [loadingBuildings, setLoadingBuildings] = useState(true);
+  const [profileData, setProfileData] = useState<any>(null);
 
   const {
     register,
@@ -48,7 +57,7 @@ export default function UserProfilePage() {
 
   const buildingId = watch("buildingId");
 
-  // Load buildings when component mounts
+  // Load buildings
   useEffect(() => {
     const loadBuildings = async () => {
       try {
@@ -77,33 +86,27 @@ export default function UserProfilePage() {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const data = (await getUserProfile()) as any; // Temporary fix
+      const data = await getUserProfile();
+      setProfileData(data);
 
       setValue("firstName", data.firstName || "");
       setValue("lastName", data.lastName || "");
       setValue("phoneNumber", data.phoneNumber || "");
 
-      // Try to get buildingId from different possible locations
+      // Extract building ID from various possible locations
       let userBuildingId = "";
-
-      // Check if buildingId exists directly
-      if (data.buildingId) {
-        userBuildingId = data.buildingId;
-      }
-      // Check if building object exists with _id
-      else if (data.building && data.building._id) {
-        userBuildingId = data.building._id;
-      }
-      // Check if it's in application data
-      else if (data.application && data.application.buildingId) {
-        userBuildingId = data.application.buildingId;
-      }
-      // Check if it's in selectedBuilding field
-      else if (data.selectedBuilding) {
-        userBuildingId = data.selectedBuilding;
+      if ((data as any).buildingId) {
+        userBuildingId = (data as any).buildingId;
+      } else if ((data as any).building?._id) {
+        userBuildingId = (data as any).building._id;
+      } else if ((data as any).address?.buildingName) {
+        // Try to find by name
+        const found = buildings.find(
+          (b) => b.buildingName === (data as any).address.buildingName,
+        );
+        if (found) userBuildingId = found._id;
       }
 
-      console.log("Loaded building ID:", userBuildingId); // Debug log
       setValue("buildingId", userBuildingId);
     } catch (error: any) {
       console.error("Failed to load profile:", error);
@@ -114,14 +117,17 @@ export default function UserProfilePage() {
   };
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    if (!loadingBuildings) {
+      loadProfile();
+    }
+  }, [loadingBuildings]);
 
   const onSubmit = async (data: FormData) => {
     setUpdating(true);
     try {
-      await updateUserProfile(data);
+      await updateUserProfile(data as any);
       toast.success("Profile updated successfully");
+      await loadProfile();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to update profile");
     } finally {
@@ -150,8 +156,41 @@ export default function UserProfilePage() {
           <p className="text-gray-600">Update your personal information</p>
         </div>
 
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-6">
+          {/* Read-Only Info Card */}
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <FiUser className="w-5 h-5 text-blue-600" />
+              Account Information
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <FiMail className="w-5 h-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Email</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {user?.email || "Not set"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <FiUser className="w-5 h-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Username</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {user?.username || "Not set"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Editable Form */}
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <FiMapPin className="w-5 h-5 text-blue-600" />
+              Personal Information
+            </h2>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -186,23 +225,16 @@ export default function UserProfilePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <input
-                  value={user?.email || ""}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone Number *
                 </label>
-                <input
-                  {...register("phoneNumber")}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                />
+                <div className="relative">
+                  <FiPhone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    {...register("phoneNumber")}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="+63 9XX XXX XXXX"
+                  />
+                </div>
                 {errors.phoneNumber && (
                   <p className="text-red-500 text-xs mt-1">
                     {errors.phoneNumber.message}
@@ -212,7 +244,7 @@ export default function UserProfilePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assigned Building *
+                  Assigned Building
                 </label>
                 <select
                   {...register("buildingId")}
@@ -227,20 +259,16 @@ export default function UserProfilePage() {
                     </option>
                   ))}
                 </select>
-                {errors.buildingId && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.buildingId.message}
-                  </p>
-                )}
               </div>
 
-              {/* Display selected building details */}
+              {/* Selected Building Details */}
               {selectedBuilding && (
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                   <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span>🏢</span> Your Selected Building
+                    <FiMapPin className="w-4 h-4 text-blue-600" />
+                    Your Selected Building
                   </h3>
-                  <div className="space-y-1 text-sm text-gray-600">
+                  <div className="grid md:grid-cols-2 gap-2 text-sm text-gray-600">
                     <p>
                       <span className="font-medium">Building:</span>{" "}
                       {selectedBuilding.buildingName}
