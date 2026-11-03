@@ -611,7 +611,7 @@ export default function AdminPaymentsPage() {
     "payments",
   );
 
-  const [monthFilter, setMonthFilter] = useState(getCurrentMonthString());
+  const [monthFilter, setMonthFilter] = useState("");
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);

@@ -114,7 +114,7 @@ export default function BillingReportsWithDownload({
 }: BillingReportsWithDownloadProps) {
   const [reportType, setReportType] = useState<
     "unpaid" | "overdue" | "all" | "byBuilding" | "installation"
-  >("unpaid");
+  >("all");
   const [selectedBuilding, setSelectedBuilding] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showPaidBills, setShowPaidBills] = useState(false);

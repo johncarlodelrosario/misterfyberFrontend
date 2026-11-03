@@ -510,7 +510,7 @@ function ApplyFormContent() {
                       <div className="grid sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Tower *
+                            Tower
                           </label>
                           <input
                             type="text"
@@ -527,7 +527,7 @@ function ApplyFormContent() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Floor
+                            Floor *
                           </label>
                           <input
                             type="text"
@@ -540,7 +540,7 @@ function ApplyFormContent() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Unit Number
+                            Unit Number *
                           </label>
                           <input
                             type="text"

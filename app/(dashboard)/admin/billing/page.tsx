@@ -298,7 +298,7 @@ function AdminBillingPageContent() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState(getCurrentMonthString());
+  const [monthFilter, setMonthFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [pagination, setPagination] = useState({
