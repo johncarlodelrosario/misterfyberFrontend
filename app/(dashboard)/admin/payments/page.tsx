@@ -1,4 +1,7 @@
-// frontend/src/app/admin/payments/page.tsx - UNIFIED DESIGN PATTERN + CUSTOMIZABLE AMOUNT + EDITABLE PAYMENTS + AUTO-REFRESH
+// frontend/src/app/admin/payments/page.tsx - COMPLETE FIXED
+// ✅ FIX: Full name search now works ("Juan Dela Cruz", "Cruz Juan", "JuanDelaCruz")
+// ✅ FIX: Search also matches email, phone, applicationId, reference number
+// ✅ FIX: UNIFIED DESIGN PATTERN + CUSTOMIZABLE AMOUNT + EDITABLE PAYMENTS + AUTO-REFRESH
 "use client";
 
 import React, {
@@ -44,6 +47,7 @@ import api from "@/services/api";
 import CustomerSummaryTable from "@/components/admin/CustomerSummaryTable";
 import PaymentReport from "@/components/admin/PaymentReport";
 
+// ==================== TYPES ====================
 type Payment = ServicePayment;
 
 interface CustomerInfo {
@@ -74,6 +78,17 @@ interface Building {
   address: string;
   buildingName?: string;
 }
+
+interface FetchFilters {
+  statusFilter: string;
+  paymentTypeFilter: string;
+  buildingFilter: string;
+  effectiveStart: string;
+  effectiveEnd: string;
+}
+
+// ==================== AUTO-REFRESH INTERVAL ====================
+const AUTO_REFRESH_INTERVAL_MS = 15000; // 15 seconds
 
 // ==================== FORMATTING HELPERS ====================
 function formatBillingPeriod(billingPeriod?: {
@@ -183,6 +198,98 @@ function paymentBelongsInBillingRange(
   if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) return true;
 
   return billingStart >= rangeStart && billingStart <= rangeEnd;
+}
+
+// ==================== ✅ SEARCH HELPER (THE MAIN FIX) ====================
+/**
+ * Full-name + all-field search that works with:
+ *   - "Juan"                  → matches
+ *   - "Cruz"                  → matches
+ *   - "Juan Dela Cruz"        → matches (was broken before)
+ *   - "juan dela cruz"        → matches (case-insensitive)
+ *   - "JUAN DELA CRUZ"        → matches (case-insensitive)
+ *   - "JuanDelaCruz"          → matches (no spaces)
+ *   - "Cruz Juan"             → matches (reverse order)
+ *   - "juan  dela  cruz"      → matches (extra whitespace)
+ *   - email / phone / appId   → matches
+ *   - reference number        → matches
+ *   - building name           → matches
+ *   - payment type / status   → matches
+ */
+function paymentMatchesSearch(
+  payment: Payment,
+  info: CustomerInfo,
+  searchTerm: string,
+): boolean {
+  const term = (searchTerm || "").trim().toLowerCase();
+  if (!term) return true;
+
+  const name = (info.name || "").toLowerCase().trim();
+  const email = (info.email || "").toLowerCase().trim();
+  const phone = (info.phone || "").toLowerCase().trim();
+  const appId = (info.applicationId || "").toLowerCase().trim();
+  const buildingName = (info.buildingName || "").toLowerCase().trim();
+  const refNo = (payment.referenceNumber || "").toLowerCase().trim();
+  const paymentType = (payment.paymentType || "").toLowerCase().trim();
+  const status = (payment.status || "").toLowerCase().trim();
+  const paymentMethod = (payment.paymentMethod || "").toLowerCase().trim();
+  const notes = ((payment.paymentDetails as any)?.notes || "")
+    .toLowerCase()
+    .trim();
+  const invoiceNumber = ((payment.billingId as any)?.invoiceNumber || "")
+    .toLowerCase()
+    .trim();
+
+  // Normalized name variants
+  const nameNoSpaces = name.replace(/\s+/g, "");
+  const termNoSpaces = term.replace(/\s+/g, "");
+  const nameWords = name.split(/\s+/).filter(Boolean);
+  const reverseName = [...nameWords].reverse().join(" ");
+
+  // 1) Direct substring matches
+  if (name.includes(term)) return true;
+  if (reverseName.includes(term)) return true;
+
+  // 2) No-spaces match (handles "JuanDelaCruz")
+  if (termNoSpaces.length > 0) {
+    if (nameNoSpaces.includes(termNoSpaces)) return true;
+  }
+
+  // 3) Individual field matches
+  if (email.includes(term)) return true;
+  if (phone.includes(term)) return true;
+  if (appId.includes(term)) return true;
+  if (buildingName.includes(term)) return true;
+  if (refNo.includes(term)) return true;
+  if (paymentType.includes(term)) return true;
+  if (status.includes(term)) return true;
+  if (paymentMethod.includes(term)) return true;
+  if (notes.includes(term)) return true;
+  if (invoiceNumber.includes(term)) return true;
+
+  // 4) Word-based match — all words must appear somewhere
+  //    Handles "Cruz Juan", "juan d", "dela juan", etc.
+  const termWords = term.split(/\s+/).filter(Boolean);
+  if (termWords.length > 1) {
+    const haystack = [
+      name,
+      reverseName,
+      email,
+      phone,
+      appId,
+      buildingName,
+      refNo,
+      paymentType,
+      status,
+      paymentMethod,
+      notes,
+      invoiceNumber,
+    ].join(" ");
+    const allWordsMatch = termWords.every((word) => haystack.includes(word));
+    if (allWordsMatch) return true;
+  }
+
+  return false;
 }
 
 // ==================== CUSTOMER INFO EXTRACTION ====================
@@ -1022,6 +1129,19 @@ export default function AdminPaymentsPage() {
   const [allPayments, setAllPayments] = useState<Payment[]>([]);
 
   const isMountedRef = useRef(true);
+  const autoRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+
+  // Latest filters kept in a ref so the stable loadPayments() and the timer
+  // always read the *current* values (no stale closures).
+  const latestFiltersRef = useRef<FetchFilters>({
+    statusFilter: "",
+    paymentTypeFilter: "",
+    buildingFilter: "",
+    effectiveStart: "",
+    effectiveEnd: "",
+  });
 
   const effectiveStart = useMemo(() => {
     if (dateRangeStart && dateRangeEnd) return dateRangeStart;
@@ -1034,6 +1154,23 @@ export default function AdminPaymentsPage() {
     if (monthFilter) return monthToRange(monthFilter).end;
     return "";
   }, [dateRangeStart, dateRangeEnd, monthFilter]);
+
+  // Keep the ref in sync with the state
+  useEffect(() => {
+    latestFiltersRef.current = {
+      statusFilter,
+      paymentTypeFilter,
+      buildingFilter,
+      effectiveStart,
+      effectiveEnd,
+    };
+  }, [
+    statusFilter,
+    paymentTypeFilter,
+    buildingFilter,
+    effectiveStart,
+    effectiveEnd,
+  ]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1050,127 +1187,119 @@ export default function AdminPaymentsPage() {
     };
   }, []);
 
-  // ==================== LOAD PAYMENTS ====================
-  const loadPayments = useCallback(
-    async (isRefresh = false) => {
+  // ==================== LOAD PAYMENTS (stable, reads filters from ref) ====================
+  // isManual  -> caller pressed the Refresh button (shows spinner + toast)
+  // !isManual -> background / silent call (no spinner, no toast)
+  const loadPayments = useCallback(async (isManual = false) => {
+    if (!isMountedRef.current) return;
+
+    if (isManual) setRefreshing(true);
+
+    try {
+      const {
+        statusFilter: sF,
+        paymentTypeFilter: pF,
+        buildingFilter: bF,
+        effectiveStart: eS,
+        effectiveEnd: eE,
+      } = latestFiltersRef.current;
+
+      const params: any = {
+        limit: "all" as const,
+        forceRefresh: true,
+      };
+
+      if (sF && sF !== "all" && sF !== "") {
+        params.status = sF;
+      }
+      if (pF && pF !== "all" && pF !== "") {
+        params.paymentType = pF;
+      }
+      if (bF && bF !== "all" && bF !== "") {
+        params.buildingId = bF;
+      }
+
+      const allPaymentsResult = await getAllPayments(params);
+
       if (!isMountedRef.current) return;
 
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+      const rawList: Payment[] = allPaymentsResult.data || [];
 
-      try {
-        const params: any = {
-          limit: "all" as const,
-          forceRefresh: true,
-        };
+      const filteredByBilling = rawList.filter((p) =>
+        paymentBelongsInBillingRange(p, eS, eE),
+      );
 
-        if (statusFilter && statusFilter !== "all" && statusFilter !== "") {
-          params.status = statusFilter;
-        }
-        if (
-          paymentTypeFilter &&
-          paymentTypeFilter !== "all" &&
-          paymentTypeFilter !== ""
-        ) {
-          params.paymentType = paymentTypeFilter;
-        }
-        if (
-          buildingFilter &&
-          buildingFilter !== "all" &&
-          buildingFilter !== ""
-        ) {
-          params.buildingId = buildingFilter;
-        }
+      setAllPayments(filteredByBilling);
+      const grouped = groupPaymentsSync(filteredByBilling);
+      setPaymentGroups(grouped);
 
-        const allPaymentsResult = await getAllPayments(params);
+      let pendingList: Payment[] = [];
+      if (!sF || sF === "pending" || sF === "") {
+        try {
+          const pendingResult = await getPendingPayments(true);
+          pendingList = pendingResult.data || [];
 
-        if (!isMountedRef.current) return;
-
-        const rawList: Payment[] = allPaymentsResult.data || [];
-
-        const filteredByBilling = rawList.filter((p) =>
-          paymentBelongsInBillingRange(p, effectiveStart, effectiveEnd),
-        );
-
-        setAllPayments(filteredByBilling);
-        const grouped = groupPaymentsSync(filteredByBilling);
-        setPaymentGroups(grouped);
-
-        let pendingList: Payment[] = [];
-        if (
-          !statusFilter ||
-          statusFilter === "pending" ||
-          statusFilter === ""
-        ) {
-          try {
-            const pendingResult = await getPendingPayments(true);
-            pendingList = pendingResult.data || [];
-
-            if (paymentTypeFilter && paymentTypeFilter !== "all") {
-              pendingList = pendingList.filter(
-                (p: Payment) => p.paymentType === paymentTypeFilter,
-              );
-            }
-
-            if (buildingFilter && buildingFilter !== "all") {
-              const targetId = String(buildingFilter);
-              const normalizeId = (v: any): string => {
-                if (v === null || v === undefined) return "";
-                if (typeof v === "string") return v;
-                if (typeof v === "object" && v._id) return normalizeId(v._id);
-                if (typeof v === "object" && v.toString) {
-                  try {
-                    return v.toString();
-                  } catch {
-                    return "";
-                  }
-                }
-                return String(v);
-              };
-
-              pendingList = pendingList.filter((p: any) => {
-                if (normalizeId(p.buildingId) === targetId) return true;
-                if (p.userId && typeof p.userId === "object") {
-                  if (normalizeId(p.userId.buildingId) === targetId)
-                    return true;
-                }
-                if (p.applicationId && typeof p.applicationId === "object") {
-                  if (normalizeId(p.applicationId.buildingId) === targetId)
-                    return true;
-                }
-                return false;
-              });
-            }
-
-            pendingList = pendingList.filter((p) =>
-              paymentBelongsInBillingRange(p, effectiveStart, effectiveEnd),
+          if (pF && pF !== "all") {
+            pendingList = pendingList.filter(
+              (p: Payment) => p.paymentType === pF,
             );
-          } catch {
-            // ignore
           }
-        }
-        setPendingPayments(pendingList);
-      } catch (error: any) {
-        console.error("Failed to load payments:", error);
-        if (isRefresh) toast.error("Failed to refresh payments");
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
+
+          if (bF && bF !== "all") {
+            const targetId = String(bF);
+            const normalizeId = (v: any): string => {
+              if (v === null || v === undefined) return "";
+              if (typeof v === "string") return v;
+              if (typeof v === "object" && v._id) return normalizeId(v._id);
+              if (typeof v === "object" && v.toString) {
+                try {
+                  return v.toString();
+                } catch {
+                  return "";
+                }
+              }
+              return String(v);
+            };
+
+            pendingList = pendingList.filter((p: any) => {
+              if (normalizeId(p.buildingId) === targetId) return true;
+              if (p.userId && typeof p.userId === "object") {
+                if (normalizeId(p.userId.buildingId) === targetId) return true;
+              }
+              if (p.applicationId && typeof p.applicationId === "object") {
+                if (normalizeId(p.applicationId.buildingId) === targetId)
+                  return true;
+              }
+              return false;
+            });
+          }
+
+          pendingList = pendingList.filter((p) =>
+            paymentBelongsInBillingRange(p, eS, eE),
+          );
+        } catch {
+          // ignore
         }
       }
-    },
-    [
-      statusFilter,
-      paymentTypeFilter,
-      buildingFilter,
-      effectiveStart,
-      effectiveEnd,
-    ],
-  );
+      setPendingPayments(pendingList);
+
+      if (isManual) {
+        toast.success("Payments refreshed");
+      }
+    } catch (error: any) {
+      console.error("Failed to load payments:", error);
+      if (isManual) toast.error("Failed to refresh payments");
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
 
   // ==================== RELOAD WHEN NON-SEARCH FILTERS CHANGE ====================
   useEffect(() => {
+    setLoading(true);
     loadPayments(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -1181,91 +1310,133 @@ export default function AdminPaymentsPage() {
     effectiveEnd,
   ]);
 
-  // ==================== STATS THAT FOLLOW SEARCH ====================
-  const searchedPayments = useMemo(() => {
-    const trimmed = (search || "").trim().toLowerCase();
-    if (!trimmed) return allPayments;
+  // ==================== AUTO-REFRESH POLLING (always on) ====================
+  // Created exactly once. Pauses automatically while the tab is hidden to
+  // avoid hammering the server, then resumes on focus.
+  useEffect(() => {
+    const startTimer = () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+      }
+      autoRefreshTimerRef.current = setInterval(() => {
+        if (isMountedRef.current && !document.hidden) {
+          loadPayments(false);
+        }
+      }, AUTO_REFRESH_INTERVAL_MS);
+    };
 
+    const stopTimer = () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else {
+        // Tab is back – refresh immediately, then resume polling.
+        loadPayments(false);
+        startTimer();
+      }
+    };
+
+    startTimer();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopTimer();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadPayments]);
+
+  // ==================== ✅ SEARCHED PAYMENTS (FULL NAME FIX) ====================
+  // Ito ang main fix — gumagamit na ngayon ng paymentMatchesSearch() helper
+  // na sumusuporta sa buong pangalan, reverse order, no-spaces, at lahat ng fields.
+  const searchedPayments = useMemo(() => {
+    if (!search || !search.trim()) return allPayments;
     return allPayments.filter((p) => {
       const info = extractCustomerInfoSync(p);
-      return (
-        (info.name || "").toLowerCase().includes(trimmed) ||
-        (info.email || "").toLowerCase().includes(trimmed) ||
-        (info.applicationId || "").toLowerCase().includes(trimmed) ||
-        (info.phone || "").toLowerCase().includes(trimmed) ||
-        (p.referenceNumber || "").toLowerCase().includes(trimmed)
-      );
+      return paymentMatchesSearch(p, info, search);
     });
   }, [allPayments, search]);
 
+  // ==================== STATS: REGULAR / PRO-RATED / INSTALLATION / TOTAL ====================
   const searchedStats = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-      999,
-    );
-
-    let totalAmount = 0;
-    let totalCount = 0;
-    let monthlyAmount = 0;
-    let monthlyCount = 0;
-    let pendingAmount = 0;
-    let pendingCount = 0;
+    let regularAmount = 0;
+    let regularCount = 0;
+    let proRatedAmount = 0;
+    let proRatedCount = 0;
+    let installationAmount = 0;
+    let installationCount = 0;
 
     for (const p of searchedPayments) {
       const amt = Number(p.amount) || 0;
-      totalAmount += amt;
-      totalCount += 1;
-
-      const billingStart = getBillingPeriodStart(p);
-      if (
-        billingStart &&
-        billingStart >= monthStart &&
-        billingStart <= monthEnd
-      ) {
-        monthlyAmount += amt;
-        monthlyCount += 1;
-      }
-
-      if (p.status === "pending") {
-        pendingAmount += amt;
-        pendingCount += 1;
+      if (p.paymentType === "installation") {
+        installationAmount += amt;
+        installationCount += 1;
+      } else if (p.paymentType === "pro_rated") {
+        proRatedAmount += amt;
+        proRatedCount += 1;
+      } else {
+        // subscription + others = regular
+        regularAmount += amt;
+        regularCount += 1;
       }
     }
 
+    const totalAmount = regularAmount + proRatedAmount + installationAmount;
+    const totalCount = regularCount + proRatedCount + installationCount;
+
     return {
+      regularAmount,
+      regularCount,
+      proRatedAmount,
+      proRatedCount,
+      installationAmount,
+      installationCount,
       totalAmount,
       totalCount,
-      monthlyAmount,
-      monthlyCount,
-      pendingAmount,
-      pendingCount,
     };
   }, [searchedPayments]);
 
+  // ==================== ✅ SEARCHED PENDING PAYMENTS (FULL NAME FIX) ====================
   const searchedPendingPayments = useMemo(() => {
-    const trimmed = (search || "").trim().toLowerCase();
-    if (!trimmed) return pendingPayments;
+    if (!search || !search.trim()) return pendingPayments;
     return pendingPayments.filter((p) => {
       const info = extractCustomerInfoSync(p);
-      return (
-        (info.name || "").toLowerCase().includes(trimmed) ||
-        (info.email || "").toLowerCase().includes(trimmed) ||
-        (info.applicationId || "").toLowerCase().includes(trimmed) ||
-        (info.phone || "").toLowerCase().includes(trimmed) ||
-        (p.referenceNumber || "").toLowerCase().includes(trimmed)
-      );
+      return paymentMatchesSearch(p, info, search);
     });
   }, [pendingPayments, search]);
 
+  // ==================== ✅ FILTERED PAYMENT GROUPS (BY SEARCH) ====================
+  // Ito ang para sa CustomerSummaryTable — kailangan i-filter din ang groups
+  // para kapag nag-search ang user, lumiit din ang grouped list.
+  const searchedPaymentGroups = useMemo(() => {
+    if (!search || !search.trim()) return paymentGroups;
+
+    const matchingCustomerIds = new Set<string>();
+    for (const p of searchedPayments) {
+      const info = extractCustomerInfoSync(p);
+      let cid = info.applicationId;
+      if (!cid || cid === "—" || cid === "" || cid === "Unknown Customer") {
+        cid =
+          info.email !== "—"
+            ? info.email
+            : (p.userId as any)?._id || `unknown-${p._id}`;
+      }
+      matchingCustomerIds.add(cid);
+    }
+
+    return paymentGroups.filter((group) =>
+      matchingCustomerIds.has(group.customerId),
+    );
+  }, [paymentGroups, searchedPayments, search]);
+
   // ==================== HANDLERS ====================
   const handleRefresh = () => {
+    // Manual refresh — always works, always shows spinner + success toast.
     loadPayments(true);
   };
 
@@ -1300,7 +1471,7 @@ export default function AdminPaymentsPage() {
       } else {
         toast.success("Payment confirmed!");
       }
-      await loadPayments(true);
+      await loadPayments(false);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to confirm payment");
@@ -1316,7 +1487,7 @@ export default function AdminPaymentsPage() {
     try {
       await rejectPayment(paymentId, reason);
       toast.success("Payment rejected");
-      await loadPayments(true);
+      await loadPayments(false);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to reject payment");
@@ -1339,7 +1510,7 @@ export default function AdminPaymentsPage() {
     try {
       await deletePayment(paymentId);
       toast.success(`Payment ${referenceNumber} deleted successfully`);
-      await loadPayments(true);
+      await loadPayments(false);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to delete payment");
@@ -1365,7 +1536,7 @@ export default function AdminPaymentsPage() {
       toast.success(
         `Deleted ${result.data?.deletedCount || 0} payments for ${customerName}`,
       );
-      await loadPayments(true);
+      await loadPayments(false);
       setSelectedPayment(null);
     } catch (error: any) {
       toast.error(
@@ -1378,10 +1549,8 @@ export default function AdminPaymentsPage() {
 
   // ==================== AUTO-REFRESH AFTER EDIT ====================
   const handlePaymentSaved = useCallback(async () => {
-    // Refresh immediately so the updated row/details reflect the change
-    await loadPayments(true);
+    await loadPayments(false);
 
-    // Also refresh the selected payment view if it was the one edited
     if (selectedPayment && editingPayment) {
       try {
         const params: any = { limit: "all" as const, forceRefresh: true };
@@ -1400,7 +1569,7 @@ export default function AdminPaymentsPage() {
 
   // ==================== EXPORT PDF ====================
   const exportToPDF = () => {
-    const exportData = paymentGroups;
+    const exportData = searchedPaymentGroups;
 
     if (exportData.length === 0) {
       toast.error("No data to export. Please adjust your filters.");
@@ -1600,7 +1769,7 @@ export default function AdminPaymentsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 bg-white rounded-lg p-1 shadow-sm border border-gray-200">
             <button
               onClick={() => setActiveView("payments")}
@@ -1626,13 +1795,39 @@ export default function AdminPaymentsPage() {
         </div>
       </div>
 
-      {/* STATS — follow search */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* STATS — TOTAL / REGULAR / PRO-RATED / INSTALLATION (follow search) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* TOTAL CARD — FIRST */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-sm p-5 border-2 border-blue-300">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-800">
+                Total
+                {search && (
+                  <span className="ml-1 text-xs text-blue-600 font-normal">
+                    (filtered)
+                  </span>
+                )}
+              </p>
+              <p className="text-3xl font-bold text-blue-900 mt-1">
+                {formatCurrency(searchedStats.totalAmount)}
+              </p>
+              <p className="text-xs text-blue-700 mt-2">
+                {searchedStats.totalCount} total transaction
+                {searchedStats.totalCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center">
+              <FiBarChart2 className="w-6 h-6 text-blue-800" />
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">
-                Total Amount
+                Regular Payment
                 {search && (
                   <span className="ml-1 text-xs text-blue-600 font-normal">
                     (filtered)
@@ -1640,11 +1835,11 @@ export default function AdminPaymentsPage() {
                 )}
               </p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
-                {formatCurrency(searchedStats.totalAmount)}
+                {formatCurrency(searchedStats.regularAmount)}
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                {searchedStats.totalCount} transaction
-                {searchedStats.totalCount !== 1 ? "s" : ""}
+                {searchedStats.regularCount} transaction
+                {searchedStats.regularCount !== 1 ? "s" : ""}
               </p>
             </div>
             <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
@@ -1657,15 +1852,14 @@ export default function AdminPaymentsPage() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">
-                This Month's Total
+                Pro-rated Payment
               </p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
-                {formatCurrency(searchedStats.monthlyAmount)}
+                {formatCurrency(searchedStats.proRatedAmount)}
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                {searchedStats.monthlyCount} payment
-                {searchedStats.monthlyCount !== 1 ? "s" : ""} this month (by
-                billing period)
+                {searchedStats.proRatedCount} transaction
+                {searchedStats.proRatedCount !== 1 ? "s" : ""}
               </p>
             </div>
             <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
@@ -1678,15 +1872,14 @@ export default function AdminPaymentsPage() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">
-                Pending Payments
+                Installation Fee
               </p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
-                {formatCurrency(searchedStats.pendingAmount)}
+                {formatCurrency(searchedStats.installationAmount)}
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                {searchedStats.pendingCount} payment
-                {searchedStats.pendingCount !== 1 ? "s" : ""} awaiting
-                confirmation
+                {searchedStats.installationCount} transaction
+                {searchedStats.installationCount !== 1 ? "s" : ""}
               </p>
             </div>
             <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
@@ -1703,7 +1896,7 @@ export default function AdminPaymentsPage() {
             <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by name, email, or application ID..."
+              placeholder="Search by name, email, application ID, reference..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1904,6 +2097,26 @@ export default function AdminPaymentsPage() {
         )}
       </div>
 
+      {/* ✅ Search Result Info Banner */}
+      {search && search.trim() && (
+        <div className="px-4 py-2 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
+          🔍 Showing <strong>{searchedPayments.length}</strong> payment
+          {searchedPayments.length !== 1 ? "s" : ""} for{" "}
+          <strong>"{search}"</strong>
+          {searchedPaymentGroups.length > 0 && (
+            <span className="ml-1">
+              across <strong>{searchedPaymentGroups.length}</strong> customer
+              {searchedPaymentGroups.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {searchedStats.totalAmount > 0 && (
+            <span className="ml-2 text-purple-700">
+              • Total: {formatCurrency(searchedStats.totalAmount)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Pending banner */}
       {searchedPendingPayments.length > 0 && activeView === "payments" && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3 flex-wrap">
@@ -1946,9 +2159,8 @@ export default function AdminPaymentsPage() {
                 <h2 className="text-sm font-semibold text-gray-900">
                   Pending Confirmation ({searchedPendingPayments.length})
                 </h2>
-                <span className="text-xs text-gray-500 flex items-center gap-1">
-                  <FiDollarSign className="w-3 h-3" />
-                  Click the ₱ icon to customize amount before confirming
+                <span className="text-xs text-gray-500">
+                  • Click the peso icon to customize amount before confirming
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -2004,7 +2216,7 @@ export default function AdminPaymentsPage() {
           )}
 
           <CustomerSummaryTable
-            paymentGroups={paymentGroups}
+            paymentGroups={searchedPaymentGroups}
             search={search}
             buildingFilter={buildingFilter}
             buildings={buildings}
@@ -2021,7 +2233,7 @@ export default function AdminPaymentsPage() {
         </>
       ) : (
         <PaymentReport
-          paymentGroups={paymentGroups}
+          paymentGroups={searchedPaymentGroups}
           buildings={buildings}
           buildingFilter={buildingFilter}
           dateRangeStart={effectiveStart}

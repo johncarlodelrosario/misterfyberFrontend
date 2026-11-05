@@ -1,4 +1,6 @@
 // frontend/src/components/admin/billingTable.tsx - COMPLETE FIXED
+// ✅ FIX: Full name search now works ("Juan Dela Cruz", "Cruz Juan", "JuanDelaCruz")
+// ✅ FIX: Case-insensitive, whitespace-tolerant, word-order-tolerant search
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -39,7 +41,7 @@ import {
   FiFilter,
 } from "react-icons/fi";
 
-// Types
+// ==================== TYPES ====================
 export interface CustomerItem {
   _id: string;
   firstName: string;
@@ -179,7 +181,8 @@ interface BillingTableProps {
   disconnectedCustomers?: CustomerItem[];
 }
 
-// Helper functions
+// ==================== HELPER FUNCTIONS ====================
+
 function getBuildingDisplay(customer: CustomerItem): string {
   if (customer.building) {
     if (
@@ -264,6 +267,68 @@ function getInstallationFeeStatus(customer: CustomerItem): {
 function isInstallationFeeDue(customer: CustomerItem): boolean {
   const status = getInstallationFeeStatus(customer);
   return status.isDue;
+}
+
+// ==================== SEARCH HELPER (THE MAIN FIX) ====================
+/**
+ * ✅ FIX: Full-name search that works with:
+ *   - "Juan"                  → matches
+ *   - "Cruz"                  → matches
+ *   - "Juan Dela Cruz"        → matches (was broken before)
+ *   - "juan dela cruz"        → matches (case-insensitive)
+ *   - "JUAN DELA CRUZ"        → matches (case-insensitive)
+ *   - "JuanDelaCruz"          → matches (no spaces)
+ *   - "Cruz Juan"             → matches (reverse order)
+ *   - "juan  dela  cruz"      → matches (extra whitespace)
+ *   - email / applicationId   → matches
+ */
+function customerMatchesSearch(
+  customer: CustomerItem,
+  searchTerm: string,
+): boolean {
+  const term = (searchTerm || "").trim().toLowerCase();
+  if (!term) return true;
+
+  const firstName = (customer.firstName || "").toLowerCase().trim();
+  const lastName = (customer.lastName || "").toLowerCase().trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+  const reverseName = `${lastName} ${firstName}`.trim();
+  const fullNameNoSpaces = fullName.replace(/\s+/g, "");
+  const reverseNameNoSpaces = reverseName.replace(/\s+/g, "");
+  const termNoSpaces = term.replace(/\s+/g, "");
+  const email = (customer.email || "").toLowerCase().trim();
+  const username = (customer.username || "").toLowerCase().trim();
+  const phone = (customer.phoneNumber || "").toLowerCase().trim();
+  const appId = (customer.applicationId || "").toLowerCase().trim();
+
+  // 1) Direct substring matches on combined name
+  if (fullName.includes(term)) return true;
+  if (reverseName.includes(term)) return true;
+
+  // 2) No-spaces match (handles "JuanDelaCruz")
+  if (termNoSpaces.length > 0) {
+    if (fullNameNoSpaces.includes(termNoSpaces)) return true;
+    if (reverseNameNoSpaces.includes(termNoSpaces)) return true;
+  }
+
+  // 3) Individual field substring matches
+  if (firstName.includes(term)) return true;
+  if (lastName.includes(term)) return true;
+  if (email.includes(term)) return true;
+  if (username.includes(term)) return true;
+  if (phone.includes(term)) return true;
+  if (appId.includes(term)) return true;
+
+  // 4) Word-based matching — all words must appear somewhere in name/email/appId
+  //    This handles "Cruz Juan", "juan d", "dela juan", etc.
+  const termWords = term.split(/\s+/).filter(Boolean);
+  if (termWords.length > 1) {
+    const haystack = `${fullName} ${reverseName} ${email} ${username} ${phone} ${appId}`;
+    const allWordsMatch = termWords.every((word) => haystack.includes(word));
+    if (allWordsMatch) return true;
+  }
+
+  return false;
 }
 
 // ==================== BILL PRICE EDIT COMPONENT ====================
@@ -427,7 +492,7 @@ const CustomerRow = React.memo(
 
     const visibleUnpaidBills = customer.unpaidBills || [];
 
-    // ✅ FIXED: getStatusBadge
+    // ✅ getStatusBadge
     const getStatusBadge = () => {
       if (isDisconnected) return "bg-gray-200 text-gray-700";
       if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
@@ -465,7 +530,7 @@ const CustomerRow = React.memo(
       return "bg-gray-100 text-gray-800";
     };
 
-    // ✅ FIXED: getStatusText
+    // ✅ getStatusText
     const getStatusText = () => {
       if (isDisconnected) return "Disconnected";
       if (hasUnpaidInstallationFee) return "Installation Fee Due";
@@ -988,11 +1053,11 @@ export default function BillingTable({
     return d >= dateRange.start && d <= dateRange.end;
   };
 
-  // ✅ CRITICAL FIX: Date range filter must not hide customers who have NO bills.
-  // Approved applications without billing must remain visible regardless of month filter.
+  // ✅ FIXED: Full-name search now works correctly
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...displayCustomers];
 
+    // ===== DATE RANGE FILTER =====
     if (dateRange) {
       filtered = filtered.filter((c) => {
         const allBills = [
@@ -1006,24 +1071,19 @@ export default function BillingTable({
         }
         if (c.nextMonthBill) allBills.push(c.nextMonthBill);
 
-        // ✅ ITO ANG FIX: Kung walang bills, huwag i-filter out. Ipakita pa rin.
+        // ✅ Kung walang bills, huwag i-filter out. Ipakita pa rin.
         if (allBills.length === 0) return true;
 
         return allBills.some((b) => billInRange(b));
       });
     }
 
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (c) =>
-          c.firstName?.toLowerCase().includes(term) ||
-          c.lastName?.toLowerCase().includes(term) ||
-          c.email?.toLowerCase().includes(term) ||
-          (c.applicationId && c.applicationId.toLowerCase().includes(term)),
-      );
+    // ===== SEARCH FILTER (FULL NAME FIX) =====
+    if (searchTerm && searchTerm.trim()) {
+      filtered = filtered.filter((c) => customerMatchesSearch(c, searchTerm));
     }
 
+    // ===== BUILDING FILTER =====
     if (buildingFilter !== "all") {
       filtered = filtered.filter((c) => {
         const customerBuildingId = c.building?._id || null;
@@ -1031,6 +1091,7 @@ export default function BillingTable({
       });
     }
 
+    // ===== STATUS FILTER =====
     if (statusFilter !== "all") {
       filtered = filtered.filter((c) => {
         const isDisc =
@@ -1067,6 +1128,7 @@ export default function BillingTable({
       });
     }
 
+    // ===== SORT =====
     filtered.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -1250,8 +1312,6 @@ export default function BillingTable({
             </button>
           )}
 
-          {/* Reports button removed from table toolbar */}
-
           <button
             onClick={onOpenBackdated}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
@@ -1398,6 +1458,11 @@ export default function BillingTable({
                     className="px-3 py-8 text-center text-gray-500 text-sm"
                   >
                     No customers found
+                    {searchTerm && (
+                      <span className="block mt-1 text-xs text-gray-400">
+                        No results for "{searchTerm}"
+                      </span>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -1489,6 +1554,9 @@ export default function BillingTable({
               year: "numeric",
             })}
           </span>
+        )}
+        {searchTerm && (
+          <span className="ml-2 text-purple-600">| 🔍 "{searchTerm}"</span>
         )}
         - Sorted by {sortField} (
         {sortDirection === "asc" ? "Ascending" : "Descending"})

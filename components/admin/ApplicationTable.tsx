@@ -1,4 +1,6 @@
 // components/admin/ApplicationTable.tsx - COMPLETE FIXED
+// ✅ FIX: Full name search now works ("Juan Dela Cruz", "Cruz Juan", "JuanDelaCruz")
+// ✅ FIX: Search also matches email, phone, applicationId, building, plan, status
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -17,7 +19,9 @@ import {
 } from "@heroicons/react/24/outline";
 import { Building, Plan, getApplication } from "@/services/application";
 
-// Interface definitions
+// ============================================================
+// INTERFACE DEFINITIONS
+// ============================================================
 export interface Application {
   _id?: string;
   id?: string;
@@ -92,6 +96,136 @@ export interface ApplicationTableProps {
   statusOptions?: StatusOption[];
 }
 
+// ============================================================
+// ✅ SEARCH HELPER (THE MAIN FIX)
+// ============================================================
+/**
+ * Full-name search that works with:
+ *   - "Juan"                  → matches
+ *   - "Cruz"                  → matches
+ *   - "Juan Dela Cruz"        → matches (was broken before)
+ *   - "juan dela cruz"        → matches (case-insensitive)
+ *   - "JUAN DELA CRUZ"        → matches (case-insensitive)
+ *   - "JuanDelaCruz"          → matches (no spaces)
+ *   - "Cruz Juan"             → matches (reverse order)
+ *   - "juan  dela  cruz"      → matches (extra whitespace)
+ *   - email / phone / appId   → matches
+ *   - building / plan / status → matches
+ */
+function applicationMatchesSearch(
+  app: Application,
+  searchTerm: string,
+  buildings: Building[],
+  plans: Plan[],
+): boolean {
+  const term = (searchTerm || "").trim().toLowerCase();
+  if (!term) return true;
+
+  const firstName = (app.firstName || "").toLowerCase().trim();
+  const middleName = (app.middleName || "").toLowerCase().trim();
+  const lastName = (app.lastName || "").toLowerCase().trim();
+  const email = (app.email || "").toLowerCase().trim();
+  const phone = (app.phoneNumber || "").toLowerCase().trim();
+  const appId = (app.applicationId || app.id || app._id || "")
+    .toLowerCase()
+    .trim();
+  const idNumber = (app.idNumber || "").toLowerCase().trim();
+  const macAddress = (app.macAddress || "").toLowerCase().trim();
+  const tower = (app.tower || "").toLowerCase().trim();
+  const floor = (app.floor || "").toLowerCase().trim();
+  const unit = (app.unitNumber || "").toLowerCase().trim();
+
+  // Build name variants
+  const fullName = `${firstName} ${middleName} ${lastName}`
+    .replace(/\s+/g, " ")
+    .trim();
+  const fullNameNoMiddle = `${firstName} ${lastName}`
+    .replace(/\s+/g, " ")
+    .trim();
+  const reverseName = `${lastName} ${firstName}`.replace(/\s+/g, " ").trim();
+
+  const fullNameNoSpaces = fullName.replace(/\s+/g, "");
+  const fullNameNoMiddleNoSpaces = fullNameNoMiddle.replace(/\s+/g, "");
+  const reverseNameNoSpaces = reverseName.replace(/\s+/g, "");
+  const termNoSpaces = term.replace(/\s+/g, "");
+
+  // Build building/plan names for search
+  let buildingName = "";
+  if (typeof app.buildingId === "object" && app.buildingId !== null) {
+    buildingName = (app.buildingId.buildingName || "").toLowerCase().trim();
+  } else if (typeof app.buildingId === "string") {
+    const found = buildings.find((b) => b._id === app.buildingId);
+    buildingName = (found?.buildingName || "").toLowerCase().trim();
+  }
+
+  let planName = "";
+  if (typeof app.planId === "object" && app.planId !== null) {
+    planName = (app.planId.name || "").toLowerCase().trim();
+  } else if (typeof app.planId === "string") {
+    const found = plans.find((p) => p._id === app.planId);
+    planName = (found?.name || "").toLowerCase().trim();
+  }
+
+  const status = (app.status || "").toLowerCase().trim();
+
+  // 1) Direct substring matches on combined name
+  if (fullName.includes(term)) return true;
+  if (fullNameNoMiddle.includes(term)) return true;
+  if (reverseName.includes(term)) return true;
+
+  // 2) No-spaces match (handles "JuanDelaCruz")
+  if (termNoSpaces.length > 0) {
+    if (fullNameNoSpaces.includes(termNoSpaces)) return true;
+    if (fullNameNoMiddleNoSpaces.includes(termNoSpaces)) return true;
+    if (reverseNameNoSpaces.includes(termNoSpaces)) return true;
+  }
+
+  // 3) Individual field substring matches
+  if (firstName.includes(term)) return true;
+  if (middleName.includes(term)) return true;
+  if (lastName.includes(term)) return true;
+  if (email.includes(term)) return true;
+  if (phone.includes(term)) return true;
+  if (appId.includes(term)) return true;
+  if (idNumber.includes(term)) return true;
+  if (macAddress.includes(term)) return true;
+  if (buildingName.includes(term)) return true;
+  if (planName.includes(term)) return true;
+  if (status.includes(term)) return true;
+  if (tower.includes(term)) return true;
+  if (floor.includes(term)) return true;
+  if (unit.includes(term)) return true;
+
+  // 4) Word-based matching — all words must appear somewhere in name/email/appId
+  //    This handles "Cruz Juan", "juan d", "dela juan", etc.
+  const termWords = term.split(/\s+/).filter(Boolean);
+  if (termWords.length > 1) {
+    const haystack = [
+      fullName,
+      fullNameNoMiddle,
+      reverseName,
+      email,
+      phone,
+      appId,
+      idNumber,
+      buildingName,
+      planName,
+      status,
+      tower,
+      floor,
+      unit,
+      macAddress,
+    ].join(" ");
+    const allWordsMatch = termWords.every((word) => haystack.includes(word));
+    if (allWordsMatch) return true;
+  }
+
+  return false;
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export function ApplicationTable({
   applications: initialApplications,
   isLoading = false,
@@ -112,6 +246,7 @@ export function ApplicationTable({
   totalPages = 0,
   currentPage = 1,
   onPageChange,
+  searchQuery = "",
 }: ApplicationTableProps) {
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
@@ -121,6 +256,7 @@ export function ApplicationTable({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isActionInProgress, setIsActionInProgress] = useState(false);
+  const [localSearch, setLocalSearch] = useState(searchQuery || "");
 
   const [localApplications, setLocalApplications] =
     useState<Application[]>(initialApplications);
@@ -129,10 +265,21 @@ export function ApplicationTable({
     setLocalApplications(initialApplications);
   }, [initialApplications]);
 
+  // Sync local search with parent searchQuery
+  useEffect(() => {
+    setLocalSearch(searchQuery || "");
+  }, [searchQuery]);
+
+  // ============================================================
+  // ✅ GET APP ID
+  // ============================================================
   const getAppId = useCallback((app: Application): string => {
     return app._id || app.id || app.applicationId || "";
   }, []);
 
+  // ============================================================
+  // ✅ STATUS BADGE
+  // ============================================================
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -174,6 +321,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ BUILDING NAME HELPER
+  // ============================================================
   const getBuildingName = useCallback(
     (building: string | { _id: string; buildingName: string }) => {
       if (!building) return "N/A";
@@ -193,6 +343,9 @@ export function ApplicationTable({
     [buildings],
   );
 
+  // ============================================================
+  // ✅ PLAN NAME HELPER
+  // ============================================================
   const getPlanName = useCallback(
     (
       plan:
@@ -214,6 +367,9 @@ export function ApplicationTable({
     [plans],
   );
 
+  // ============================================================
+  // ✅ PLAN PRICE HELPER
+  // ============================================================
   const getPlanPrice = useCallback(
     (
       plan:
@@ -235,6 +391,9 @@ export function ApplicationTable({
     [plans],
   );
 
+  // ============================================================
+  // ✅ REFRESH DATA
+  // ============================================================
   const refreshData = useCallback(async () => {
     if (isRefreshing || isActionInProgress) return;
     setIsRefreshing(true);
@@ -249,6 +408,9 @@ export function ApplicationTable({
     }
   }, [onRefresh, isRefreshing, isActionInProgress]);
 
+  // ============================================================
+  // ✅ UPDATE APPLICATION STATUS (LOCAL)
+  // ============================================================
   const updateApplicationStatus = useCallback(
     (
       id: string,
@@ -269,6 +431,9 @@ export function ApplicationTable({
     [getAppId],
   );
 
+  // ============================================================
+  // ✅ REMOVE SINGLE APPLICATION (LOCAL)
+  // ============================================================
   const removeApplication = useCallback(
     (id: string) => {
       setLocalApplications((prev) =>
@@ -278,6 +443,9 @@ export function ApplicationTable({
     [getAppId],
   );
 
+  // ============================================================
+  // ✅ REMOVE MULTIPLE APPLICATIONS (LOCAL)
+  // ============================================================
   const removeApplications = useCallback(
     (ids: string[]) => {
       setLocalApplications((prev) =>
@@ -287,6 +455,9 @@ export function ApplicationTable({
     [getAppId],
   );
 
+  // ============================================================
+  // ✅ APPROVE HANDLER
+  // ============================================================
   const handleApprove = async (id: string) => {
     if (!id) {
       toast.error("Cannot approve: No ID found");
@@ -318,6 +489,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ REJECT HANDLER
+  // ============================================================
   const handleReject = async (id: string) => {
     if (!id) {
       toast.error("Cannot reject: No ID found");
@@ -349,6 +523,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ DELETE HANDLER
+  // ============================================================
   const handleDelete = async (id: string) => {
     if (!id) {
       toast.error("Cannot delete: No ID found");
@@ -394,6 +571,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ BULK DELETE HANDLER
+  // ============================================================
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) {
       toast.error("Please select applications to delete");
@@ -435,6 +615,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ EDIT HANDLER
+  // ============================================================
   const handleEdit = (application: Application) => {
     if (isActionInProgress) return;
     setSelectedApplication(application);
@@ -459,6 +642,9 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ VIEW DETAILS HANDLER
+  // ============================================================
   const handleViewDetails = async (application: Application) => {
     if (isActionInProgress) return;
 
@@ -492,6 +678,9 @@ export function ApplicationTable({
     setShowDetailsModal(true);
   };
 
+  // ============================================================
+  // ✅ FORMAT DATE
+  // ============================================================
   const formatDate = (date: string) => {
     try {
       return format(new Date(date), "MMM d, yyyy");
@@ -500,12 +689,30 @@ export function ApplicationTable({
     }
   };
 
+  // ============================================================
+  // ✅ FILTERED APPLICATIONS (CLIENT-SIDE SEARCH FALLBACK)
+  // Ito ang nag-aapply ng full-name search sa local data kapag
+  // hindi nagre-reload ang backend. Pero kung may server-side search
+  // na, hindi ito magdodoble-filter dahil nag-match na ang backend.
+  // ============================================================
+  const filteredApplications = useMemo(() => {
+    if (!localSearch || !localSearch.trim()) {
+      return localApplications;
+    }
+    return localApplications.filter((app) =>
+      applicationMatchesSearch(app, localSearch, buildings, plans),
+    );
+  }, [localApplications, localSearch, buildings, plans]);
+
   const displayApplications = useMemo(
-    () => localApplications,
-    [localApplications],
+    () => filteredApplications,
+    [filteredApplications],
   );
   const isLoaded = loading || isLoading || isRefreshing;
 
+  // ============================================================
+  // ✅ SELECT HANDLERS
+  // ============================================================
   const handleSelectAll = (checked: boolean) => {
     if (onSelectAll) onSelectAll(checked);
   };
@@ -514,6 +721,9 @@ export function ApplicationTable({
     if (onSelectOne) onSelectOne(id, checked);
   };
 
+  // ============================================================
+  // ✅ GET APPLICATION FOR EDIT
+  // ============================================================
   const getApplicationForEdit = (app: Application | null) => {
     if (!app) return null;
     const id = app._id || app.id || app.applicationId || "";
@@ -523,11 +733,21 @@ export function ApplicationTable({
     } as Application & { _id: string };
   };
 
+  // ============================================================
+  // ✅ LOCAL SEARCH INPUT HANDLER
+  // ============================================================
+  const handleLocalSearchChange = (value: string) => {
+    setLocalSearch(value);
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between px-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {selectedIds.length > 0 && (
             <button
               onClick={handleBulkDelete}
@@ -551,6 +771,17 @@ export function ApplicationTable({
           </button>
         </div>
       </div>
+
+      {/* Search Result Info */}
+      {localSearch && localSearch.trim() && (
+        <div className="px-4">
+          <div className="px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
+            🔍 Showing <strong>{displayApplications.length}</strong> result
+            {displayApplications.length !== 1 ? "s" : ""} for "
+            <strong>{localSearch}</strong>"
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -636,6 +867,11 @@ export function ApplicationTable({
                   className="px-6 py-8 text-center text-gray-500"
                 >
                   No applications found
+                  {localSearch && (
+                    <div className="text-xs text-gray-400 mt-1">
+                      No results for "{localSearch}"
+                    </div>
+                  )}
                 </td>
               </tr>
             ) : (
@@ -677,7 +913,9 @@ export function ApplicationTable({
                       <div
                         className={`font-medium ${isDisconnected ? "text-gray-500" : "text-gray-900"}`}
                       >
-                        {app.firstName} {app.lastName}
+                        {app.firstName}{" "}
+                        {app.middleName ? `${app.middleName} ` : ""}
+                        {app.lastName}
                       </div>
                       <div className="text-xs text-gray-500">
                         ID: {app.applicationId || app.idNumber || "N/A"}
@@ -798,6 +1036,11 @@ export function ApplicationTable({
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
           <p className="text-sm text-gray-500">
             Showing {displayApplications.length} of {total} applications
+            {localSearch && localSearch.trim() && (
+              <span className="ml-2 text-purple-600">
+                (filtered by "{localSearch}")
+              </span>
+            )}
           </p>
 
           <div className="flex items-center gap-2">
