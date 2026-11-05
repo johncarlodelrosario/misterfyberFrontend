@@ -1,4 +1,4 @@
-// frontend/src/app/admin/payments/page.tsx - UNIFIED DESIGN PATTERN
+// frontend/src/app/admin/payments/page.tsx - UNIFIED DESIGN PATTERN + CUSTOMIZABLE AMOUNT + EDITABLE PAYMENTS + AUTO-REFRESH
 "use client";
 
 import React, {
@@ -11,11 +11,13 @@ import React, {
 import {
   getAllPayments,
   confirmPayment,
+  updatePayment,
   rejectPayment,
   getPendingPayments,
   deletePayment,
   bulkDeleteCustomerPayments,
   type Payment as ServicePayment,
+  type UpdatePaymentData,
 } from "@/services/payment";
 import {
   FiSearch,
@@ -33,6 +35,9 @@ import {
   FiChevronDown,
   FiChevronUp,
   FiCreditCard,
+  FiDollarSign,
+  FiEdit2,
+  FiSave,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import api from "@/services/api";
@@ -126,6 +131,8 @@ function getPaymentTypeColor(type: string): string {
       return "bg-purple-100 text-purple-800";
     case "installation":
       return "bg-orange-100 text-orange-800";
+    case "pro_rated":
+      return "bg-blue-100 text-blue-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
@@ -366,116 +373,457 @@ function groupPaymentsSync(payments: Payment[]): PaymentGroup[] {
   return Array.from(groups.values());
 }
 
-// ==================== CUSTOMER DETAILS ====================
-const CustomerDetails = React.memo(({ payment }: { payment: Payment }) => {
-  const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
-  const isFree = payment.paymentDetails?.isFree === true;
+// ==================== EDIT PAYMENT MODAL ====================
+interface EditPaymentModalProps {
+  payment: Payment;
+  onClose: () => void;
+  onSaved: () => void;
+}
 
-  const isInstallation =
-    payment.paymentType === "installation" ||
-    (payment.billingId as any)?.isInstallationBill;
-  const billingPeriod = (payment.billingId as any)?.billingPeriod;
+function EditPaymentModal({
+  payment,
+  onClose,
+  onSaved,
+}: EditPaymentModalProps) {
+  const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({
+    amount: payment.amount?.toString() || "0",
+    paymentMethod: payment.paymentMethod || "manual",
+    paymentType: payment.paymentType || "subscription",
+    status: payment.status || "pending",
+    referenceNumber: payment.referenceNumber || "",
+    customerName: payment.customerName || info.name || "",
+    customerEmail: payment.customerEmail || info.email || "",
+    customerPhone: payment.customerPhone || info.phone || "",
+    notes: payment.paymentDetails?.notes || "",
+    paidAt: payment.paidAt
+      ? new Date(payment.paidAt).toISOString().slice(0, 16)
+      : "",
+    transactionId: (payment as any).transactionId || "",
+  });
+
+  const updateField = (field: string, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    const parsedAmount = parseFloat(form.amount);
+    if (isNaN(parsedAmount) || parsedAmount < 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    if (!form.referenceNumber.trim()) {
+      toast.error("Reference number is required");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload: UpdatePaymentData = {
+        amount: parsedAmount,
+        paymentMethod: form.paymentMethod,
+        paymentType: form.paymentType as any,
+        status: form.status as any,
+        referenceNumber: form.referenceNumber.trim(),
+        customerName: form.customerName.trim(),
+        customerEmail: form.customerEmail.trim(),
+        customerPhone: form.customerPhone.trim(),
+        notes: form.notes,
+        transactionId: form.transactionId.trim() || undefined,
+      };
+
+      if (form.paidAt) {
+        payload.paidAt = new Date(form.paidAt).toISOString();
+      }
+
+      await updatePayment(payment._id, payload);
+      toast.success("Payment updated successfully!");
+      onSaved();
+      onClose();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to update payment");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs text-gray-500">Customer</p>
-        <p className="font-semibold text-lg">{info.name}</p>
-        <p className="text-sm text-gray-600">{info.email}</p>
-        <p className="text-sm font-mono text-gray-500">{info.applicationId}</p>
-        {info.buildingName && (
-          <p className="text-sm text-blue-600 flex items-center gap-1">
-            <FiHome className="w-3 h-3" /> {info.buildingName}
-          </p>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-xs text-gray-500">Amount</p>
-          <div className="flex items-center gap-2">
-            <p className="text-2xl font-bold text-green-600">
-              {formatCurrency(payment.amount)}
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="border-b px-6 py-4 flex justify-between items-center sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <FiEdit2 className="w-5 h-5 text-blue-600" /> Edit Payment
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Reference: {payment.referenceNumber}
             </p>
-            {isFree && (
-              <span className="px-2 py-0.5 text-xs font-bold bg-green-500 text-white rounded-full flex items-center gap-1">
-                <FiCheckCircle className="w-3 h-3" /> FREE
-              </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+            disabled={saving}
+          >
+            <FiX className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Amount */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Amount (₱) *
+              </label>
+              <input
+                type="number"
+                value={form.amount}
+                onChange={(e) => updateField("amount", e.target.value)}
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Status *
+              </label>
+              <select
+                value={form.status}
+                onChange={(e) => updateField("status", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="refunded">Refunded</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Payment Method
+              </label>
+              <select
+                value={form.paymentMethod}
+                onChange={(e) => updateField("paymentMethod", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="manual">Manual</option>
+                <option value="paymongo">PayMongo</option>
+                <option value="dragonpay">DragonPay</option>
+                <option value="gcash">GCash</option>
+                <option value="maya">Maya</option>
+                <option value="card">Card</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="free">Free</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Payment Type
+              </label>
+              <select
+                value={form.paymentType}
+                onChange={(e) => updateField("paymentType", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="subscription">Subscription</option>
+                <option value="installation">Installation</option>
+                <option value="pro_rated">Pro-rated</option>
+                <option value="others">Others</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Reference Number *
+              </label>
+              <input
+                type="text"
+                value={form.referenceNumber}
+                onChange={(e) => updateField("referenceNumber", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Transaction ID
+              </label>
+              <input
+                type="text"
+                value={form.transactionId}
+                onChange={(e) => updateField("transactionId", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Paid At
+              </label>
+              <input
+                type="datetime-local"
+                value={form.paidAt}
+                onChange={(e) => updateField("paidAt", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="border-t pt-4 mt-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Customer Information
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Customer Name
+                </label>
+                <input
+                  type="text"
+                  value={form.customerName}
+                  onChange={(e) => updateField("customerName", e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={form.customerEmail}
+                  onChange={(e) => updateField("customerEmail", e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={form.customerPhone}
+                  onChange={(e) => updateField("customerPhone", e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          {form.status === "completed" && payment.status !== "completed" && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <p className="text-xs text-green-700">
+                ⚠️ Changing status to <strong>Completed</strong> will mark the
+                linked billing as <strong>paid</strong> and update the billing
+                cycle.
+              </p>
+            </div>
+          )}
+
+          {form.status !== "completed" && payment.status === "completed" && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <p className="text-xs text-orange-700">
+                ⚠️ Reverting from <strong>Completed</strong> to{" "}
+                <strong>{form.status}</strong> will unmark the linked billing as
+                paid.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t px-6 py-4 flex justify-end gap-2 sticky bottom-0 bg-white">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <FiSave className="w-4 h-4" /> Save Changes
+              </>
             )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== CUSTOMER DETAILS ====================
+const CustomerDetails = React.memo(
+  ({ payment, onEdit }: { payment: Payment; onEdit: (p: Payment) => void }) => {
+    const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
+    const isFree = payment.paymentDetails?.isFree === true;
+
+    const isInstallation =
+      payment.paymentType === "installation" ||
+      (payment.billingId as any)?.isInstallationBill;
+    const billingPeriod = (payment.billingId as any)?.billingPeriod;
+
+    const originalAmount = payment.metadata?.originalAmount;
+    const amountAdjusted =
+      originalAmount !== undefined && originalAmount !== payment.amount;
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500">Customer</p>
+          <p className="font-semibold text-lg">{info.name}</p>
+          <p className="text-sm text-gray-600">{info.email}</p>
+          <p className="text-sm font-mono text-gray-500">
+            {info.applicationId}
+          </p>
+          {info.buildingName && (
+            <p className="text-sm text-blue-600 flex items-center gap-1">
+              <FiHome className="w-3 h-3" /> {info.buildingName}
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-gray-500">Amount</p>
+            <div className="flex items-center gap-2">
+              <p className="text-2xl font-bold text-green-600">
+                {formatCurrency(payment.amount)}
+              </p>
+              {isFree && (
+                <span className="px-2 py-0.5 text-xs font-bold bg-green-500 text-white rounded-full flex items-center gap-1">
+                  <FiCheckCircle className="w-3 h-3" /> FREE
+                </span>
+              )}
+            </div>
+            {amountAdjusted && (
+              <p className="text-xs text-orange-600 flex items-center gap-1">
+                <FiDollarSign className="w-3 h-3" />
+                Adjusted from {formatCurrency(originalAmount)}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Status</p>
+            <span
+              className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(payment.status)}`}
+            >
+              {payment.status === "completed" ? "Paid" : payment.status}
+            </span>
           </div>
         </div>
         <div>
-          <p className="text-xs text-gray-500">Status</p>
-          <span
-            className={`px-2 py-1 text-xs rounded-full inline-block ${getStatusColor(payment.status)}`}
-          >
-            {payment.status === "completed" ? "Paid" : payment.status}
-          </span>
+          <p className="text-xs text-gray-500">Reference Number</p>
+          <p className="font-mono text-sm break-all">
+            {payment.referenceNumber}
+          </p>
         </div>
+        {!isInstallation && (payment.billingId as any)?.invoiceNumber && (
+          <div>
+            <p className="text-xs text-gray-500">Invoice Number</p>
+            <p className="font-mono text-sm">
+              {(payment.billingId as any).invoiceNumber}
+            </p>
+          </div>
+        )}
+        {!isInstallation && billingPeriod && (
+          <div className="bg-blue-50 p-3 rounded-lg">
+            <p className="text-xs text-gray-500 flex items-center gap-1">
+              <FiCalendar className="w-3 h-3" /> Billing Period
+            </p>
+            <p className="text-base font-bold text-blue-800">
+              {formatBillingPeriod(billingPeriod)}
+            </p>
+            {(payment.billingId as any)?.isProRated && (
+              <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
+                Pro-rated Bill
+              </span>
+            )}
+          </div>
+        )}
+        {!isInstallation && (payment.billingId as any)?.dueDate && (
+          <div>
+            <p className="text-xs text-gray-500">Due Date</p>
+            <p className="text-sm font-medium text-red-600">
+              {formatDateFixed((payment.billingId as any).dueDate)}
+            </p>
+          </div>
+        )}
+        <div>
+          <p className="text-xs text-gray-500">Payment Date</p>
+          <p className="text-sm">{formatShortDate(payment.createdAt)}</p>
+        </div>
+        {payment.paidAt && (
+          <div>
+            <p className="text-xs text-gray-500">Paid At</p>
+            <p className="text-sm">{formatShortDate(payment.paidAt)}</p>
+          </div>
+        )}
+        {payment.paymentDetails?.notes && (
+          <div>
+            <p className="text-xs text-gray-500">Notes</p>
+            <p className="text-sm text-gray-600">
+              {payment.paymentDetails.notes}
+            </p>
+          </div>
+        )}
+        {amountAdjusted && (
+          <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+            <p className="text-xs text-orange-600 flex items-center gap-1">
+              <FiDollarSign className="w-3 h-3" /> Amount was adjusted during
+              confirmation
+            </p>
+            <p className="text-sm text-orange-800 mt-1">
+              Original: {formatCurrency(originalAmount)} → Adjusted:{" "}
+              {formatCurrency(payment.amount)}
+            </p>
+            {payment.metadata?.amountAdjustmentReason && (
+              <p className="text-xs text-orange-600 mt-1">
+                Reason: {payment.metadata.amountAdjustmentReason}
+              </p>
+            )}
+          </div>
+        )}
+        {isFree && (
+          <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <FiCheckCircle className="w-3 h-3" /> This payment was marked as
+              FREE
+            </p>
+          </div>
+        )}
       </div>
-      <div>
-        <p className="text-xs text-gray-500">Reference Number</p>
-        <p className="font-mono text-sm break-all">{payment.referenceNumber}</p>
-      </div>
-      {!isInstallation && (payment.billingId as any)?.invoiceNumber && (
-        <div>
-          <p className="text-xs text-gray-500">Invoice Number</p>
-          <p className="font-mono text-sm">
-            {(payment.billingId as any).invoiceNumber}
-          </p>
-        </div>
-      )}
-      {!isInstallation && billingPeriod && (
-        <div className="bg-blue-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-500 flex items-center gap-1">
-            <FiCalendar className="w-3 h-3" /> Billing Period
-          </p>
-          <p className="text-base font-bold text-blue-800">
-            {formatBillingPeriod(billingPeriod)}
-          </p>
-          {(payment.billingId as any)?.isProRated && (
-            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full mt-1 inline-block">
-              Pro-rated Bill
-            </span>
-          )}
-        </div>
-      )}
-      {!isInstallation && (payment.billingId as any)?.dueDate && (
-        <div>
-          <p className="text-xs text-gray-500">Due Date</p>
-          <p className="text-sm font-medium text-red-600">
-            {formatDateFixed((payment.billingId as any).dueDate)}
-          </p>
-        </div>
-      )}
-      <div>
-        <p className="text-xs text-gray-500">Payment Date</p>
-        <p className="text-sm">{formatShortDate(payment.createdAt)}</p>
-      </div>
-      {payment.paidAt && (
-        <div>
-          <p className="text-xs text-gray-500">Paid At</p>
-          <p className="text-sm">{formatShortDate(payment.paidAt)}</p>
-        </div>
-      )}
-      {payment.paymentDetails?.notes && (
-        <div>
-          <p className="text-xs text-gray-500">Notes</p>
-          <p className="text-sm text-gray-600">
-            {payment.paymentDetails.notes}
-          </p>
-        </div>
-      )}
-      {isFree && (
-        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-          <p className="text-xs text-green-600 flex items-center gap-1">
-            <FiCheckCircle className="w-3 h-3" /> This payment was marked as
-            FREE
-          </p>
-        </div>
-      )}
-    </div>
-  );
-});
+    );
+  },
+);
 
 CustomerDetails.displayName = "CustomerDetails";
 
@@ -488,27 +836,41 @@ const PendingPaymentRow = React.memo(
     onReject,
     onView,
     onDelete,
+    onEdit,
     confirming,
     rejecting,
     deleting,
   }: {
     payment: Payment;
     index: number;
-    onConfirm: (id: string) => void;
+    onConfirm: (id: string, customAmount?: number) => void;
     onReject: (id: string) => void;
     onView: (payment: Payment) => void;
     onDelete: (id: string, ref: string) => void;
+    onEdit: (payment: Payment) => void;
     confirming: boolean;
     rejecting: boolean;
     deleting: boolean;
   }) => {
     const info = useMemo(() => extractCustomerInfoSync(payment), [payment]);
     const isFree = payment.paymentDetails?.isFree === true;
+    const [showAmountInput, setShowAmountInput] = useState(false);
+    const [customAmount, setCustomAmount] = useState(payment.amount.toString());
 
     const billingPeriod = (payment.billingId as any)?.billingPeriod;
     const isInstallation =
       payment.paymentType === "installation" ||
       (payment.billingId as any)?.isInstallationBill;
+
+    const handleConfirmClick = () => {
+      const parsedAmount = parseFloat(customAmount);
+      if (showAmountInput && (isNaN(parsedAmount) || parsedAmount < 0)) {
+        toast.error("Please enter a valid amount");
+        return;
+      }
+      onConfirm(payment._id, showAmountInput ? parsedAmount : undefined);
+      setShowAmountInput(false);
+    };
 
     return (
       <tr className="hover:bg-gray-50">
@@ -527,9 +889,41 @@ const PendingPaymentRow = React.memo(
         <td className="px-4 py-3 font-mono text-sm">{info.applicationId}</td>
         <td className="px-4 py-3 text-sm">{info.buildingName || "—"}</td>
         <td className="px-4 py-3 font-semibold">
-          {formatCurrency(payment.amount)}
-          {isFree && (
-            <span className="ml-1 text-xs text-green-600">(FREE)</span>
+          {showAmountInput ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-500">₱</span>
+              <input
+                type="number"
+                value={customAmount}
+                onChange={(e) => setCustomAmount(e.target.value)}
+                className="w-24 px-2 py-1 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="0"
+                step="0.01"
+                autoFocus
+              />
+              <button
+                onClick={() => {
+                  setShowAmountInput(false);
+                  setCustomAmount(payment.amount.toString());
+                }}
+                className="text-gray-400 hover:text-gray-600"
+                title="Cancel"
+              >
+                <FiX className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span>{formatCurrency(payment.amount)}</span>
+              {isFree && <span className="text-xs text-green-600">(FREE)</span>}
+              <button
+                onClick={() => setShowAmountInput(true)}
+                className="text-blue-500 hover:text-blue-700"
+                title="Customize amount"
+              >
+                <FiDollarSign className="w-4 h-4" />
+              </button>
+            </div>
           )}
         </td>
         <td className="px-4 py-3 text-sm">
@@ -556,10 +950,11 @@ const PendingPaymentRow = React.memo(
         <td className="px-4 py-3">
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => onConfirm(payment._id)}
+              onClick={handleConfirmClick}
               disabled={confirming}
-              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition disabled:opacity-50"
+              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition disabled:opacity-50 flex items-center gap-1"
             >
+              <FiCheckCircle className="w-3 h-3" />
               Confirm
             </button>
             <button
@@ -568,6 +963,12 @@ const PendingPaymentRow = React.memo(
               className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition disabled:opacity-50"
             >
               Reject
+            </button>
+            <button
+              onClick={() => onEdit(payment)}
+              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition flex items-center gap-1"
+            >
+              <FiEdit2 className="w-3 h-3" /> Edit
             </button>
             <button
               onClick={() => onView(payment)}
@@ -603,6 +1004,7 @@ export default function AdminPaymentsPage() {
   const [buildingFilter, setBuildingFilter] = useState("");
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -877,12 +1279,27 @@ export default function AdminPaymentsPage() {
     setDateRangeEnd("");
   };
 
-  const handleConfirmPayment = async (paymentId: string) => {
-    if (!confirm("Confirm this payment?")) return;
+  const handleConfirmPayment = async (
+    paymentId: string,
+    customAmount?: number,
+  ) => {
+    const payment = pendingPayments.find((p) => p._id === paymentId);
+    const amountMsg =
+      customAmount !== undefined
+        ? ` with adjusted amount ${formatCurrency(customAmount)}`
+        : "";
+
+    if (!confirm(`Confirm this payment${amountMsg}?`)) return;
     setConfirming(true);
     try {
-      await confirmPayment(paymentId);
-      toast.success("Payment confirmed!");
+      const result = await confirmPayment(paymentId, undefined, customAmount);
+      if (result.amountAdjusted) {
+        toast.success(
+          `Payment confirmed! Amount adjusted from ${formatCurrency(result.originalAmount)} to ${formatCurrency(result.finalAmount)}.`,
+        );
+      } else {
+        toast.success("Payment confirmed!");
+      }
       await loadPayments(true);
       setSelectedPayment(null);
     } catch (error: any) {
@@ -958,6 +1375,28 @@ export default function AdminPaymentsPage() {
       setBulkDeleting(false);
     }
   };
+
+  // ==================== AUTO-REFRESH AFTER EDIT ====================
+  const handlePaymentSaved = useCallback(async () => {
+    // Refresh immediately so the updated row/details reflect the change
+    await loadPayments(true);
+
+    // Also refresh the selected payment view if it was the one edited
+    if (selectedPayment && editingPayment) {
+      try {
+        const params: any = { limit: "all" as const, forceRefresh: true };
+        const allPaymentsResult = await getAllPayments(params);
+        const rawList: Payment[] = allPaymentsResult.data || [];
+        const updated = rawList.find((p) => p._id === selectedPayment._id);
+        if (updated && isMountedRef.current) {
+          setSelectedPayment(updated);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadPayments, selectedPayment, editingPayment]);
 
   // ==================== EXPORT PDF ====================
   const exportToPDF = () => {
@@ -1157,7 +1596,7 @@ export default function AdminPaymentsPage() {
             Payment Management
           </h1>
           <p className="text-gray-600">
-            View, confirm, and manage customer payments
+            View, confirm, edit, and manage customer payments
           </p>
         </div>
 
@@ -1350,6 +1789,7 @@ export default function AdminPaymentsPage() {
                   <option value="">All Types</option>
                   <option value="subscription">Subscription</option>
                   <option value="installation">Installation</option>
+                  <option value="pro_rated">Pro-rated</option>
                 </select>
               </div>
 
@@ -1502,10 +1942,14 @@ export default function AdminPaymentsPage() {
         <>
           {searchedPendingPayments.length > 0 && (
             <div className="bg-white rounded-lg shadow border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">
                   Pending Confirmation ({searchedPendingPayments.length})
                 </h2>
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <FiDollarSign className="w-3 h-3" />
+                  Click the ₱ icon to customize amount before confirming
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -1547,6 +1991,7 @@ export default function AdminPaymentsPage() {
                         onReject={handleRejectPayment}
                         onView={setSelectedPayment}
                         onDelete={handleDeletePayment}
+                        onEdit={setEditingPayment}
                         confirming={confirming}
                         rejecting={rejecting}
                         deleting={deleting}
@@ -1569,6 +2014,7 @@ export default function AdminPaymentsPage() {
             onDelete={handleDeletePayment}
             onBulkDelete={handleBulkDeleteCustomerPayments}
             onExportPDF={exportToPDF}
+            onEdit={setEditingPayment}
             deleting={deleting}
             bulkDeleting={bulkDeleting}
           />
@@ -1598,8 +2044,20 @@ export default function AdminPaymentsPage() {
               </button>
             </div>
             <div className="p-6">
-              <CustomerDetails payment={selectedPayment} />
-              <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end gap-2">
+              <CustomerDetails
+                payment={selectedPayment}
+                onEdit={setEditingPayment}
+              />
+              <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    setEditingPayment(selectedPayment);
+                    setSelectedPayment(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                >
+                  <FiEdit2 className="w-4 h-4" /> Edit
+                </button>
                 <button
                   onClick={() => {
                     if (
@@ -1629,6 +2087,15 @@ export default function AdminPaymentsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Payment Modal */}
+      {editingPayment && (
+        <EditPaymentModal
+          payment={editingPayment}
+          onClose={() => setEditingPayment(null)}
+          onSaved={handlePaymentSaved}
+        />
       )}
     </div>
   );

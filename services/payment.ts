@@ -1,4 +1,4 @@
-// frontend/src/services/payment.ts - COMPLETE - NO CACHE, ALWAYS REALTIME
+// frontend/src/services/payment.ts - COMPLETE - NO CACHE, ALWAYS REALTIME + CUSTOMIZABLE AMOUNT + UPDATE
 
 import api from "./api";
 
@@ -14,6 +14,26 @@ export interface CreatePaymentData {
   customerPhone?: string;
   buildingId?: string;
   isFree?: boolean;
+}
+
+export interface ConfirmPaymentData {
+  notes?: string;
+  paymentType?: "subscription" | "installation" | "pro_rated" | "others";
+  customAmount?: number;
+}
+
+export interface UpdatePaymentData {
+  amount?: number;
+  paymentMethod?: string;
+  paymentType?: "subscription" | "installation" | "pro_rated" | "others";
+  status?: "pending" | "processing" | "completed" | "failed" | "refunded";
+  referenceNumber?: string;
+  notes?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  paidAt?: string;
+  transactionId?: string;
 }
 
 export interface PaymentResponse {
@@ -47,6 +67,7 @@ export interface Payment {
     confirmedAt?: string;
     isFree?: boolean;
   };
+  metadata?: any;
   paidAt: string;
   createdAt: string;
   updatedAt: string;
@@ -138,8 +159,24 @@ export const verifyPayment = async (reference: string): Promise<any> => {
 export const confirmPayment = async (
   paymentId: string,
   notes?: string,
+  customAmount?: number,
+  paymentType?: string,
 ): Promise<any> => {
-  const response = await api.put(`/payments/${paymentId}/confirm`, { notes });
+  const body: any = {};
+  if (notes !== undefined) body.notes = notes;
+  if (customAmount !== undefined) body.customAmount = customAmount;
+  if (paymentType !== undefined) body.paymentType = paymentType;
+
+  const response = await api.put(`/payments/${paymentId}/confirm`, body);
+  return response.data;
+};
+
+// ==================== UPDATE PAYMENT (EDITABLE EVEN IF COMPLETED) ====================
+export const updatePayment = async (
+  paymentId: string,
+  data: UpdatePaymentData,
+): Promise<any> => {
+  const response = await api.put(`/payments/${paymentId}`, data);
   return response.data;
 };
 
@@ -263,6 +300,7 @@ export default {
   getPayment,
   verifyPayment,
   confirmPayment,
+  updatePayment,
   rejectPayment,
   getPendingPayments,
   getPaymentStats,

@@ -1,4 +1,4 @@
-// frontend/src/components/admin/CustomerSummaryTable.tsx - UNIFIED DESIGN PATTERN
+// frontend/src/components/admin/CustomerSummaryTable.tsx - UNIFIED DESIGN PATTERN + EDIT SUPPORT
 "use client";
 
 import React, { useState, Fragment, useMemo } from "react";
@@ -14,6 +14,7 @@ import {
   FiCheckCircle,
   FiInfo,
   FiPrinter,
+  FiEdit2,
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import type { Payment as ServicePayment } from "@/services/payment";
@@ -240,6 +241,7 @@ const CustomerSummaryRow = React.memo(
     onView,
     onDelete,
     onBulkDelete,
+    onEdit,
     deleting,
     bulkDeleting,
   }: {
@@ -250,6 +252,7 @@ const CustomerSummaryRow = React.memo(
     onView: (payment: Payment) => void;
     onDelete: (id: string, ref: string) => void;
     onBulkDelete: (customerId: string, customerName: string) => void;
+    onEdit: (payment: Payment) => void;
     deleting: boolean;
     bulkDeleting: boolean;
   }) => {
@@ -526,6 +529,12 @@ const CustomerSummaryRow = React.memo(
                             <FiEye className="w-3 h-3" /> View Full Details
                           </button>
                           <button
+                            onClick={() => onEdit(p)}
+                            className="text-indigo-600 text-xs hover:underline flex items-center gap-1"
+                          >
+                            <FiEdit2 className="w-3 h-3" /> Edit
+                          </button>
+                          <button
                             onClick={() => onDelete(p._id, p.referenceNumber)}
                             disabled={deleting}
                             className="text-red-600 text-xs hover:underline flex items-center gap-1 disabled:opacity-50"
@@ -560,6 +569,7 @@ interface CustomerSummaryTableProps {
   onDelete: (id: string, ref: string) => void;
   onBulkDelete: (customerId: string, customerName: string) => void;
   onExportPDF: () => void;
+  onEdit: (payment: Payment) => void;
   deleting: boolean;
   bulkDeleting: boolean;
 }
@@ -575,6 +585,7 @@ export default function CustomerSummaryTable({
   onDelete,
   onBulkDelete,
   onExportPDF,
+  onEdit,
   deleting,
   bulkDeleting,
 }: CustomerSummaryTableProps) {
@@ -854,6 +865,7 @@ export default function CustomerSummaryTable({
                     onView={onView}
                     onDelete={onDelete}
                     onBulkDelete={onBulkDelete}
+                    onEdit={onEdit}
                     deleting={deleting}
                     bulkDeleting={bulkDeleting}
                   />
