@@ -52,14 +52,12 @@ import {
 } from "react-icons/fi";
 import toast from "react-hot-toast";
 
-// Import components
 import BillingReportsWithDownload from "@/components/BillingReportsWithDownload";
 import BillingTable from "@/components/admin/billingTable";
 import CustomerDetailModal from "@/components/admin/CustomerDetailModal";
 import BackdatedModal from "@/components/billing/BackdatedModal";
 import RichTextEditor from "@/components/RichTextEditor";
 
-// Import services
 import {
   startBilling,
   stopBilling,
@@ -96,7 +94,6 @@ import emailService, {
   EmailTemplate,
 } from "@/services/emailService";
 
-// Import types
 interface CustomerItem {
   _id: string;
   firstName: string;
@@ -142,7 +139,6 @@ interface Building {
 type SortField = "name" | "plan" | "balance" | "status" | "installationFee";
 type SortDirection = "asc" | "desc";
 
-// ==================== SENDER OPTIONS ====================
 const SENDER_OPTIONS: {
   value: SenderType;
   label: string;
@@ -180,8 +176,6 @@ const SENDER_OPTIONS: {
   },
 ];
 
-// ==================== HELPER FUNCTIONS ====================
-
 function formatDate(dateString: string): string {
   if (!dateString) return "-";
   try {
@@ -202,7 +196,6 @@ function formatCurrency(amount: any): string {
   return `₱${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// ==================== QUERY CLIENT SETUP ====================
 import { QueryClient } from "@tanstack/react-query";
 
 const queryClient = new QueryClient({
@@ -218,7 +211,6 @@ const queryClient = new QueryClient({
   },
 });
 
-// ===== API FUNCTIONS =====
 const fetchDashboardData = async () => {
   try {
     const timestamp = Date.now();
@@ -252,7 +244,6 @@ const fetchPlans = async () => {
   }
 };
 
-// ==================== CUSTOM HOOKS ====================
 const useDashboardData = () => {
   return useQuery({
     queryKey: ["dashboardData"],
@@ -282,11 +273,9 @@ const usePlans = () => {
   });
 };
 
-// ==================== MAIN COMPONENT ====================
 function AdminBillingPageContent() {
   const queryClient = useQueryClient();
 
-  // ✅ Function to get current month string (YYYY-MM)
   const getCurrentMonthString = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -294,7 +283,6 @@ function AdminBillingPageContent() {
     return `${year}-${month}`;
   };
 
-  // ==================== STATE ====================
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
@@ -310,7 +298,6 @@ function AdminBillingPageContent() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
-  // Modal states
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showBackdatedModal, setShowBackdatedModal] = useState(false);
   const [showExistingCustomersModal, setShowExistingCustomersModal] =
@@ -331,7 +318,6 @@ function AdminBillingPageContent() {
   const [customerToReconnect, setCustomerToReconnect] =
     useState<CustomerItem | null>(null);
 
-  // Real-time states
   const [autoGenerationRunning, setAutoGenerationRunning] = useState(false);
   const [lastAutoGenTime, setLastAutoGenTime] = useState<Date | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -341,11 +327,9 @@ function AdminBillingPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
 
-  // WebSocket states
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(
     null,
   );
@@ -362,7 +346,6 @@ function AdminBillingPageContent() {
     customer: CustomerItem;
   } | null>(null);
 
-  // ==================== EMAIL MODAL STATE ====================
   const [emailCustomer, setEmailCustomer] = useState<CustomerItem | null>(null);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailMessage, setEmailMessage] = useState("");
@@ -384,7 +367,6 @@ function AdminBillingPageContent() {
   const [emailCustomerLocation, setEmailCustomerLocation] = useState("");
   const [emailCollectionEmail, setEmailCollectionEmail] = useState("");
 
-  // ✅ NEW: Template + Schedule state
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [emailSelectedTemplateId, setEmailSelectedTemplateId] = useState("");
   const [emailTemplatesLoading, setEmailTemplatesLoading] = useState(false);
@@ -393,7 +375,6 @@ function AdminBillingPageContent() {
   const [emailScheduleName, setEmailScheduleName] = useState("");
   const [emailScheduling, setEmailScheduling] = useState(false);
 
-  // Form states
   const [startDate, setStartDate] = useState("");
   const [customAmount, setCustomAmount] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
@@ -435,7 +416,6 @@ function AdminBillingPageContent() {
     earlyBillGenerationDays: 15,
   });
 
-  // ==================== QUERIES ====================
   const {
     data: dashboardData,
     isLoading,
@@ -445,7 +425,6 @@ function AdminBillingPageContent() {
   const { data: buildingsData = [] } = useBuildings();
   const { data: plansData = [] } = usePlans();
 
-  // ==================== EMAIL HELPER FUNCTIONS ====================
   const getLocationFromBuildingName = useCallback(
     (buildingName?: string): string => {
       if (!buildingName) return "other";
@@ -484,7 +463,6 @@ function AdminBillingPageContent() {
     return "📍 Other";
   }, []);
 
-  // ==================== COMPUTED DATE RANGE ====================
   const dateRange = useMemo(() => {
     if (!monthFilter && !dateFilter) return null;
 
@@ -524,17 +502,45 @@ function AdminBillingPageContent() {
     return null;
   }, [monthFilter, dateFilter]);
 
-  // ✅ Helper: check if a bill falls in current date range
+  // ✅ FIXED billInRange: uses billingPeriod / periodStart / periodEnd /
+  //    billDate / dueDate / createdAt. NO longer relies on updatedAt/paidAt
+  //    (which incorrectly matched paid bills into wrong months).
   const billInRange = useCallback(
     (bill: any): boolean => {
       if (!dateRange) return true;
-      const raw =
-        bill?.billDate ||
-        bill?.createdAt ||
-        bill?.dueDate ||
-        bill?.paidAt ||
-        bill?.paymentDate ||
-        bill?.updatedAt;
+
+      // 1) Explicit billingPeriod string "YYYY-MM"
+      if (bill?.billingPeriod && typeof bill.billingPeriod === "string") {
+        const parts = bill.billingPeriod.split("-");
+        if (parts.length >= 2) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          if (!isNaN(y) && !isNaN(m)) {
+            const billStart = new Date(y, m, 1, 0, 0, 0, 0);
+            const billEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+            return billEnd >= dateRange.start && billStart <= dateRange.end;
+          }
+        }
+      }
+
+      // 2) Explicit periodStart / periodEnd
+      const periodStart =
+        bill?.periodStart || bill?.billingPeriodStart || bill?.periodFrom;
+      const periodEnd =
+        bill?.periodEnd || bill?.billingPeriodEnd || bill?.periodTo;
+      if (periodStart || periodEnd) {
+        const ps = periodStart ? new Date(periodStart) : null;
+        const pe = periodEnd ? new Date(periodEnd) : null;
+        const psValid = ps && !isNaN(ps.getTime());
+        const peValid = pe && !isNaN(pe.getTime());
+        if (psValid) {
+          const endDate = peValid ? (pe as Date) : (ps as Date);
+          return endDate >= dateRange.start && (ps as Date) <= dateRange.end;
+        }
+      }
+
+      // 3) Fall back to billDate / dueDate / createdAt
+      const raw = bill?.billDate || bill?.dueDate || bill?.createdAt;
       if (!raw) return false;
       const d = new Date(raw);
       if (isNaN(d.getTime())) return false;
@@ -543,9 +549,6 @@ function AdminBillingPageContent() {
     [dateRange],
   );
 
-  // ==================== COMPUTED DATA ====================
-  // ✅ FIX: Prefer allCustomers (backend already merges approved-no-billing apps)
-  //         Fall back to merging customers + disconnectedCustomers
   const allCustomers = useMemo<CustomerItem[]>(() => {
     if (!dashboardData) return [];
 
@@ -561,7 +564,6 @@ function AdminBillingPageContent() {
     const disconnected = (dashboardData.disconnectedCustomers ||
       []) as CustomerItem[];
 
-    // Dedupe by _id + type
     const seen = new Set<string>();
     return [...active, ...disconnected].filter((c) => {
       const key = `${c.type}-${c._id}`;
@@ -601,7 +603,6 @@ function AdminBillingPageContent() {
   }, [allCustomers, buildingFilter, dateRange, billInRange]);
 
   const buildingFilteredStats = useMemo(() => {
-    // Count disconnected from current allCustomers
     const disconnectedCount = allCustomers.filter(
       (c) =>
         c.isDisconnected === true ||
@@ -667,7 +668,6 @@ function AdminBillingPageContent() {
           ? baseStats.totalBalance / baseStats.customersWithBalanceCount
           : 0;
 
-      // ✅ Total customers should EXCLUDE disconnected
       const totalActiveCustomers = Math.max(
         0,
         (baseStats.totalCustomers || 0) - disconnectedCount,
@@ -756,7 +756,44 @@ function AdminBillingPageContent() {
       (c) => c.type === "application" && !c.billingCycle,
     ).length;
 
-    const collectibles = totalBalance;
+    let collectibles = totalBalance;
+    let totalUnpaidBillsCount = filtered.reduce(
+      (sum, c) => sum + (c.unpaidBills?.length || 0),
+      0,
+    );
+
+    if (dateRange) {
+      let monthCollectibles = 0;
+      let monthUnpaidCount = 0;
+      const seenBillIds = new Set<string>();
+
+      filtered.forEach((c) => {
+        const customerBills: any[] = [
+          ...(c.unpaidBills || []),
+          ...(c.overdueBills || []),
+          ...(c.visibleUnpaidBills || []),
+          ...(c.hiddenBills || []),
+        ];
+        if (c.billingCycle?.bills && Array.isArray(c.billingCycle.bills)) {
+          customerBills.push(...c.billingCycle.bills);
+        }
+        if (c.nextMonthBill) customerBills.push(c.nextMonthBill);
+
+        customerBills.forEach((b) => {
+          const billId = b?._id || b?.id;
+          if (!billId || seenBillIds.has(billId)) return;
+          seenBillIds.add(billId);
+          if (billInRange(b) && b.status !== "paid") {
+            monthCollectibles += b.total || b.amount || 0;
+            monthUnpaidCount++;
+          }
+        });
+      });
+
+      collectibles = monthCollectibles;
+      totalUnpaidBillsCount = monthUnpaidCount;
+    }
+
     const totalOverdueAmount = filtered.reduce((sum, c) => {
       const overdue = (c.overdueBills || []).reduce(
         (s: number, b: any) => s + (b.total || b.amount || 0),
@@ -764,10 +801,7 @@ function AdminBillingPageContent() {
       );
       return sum + overdue;
     }, 0);
-    const totalUnpaidBillsCount = filtered.reduce(
-      (sum, c) => sum + (c.unpaidBills?.length || 0),
-      0,
-    );
+
     const monthlyRecurringRevenue = filtered.reduce((sum, c) => {
       if (c.billingCycle?.status === "active" || c.status === "active") {
         return sum + (c.planPrice || 0);
@@ -780,7 +814,6 @@ function AdminBillingPageContent() {
         : 0;
 
     return {
-      // ✅ Total customers should EXCLUDE disconnected
       totalCustomers: nonDisconnected.length,
       totalBalance,
       customersWithBalanceCount,
@@ -808,6 +841,7 @@ function AdminBillingPageContent() {
     buildingFilteredCustomers,
     allCustomers,
     dashboardData,
+    billInRange,
   ]);
 
   const activeBuildingName = useMemo<string | null>(() => {
@@ -898,7 +932,6 @@ function AdminBillingPageContent() {
     stats,
   ]);
 
-  // ==================== REFRESH FUNCTION ====================
   const refreshData = useCallback(
     async (silent: boolean = false) => {
       if (isRefreshing) return;
@@ -935,7 +968,6 @@ function AdminBillingPageContent() {
     [queryClient, refetch, isRefreshing],
   );
 
-  // ==================== WEBSOCKET SETUP ====================
   useEffect(() => {
     if (!isMounted) return;
 
@@ -1050,8 +1082,6 @@ function AdminBillingPageContent() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
-
-  // ==================== MUTATIONS ====================
 
   const disconnectClientMutation = useMutation({
     mutationFn: (params: { applicationId: string; reason?: string }) =>
@@ -1372,7 +1402,6 @@ function AdminBillingPageContent() {
     },
   });
 
-  // ==================== HANDLERS ====================
   const resetStartForm = () => {
     setSelectedUserId("");
     setSelectedApplicationId("");
@@ -1529,7 +1558,6 @@ function AdminBillingPageContent() {
     }
   }, [refreshData]);
 
-  // ==================== EMAIL HANDLERS ====================
   const loadEmailCustomerBills = useCallback(async (applicationId: string) => {
     if (!applicationId) {
       setEmailCustomerBills([]);
@@ -2205,7 +2233,6 @@ function AdminBillingPageContent() {
     }
   };
 
-  // ==================== EFFECTS ====================
   useEffect(() => {
     setIsMounted(true);
 
@@ -2266,7 +2293,6 @@ function AdminBillingPageContent() {
     setDateFilter("");
   };
 
-  // ==================== RENDER ====================
   return (
     <div className="p-4 sm:p-6 space-y-6">
       {/* Header */}
@@ -2293,8 +2319,6 @@ function AdminBillingPageContent() {
             )}
           </div>
 
-          {/* Reports button removed as requested */}
-
           <button
             onClick={() => setShowSettingsModal(true)}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
@@ -2319,7 +2343,7 @@ function AdminBillingPageContent() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <p className="text-sm font-medium text-gray-600">Total Customers</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">
@@ -2335,7 +2359,18 @@ function AdminBillingPageContent() {
             {formatCurrency(buildingFilteredStats.collectibles)}
           </p>
           <p className="text-xs text-gray-500 mt-2">
-            {buildingFilteredStats.customersWithBalanceCount} with balance
+            {dateRange
+              ? "Filtered period only"
+              : `${buildingFilteredStats.customersWithBalanceCount} with balance`}
+          </p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Unpaid</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">
+            {buildingFilteredStats.totalUnpaidBillsCount}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {dateRange ? "Bills in filtered period" : "Unpaid bills total"}
           </p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
@@ -3472,7 +3507,7 @@ function AdminBillingPageContent() {
         </div>
       )}
 
-      {/* ==================== EMAIL MODAL ==================== */}
+      {/* EMAIL MODAL */}
       {showEmailModal && emailCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[95vh] overflow-y-auto shadow-2xl">
@@ -4088,7 +4123,6 @@ function AdminBillingPageContent() {
   );
 }
 
-// ==================== EXPORT ====================
 export default function AdminBillingPage() {
   return (
     <QueryClientProvider client={queryClient}>

@@ -1,4 +1,4 @@
-// services/emailService.ts - COMPLETE FIXED VERSION WITH ALL EXPORTS
+// services/emailService.ts - COMPLETE FIXED VERSION WITH PLAN SUPPORT
 
 import api from "./api";
 
@@ -32,6 +32,11 @@ export interface Customer {
   lastBillAmount: number;
   lastBillStatus: string | null;
   location: string;
+  // ✅ PLAN FIELDS
+  planId?: string;
+  planName?: string;
+  planPrice?: number;
+  planSpeed?: string;
   _fetchedAt?: string;
 }
 
@@ -133,20 +138,17 @@ export interface ScheduleStats {
 // ==================== SERVICE CLASS ====================
 
 class EmailService {
-  // ✅ Get sender options from backend
   async getSenderOptions(location?: string): Promise<SenderOption[]> {
     try {
       const params = new URLSearchParams();
       if (location) params.append("location", location);
       params.append("_t", Date.now().toString());
-
       const response = await api.get(
         `/manual-email/sender-options?${params.toString()}`,
       );
       return response.data.data || [];
     } catch (error) {
       console.error("Failed to get sender options:", error);
-      // Fallback to defaults if endpoint fails
       return [
         {
           value: "collection",
@@ -178,13 +180,14 @@ class EmailService {
     }
   }
 
-  // ✅ Customer methods
   async getCustomers(params?: {
     search?: string;
     status?: string;
     hasBilling?: string;
     forceRefresh?: boolean;
     location?: string;
+    building?: string;
+    plan?: string;
   }): Promise<Customer[]> {
     try {
       const queryParams = new URLSearchParams();
@@ -193,9 +196,12 @@ class EmailService {
       if (params?.hasBilling)
         queryParams.append("hasBilling", params.hasBilling);
       queryParams.append("forceRefresh", "true");
-      if (params?.location && params.location !== "all") {
+      if (params?.location && params.location !== "all")
         queryParams.append("location", params.location);
-      }
+      if (params?.building && params.building !== "all")
+        queryParams.append("building", params.building);
+      if (params?.plan && params.plan !== "all")
+        queryParams.append("plan", params.plan);
       queryParams.append("_t", Date.now().toString());
 
       const response = await api.get(
@@ -221,8 +227,6 @@ class EmailService {
       throw error;
     }
   }
-
-  // ==================== SEND EMAIL METHODS ====================
 
   async sendEmail(data: {
     applicationId: string;
@@ -255,6 +259,8 @@ class EmailService {
     useAdminSender?: boolean;
     senderType?: SenderType;
     locationFilter?: string;
+    buildingFilter?: string;
+    planFilter?: string;
   }): Promise<any> {
     try {
       const response = await api.post("/manual-email/send-bulk", data);
@@ -284,8 +290,6 @@ class EmailService {
       throw error;
     }
   }
-
-  // ==================== TEMPLATE METHODS ====================
 
   async getTemplates(): Promise<EmailTemplate[]> {
     try {
@@ -349,8 +353,6 @@ class EmailService {
     }
   }
 
-  // ==================== SENT RECORDS METHODS ====================
-
   async getSentRecords(params?: {
     scheduleId?: string;
     isScheduled?: boolean;
@@ -359,9 +361,8 @@ class EmailService {
       const queryParams = new URLSearchParams();
       if (params?.scheduleId)
         queryParams.append("scheduleId", params.scheduleId);
-      if (params?.isScheduled !== undefined) {
+      if (params?.isScheduled !== undefined)
         queryParams.append("isScheduled", params.isScheduled.toString());
-      }
       queryParams.append("_t", Date.now().toString());
 
       const response = await api.get(
@@ -386,8 +387,6 @@ class EmailService {
     }
   }
 
-  // ==================== PREVIEW METHOD ====================
-
   async previewEmail(data: {
     subject: string;
     message: string;
@@ -407,20 +406,6 @@ class EmailService {
     }
   }
 
-  // ==================== SCHEDULING METHODS ====================
-
-  /**
-   * ✅ FIXED: Schedule email with proper timezone handling
-   *
-   * The frontend sends the datetime-local string (which is LOCAL time).
-   * The backend will parse it correctly and store as UTC.
-   *
-   * We send the raw ISO string from the local Date object, which JavaScript
-   * correctly converts to UTC when calling .toISOString().
-   *
-   * IMPORTANT: The `scheduledFor` parameter should be a proper ISO string
-   * that represents the UTC equivalent of the local time selected.
-   */
   async scheduleEmail(data: {
     name: string;
     applicationIds: string[];
@@ -443,8 +428,6 @@ class EmailService {
     };
   }): Promise<any> {
     try {
-      // ✅ FIX: Parse the datetime-local string as local time, then convert to ISO
-      // The scheduledFor coming in is already a proper ISO string from the component
       const response = await api.post("/manual-email/schedule", data);
       return response.data;
     } catch (error) {
@@ -460,9 +443,8 @@ class EmailService {
   }): Promise<{ data: ScheduledEmail[]; total: number; totalPages: number }> {
     try {
       const queryParams = new URLSearchParams();
-      if (params?.status && params.status !== "all") {
+      if (params?.status && params.status !== "all")
         queryParams.append("status", params.status);
-      }
       if (params?.page) queryParams.append("page", params.page.toString());
       if (params?.limit) queryParams.append("limit", params.limit.toString());
       queryParams.append("_t", Date.now().toString());
@@ -558,8 +540,6 @@ class EmailService {
     }
   }
 }
-
-// ==================== SINGLETON EXPORT ====================
 
 const emailService = new EmailService();
 export default emailService;

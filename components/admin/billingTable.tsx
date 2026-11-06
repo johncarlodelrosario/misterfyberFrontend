@@ -1,6 +1,9 @@
 // frontend/src/components/admin/billingTable.tsx - COMPLETE FIXED
-// ✅ FIX: Full name search now works ("Juan Dela Cruz", "Cruz Juan", "JuanDelaCruz")
-// ✅ FIX: Case-insensitive, whitespace-tolerant, word-order-tolerant search
+// ✅ FIX: Month filter now actually filters customers by bills in that month
+// ✅ FIX: billInRange uses billingPeriod / periodStart / periodEnd / billDate / dueDate / createdAt
+//         (NO longer uses updatedAt / paidAt / paymentDate which caused wrong-month matches)
+// ✅ FIX: Full name search works ("Juan Dela Cruz", "Cruz Juan", "JuanDelaCruz")
+// ✅ FIX: Defensive access for unpaidBills and planPrice (prevents crashes)
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -192,7 +195,7 @@ function getBuildingDisplay(customer: CustomerItem): string {
       return customer.building.buildingName;
     }
     if (typeof customer.building === "string") {
-      return customer.building;
+      return customer.building as unknown as string;
     }
   }
   return "-";
@@ -269,14 +272,14 @@ function isInstallationFeeDue(customer: CustomerItem): boolean {
   return status.isDue;
 }
 
-// ==================== SEARCH HELPER (THE MAIN FIX) ====================
+// ==================== SEARCH HELPER ====================
 /**
  * ✅ FIX: Full-name search that works with:
  *   - "Juan"                  → matches
  *   - "Cruz"                  → matches
- *   - "Juan Dela Cruz"        → matches (was broken before)
+ *   - "Juan Dela Cruz"        → matches
  *   - "juan dela cruz"        → matches (case-insensitive)
- *   - "JUAN DELA CRUZ"        → matches (case-insensitive)
+ *   - "JUAN DELA CRUZ"        → matches
  *   - "JuanDelaCruz"          → matches (no spaces)
  *   - "Cruz Juan"             → matches (reverse order)
  *   - "juan  dela  cruz"      → matches (extra whitespace)
@@ -301,17 +304,14 @@ function customerMatchesSearch(
   const phone = (customer.phoneNumber || "").toLowerCase().trim();
   const appId = (customer.applicationId || "").toLowerCase().trim();
 
-  // 1) Direct substring matches on combined name
   if (fullName.includes(term)) return true;
   if (reverseName.includes(term)) return true;
 
-  // 2) No-spaces match (handles "JuanDelaCruz")
   if (termNoSpaces.length > 0) {
     if (fullNameNoSpaces.includes(termNoSpaces)) return true;
     if (reverseNameNoSpaces.includes(termNoSpaces)) return true;
   }
 
-  // 3) Individual field substring matches
   if (firstName.includes(term)) return true;
   if (lastName.includes(term)) return true;
   if (email.includes(term)) return true;
@@ -319,8 +319,6 @@ function customerMatchesSearch(
   if (phone.includes(term)) return true;
   if (appId.includes(term)) return true;
 
-  // 4) Word-based matching — all words must appear somewhere in name/email/appId
-  //    This handles "Cruz Juan", "juan d", "dela juan", etc.
   const termWords = term.split(/\s+/).filter(Boolean);
   if (termWords.length > 1) {
     const haystack = `${fullName} ${reverseName} ${email} ${username} ${phone} ${appId}`;
@@ -468,8 +466,13 @@ const CustomerRow = React.memo(
       customer: CustomerItem,
     ) => void;
   }) => {
-    const hasUnpaidBills =
-      customer.unpaidBills && customer.unpaidBills.length > 0;
+    // ✅ Defensive: derive safe values from potentially missing data
+    const safePlanPrice = customer.planPrice || 0;
+    const safeBalance = customer.currentBalance || 0;
+    const unpaidBillsCount = customer.unpaidBills?.length || 0;
+    const overdueBillsCount = customer.overdueBills?.length || 0;
+
+    const hasUnpaidBills = unpaidBillsCount > 0;
     const hasBillingCycle = !!customer.billingCycle;
     const isActive = customer.billingCycle?.status === "active";
     const isPaused = customer.billingCycle?.status === "paused";
@@ -492,7 +495,6 @@ const CustomerRow = React.memo(
 
     const visibleUnpaidBills = customer.unpaidBills || [];
 
-    // ✅ getStatusBadge
     const getStatusBadge = () => {
       if (isDisconnected) return "bg-gray-200 text-gray-700";
       if (hasUnpaidInstallationFee) return "bg-amber-100 text-amber-800";
@@ -530,7 +532,6 @@ const CustomerRow = React.memo(
       return "bg-gray-100 text-gray-800";
     };
 
-    // ✅ getStatusText
     const getStatusText = () => {
       if (isDisconnected) return "Disconnected";
       if (hasUnpaidInstallationFee) return "Installation Fee Due";
@@ -617,23 +618,21 @@ const CustomerRow = React.memo(
             {customer.planName}
           </p>
           <p className="text-xs text-gray-500">
-            ₱{customer.planPrice.toLocaleString()}/mo
+            ₱{safePlanPrice.toLocaleString()}/mo
           </p>
         </td>
         <td className="px-3 py-2">
-          <p
-            className={`text-sm font-bold ${getBalanceColor(customer.currentBalance)}`}
-          >
-            ₱{customer.currentBalance.toLocaleString()}
+          <p className={`text-sm font-bold ${getBalanceColor(safeBalance)}`}>
+            ₱{safeBalance.toLocaleString()}
           </p>
-          {customer.unpaidBills.length > 0 && !isDisconnected && (
+          {unpaidBillsCount > 0 && !isDisconnected && (
             <p className="text-[10px] text-red-500">
-              {customer.unpaidBills.length} unpaid
+              {unpaidBillsCount} unpaid
             </p>
           )}
-          {isDisconnected && customer.unpaidBills.length > 0 && (
+          {isDisconnected && unpaidBillsCount > 0 && (
             <p className="text-[10px] text-gray-500 italic">
-              {customer.unpaidBills.length} bill(s) preserved
+              {unpaidBillsCount} bill(s) preserved
             </p>
           )}
         </td>
@@ -1038,22 +1037,54 @@ export default function BillingTable({
     return null;
   }, [monthFilter, dateFilter]);
 
+  // ✅ FIXED billInRange:
+  //    - Uses billingPeriod / periodStart / periodEnd / billDate / dueDate / createdAt
+  //    - NO longer uses paidAt / paymentDate / updatedAt (those caused wrong-month matches
+  //      because a September bill paid in October would match the October filter)
   const billInRange = (bill: any): boolean => {
     if (!dateRange) return true;
-    const raw =
-      bill?.billDate ||
-      bill?.createdAt ||
-      bill?.dueDate ||
-      bill?.paidAt ||
-      bill?.paymentDate ||
-      bill?.updatedAt;
+
+    // 1) Explicit billingPeriod string "YYYY-MM"
+    if (bill?.billingPeriod && typeof bill.billingPeriod === "string") {
+      const parts = bill.billingPeriod.split("-");
+      if (parts.length >= 2) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        if (!isNaN(y) && !isNaN(m)) {
+          const billStart = new Date(y, m, 1, 0, 0, 0, 0);
+          const billEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+          return billEnd >= dateRange.start && billStart <= dateRange.end;
+        }
+      }
+    }
+
+    // 2) Explicit periodStart / periodEnd
+    const periodStart =
+      bill?.periodStart || bill?.billingPeriodStart || bill?.periodFrom;
+    const periodEnd =
+      bill?.periodEnd || bill?.billingPeriodEnd || bill?.periodTo;
+    if (periodStart || periodEnd) {
+      const ps = periodStart ? new Date(periodStart) : null;
+      const pe = periodEnd ? new Date(periodEnd) : null;
+      const psValid = ps && !isNaN(ps.getTime());
+      const peValid = pe && !isNaN(pe.getTime());
+      if (psValid) {
+        const endDate = peValid ? (pe as Date) : (ps as Date);
+        return endDate >= dateRange.start && (ps as Date) <= dateRange.end;
+      }
+    }
+
+    // 3) Fall back to billDate / dueDate / createdAt
+    const raw = bill?.billDate || bill?.dueDate || bill?.createdAt;
     if (!raw) return false;
     const d = new Date(raw);
     if (isNaN(d.getTime())) return false;
     return d >= dateRange.start && d <= dateRange.end;
   };
 
-  // ✅ FIXED: Full-name search now works correctly
+  // ✅ FIXED: When a month/date filter is active, only show customers who
+  //    actually have bills in that period. (Previous bug: `if (allBills.length === 0)
+  //    return true;` defeated the filter by showing everyone.)
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...displayCustomers];
 
@@ -1071,14 +1102,11 @@ export default function BillingTable({
         }
         if (c.nextMonthBill) allBills.push(c.nextMonthBill);
 
-        // ✅ Kung walang bills, huwag i-filter out. Ipakita pa rin.
-        if (allBills.length === 0) return true;
-
         return allBills.some((b) => billInRange(b));
       });
     }
 
-    // ===== SEARCH FILTER (FULL NAME FIX) =====
+    // ===== SEARCH FILTER =====
     if (searchTerm && searchTerm.trim()) {
       filtered = filtered.filter((c) => customerMatchesSearch(c, searchTerm));
     }
@@ -1102,14 +1130,15 @@ export default function BillingTable({
         if (statusFilter === "disconnected") return isDisc;
         if (isDisc && statusFilter !== "all") return false;
 
-        if (statusFilter === "has_balance") return c.currentBalance > 0;
-        if (statusFilter === "overdue") return c.overdueBills.length > 0;
+        if (statusFilter === "has_balance") return (c.currentBalance || 0) > 0;
+        if (statusFilter === "overdue")
+          return (c.overdueBills?.length || 0) > 0;
         if (statusFilter === "active") return c.status === "active";
         if (statusFilter === "suspended") return c.status === "suspended";
         if (statusFilter === "paused")
           return c.billingCycle?.status === "paused";
         if (statusFilter === "pending_activation") {
-          const hasUnpaid = c.unpaidBills && c.unpaidBills.length > 0;
+          const hasUnpaid = (c.unpaidBills?.length || 0) > 0;
           return c.billingCycle?.status === "pending_activation" && hasUnpaid;
         }
         if (statusFilter === "applications") return c.type === "application";
@@ -1139,12 +1168,12 @@ export default function BillingTable({
           bValue = `${b.firstName} ${b.lastName}`.toLowerCase();
           break;
         case "plan":
-          aValue = a.planName.toLowerCase();
-          bValue = b.planName.toLowerCase();
+          aValue = (a.planName || "").toLowerCase();
+          bValue = (b.planName || "").toLowerCase();
           break;
         case "balance":
-          aValue = a.currentBalance;
-          bValue = b.currentBalance;
+          aValue = a.currentBalance || 0;
+          bValue = b.currentBalance || 0;
           break;
         case "status": {
           const getStatusText = (c: CustomerItem) => {
@@ -1461,6 +1490,11 @@ export default function BillingTable({
                     {searchTerm && (
                       <span className="block mt-1 text-xs text-gray-400">
                         No results for "{searchTerm}"
+                      </span>
+                    )}
+                    {dateRange && !searchTerm && (
+                      <span className="block mt-1 text-xs text-gray-400">
+                        No customers with bills in the selected period
                       </span>
                     )}
                   </td>

@@ -1,4 +1,4 @@
-// app/admin/email/page.tsx - COMPLETE FIXED VERSION WITH 4 SENDER OPTIONS
+// app/admin/email/page.tsx - COMPLETE FIXED VERSION WITH WORKING PLAN FILTER
 
 "use client";
 
@@ -10,6 +10,8 @@ import emailService, {
   EmailSentRecord,
   SenderType,
 } from "@/services/emailService";
+import { getActiveBuildings, Building } from "@/services/building";
+import { getPlans, Plan } from "@/services/plan";
 import RichTextEditor from "@/components/RichTextEditor";
 import ScheduledEmailsTab from "@/components/ScheduledEmailsTab";
 import toast from "react-hot-toast";
@@ -69,7 +71,14 @@ export default function ManualEmailPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [buildingFilter, setBuildingFilter] = useState<string>("all");
+  const [planFilter, setPlanFilter] = useState<string>("all");
   const [totalEmailsSent, setTotalEmailsSent] = useState<number>(0);
+
+  // ==================== BUILDINGS & PLANS STATE ====================
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [buildingsLoading, setBuildingsLoading] = useState(false);
+  const [plansLoading, setPlansLoading] = useState(false);
 
   // Email form state
   const [subject, setSubject] = useState("");
@@ -87,7 +96,7 @@ export default function ManualEmailPage() {
   >("unpaid");
   const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
 
-  // ==================== SENDER TYPE STATE (NEW) ====================
+  // ==================== SENDER TYPE STATE ====================
   const [senderType, setSenderType] = useState<SenderType>("collection");
 
   // Location state
@@ -204,9 +213,60 @@ export default function ManualEmailPage() {
     setTotalEmailsSent(total);
   }, [sentRecords]);
 
+  // ==================== LOAD BUILDINGS ====================
+  const loadBuildings = useCallback(async (forceRefresh = false) => {
+    if (!isMountedRef.current) return [];
+    setBuildingsLoading(true);
+    try {
+      const data = await getActiveBuildings(forceRefresh);
+      if (isMountedRef.current) {
+        setBuildings(data || []);
+      }
+      return data || [];
+    } catch (error) {
+      console.error("Failed to load buildings:", error);
+      if (isMountedRef.current) {
+        setBuildings([]);
+      }
+      return [];
+    } finally {
+      if (isMountedRef.current) {
+        setBuildingsLoading(false);
+      }
+    }
+  }, []);
+
+  // ==================== LOAD PLANS ====================
+  const loadPlans = useCallback(async (forceRefresh = false) => {
+    if (!isMountedRef.current) return [];
+    setPlansLoading(true);
+    try {
+      const data = await getPlans(forceRefresh);
+      if (isMountedRef.current) {
+        setPlans(data || []);
+      }
+      return data || [];
+    } catch (error) {
+      console.error("Failed to load plans:", error);
+      if (isMountedRef.current) {
+        setPlans([]);
+      }
+      return [];
+    } finally {
+      if (isMountedRef.current) {
+        setPlansLoading(false);
+      }
+    }
+  }, []);
+
   // ==================== LOAD FUNCTIONS ====================
   const loadCustomers = useCallback(
-    async (search?: string, location?: string): Promise<Customer[]> => {
+    async (
+      search?: string,
+      location?: string,
+      building?: string,
+      plan?: string,
+    ): Promise<Customer[]> => {
       if (!isMountedRef.current) return [];
 
       try {
@@ -216,6 +276,8 @@ export default function ManualEmailPage() {
           search,
           forceRefresh: true,
           location,
+          building,
+          plan,
         });
 
         const processedData = (data || []).map((customer) => ({
@@ -308,11 +370,14 @@ export default function ManualEmailPage() {
       try {
         setRefreshing(true);
 
+        // ✅ Pass building & plan to backend so it filters server-side
         const [freshCustomers, freshSentRecords, freshTemplates] =
           await Promise.all([
             loadCustomers(
               searchTerm,
               buildingFilter !== "all" ? buildingFilter : undefined,
+              buildingFilter !== "all" ? buildingFilter : undefined,
+              planFilter !== "all" ? planFilter : undefined,
             ),
             loadSentRecords(),
             loadTemplates(),
@@ -351,6 +416,7 @@ export default function ManualEmailPage() {
     [
       searchTerm,
       buildingFilter,
+      planFilter,
       selectedCustomer,
       selectedCustomers,
       loadCustomers,
@@ -372,6 +438,8 @@ export default function ManualEmailPage() {
             loadCustomers(""),
             loadTemplates(),
             loadSentRecords(),
+            loadBuildings(),
+            loadPlans(),
           ]);
           initialLoadDone.current = true;
         } finally {
@@ -387,7 +455,29 @@ export default function ManualEmailPage() {
     return () => {
       isMountedRef.current = false;
     };
-  }, [loadCustomers, loadTemplates, loadSentRecords]);
+  }, [loadCustomers, loadTemplates, loadSentRecords, loadBuildings, loadPlans]);
+
+  // ✅ RELOAD CUSTOMERS WHEN BUILDING OR PLAN FILTER CHANGES
+  useEffect(() => {
+    if (!initialLoadDone.current) return;
+    if (!isMountedRef.current) return;
+
+    const reload = async () => {
+      try {
+        await loadCustomers(
+          searchTerm,
+          buildingFilter !== "all" ? buildingFilter : undefined,
+          buildingFilter !== "all" ? buildingFilter : undefined,
+          planFilter !== "all" ? planFilter : undefined,
+        );
+      } catch (err) {
+        console.error("Filter reload failed:", err);
+      }
+    };
+
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildingFilter, planFilter]);
 
   // ==================== HANDLERS ====================
   const handleCustomerSelect = async (customer: Customer | null) => {
@@ -553,6 +643,8 @@ export default function ManualEmailPage() {
         sendCopyToAdmin,
         senderType,
         locationFilter: buildingFilter !== "all" ? buildingFilter : undefined,
+        buildingFilter: buildingFilter !== "all" ? buildingFilter : undefined,
+        planFilter: planFilter !== "all" ? planFilter : undefined,
       });
 
       const senderDisplay =
@@ -581,6 +673,7 @@ export default function ManualEmailPage() {
     }
   };
 
+  // ==================== SAVE TEMPLATE (UPDATED) ====================
   const handleSaveTemplate = async () => {
     if (!newTemplate.name || !newTemplate.subject || !newTemplate.message) {
       toast.error("Please fill in all template fields");
@@ -716,6 +809,7 @@ export default function ManualEmailPage() {
   };
 
   // ==================== FILTERS ====================
+  // ✅ CLIENT-SIDE SAFETY FILTER (in case backend ignores filters)
   const filteredCustomers = customers.filter((c) => {
     const matchesSearch =
       (c.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
@@ -735,9 +829,41 @@ export default function ManualEmailPage() {
         !(c.buildingName || "").toLowerCase().includes("breeze") &&
         !(c.buildingName || "").toLowerCase().includes("sil") &&
         !(c.buildingName || "").toLowerCase().includes("silk");
+    } else if (buildingFilter !== "all") {
+      const selectedBuilding = buildings.find(
+        (b) => b._id === buildingFilter || b.buildingName === buildingFilter,
+      );
+      if (selectedBuilding) {
+        matchesBuilding =
+          (c.buildingName || "").toLowerCase() ===
+          (selectedBuilding.buildingName || "").toLowerCase();
+      }
     }
 
-    return matchesSearch && matchesBuilding;
+    // ✅ FIXED: Plan filter uses planId OR planName (case-insensitive)
+    let matchesPlan = true;
+    if (planFilter !== "all") {
+      const selectedPlan = plans.find((p) => p._id === planFilter);
+      if (selectedPlan) {
+        const cPlanId = (c.planId || "").toString().trim();
+        const cPlanName = (c.planName || "").toString().trim().toLowerCase();
+        const targetId = (selectedPlan._id || "").toString().trim();
+        const targetName = (selectedPlan.name || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+
+        if (cPlanId && cPlanId === targetId) {
+          matchesPlan = true;
+        } else if (cPlanName && targetName && cPlanName === targetName) {
+          matchesPlan = true;
+        } else {
+          matchesPlan = false;
+        }
+      }
+    }
+
+    return matchesSearch && matchesBuilding && matchesPlan;
   });
 
   const filteredUnpaidCustomers = filteredCustomers.filter(
@@ -786,7 +912,6 @@ export default function ManualEmailPage() {
           const isCollection = option.value === "collection";
           const disabled = isCollection && !customerLocation;
 
-          // Color classes based on option color
           const colorClasses: Record<string, string> = {
             green: isSelected
               ? "border-green-500 bg-green-50 text-green-700"
@@ -802,7 +927,6 @@ export default function ManualEmailPage() {
               : "border-gray-300 hover:border-gray-400 text-gray-700",
           };
 
-          // Display email for collection
           const displayEmail = isCollection
             ? customerLocation
               ? collectionEmail
@@ -873,6 +997,8 @@ export default function ManualEmailPage() {
                 🔄 Last updated: {lastUpdated || "Never"}
                 {customers.length > 0 &&
                   ` • ${customers.length} customers loaded`}
+                {buildings.length > 0 && ` • ${buildings.length} buildings`}
+                {plans.length > 0 && ` • ${plans.length} plans`}
               </p>
             </div>
             <button
@@ -962,53 +1088,79 @@ export default function ManualEmailPage() {
                   Select Customer
                 </h2>
 
-                {/* Building Filter */}
+                {/* Building Filter - Only Specific Buildings now */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Filter by Building
+                    🏢 Filter by Building
                   </label>
-                  <div className="flex gap-2 flex-wrap">
-                    <button
-                      onClick={() => setBuildingFilter("all")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "all"
-                          ? "bg-gray-800 text-white border-gray-800"
-                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      All ({customers.length})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("breeze")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "breeze"
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
-                      }`}
-                    >
-                      🌊 Breeze ({breezeCount})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("sil")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "sil"
-                          ? "bg-purple-600 text-white border-purple-600"
-                          : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
-                      }`}
-                    >
-                      🏢 SIL ({silCount})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("other")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "other"
-                          ? "bg-gray-600 text-white border-gray-600"
-                          : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      📍 Other ({otherCount})
-                    </button>
-                  </div>
+                  <select
+                    value={buildingFilter}
+                    onChange={(e) => setBuildingFilter(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="all">
+                      All Buildings ({customers.length})
+                    </option>
+                    {buildings.length > 0 && (
+                      <optgroup label="">
+                        {buildings.map((building) => (
+                          <option key={building._id} value={building._id}>
+                            {building.buildingName}
+                            {building.location ? ` (${building.location})` : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {buildingsLoading && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Loading buildings...
+                    </p>
+                  )}
+                  {!buildingsLoading && buildings.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {buildings.length} buildings loaded
+                    </p>
+                  )}
+                </div>
+
+                {/* Plan Filter */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    📦 Filter by Plan
+                  </label>
+                  <select
+                    value={planFilter}
+                    onChange={(e) => setPlanFilter(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="all">All Plans</option>
+                    {plans.length > 0 ? (
+                      plans.map((plan) => (
+                        <option key={plan._id} value={plan._id}>
+                          {plan.name}
+                          {plan.speed
+                            ? ` - ${plan.speed.download}Mbps/${plan.speed.upload}Mbps`
+                            : ""}
+                          {plan.price ? ` (₱${plan.price})` : ""}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>
+                        No plans available
+                      </option>
+                    )}
+                  </select>
+                  {plansLoading && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Loading plans...
+                    </p>
+                  )}
+                  {!plansLoading && plans.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {plans.length} plans loaded
+                    </p>
+                  )}
                 </div>
 
                 <input
@@ -1042,6 +1194,9 @@ export default function ManualEmailPage() {
                     {displayCustomers.length === 0 ? (
                       <div className="text-center py-8 text-gray-500">
                         <p>No customers found</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Try changing building or plan filter
+                        </p>
                         <button
                           onClick={() => loadCustomers("")}
                           className="mt-2 text-sm text-blue-600 underline"
@@ -1083,6 +1238,11 @@ export default function ManualEmailPage() {
                                 {customer.buildingName && (
                                   <p className="text-xs text-gray-400">
                                     🏢 {customer.buildingName}
+                                  </p>
+                                )}
+                                {customer.planName && (
+                                  <p className="text-xs text-indigo-500">
+                                    📦 {customer.planName}
                                   </p>
                                 )}
                               </div>
@@ -1128,6 +1288,14 @@ export default function ManualEmailPage() {
                     {selectedCustomer.buildingName && (
                       <p className="text-sm text-gray-600">
                         🏢 Building: {selectedCustomer.buildingName}
+                      </p>
+                    )}
+                    {selectedCustomer.planName && (
+                      <p className="text-sm text-gray-600">
+                        📦 Plan: {selectedCustomer.planName}
+                        {selectedCustomer.planPrice
+                          ? ` (₱${selectedCustomer.planPrice})`
+                          : ""}
                       </p>
                     )}
                     {customerLocation && customerLocation !== "other" && (
@@ -1200,7 +1368,7 @@ export default function ManualEmailPage() {
                   </div>
                 )}
 
-                {/* ==================== SENDER SELECTOR (NEW) ==================== */}
+                {/* SENDER SELECTOR */}
                 <SenderSelector />
 
                 <div className="mb-4">
@@ -1413,52 +1581,59 @@ export default function ManualEmailPage() {
                   Select Customers for Bulk Email
                 </h2>
 
+                {/* Building Filter */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Filter by Building
+                    🏢 Filter by Building
                   </label>
-                  <div className="flex gap-2 flex-wrap">
-                    <button
-                      onClick={() => setBuildingFilter("all")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "all"
-                          ? "bg-gray-800 text-white border-gray-800"
-                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      All ({customers.length})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("breeze")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "breeze"
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
-                      }`}
-                    >
-                      🌊 Breeze ({breezeCount})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("sil")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "sil"
-                          ? "bg-purple-600 text-white border-purple-600"
-                          : "bg-white text-purple-600 border-purple-300 hover:bg-purple-50"
-                      }`}
-                    >
-                      🏢 SIL ({silCount})
-                    </button>
-                    <button
-                      onClick={() => setBuildingFilter("other")}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        buildingFilter === "other"
-                          ? "bg-gray-600 text-white border-gray-600"
-                          : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      📍 Other ({otherCount})
-                    </button>
-                  </div>
+                  <select
+                    value={buildingFilter}
+                    onChange={(e) => setBuildingFilter(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="all">
+                      All Buildings ({customers.length})
+                    </option>
+                    {buildings.length > 0 && (
+                      <optgroup label="──────── Specific Buildings ────────">
+                        {buildings.map((building) => (
+                          <option key={building._id} value={building._id}>
+                            {building.buildingName}
+                            {building.location ? ` (${building.location})` : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                {/* Plan Filter */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    📦 Filter by Plan
+                  </label>
+                  <select
+                    value={planFilter}
+                    onChange={(e) => setPlanFilter(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="all">All Plans</option>
+                    {plans.length > 0 ? (
+                      plans.map((plan) => (
+                        <option key={plan._id} value={plan._id}>
+                          {plan.name}
+                          {plan.speed
+                            ? ` - ${plan.speed.download}Mbps/${plan.speed.upload}Mbps`
+                            : ""}
+                          {plan.price ? ` (₱${plan.price})` : ""}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>
+                        No plans available
+                      </option>
+                    )}
+                  </select>
                 </div>
 
                 <input
@@ -1495,6 +1670,9 @@ export default function ManualEmailPage() {
                     {displayCustomers.length === 0 ? (
                       <div className="text-center py-8 text-gray-500">
                         <p>No customers found</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Try changing building or plan filter
+                        </p>
                       </div>
                     ) : (
                       displayCustomers.map((customer) => (
@@ -1544,10 +1722,20 @@ export default function ManualEmailPage() {
                             <p className="text-sm text-gray-500">
                               {customer.email || "No email"}
                             </p>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                               <span className="text-xs text-gray-400">
                                 ID: {customer.applicationId || "N/A"}
                               </span>
+                              {customer.buildingName && (
+                                <span className="text-xs text-gray-400">
+                                  🏢 {customer.buildingName}
+                                </span>
+                              )}
+                              {customer.planName && (
+                                <span className="text-xs text-indigo-500">
+                                  📦 {customer.planName}
+                                </span>
+                              )}
                               {customer.hasUnpaidBills && (
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
                                   Unpaid
@@ -1575,17 +1763,25 @@ export default function ManualEmailPage() {
                   </p>
                   {buildingFilter !== "all" && (
                     <p className="text-xs text-blue-600">
-                      Location Filter:{" "}
-                      {buildingFilter === "breeze"
-                        ? "🌊 Breeze"
-                        : buildingFilter === "sil"
-                          ? "🏢 SIL"
-                          : "📍 Other"}
+                      Building Filter:{" "}
+                      {buildings.find((b) => b._id === buildingFilter)
+                        ?.buildingName ||
+                        (buildingFilter === "breeze"
+                          ? "🌊 Breeze"
+                          : buildingFilter === "sil"
+                            ? "🏢 SIL"
+                            : "📍 Other")}
+                    </p>
+                  )}
+                  {planFilter !== "all" && (
+                    <p className="text-xs text-blue-600">
+                      Plan Filter:{" "}
+                      {plans.find((p) => p._id === planFilter)?.name || "All"}
                     </p>
                   )}
                 </div>
 
-                {/* ==================== SENDER SELECTOR (NEW) ==================== */}
+                {/* SENDER SELECTOR */}
                 <SenderSelector />
 
                 <div className="mb-4">
@@ -1941,54 +2137,91 @@ export default function ManualEmailPage() {
         </div>
       )}
 
-      {/* Save Template Dialog */}
+      {/* Save Template Dialog (UPDATED) */}
       {showTemplateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full">
-            <div className="p-4 border-b">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
               <h3 className="text-lg font-semibold">Save Email Template</h3>
+              <button
+                onClick={() => setShowTemplateDialog(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
             </div>
-            <div className="p-4 space-y-4">
-              <input
-                type="text"
-                placeholder="Template Name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.name}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, name: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Category"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.category}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, category: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.subject}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, subject: e.target.value })
-                }
-              />
-              <textarea
-                rows={4}
-                placeholder="Message"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                value={newTemplate.message}
-                onChange={(e) =>
-                  setNewTemplate({ ...newTemplate, message: e.target.value })
-                }
-              />
-              <label className="flex items-center">
+            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Template Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter template name..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newTemplate.name}
+                  onChange={(e) =>
+                    setNewTemplate({ ...newTemplate, name: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., welcome, payment, reminder..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newTemplate.category}
+                  onChange={(e) =>
+                    setNewTemplate({ ...newTemplate, category: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter email subject..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newTemplate.subject}
+                  onChange={(e) =>
+                    setNewTemplate({ ...newTemplate, subject: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Use the toolbar below to format your text (bold, italic,
+                  lists, highlight, links, etc.)
+                </p>
+                <RichTextEditor
+                  value={newTemplate.message}
+                  onChange={(content) => {
+                    setNewTemplate({
+                      ...newTemplate,
+                      message: content,
+                    });
+                  }}
+                  placeholder="Write your email message here..."
+                  minHeight="250px"
+                  maxHeight="400px"
+                />
+              </div>
+
+              <div className="flex items-center pt-2">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   checked={newTemplate.includeBillingDefault}
                   onChange={(e) =>
                     setNewTemplate({
@@ -2000,20 +2233,34 @@ export default function ManualEmailPage() {
                 <span className="ml-2 text-sm text-gray-700">
                   Include billing by default
                 </span>
-              </label>
+              </div>
+
+              {newTemplate.message && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs font-medium text-gray-500 mb-2">
+                    📄 Preview of formatted content:
+                  </p>
+                  <div
+                    className="text-sm text-gray-700 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{
+                      __html: newTemplate.message,
+                    }}
+                  />
+                </div>
+              )}
             </div>
-            <div className="p-4 border-t flex gap-3">
+            <div className="p-4 border-t flex gap-3 bg-gray-50">
               <button
                 onClick={() => setShowTemplateDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveTemplate}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
-                Save Template
+                <span>💾</span> Save Template
               </button>
             </div>
           </div>
