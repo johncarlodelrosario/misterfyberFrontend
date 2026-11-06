@@ -1,4 +1,4 @@
-// app/admin/email/page.tsx - COMPLETE FIXED VERSION WITH WORKING PLAN FILTER
+// app/admin/email/page.tsx - PROFESSIONAL ENTERPRISE DESIGN
 
 "use client";
 
@@ -29,7 +29,7 @@ const SENDER_OPTIONS: {
     label: "Collection",
     email: "Location-specific",
     icon: "📍",
-    color: "green",
+    color: "emerald",
   },
   {
     value: "admin",
@@ -43,7 +43,7 @@ const SENDER_OPTIONS: {
     label: "Workselpueblo",
     email: "workselpueblo@fyberblizz.com",
     icon: "🏢",
-    color: "purple",
+    color: "indigo",
   },
   {
     value: "fbsilkresidence",
@@ -180,10 +180,10 @@ export default function ManualEmailPage() {
 
   const getLocationBadgeColor = useCallback((location: string): string => {
     if (location === "breeze")
-      return "bg-blue-100 text-blue-800 border-blue-300";
+      return "bg-blue-50 text-blue-700 border-blue-200";
     if (location === "sil")
-      return "bg-purple-100 text-purple-800 border-purple-300";
-    return "bg-gray-100 text-gray-800 border-gray-300";
+      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    return "bg-slate-100 text-slate-700 border-slate-200";
   }, []);
 
   // ==================== UPDATE LOCATION ====================
@@ -370,7 +370,6 @@ export default function ManualEmailPage() {
       try {
         setRefreshing(true);
 
-        // ✅ Pass building & plan to backend so it filters server-side
         const [freshCustomers, freshSentRecords, freshTemplates] =
           await Promise.all([
             loadCustomers(
@@ -809,7 +808,6 @@ export default function ManualEmailPage() {
   };
 
   // ==================== FILTERS ====================
-  // ✅ CLIENT-SIDE SAFETY FILTER (in case backend ignores filters)
   const filteredCustomers = customers.filter((c) => {
     const matchesSearch =
       (c.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
@@ -840,7 +838,6 @@ export default function ManualEmailPage() {
       }
     }
 
-    // ✅ FIXED: Plan filter uses planId OR planName (case-insensitive)
     let matchesPlan = true;
     if (planFilter !== "all") {
       const selectedPlan = plans.find((p) => p._id === planFilter);
@@ -902,9 +899,9 @@ export default function ManualEmailPage() {
 
   // ==================== SENDER SELECTOR COMPONENT ====================
   const SenderSelector = () => (
-    <div className="mb-4">
-      <label className="block text-sm font-medium text-gray-700 mb-2">
-        📧 Send From (Choose Sender Email)
+    <div className="mb-6">
+      <label className="block text-sm font-semibold text-slate-700 mb-3">
+        Send From (Choose Sender Email)
       </label>
       <div className="grid grid-cols-2 gap-3">
         {SENDER_OPTIONS.map((option) => {
@@ -913,18 +910,18 @@ export default function ManualEmailPage() {
           const disabled = isCollection && !customerLocation;
 
           const colorClasses: Record<string, string> = {
-            green: isSelected
-              ? "border-green-500 bg-green-50 text-green-700"
-              : "border-gray-300 hover:border-gray-400 text-gray-700",
+            emerald: isSelected
+              ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
+              : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50",
             blue: isSelected
-              ? "border-blue-500 bg-blue-50 text-blue-700"
-              : "border-gray-300 hover:border-gray-400 text-gray-700",
-            purple: isSelected
-              ? "border-purple-500 bg-purple-50 text-purple-700"
-              : "border-gray-300 hover:border-gray-400 text-gray-700",
+              ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+              : "border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50",
+            indigo: isSelected
+              ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+              : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50",
             orange: isSelected
-              ? "border-orange-500 bg-orange-50 text-orange-700"
-              : "border-gray-300 hover:border-gray-400 text-gray-700",
+              ? "border-orange-500 bg-orange-50 ring-1 ring-orange-500"
+              : "border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/50",
           };
 
           const displayEmail = isCollection
@@ -939,16 +936,18 @@ export default function ManualEmailPage() {
               type="button"
               onClick={() => !disabled && setSenderType(option.value)}
               disabled={disabled}
-              className={`px-4 py-3 rounded-lg border text-sm transition-colors text-left ${
+              className={`px-4 py-3 rounded-lg border text-left transition-all duration-200 ${
                 disabled
-                  ? "opacity-50 cursor-not-allowed bg-gray-50"
+                  ? "opacity-50 cursor-not-allowed bg-slate-50 border-slate-200"
                   : colorClasses[option.color]
               }`}
             >
-              <span className="block font-medium">
+              <span
+                className={`block text-sm font-semibold ${isSelected ? "text-slate-900" : "text-slate-700"}`}
+              >
                 {option.icon} {option.label}
               </span>
-              <span className="text-xs text-gray-500 truncate block">
+              <span className="text-xs text-slate-500 truncate block mt-0.5">
                 {displayEmail}
               </span>
             </button>
@@ -956,23 +955,27 @@ export default function ManualEmailPage() {
         })}
       </div>
       {senderType === "collection" && customerLocation && (
-        <p className="text-xs text-green-600 mt-2">
-          ✅ Using location-specific collection email: {collectionEmail}
+        <p className="text-xs font-medium text-emerald-600 mt-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          Using location-specific email: {collectionEmail}
         </p>
       )}
       {senderType === "workselpueblo" && (
-        <p className="text-xs text-purple-600 mt-2">
-          📧 Using workselpueblo@fyberblizz.com as sender
+        <p className="text-xs font-medium text-indigo-600 mt-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+          Using workselpueblo@fyberblizz.com as sender
         </p>
       )}
       {senderType === "fbsilkresidence" && (
-        <p className="text-xs text-orange-600 mt-2">
-          📧 Using fbsilkresidence@gmail.com as sender
+        <p className="text-xs font-medium text-orange-600 mt-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+          Using fbsilkresidence@gmail.com as sender
         </p>
       )}
       {senderType === "admin" && (
-        <p className="text-xs text-blue-600 mt-2">
-          📧 Using admin@misterfyber.com as sender
+        <p className="text-xs font-medium text-blue-600 mt-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+          Using admin@misterfyber.com as sender
         </p>
       )}
     </div>
@@ -980,725 +983,799 @@ export default function ManualEmailPage() {
 
   // ==================== RENDER ====================
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header with Stats */}
         <div className="mb-8">
-          <div className="flex justify-between items-start flex-wrap gap-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                📧 Manual Email Management
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+                Manual Email Center
               </h1>
-              <p className="text-gray-500 mt-1">
-                Send custom emails to customers with rich text formatting and
-                scheduling
+              <p className="text-sm text-slate-500 mt-1">
+                Manage, compose, and schedule custom emails for your customers.
               </p>
-              <p className="text-xs text-gray-400 mt-1">
-                🔄 Last updated: {lastUpdated || "Never"}
-                {customers.length > 0 &&
-                  ` • ${customers.length} customers loaded`}
-                {buildings.length > 0 && ` • ${buildings.length} buildings`}
-                {plans.length > 0 && ` • ${plans.length} plans`}
-              </p>
+              <div className="flex items-center gap-3 text-xs text-slate-400 mt-2">
+                <span className="flex items-center gap-1">
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    ></path>
+                  </svg>
+                  Updated: {lastUpdated || "Never"}
+                </span>
+                <span>•</span>
+                <span>{customers.length} Customers</span>
+                <span>•</span>
+                <span>{buildings.length} Buildings</span>
+                <span>•</span>
+                <span>{plans.length} Plans</span>
+              </div>
             </div>
             <button
               onClick={handleRefresh}
               disabled={loading || refreshing}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+              className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-sm ${
                 loading || refreshing
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
               {loading || refreshing ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <svg
+                    className="animate-spin h-4 w-4 text-slate-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
                   Refreshing...
                 </>
               ) : (
-                <>🔄 Refresh All</>
+                <>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    ></path>
+                  </svg>
+                  Refresh Data
+                </>
               )}
             </button>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Total Customers</p>
-              <p className="text-2xl font-bold text-gray-900">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Total Customers
+              </p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">
                 {customers.length}
               </p>
             </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">📧 Total Emails Sent</p>
-              <p className="text-2xl font-bold text-blue-600">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Total Sent
+              </p>
+              <p className="text-3xl font-bold text-blue-600 mt-1">
                 {totalEmailsSent}
               </p>
             </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">🌊 Breeze Customers</p>
-              <p className="text-2xl font-bold text-blue-600">{breezeCount}</p>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Breeze Customers
+              </p>
+              <p className="text-3xl font-bold text-emerald-600 mt-1">
+                {breezeCount}
+              </p>
             </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">🏢 SIL Customers</p>
-              <p className="text-2xl font-bold text-purple-600">{silCount}</p>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                SIL Customers
+              </p>
+              <p className="text-3xl font-bold text-indigo-600 mt-1">
+                {silCount}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="flex space-x-8 overflow-x-auto">
+        {/* Navigation Tabs */}
+        <div className="bg-white border border-slate-200 rounded-t-xl px-2 pt-2">
+          <nav
+            className="flex space-x-1 overflow-x-auto no-scrollbar"
+            aria-label="Tabs"
+          >
             {[
               { id: "single", name: "Single Email", icon: "✉️" },
               { id: "bulk", name: "Bulk Email", icon: "👥" },
               { id: "templates", name: "Templates", icon: "📄" },
               { id: "sent", name: "Sent Records", icon: "📨" },
-              { id: "scheduled", name: "📅 Scheduled", icon: "📅" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.name}
-                {tab.id === "sent" && totalEmailsSent > 0 && (
-                  <span className="ml-2 bg-blue-100 text-blue-600 text-xs px-2 py-0.5 rounded-full">
-                    {totalEmailsSent}
-                  </span>
-                )}
-              </button>
-            ))}
+              { id: "scheduled", name: "Scheduled", icon: "📅" },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex items-center gap-2 py-3 px-4 text-sm font-semibold rounded-t-lg transition-colors whitespace-nowrap border-b-2 ${
+                    isActive
+                      ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                      : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="text-base">{tab.icon}</span>
+                  {tab.name}
+                  {tab.id === "sent" && totalEmailsSent > 0 && (
+                    <span
+                      className={`ml-1 px-2 py-0.5 rounded-full text-[10px] ${isActive ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}
+                    >
+                      {totalEmailsSent}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Tab Content */}
-        <div key={`content-${refreshKey}`}>
+        {/* Tab Content Area */}
+        <div className="bg-slate-50/50 pt-6" key={`content-${refreshKey}`}>
           {/* Single Email Tab */}
           {activeTab === "single" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column - Customer Selection */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  Select Customer
-                </h2>
+              <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-[calc(100vh-250px)] min-h-[600px]">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Select Customer
+                  </h2>
+                  <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">
+                    {displayCustomers.length} results
+                  </span>
+                </div>
 
-                {/* Building Filter - Only Specific Buildings now */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    🏢 Filter by Building
-                  </label>
-                  <select
-                    value={buildingFilter}
-                    onChange={(e) => setBuildingFilter(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">
-                      All Buildings ({customers.length})
-                    </option>
-                    {buildings.length > 0 && (
-                      <optgroup label="">
-                        {buildings.map((building) => (
-                          <option key={building._id} value={building._id}>
-                            {building.buildingName}
-                            {building.location ? ` (${building.location})` : ""}
+                <div className="space-y-4 mb-4 shrink-0">
+                  {/* Filters */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Building
+                      </label>
+                      <select
+                        value={buildingFilter}
+                        onChange={(e) => setBuildingFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="all">All Buildings</option>
+                        {buildings.length > 0 && (
+                          <optgroup label="Specific Buildings">
+                            {buildings.map((building) => (
+                              <option key={building._id} value={building._id}>
+                                {building.buildingName}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Plan
+                      </label>
+                      <select
+                        value={planFilter}
+                        onChange={(e) => setPlanFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="all">All Plans</option>
+                        {plans.map((plan) => (
+                          <option key={plan._id} value={plan._id}>
+                            {plan.name}
                           </option>
                         ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {buildingsLoading && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      Loading buildings...
-                    </p>
-                  )}
-                  {!buildingsLoading && buildings.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {buildings.length} buildings loaded
-                    </p>
-                  )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg
+                        className="h-4 w-4 text-slate-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        ></path>
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search name, email, or ID..."
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
                 </div>
 
-                {/* Plan Filter */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    📦 Filter by Plan
-                  </label>
-                  <select
-                    value={planFilter}
-                    onChange={(e) => setPlanFilter(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All Plans</option>
-                    {plans.length > 0 ? (
-                      plans.map((plan) => (
-                        <option key={plan._id} value={plan._id}>
-                          {plan.name}
-                          {plan.speed
-                            ? ` - ${plan.speed.download}Mbps/${plan.speed.upload}Mbps`
-                            : ""}
-                          {plan.price ? ` (₱${plan.price})` : ""}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>
-                        No plans available
-                      </option>
-                    )}
-                  </select>
-                  {plansLoading && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      Loading plans...
-                    </p>
-                  )}
-                  {!plansLoading && plans.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {plans.length} plans loaded
-                    </p>
-                  )}
-                </div>
-
-                <input
-                  type="text"
-                  placeholder="Search by name, email, or application ID..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-
-                {loading && customers.length === 0 && (
-                  <div className="flex justify-center py-8">
-                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                )}
-
-                {error && !loading && customers.length === 0 && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                    <p className="text-red-600 text-sm">{error}</p>
-                    <button
-                      onClick={() => loadCustomers(searchTerm)}
-                      className="mt-2 text-sm text-red-700 underline"
-                    >
-                      Try Again
-                    </button>
-                  </div>
-                )}
-
-                {!loading && !error && (
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {displayCustomers.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        <p>No customers found</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Try changing building or plan filter
-                        </p>
-                        <button
-                          onClick={() => loadCustomers("")}
-                          className="mt-2 text-sm text-blue-600 underline"
+                {/* Customer List */}
+                <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                  {loading && customers.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                      <svg
+                        className="animate-spin h-8 w-8 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <p className="text-sm">Loading customers...</p>
+                    </div>
+                  ) : displayCustomers.length === 0 ? (
+                    <div className="text-center py-10">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 mb-3">
+                        <svg
+                          className="w-6 h-6 text-slate-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
                         >
-                          🔄 Refresh customer list
-                        </button>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                          ></path>
+                        </svg>
                       </div>
-                    ) : (
-                      displayCustomers.map((customer) => {
-                        const location = getLocationFromBuildingName(
-                          customer.buildingName,
-                        );
-                        const locationDisplay = getLocationDisplay(location);
-                        const badgeColor = getLocationBadgeColor(location);
+                      <p className="text-slate-500 font-medium">
+                        No customers found
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Try changing your filters.
+                      </p>
+                    </div>
+                  ) : (
+                    displayCustomers.map((customer) => {
+                      const location = getLocationFromBuildingName(
+                        customer.buildingName,
+                      );
+                      const isSelected =
+                        selectedCustomer?.applicationId ===
+                        customer.applicationId;
 
-                        return (
-                          <button
-                            key={customer._id || customer.applicationId}
-                            onClick={() => handleCustomerSelect(customer)}
-                            className={`w-full text-left p-4 rounded-lg border transition-all ${
-                              selectedCustomer?.applicationId ===
-                              customer.applicationId
-                                ? "border-blue-500 bg-blue-50"
-                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                            }`}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-medium text-gray-900">
-                                  {customer.firstName || ""}{" "}
-                                  {customer.lastName || ""}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                  {customer.email || "No email"}
-                                </p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  ID: {customer.applicationId || "N/A"}
-                                </p>
+                      return (
+                        <button
+                          key={customer._id || customer.applicationId}
+                          onClick={() => handleCustomerSelect(customer)}
+                          className={`w-full text-left p-3 rounded-lg border transition-all ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-50 shadow-sm ring-1 ring-blue-500"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0 pr-2">
+                              <p className="text-sm font-semibold text-slate-900 truncate">
+                                {customer.firstName || ""}{" "}
+                                {customer.lastName || ""}
+                              </p>
+                              <p className="text-xs text-slate-500 truncate mt-0.5">
+                                {customer.email || "No email"}
+                              </p>
+                              <div className="flex items-center gap-2 mt-2">
                                 {customer.buildingName && (
-                                  <p className="text-xs text-gray-400">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
                                     🏢 {customer.buildingName}
-                                  </p>
-                                )}
-                                {customer.planName && (
-                                  <p className="text-xs text-indigo-500">
-                                    📦 {customer.planName}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                {location !== "other" && (
-                                  <span
-                                    className={`px-2 py-1 text-xs font-medium rounded-full border ${badgeColor}`}
-                                  >
-                                    {locationDisplay}
                                   </span>
                                 )}
-                                {customer.hasUnpaidBills && (
-                                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                                    ⚠️ Unpaid
+                                {customer.planName && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                    📦 {customer.planName}
                                   </span>
                                 )}
                               </div>
                             </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
-
-                {selectedCustomer && (
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-700">
-                      Selected Customer
-                    </p>
-                    <p className="text-sm text-gray-900 mt-1">
-                      <strong>
-                        {selectedCustomer.firstName || ""}{" "}
-                        {selectedCustomer.lastName || ""}
-                      </strong>
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {selectedCustomer.email || "No email"}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Phone: {selectedCustomer.phoneNumber || "N/A"}
-                    </p>
-                    {selectedCustomer.buildingName && (
-                      <p className="text-sm text-gray-600">
-                        🏢 Building: {selectedCustomer.buildingName}
-                      </p>
-                    )}
-                    {selectedCustomer.planName && (
-                      <p className="text-sm text-gray-600">
-                        📦 Plan: {selectedCustomer.planName}
-                        {selectedCustomer.planPrice
-                          ? ` (₱${selectedCustomer.planPrice})`
-                          : ""}
-                      </p>
-                    )}
-                    {customerLocation && customerLocation !== "other" && (
-                      <div className="mt-2">
-                        <span
-                          className={`px-3 py-1 text-sm font-medium rounded-full border ${getLocationBadgeColor(customerLocation)}`}
-                        >
-                          📍 {getLocationDisplay(customerLocation)}
-                        </span>
-                        <span className="ml-2 text-xs text-gray-500">
-                          Collection: {collectionEmail}
-                        </span>
-                      </div>
-                    )}
-                    {selectedCustomer.hasUnpaidBills && (
-                      <span className="inline-flex items-center mt-2 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
-                        ⚠️ Has Unpaid Bills
-                      </span>
-                    )}
-                  </div>
-                )}
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              {location !== "other" && (
+                                <span
+                                  className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-full border ${getLocationBadgeColor(location)}`}
+                                >
+                                  {location}
+                                </span>
+                              )}
+                              {customer.hasUnpaidBills && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-full bg-red-50 text-red-700 border border-red-100">
+                                  Unpaid
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
               {/* Right Column - Compose Email */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              <div className="lg:col-span-7 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-[calc(100vh-250px)] min-h-[600px] overflow-y-auto custom-scrollbar">
+                <h2 className="text-lg font-bold text-slate-900 mb-4 shrink-0">
                   Compose Email
                 </h2>
 
-                {selectedCustomer &&
-                  customerLocation &&
-                  customerLocation !== "other" && (
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        <strong>📍 Location Detected:</strong>{" "}
-                        {getLocationDisplay(customerLocation)}
-                      </p>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Collection Email: {collectionEmail}
-                      </p>
-                      <p className="text-xs text-blue-600">
-                        Building: {selectedCustomer.buildingName || "N/A"}
-                      </p>
-                    </div>
-                  )}
-
-                {/* Template Selector */}
-                {templates.length > 0 && (
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Load Template
-                    </label>
-                    <select
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      value={selectedTemplateId}
-                      onChange={(e) => handleTemplateSelect(e.target.value)}
+                {!selectedCustomer ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                    <svg
+                      className="w-12 h-12 mb-3 text-slate-300"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      <option value="">None</option>
-                      {templates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name || "Unnamed"} (
-                          {template.category || "general"})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Loading a template will preserve all formatting (bold,
-                      italic, highlight, lists, spacing)
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                    <p className="text-sm font-medium text-slate-500">
+                      No customer selected
+                    </p>
+                    <p className="text-xs mt-1">
+                      Select a customer from the left to start composing.
                     </p>
                   </div>
-                )}
-
-                {/* SENDER SELECTOR */}
-                <SenderSelector />
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Subject
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Enter email subject..."
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Message
-                  </label>
-                  <RichTextEditor
-                    value={richTextContent || message}
-                    onChange={(content) => {
-                      setRichTextContent(content);
-                      const tempDiv = document.createElement("div");
-                      tempDiv.innerHTML = content;
-                      setMessage(tempDiv.textContent || "");
-                    }}
-                    placeholder="Write your email message here..."
-                    minHeight="200px"
-                    maxHeight="350px"
-                  />
-                </div>
-
-                <label className="flex items-center mb-4">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    checked={includeBilling}
-                    onChange={(e) => {
-                      setIncludeBilling(e.target.checked);
-                      if (!e.target.checked) {
-                        setSelectedBillIds([]);
-                      }
-                    }}
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Include Billing Information
-                  </span>
-                </label>
-
-                {includeBilling && (
-                  <div className="mb-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Select Bills ({selectedBillIds.length} selected)
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={selectAllBills}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Select All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={deselectAllBills}
-                          className="text-xs text-red-600 hover:text-red-800"
-                        >
-                          Deselect All
-                        </button>
+                ) : (
+                  <div className="space-y-5">
+                    {/* Context Banner */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          Sending to: {selectedCustomer.firstName}{" "}
+                          {selectedCustomer.lastName}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {selectedCustomer.email}
+                        </p>
                       </div>
+                      {customerLocation !== "other" && (
+                        <span
+                          className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md border ${getLocationBadgeColor(customerLocation)}`}
+                        >
+                          {getLocationDisplay(customerLocation)}
+                        </span>
+                      )}
                     </div>
 
-                    {customerBills.length > 0 ? (
-                      <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                        {customerBills.map((bill) => (
-                          <label
-                            key={bill._id}
-                            className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${
-                              selectedBillIds.includes(bill._id)
-                                ? "border-blue-500 bg-blue-50"
-                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              checked={selectedBillIds.includes(bill._id)}
-                              onChange={() => toggleBillSelection(bill._id)}
-                            />
-                            <div className="ml-3 flex-1">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-900">
-                                  {bill.invoiceNumber || "N/A"}
-                                </span>
-                                <span className="text-sm font-bold text-red-600">
-                                  ₱{(bill.total || 0).toLocaleString()}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap gap-2 mt-1">
-                                <span
-                                  className={`text-xs px-2 py-0.5 rounded-full ${
-                                    bill.status === "paid"
-                                      ? "bg-green-100 text-green-700"
-                                      : bill.status === "overdue"
-                                        ? "bg-red-100 text-red-700"
-                                        : "bg-yellow-100 text-yellow-700"
-                                  }`}
-                                >
-                                  {bill.status || "N/A"}
-                                </span>
-                                {bill.isInstallationBill && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-                                    Installation
-                                  </span>
-                                )}
-                                {bill.isProRated && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                                    Pro-rated
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-500">
-                                  Due:{" "}
-                                  {new Date(bill.dueDate).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                          </label>
-                        ))}
+                    {/* Templates */}
+                    {templates.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                          Load Template
+                        </label>
+                        <select
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                          value={selectedTemplateId}
+                          onChange={(e) => handleTemplateSelect(e.target.value)}
+                        >
+                          <option value="">— Start from scratch —</option>
+                          {templates.map((template) => (
+                            <option key={template.id} value={template.id}>
+                              {template.name} ({template.category})
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    ) : (
-                      <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg">
-                        No bills found for this customer. Please create a bill
-                        first.
-                      </p>
                     )}
 
-                    {selectedBillIds.length > 0 && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">
-                          Selected {selectedBillIds.length} bill(s)
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Total: ₱
-                          {customerBills
-                            .filter((b) => selectedBillIds.includes(b._id))
-                            .reduce((sum, b) => sum + (b.total || 0), 0)
-                            .toLocaleString()}
-                        </p>
-                      </div>
-                    )}
+                    {/* Sender */}
+                    <SenderSelector />
+
+                    {/* Subject */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Subject
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-slate-400"
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        placeholder="e.g., Important update regarding your account"
+                      />
+                    </div>
+
+                    {/* Message Body */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Message Body
+                      </label>
+                      <RichTextEditor
+                        value={richTextContent || message}
+                        onChange={(content) => {
+                          setRichTextContent(content);
+                          const tempDiv = document.createElement("div");
+                          tempDiv.innerHTML = content;
+                          setMessage(tempDiv.textContent || "");
+                        }}
+                        placeholder="Write your email message here..."
+                        minHeight="200px"
+                        maxHeight="300px"
+                      />
+                    </div>
+
+                    {/* Attachments / Billing */}
+                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                      <label className="flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                          checked={includeBilling}
+                          onChange={(e) => {
+                            setIncludeBilling(e.target.checked);
+                            if (!e.target.checked) setSelectedBillIds([]);
+                          }}
+                        />
+                        <span className="ml-2 text-sm font-medium text-slate-800">
+                          Include Billing Information
+                        </span>
+                      </label>
+
+                      {includeBilling && (
+                        <div className="mt-4 space-y-3">
+                          {customerBills.length > 0 ? (
+                            <>
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-slate-500">
+                                  {selectedBillIds.length} bill(s) selected
+                                </span>
+                                <div className="flex gap-2 text-xs">
+                                  <button
+                                    onClick={selectAllBills}
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    Select All
+                                  </button>
+                                  <button
+                                    onClick={deselectAllBills}
+                                    className="text-slate-500 hover:underline"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                {customerBills.map((bill) => (
+                                  <label
+                                    key={bill._id}
+                                    className={`flex items-center p-2 rounded border cursor-pointer transition-colors ${selectedBillIds.includes(bill._id) ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                                      checked={selectedBillIds.includes(
+                                        bill._id,
+                                      )}
+                                      onChange={() =>
+                                        toggleBillSelection(bill._id)
+                                      }
+                                    />
+                                    <div className="ml-2 flex-1 flex justify-between items-center">
+                                      <span className="text-xs font-medium text-slate-700">
+                                        {bill.invoiceNumber}
+                                      </span>
+                                      <span className="text-xs font-bold text-slate-900">
+                                        ₱{(bill.total || 0).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-100">
+                              No bills found for this customer.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Admin Copy */}
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                        checked={sendCopyToAdmin}
+                        onChange={(e) => setSendCopyToAdmin(e.target.checked)}
+                      />
+                      <span className="ml-2 text-sm text-slate-700">
+                        Send a copy to admin
+                      </span>
+                    </label>
+
+                    {/* Action Buttons */}
+                    <div className="pt-4 border-t border-slate-200 flex gap-3 sticky bottom-0 bg-white">
+                      <button
+                        onClick={handlePreview}
+                        disabled={
+                          !subject.trim() ||
+                          !(message.trim() || richTextContent.trim())
+                        }
+                        className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          ></path>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          ></path>
+                        </svg>
+                        Preview
+                      </button>
+                      <button
+                        onClick={handleSendEmail}
+                        disabled={
+                          loading ||
+                          !subject.trim() ||
+                          !(message.trim() || richTextContent.trim()) ||
+                          (includeBilling && selectedBillIds.length === 0)
+                        }
+                        className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {loading ? (
+                          <svg
+                            className="animate-spin h-4 w-4 text-white"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            ></path>
+                          </svg>
+                        ) : (
+                          <>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                              ></path>
+                            </svg>
+                            Send Email
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                <label className="flex items-center mb-6">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    checked={sendCopyToAdmin}
-                    onChange={(e) => setSendCopyToAdmin(e.target.checked)}
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Send copy to admin
-                  </span>
-                </label>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={handlePreview}
-                    disabled={
-                      !selectedCustomer ||
-                      !subject.trim() ||
-                      !(message.trim() || richTextContent.trim())
-                    }
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    🔍 Preview
-                  </button>
-                  <button
-                    onClick={handleSendEmail}
-                    disabled={
-                      loading ||
-                      !selectedCustomer ||
-                      !subject.trim() ||
-                      !(message.trim() || richTextContent.trim()) ||
-                      (includeBilling && selectedBillIds.length === 0)
-                    }
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {loading ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <>
-                        <span>✉️</span> Send Email
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           )}
 
           {/* Bulk Email Tab */}
           {activeTab === "bulk" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column - Customer Selection */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  Select Customers for Bulk Email
-                </h2>
-
-                {/* Building Filter */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    🏢 Filter by Building
-                  </label>
-                  <select
-                    value={buildingFilter}
-                    onChange={(e) => setBuildingFilter(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">
-                      All Buildings ({customers.length})
-                    </option>
-                    {buildings.length > 0 && (
-                      <optgroup label="──────── Specific Buildings ────────">
-                        {buildings.map((building) => (
-                          <option key={building._id} value={building._id}>
-                            {building.buildingName}
-                            {building.location ? ` (${building.location})` : ""}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                </div>
-
-                {/* Plan Filter */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    📦 Filter by Plan
-                  </label>
-                  <select
-                    value={planFilter}
-                    onChange={(e) => setPlanFilter(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All Plans</option>
-                    {plans.length > 0 ? (
-                      plans.map((plan) => (
-                        <option key={plan._id} value={plan._id}>
-                          {plan.name}
-                          {plan.speed
-                            ? ` - ${plan.speed.download}Mbps/${plan.speed.upload}Mbps`
-                            : ""}
-                          {plan.price ? ` (₱${plan.price})` : ""}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>
-                        No plans available
-                      </option>
-                    )}
-                  </select>
-                </div>
-
-                <input
-                  type="text"
-                  placeholder="Search customers..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-
-                <div className="flex items-center gap-4 mb-4">
-                  <label className="flex items-center text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                      checked={showUnpaidOnly}
-                      onChange={(e) => setShowUnpaidOnly(e.target.checked)}
-                    />
-                    Show unpaid only
-                  </label>
-                  <span className="text-sm text-gray-500">
+              <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-[calc(100vh-250px)] min-h-[600px]">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Select Recipients
+                  </h2>
+                  <span className="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full border border-blue-200">
                     {selectedCustomers.length} selected
                   </span>
                 </div>
 
-                {loading && customers.length === 0 && (
-                  <div className="flex justify-center py-8">
-                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <div className="space-y-4 mb-4 shrink-0">
+                  {/* Filters */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Building
+                      </label>
+                      <select
+                        value={buildingFilter}
+                        onChange={(e) => setBuildingFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="all">All Buildings</option>
+                        {buildings.length > 0 && (
+                          <optgroup label="Specific Buildings">
+                            {buildings.map((building) => (
+                              <option key={building._id} value={building._id}>
+                                {building.buildingName}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Plan
+                      </label>
+                      <select
+                        value={planFilter}
+                        onChange={(e) => setPlanFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="all">All Plans</option>
+                        {plans.map((plan) => (
+                          <option key={plan._id} value={plan._id}>
+                            {plan.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                )}
 
-                {!loading && (
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {displayCustomers.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        <p>No customers found</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Try changing building or plan filter
-                        </p>
-                      </div>
-                    ) : (
-                      displayCustomers.map((customer) => (
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg
+                        className="h-4 w-4 text-slate-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        ></path>
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search customers..."
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                      checked={showUnpaidOnly}
+                      onChange={(e) => setShowUnpaidOnly(e.target.checked)}
+                    />
+                    <span className="text-sm text-slate-700">
+                      Show unpaid only
+                    </span>
+                  </label>
+                </div>
+
+                {/* Customer List */}
+                <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar border-t border-slate-100 pt-4">
+                  {loading && customers.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                      <svg
+                        className="animate-spin h-8 w-8 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <p className="text-sm">Loading...</p>
+                    </div>
+                  ) : displayCustomers.length === 0 ? (
+                    <div className="text-center py-10">
+                      <p className="text-slate-500 font-medium">
+                        No customers found
+                      </p>
+                    </div>
+                  ) : (
+                    displayCustomers.map((customer) => {
+                      const isSelected = selectedCustomers.some(
+                        (c) => c.applicationId === customer.applicationId,
+                      );
+                      return (
                         <label
                           key={customer._id || customer.applicationId}
                           className={`flex items-start p-3 rounded-lg border cursor-pointer transition-all ${
-                            selectedCustomers.some(
-                              (c) => c.applicationId === customer.applicationId,
-                            )
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            isSelected
+                              ? "border-blue-500 bg-blue-50 shadow-sm ring-1 ring-blue-500"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                           }`}
                         >
                           <input
                             type="checkbox"
-                            className="w-4 h-4 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            checked={selectedCustomers.some(
-                              (c) => c.applicationId === customer.applicationId,
-                            )}
+                            className="w-4 h-4 mt-0.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                            checked={isSelected}
                             onChange={() => {
-                              if (
-                                selectedCustomers.some(
-                                  (c) =>
-                                    c.applicationId === customer.applicationId,
-                                )
-                              ) {
+                              if (isSelected) {
                                 setSelectedCustomers((prev) =>
                                   prev.filter(
                                     (c) =>
@@ -1714,255 +1791,331 @@ export default function ManualEmailPage() {
                               }
                             }}
                           />
-                          <div className="ml-3 flex-1">
-                            <p className="font-medium text-gray-900">
+                          <div className="ml-3 flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
                               {customer.firstName || ""}{" "}
                               {customer.lastName || ""}
                             </p>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-xs text-slate-500 truncate">
                               {customer.email || "No email"}
                             </p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <span className="text-xs text-gray-400">
-                                ID: {customer.applicationId || "N/A"}
-                              </span>
-                              {customer.buildingName && (
-                                <span className="text-xs text-gray-400">
-                                  🏢 {customer.buildingName}
+                            <div className="flex items-center gap-2 mt-1">
+                              {customer.hasUnpaidBills && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase">
+                                  Unpaid
                                 </span>
                               )}
                               {customer.planName && (
-                                <span className="text-xs text-indigo-500">
-                                  📦 {customer.planName}
-                                </span>
-                              )}
-                              {customer.hasUnpaidBills && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                                  Unpaid
+                                <span className="text-[10px] text-slate-500 truncate">
+                                  Plan: {customer.planName}
                                 </span>
                               )}
                             </div>
                           </div>
                         </label>
-                      ))
-                    )}
-                  </div>
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
               {/* Right Column - Compose Bulk Email */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              <div className="lg:col-span-7 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-[calc(100vh-250px)] min-h-[600px] overflow-y-auto custom-scrollbar">
+                <h2 className="text-lg font-bold text-slate-900 mb-4 shrink-0">
                   Compose Bulk Email
                 </h2>
 
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>📧 Sending to:</strong> {selectedCustomers.length}{" "}
-                    customer(s)
-                  </p>
-                  {buildingFilter !== "all" && (
-                    <p className="text-xs text-blue-600">
-                      Building Filter:{" "}
-                      {buildings.find((b) => b._id === buildingFilter)
-                        ?.buildingName ||
-                        (buildingFilter === "breeze"
-                          ? "🌊 Breeze"
-                          : buildingFilter === "sil"
-                            ? "🏢 SIL"
-                            : "📍 Other")}
-                    </p>
-                  )}
-                  {planFilter !== "all" && (
-                    <p className="text-xs text-blue-600">
-                      Plan Filter:{" "}
-                      {plans.find((p) => p._id === planFilter)?.name || "All"}
-                    </p>
-                  )}
+                <div className="space-y-5 flex-1">
+                  {/* Summary Banner */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">
+                        Sending to {selectedCustomers.length} customer(s)
+                      </p>
+                      <p className="text-xs text-blue-700 mt-0.5">
+                        {buildingFilter !== "all" &&
+                          `Building: ${buildings.find((b) => b._id === buildingFilter)?.buildingName || buildingFilter}`}
+                        {buildingFilter !== "all" &&
+                          planFilter !== "all" &&
+                          " • "}
+                        {planFilter !== "all" &&
+                          `Plan: ${plans.find((p) => p._id === planFilter)?.name || planFilter}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <SenderSelector />
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Subject
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-slate-400"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      placeholder="e.g., System Maintenance Notice"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Message Body
+                    </label>
+                    <RichTextEditor
+                      value={richTextContent || message}
+                      onChange={(content) => {
+                        setRichTextContent(content);
+                        const tempDiv = document.createElement("div");
+                        tempDiv.innerHTML = content;
+                        setMessage(tempDiv.textContent || "");
+                      }}
+                      placeholder="Write your bulk email message here..."
+                      minHeight="200px"
+                      maxHeight="300px"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Billing Options
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      value={bulkBillType}
+                      onChange={(e) => setBulkBillType(e.target.value as any)}
+                    >
+                      <option value="unpaid">Attach Unpaid Bills Only</option>
+                      <option value="latest">Attach Latest Bill Only</option>
+                      <option value="installation">
+                        Attach Installation Bill Only
+                      </option>
+                    </select>
+                  </div>
+
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                      checked={sendCopyToAdmin}
+                      onChange={(e) => setSendCopyToAdmin(e.target.checked)}
+                    />
+                    <span className="ml-2 text-sm text-slate-700">
+                      Send a copy to admin
+                    </span>
+                  </label>
                 </div>
 
-                {/* SENDER SELECTOR */}
-                <SenderSelector />
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Subject
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Enter email subject..."
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Message
-                  </label>
-                  <RichTextEditor
-                    value={richTextContent || message}
-                    onChange={(content) => {
-                      setRichTextContent(content);
-                      const tempDiv = document.createElement("div");
-                      tempDiv.innerHTML = content;
-                      setMessage(tempDiv.textContent || "");
-                    }}
-                    placeholder="Write your email message here..."
-                    minHeight="200px"
-                    maxHeight="350px"
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bill Type
-                  </label>
-                  <select
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={bulkBillType}
-                    onChange={(e) =>
-                      setBulkBillType(
-                        e.target.value as "unpaid" | "latest" | "installation",
-                      )
+                <div className="pt-4 border-t border-slate-200 mt-4 sticky bottom-0 bg-white">
+                  <button
+                    onClick={handleSendBulkEmails}
+                    disabled={
+                      loading ||
+                      selectedCustomers.length === 0 ||
+                      !subject.trim() ||
+                      !(message.trim() || richTextContent.trim())
                     }
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    <option value="unpaid">Unpaid Bills</option>
-                    <option value="latest">Latest Bill</option>
-                    <option value="installation">Installation Bill</option>
-                  </select>
+                    {loading ? (
+                      <svg
+                        className="animate-spin h-4 w-4 text-white"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                    ) : (
+                      <>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                          ></path>
+                        </svg>
+                        Send Bulk Emails ({selectedCustomers.length})
+                      </>
+                    )}
+                  </button>
                 </div>
-
-                <label className="flex items-center mb-6">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    checked={sendCopyToAdmin}
-                    onChange={(e) => setSendCopyToAdmin(e.target.checked)}
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Send copy to admin
-                  </span>
-                </label>
-
-                <button
-                  onClick={handleSendBulkEmails}
-                  disabled={
-                    loading ||
-                    selectedCustomers.length === 0 ||
-                    !subject.trim() ||
-                    !(message.trim() || richTextContent.trim())
-                  }
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <span>📨</span> Send Bulk Emails (
-                      {selectedCustomers.length} customers)
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           )}
 
           {/* TEMPLATES TAB */}
           {activeTab === "templates" && (
-            <div>
-              <div className="mb-6">
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-bold text-slate-900">
+                  Saved Templates
+                </h2>
                 <button
                   onClick={() => setShowTemplateDialog(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-sm transition-colors"
                 >
-                  <span>💾</span> Save Current as Template
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M12 4v16m8-8H4"
+                    ></path>
+                  </svg>
+                  New Template
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {templates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="bg-white rounded-xl shadow-sm border border-gray-100 p-6"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="font-semibold text-gray-900">
-                        {template.name || "Unnamed"}
-                      </h3>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleEditTemplate(template)}
-                          className="text-blue-500 hover:text-blue-700 transition-colors p-1"
-                          title="Edit template"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTemplate(template.id)}
-                          className="text-red-500 hover:text-red-700 transition-colors p-1"
-                          title="Delete template"
-                        >
-                          🗑️
-                        </button>
+              {templates.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center shadow-sm">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+                    <svg
+                      className="w-8 h-8 text-slate-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      ></path>
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    No templates yet
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
+                    Create reusable email templates to speed up your workflow
+                    and maintain consistency.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col hover:shadow-md transition-shadow"
+                    >
+                      <div className="p-5 flex-1">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-bold text-slate-900 truncate pr-2">
+                            {template.name || "Untitled"}
+                          </h3>
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-2 py-1 rounded-md shrink-0">
+                            {template.category || "General"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-3 truncate">
+                          Subject: {template.subject || ""}
+                        </p>
+                        <div
+                          className="text-sm text-slate-600 line-clamp-3 bg-slate-50 p-3 rounded-lg border border-slate-100"
+                          dangerouslySetInnerHTML={{
+                            __html: template.message || "",
+                          }}
+                        />
+                      </div>
+                      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center rounded-b-xl">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const templateMessage = template.message || "";
+                              const hasHtml = /<[a-z][\s\S]*>/i.test(
+                                templateMessage,
+                              );
+                              setSubject(template.subject || "");
+                              if (hasHtml) {
+                                setRichTextContent(templateMessage);
+                                const tempDiv = document.createElement("div");
+                                tempDiv.innerHTML = templateMessage;
+                                setMessage(tempDiv.textContent || "");
+                              } else {
+                                const htmlContent = templateMessage.replace(
+                                  /\n/g,
+                                  "<br>",
+                                );
+                                setRichTextContent(htmlContent);
+                                setMessage(templateMessage);
+                              }
+                              setIncludeBilling(
+                                template.includeBillingDefault || false,
+                              );
+                              setActiveTab("single");
+                            }}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                          >
+                            Use Template
+                          </button>
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleEditTemplate(template)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 rounded transition-colors"
+                            title="Edit"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              ></path>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              ></path>
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">
-                      Category: {template.category || "general"}
-                    </p>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Subject: {template.subject || ""}
-                    </p>
-                    <div
-                      className="text-sm text-gray-600 mb-4 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded-lg"
-                      dangerouslySetInnerHTML={{
-                        __html:
-                          (template.message || "").length > 200
-                            ? (template.message || "").substring(0, 200) + "..."
-                            : template.message || "",
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        const templateMessage = template.message || "";
-                        const hasHtml = /<[a-z][\s\S]*>/i.test(templateMessage);
-
-                        setSubject(template.subject || "");
-
-                        if (hasHtml) {
-                          setRichTextContent(templateMessage);
-                          const tempDiv = document.createElement("div");
-                          tempDiv.innerHTML = templateMessage;
-                          setMessage(tempDiv.textContent || "");
-                        } else {
-                          const htmlContent = templateMessage.replace(
-                            /\n/g,
-                            "<br>",
-                          );
-                          setRichTextContent(htmlContent);
-                          setMessage(templateMessage);
-                        }
-
-                        setIncludeBilling(
-                          template.includeBillingDefault || false,
-                        );
-                        setActiveTab("single");
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      Load & Use
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {templates.length === 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-                  <p className="text-yellow-700">
-                    No templates saved yet. Create your first template using the
-                    button above.
-                  </p>
+                  ))}
                 </div>
               )}
             </div>
@@ -1970,114 +2123,117 @@ export default function ManualEmailPage() {
 
           {/* Sent Records Tab */}
           {activeTab === "sent" && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Sent Email Records
-              </h2>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-slate-900">
+                  Sent Records
+                </h2>
+                <span className="text-sm text-slate-500">
+                  {sentRecords.length} total emails
+                </span>
+              </div>
 
               {sentRecords.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>No sent email records found.</p>
+                <div className="p-12 text-center">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 mb-3">
+                    <svg
+                      className="w-6 h-6 text-slate-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                  </div>
+                  <p className="text-slate-500 font-medium">No records found</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
                       <tr>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Sent At
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Customer
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Subject
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Sender
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Status
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-600">
-                          Action
-                        </th>
+                        <th className="px-6 py-4">Date Sent</th>
+                        <th className="px-6 py-4">Customer</th>
+                        <th className="px-6 py-4">Subject</th>
+                        <th className="px-6 py-4">Sender</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {sentRecords.map((record) => {
                         const senderOption = SENDER_OPTIONS.find(
                           (s) => s.value === record.senderType,
                         );
-                        const senderLabel = senderOption?.label || "Collection";
-                        const senderIcon = senderOption?.icon || "📍";
-                        const senderColor = senderOption?.color || "green";
-
-                        const senderColorClasses: Record<string, string> = {
-                          green: "bg-green-100 text-green-700",
-                          blue: "bg-blue-100 text-blue-700",
-                          purple: "bg-purple-100 text-purple-700",
-                          orange: "bg-orange-100 text-orange-700",
-                        };
-
                         return (
                           <tr
                             key={record.id}
-                            className="border-b hover:bg-gray-50"
+                            className="hover:bg-slate-50/80 transition-colors"
                           >
-                            <td className="py-3 px-4 text-gray-600">
+                            <td className="px-6 py-4 whitespace-nowrap text-slate-500">
                               {formatDate(record.sentAt)}
                             </td>
-                            <td className="py-3 px-4">
-                              <p className="font-medium text-gray-900">
+                            <td className="px-6 py-4">
+                              <p className="font-semibold text-slate-900">
                                 {record.customerName}
                               </p>
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs text-slate-500">
                                 {record.customerEmail}
                               </p>
                             </td>
-                            <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
+                            <td className="px-6 py-4 text-slate-700 max-w-[200px] truncate">
                               {record.subject}
                             </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 text-xs rounded-full ${senderColorClasses[senderColor]}`}
-                              >
-                                {senderIcon} {senderLabel}
+                            <td className="px-6 py-4">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+                                {senderOption?.icon || "📍"}{" "}
+                                {senderOption?.label || "Unknown"}
                               </span>
-                              {record.location && (
-                                <span className="ml-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
-                                  {record.location}
-                                </span>
-                              )}
                             </td>
-                            <td className="py-3 px-4">
+                            <td className="px-6 py-4">
                               <span
-                                className={`px-2 py-1 text-xs rounded-full ${
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
                                   record.status === "sent"
-                                    ? "bg-green-100 text-green-700"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                     : record.status === "failed"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-yellow-100 text-yellow-700"
+                                      ? "bg-red-50 text-red-700 border border-red-200"
+                                      : "bg-amber-50 text-amber-700 border border-amber-200"
                                 }`}
                               >
                                 {record.status}
                               </span>
                               {record.isBulk && (
-                                <span className="ml-1 px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700">
-                                  Bulk ({record.recipientCount})
+                                <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase bg-purple-50 text-purple-700 border border-purple-200">
+                                  Bulk
                                 </span>
                               )}
                             </td>
-                            <td className="py-3 px-4">
+                            <td className="px-6 py-4 text-right">
                               <button
                                 onClick={() =>
                                   handleDeleteSentRecord(record.id)
                                 }
-                                className="text-red-500 hover:text-red-700 transition-colors"
-                                title="Delete record"
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Delete"
                               >
-                                🗑️
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  ></path>
+                                </svg>
                               </button>
                             </td>
                           </tr>
@@ -2103,92 +2259,128 @@ export default function ManualEmailPage() {
 
       {/* Preview Modal */}
       {previewOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">Email Preview</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Email Preview
+                </h3>
+                {previewLocation && previewLocation !== "unknown" && (
+                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                    <span>📍 {getLocationDisplay(previewLocation)}</span>
+                    <span>•</span>
+                    <span>{previewSenderInfo}</span>
+                  </p>
+                )}
+              </div>
               <button
                 onClick={() => setPreviewOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-md hover:bg-slate-200 transition-colors"
               >
-                ✕
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  ></path>
+                </svg>
               </button>
             </div>
-            {previewLocation && previewLocation !== "unknown" && (
-              <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
-                <p className="text-sm text-blue-700">
-                  📍 Location: {getLocationDisplay(previewLocation)}
-                </p>
-                <p className="text-xs text-blue-600">{previewSenderInfo}</p>
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-100">
+              <div className="bg-white mx-auto shadow-sm max-w-3xl rounded-lg overflow-hidden border border-slate-200">
+                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
               </div>
-            )}
-            <div className="p-4 overflow-y-auto max-h-[calc(80vh-160px)]">
-              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
-            <div className="p-4 border-t">
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end">
               <button
                 onClick={() => setPreviewOpen(false)}
-                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+                className="px-5 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-50 transition-colors"
               >
-                Close
+                Close Preview
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Save Template Dialog (UPDATED) */}
+      {/* Save Template Dialog */}
       {showTemplateDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Save Email Template</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-900">
+                Save New Template
+              </h3>
               <button
                 onClick={() => setShowTemplateDialog(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-md hover:bg-slate-200 transition-colors"
               >
-                ✕
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  ></path>
+                </svg>
               </button>
             </div>
-            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Template Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter template name..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={newTemplate.name}
-                  onChange={(e) =>
-                    setNewTemplate({ ...newTemplate, name: e.target.value })
-                  }
-                />
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Template Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Monthly Reminder"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newTemplate.name}
+                    onChange={(e) =>
+                      setNewTemplate({ ...newTemplate, name: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Billing, Maintenance"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newTemplate.category}
+                    onChange={(e) =>
+                      setNewTemplate({
+                        ...newTemplate,
+                        category: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., welcome, payment, reminder..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={newTemplate.category}
-                  onChange={(e) =>
-                    setNewTemplate({ ...newTemplate, category: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Subject <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   placeholder="Enter email subject..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={newTemplate.subject}
                   onChange={(e) =>
                     setNewTemplate({ ...newTemplate, subject: e.target.value })
@@ -2197,31 +2389,24 @@ export default function ManualEmailPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Message Body <span className="text-red-500">*</span>
                 </label>
-                <p className="text-xs text-gray-400 mb-2">
-                  Use the toolbar below to format your text (bold, italic,
-                  lists, highlight, links, etc.)
-                </p>
                 <RichTextEditor
                   value={newTemplate.message}
-                  onChange={(content) => {
-                    setNewTemplate({
-                      ...newTemplate,
-                      message: content,
-                    });
-                  }}
-                  placeholder="Write your email message here..."
+                  onChange={(content) =>
+                    setNewTemplate({ ...newTemplate, message: content })
+                  }
+                  placeholder="Write your template message here..."
                   minHeight="250px"
                   maxHeight="400px"
                 />
               </div>
 
-              <div className="flex items-center pt-2">
+              <label className="flex items-center cursor-pointer p-3 border border-slate-200 rounded-lg bg-slate-50">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                   checked={newTemplate.includeBillingDefault}
                   onChange={(e) =>
                     setNewTemplate({
@@ -2230,37 +2415,51 @@ export default function ManualEmailPage() {
                     })
                   }
                 />
-                <span className="ml-2 text-sm text-gray-700">
-                  Include billing by default
+                <span className="ml-2 text-sm font-medium text-slate-800">
+                  Include billing by default when using this template
                 </span>
-              </div>
+              </label>
 
               {newTemplate.message && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-xs font-medium text-gray-500 mb-2">
-                    📄 Preview of formatted content:
-                  </p>
-                  <div
-                    className="text-sm text-gray-700 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{
-                      __html: newTemplate.message,
-                    }}
-                  />
+                <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    Live Preview
+                  </div>
+                  <div className="p-4 bg-white">
+                    <div
+                      className="text-sm text-slate-700 prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: newTemplate.message }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
-            <div className="p-4 border-t flex gap-3 bg-gray-50">
+
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
               <button
                 onClick={() => setShowTemplateDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                className="px-5 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveTemplate}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-2"
               >
-                <span>💾</span> Save Template
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+                  ></path>
+                </svg>
+                Save Template
               </button>
             </div>
           </div>
@@ -2269,73 +2468,78 @@ export default function ManualEmailPage() {
 
       {/* EDIT TEMPLATE DIALOG */}
       {showEditTemplateDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h3 className="text-lg font-semibold">✏️ Edit Email Template</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-900">
+                Edit Template
+              </h3>
               <button
                 onClick={() => {
                   setShowEditTemplateDialog(false);
                   setEditingTemplate(null);
-                  setEditTemplateData({
-                    name: "",
-                    subject: "",
-                    message: "",
-                    richTextContent: "",
-                    category: "general",
-                    includeBillingDefault: false,
-                  });
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-md hover:bg-slate-200 transition-colors"
               >
-                ✕
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  ></path>
+                </svg>
               </button>
             </div>
-            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Template Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter template name..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={editTemplateData.name}
-                  onChange={(e) =>
-                    setEditTemplateData({
-                      ...editTemplateData,
-                      name: e.target.value,
-                    })
-                  }
-                />
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Template Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editTemplateData.name}
+                    onChange={(e) =>
+                      setEditTemplateData({
+                        ...editTemplateData,
+                        name: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editTemplateData.category}
+                    onChange={(e) =>
+                      setEditTemplateData({
+                        ...editTemplateData,
+                        category: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., welcome, payment, reminder..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={editTemplateData.category}
-                  onChange={(e) =>
-                    setEditTemplateData({
-                      ...editTemplateData,
-                      category: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Subject <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter email subject..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={editTemplateData.subject}
                   onChange={(e) =>
                     setEditTemplateData({
@@ -2347,13 +2551,9 @@ export default function ManualEmailPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Message Body <span className="text-red-500">*</span>
                 </label>
-                <p className="text-xs text-gray-400 mb-2">
-                  Use the toolbar below to format your text (bold, italic,
-                  lists, highlight, links, etc.)
-                </p>
                 <RichTextEditor
                   value={editTemplateData.richTextContent}
                   onChange={(content) => {
@@ -2369,10 +2569,10 @@ export default function ManualEmailPage() {
                 />
               </div>
 
-              <div className="flex items-center pt-2">
+              <label className="flex items-center cursor-pointer p-3 border border-slate-200 rounded-lg bg-slate-50">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                   checked={editTemplateData.includeBillingDefault}
                   onChange={(e) =>
                     setEditTemplateData({
@@ -2381,48 +2581,56 @@ export default function ManualEmailPage() {
                     })
                   }
                 />
-                <span className="ml-2 text-sm text-gray-700">
-                  Include billing by default
+                <span className="ml-2 text-sm font-medium text-slate-800">
+                  Include billing by default when using this template
                 </span>
-              </div>
+              </label>
 
               {editTemplateData.richTextContent && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-xs font-medium text-gray-500 mb-2">
-                    📄 Preview of formatted content:
-                  </p>
-                  <div
-                    className="text-sm text-gray-700 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{
-                      __html: editTemplateData.richTextContent,
-                    }}
-                  />
+                <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    Live Preview
+                  </div>
+                  <div className="p-4 bg-white">
+                    <div
+                      className="text-sm text-slate-700 prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{
+                        __html: editTemplateData.richTextContent,
+                      }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
-            <div className="p-4 border-t flex gap-3 bg-gray-50">
+
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowEditTemplateDialog(false);
                   setEditingTemplate(null);
-                  setEditTemplateData({
-                    name: "",
-                    subject: "",
-                    message: "",
-                    richTextContent: "",
-                    category: "general",
-                    includeBillingDefault: false,
-                  });
                 }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                className="px-5 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleUpdateTemplate}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-2"
               >
-                <span>💾</span> Update Template
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+                  ></path>
+                </svg>
+                Update Template
               </button>
             </div>
           </div>
