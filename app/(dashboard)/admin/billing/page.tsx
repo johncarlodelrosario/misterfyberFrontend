@@ -2364,15 +2364,7 @@ function AdminBillingPageContent() {
               : `${buildingFilteredStats.customersWithBalanceCount} with balance`}
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
-          <p className="text-sm font-medium text-gray-600">Unpaid</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">
-            {buildingFilteredStats.totalUnpaidBillsCount}
-          </p>
-          <p className="text-xs text-gray-500 mt-2">
-            {dateRange ? "Bills in filtered period" : "Unpaid bills total"}
-          </p>
-        </div>
+
         <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
           <p className="text-sm font-medium text-gray-600">Overdue</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">

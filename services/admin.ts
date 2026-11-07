@@ -40,27 +40,22 @@ function setCachedData<T>(key: string, data: T): void {
   try {
     const item: CacheItem<T> = { data, timestamp: Date.now() };
     const serialized = JSON.stringify(item);
-
-    // Check size before storing to avoid quota exceeded errors
     if (serialized.length > MAX_CACHE_SIZE) {
       console.warn(
         `⚠️ Cache data for ${key} too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), skipping cache`,
       );
       return;
     }
-
     localStorage.setItem(key, serialized);
   } catch (error) {
     if (error instanceof DOMException && error.name === "QuotaExceededError") {
       console.warn(`⚠️ Quota exceeded for ${key}, clearing old cache...`);
-      // Clear only this cache key
       localStorage.removeItem(key);
       try {
         const item: CacheItem<T> = { data, timestamp: Date.now() };
         const serialized = JSON.stringify(item);
-        if (serialized.length <= MAX_CACHE_SIZE) {
+        if (serialized.length <= MAX_CACHE_SIZE)
           localStorage.setItem(key, serialized);
-        }
       } catch (retryError) {
         console.error("Failed to cache data after clearing:", retryError);
       }
@@ -70,15 +65,12 @@ function setCachedData<T>(key: string, data: T): void {
   }
 }
 
-// Helper function to clear old cache items when quota is exceeded
 function clearOldCache(): void {
   try {
     const keys = Object.keys(localStorage);
     const cacheKeys = keys.filter(
       (k) => k.includes("_cache") || k.includes("_timestamp"),
     );
-
-    // Get all cache items with their timestamps
     const items = cacheKeys
       .filter((k) => k.includes("_timestamp"))
       .map((k) => ({
@@ -86,8 +78,6 @@ function clearOldCache(): void {
         timestamp: parseInt(localStorage.getItem(k) || "0", 10),
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
-
-    // Remove oldest 30%
     const toRemove = Math.ceil(items.length * 0.3);
     items.slice(0, toRemove).forEach(({ key }) => {
       localStorage.removeItem(key);
@@ -106,8 +96,36 @@ export function clearAdminCache(): void {
   });
 }
 
+// ==================== THEME PREFERENCE (PER ACCOUNT - DB) ====================
+export const getAdminThemePreference = async (): Promise<string> => {
+  try {
+    const response = await api.get("/admin/theme-preference");
+    return response.data?.data?.themePreference || "porcelain";
+  } catch (error: any) {
+    console.error(
+      "Error fetching theme preference:",
+      error.response?.data || error.message,
+    );
+    return "porcelain";
+  }
+};
+
+export const updateAdminThemePreference = async (
+  themeId: string,
+): Promise<boolean> => {
+  try {
+    await api.put("/admin/theme-preference", { themeId });
+    return true;
+  } catch (error: any) {
+    console.error(
+      "Error updating theme preference:",
+      error.response?.data || error.message,
+    );
+    return false;
+  }
+};
+
 // ==================== CUSTOMER EMAIL ALERTS TOGGLE ====================
-// CRITICAL FIX: No defaults - send EXACT value
 export const toggleCustomerEmailAlerts = async (enabled: boolean) => {
   try {
     const response = await api.put("/admin/customer-email-alerts/toggle", {
@@ -124,7 +142,6 @@ export const toggleCustomerEmailAlerts = async (enabled: boolean) => {
   }
 };
 
-// CRITICAL FIX: Return EXACT value from server - no defaults
 export const getCustomerEmailAlertsPreference = async (
   forceRefresh?: boolean,
 ) => {
@@ -133,10 +150,8 @@ export const getCustomerEmailAlertsPreference = async (
       const cached = getCachedData(CACHE_KEYS.EMAIL_ALERTS_PREFERENCE);
       if (cached) return cached;
     }
-
     const response = await api.get("/admin/customer-email-alerts/preference");
     const result = response.data;
-
     setCachedData(CACHE_KEYS.EMAIL_ALERTS_PREFERENCE, result);
     return result;
   } catch (error: any) {
@@ -144,7 +159,6 @@ export const getCustomerEmailAlertsPreference = async (
       "Error fetching customer email alerts preference:",
       error.response?.data || error.message,
     );
-    // Return the actual value or undefined - NO DEFAULT OVERRIDE
     return { success: true, data: { customerEmailAlertsEnabled: undefined } };
   }
 };
@@ -189,11 +203,8 @@ export const getAllUsers = async (params?: {
       const cached = getCachedData(CACHE_KEYS.USERS);
       if (cached) return cached;
     }
-
     const response = await api.get("/admin/users", { params });
     const result = response.data;
-
-    // Only cache if data is not too large
     setCachedData(CACHE_KEYS.USERS, result);
     return result;
   } catch (error: any) {
@@ -275,7 +286,6 @@ export const deleteUser = async (id: string) => {
 };
 
 // ==================== APPLICATION MANAGEMENT ====================
-// GET ALL APPLICATIONS (PAGINATED)
 export const getAllApplications = async (params?: {
   page?: number;
   limit?: number;
@@ -285,16 +295,10 @@ export const getAllApplications = async (params?: {
   forceRefresh?: boolean;
 }) => {
   try {
-    // Always skip cache for applications as they're too large
     const response = await api.get("/applications", {
-      params: {
-        ...params,
-        limit: params?.limit || 50, // Reduce default limit
-      },
+      params: { ...params, limit: params?.limit || 50 },
     });
     const result = response.data;
-
-    // Only cache if small enough
     setCachedData(CACHE_KEYS.APPLICATIONS, result);
     return result;
   } catch (error: any) {
@@ -306,21 +310,15 @@ export const getAllApplications = async (params?: {
   }
 };
 
-// ============ GET ALL APPLICATIONS (NO LIMIT - ALL DATA) ============
 export const getAllApplicationsUnlimited = async (): Promise<any[]> => {
   try {
-    console.log("📡 Fetching ALL applications (no limit)...");
     const response = await api.get("/applications/all");
-    console.log(
-      `✅ Received ${response.data.data?.length || 0} total applications`,
-    );
     return response.data.data || [];
   } catch (error: any) {
     console.error(
       "Error fetching all applications (unlimited):",
       error.response?.data || error.message,
     );
-    // Return empty array on error
     return [];
   }
 };
@@ -366,7 +364,6 @@ export const startBillingForApplication = async (
   },
 ) => {
   try {
-    console.log(`🚀 Starting billing for application: ${applicationId}`);
     const response = await api.post(
       `/applications/${applicationId}/start-billing`,
       data || {},
@@ -409,10 +406,8 @@ export const getAllPayments = async (params?: {
       const cached = getCachedData(CACHE_KEYS.PAYMENTS);
       if (cached) return cached;
     }
-
     const response = await api.get("/admin/payments", { params });
     const result = response.data;
-
     setCachedData(CACHE_KEYS.PAYMENTS, result);
     return result;
   } catch (error: any) {
@@ -434,8 +429,7 @@ export const getAllPayments = async (params?: {
 export const getPendingPayments = async (forceRefresh?: boolean) => {
   try {
     const response = await api.get("/admin/payments/pending");
-    const result = response.data;
-    return result;
+    return response.data;
   } catch (error: any) {
     console.error(
       "Error fetching pending payments:",
@@ -498,12 +492,10 @@ export const bulkDeleteCustomerPayments = async (
     const response = await api.delete(`/payments/bulk/customer/${customerId}`, {
       data: { deleteAll },
     });
-    // Clear payment cache
     try {
       const { clearPaymentsCache } = await import("./payment");
       clearPaymentsCache();
     } catch (e) {
-      // If payment module not available, clear admin cache
       clearAdminCache();
     }
     return response.data;
@@ -529,10 +521,8 @@ export const getAllBills = async (params?: {
       const cached = getCachedData(CACHE_KEYS.BILLS);
       if (cached) return cached;
     }
-
     const response = await api.get("/admin/bills", { params });
     const result = response.data;
-
     setCachedData(CACHE_KEYS.BILLS, result);
     return result;
   } catch (error: any) {
@@ -570,14 +560,12 @@ export const createManualCustomer = async (data: {
   includeInstallationFee?: boolean;
 }) => {
   try {
-    console.log("📝 Creating manual customer with data:", data);
     const response = await api.post("/admin/manual-customer", data);
-    console.log("✅ Manual customer created:", response.data);
     clearAdminCache();
     return response.data;
   } catch (error: any) {
     console.error(
-      "❌ Error creating manual customer:",
+      "Error creating manual customer:",
       error.response?.data || error.message,
     );
     throw error;
@@ -586,17 +574,12 @@ export const createManualCustomer = async (data: {
 
 export const getCustomersWithoutAccounts = async (forceRefresh?: boolean) => {
   try {
-    console.log("🔍 Fetching customers without accounts from API...");
-
     if (!forceRefresh) {
       const cached = getCachedData(CACHE_KEYS.CUSTOMERS_WITHOUT_ACCOUNTS);
       if (cached) return cached;
     }
-
     const response = await api.get("/admin/customers-without-accounts");
-    console.log("📦 API Response:", response.data);
     const result = response.data;
-
     setCachedData(CACHE_KEYS.CUSTOMERS_WITHOUT_ACCOUNTS, result);
     return result;
   } catch (error: any) {
@@ -652,11 +635,7 @@ export interface BillingCycle {
   manuallyStartedAt?: string;
   isAfterCutoff: boolean;
   cutoffDayUsed: number;
-  paymentHistory: Array<{
-    billingId: string;
-    amount: number;
-    paidAt: string;
-  }>;
+  paymentHistory: Array<{ billingId: string; amount: number; paidAt: string }>;
   serviceSuspendedAt?: string;
   pausedAt?: string;
   resumedAt?: string;
@@ -684,10 +663,8 @@ export const getAllBillingCycles = async (params?: {
       const cached = getCachedData(CACHE_KEYS.BILLING_CYCLES);
       if (cached) return cached;
     }
-
     const response = await api.get("/billing/cycles", { params });
     const result = response.data;
-
     setCachedData(CACHE_KEYS.BILLING_CYCLES, result);
     return result;
   } catch (error: any) {
@@ -709,7 +686,6 @@ export const fetchDashboardData = async (forceRefresh?: boolean) => {
       "Error fetching dashboard data:",
       error.response?.data || error.message,
     );
-    // Return empty data structure
     return {
       customers: [],
       billingCycles: [],
@@ -765,10 +741,8 @@ export const clearBillingCache = () => {
       localStorage.removeItem(key);
     } catch (e) {}
   });
-  console.log("🗑️ All caches cleared");
 };
 
-// ==================== PAYMENT CACHE CLEAR (ALIAS) ====================
 export const clearPaymentsCache = () => {
   try {
     const keys = [
@@ -782,7 +756,6 @@ export const clearPaymentsCache = () => {
         localStorage.removeItem(key);
       } catch (e) {}
     });
-    console.log("🗑️ Payment cache cleared");
   } catch (e) {
     console.error("Error clearing payment cache:", e);
   }
@@ -790,31 +763,24 @@ export const clearPaymentsCache = () => {
 
 // ==================== DEFAULT EXPORT ====================
 export default {
-  // Email Alerts
   toggleCustomerEmailAlerts,
   getCustomerEmailAlertsPreference,
-
-  // Dashboard
+  getAdminThemePreference,
+  updateAdminThemePreference,
   getDashboardStats,
   getRecentActivities,
-
-  // Users
   getAllUsers,
   getUser,
   updateUser,
   approveUser,
   suspendUser,
   deleteUser,
-
-  // Applications
   getAllApplications,
-  getAllApplicationsUnlimited, // <-- ADDED THIS
+  getAllApplicationsUnlimited,
   approveApplication,
   rejectApplication,
   startBillingForApplication,
   getApplicationBillingStatus,
-
-  // Payments
   getAllPayments,
   getPendingPayments,
   confirmPayment,
@@ -822,24 +788,12 @@ export default {
   deletePayment,
   bulkDeleteCustomerPayments,
   clearPaymentsCache,
-
-  // Bills
   getAllBills,
-
-  // Customers
   createManualCustomer,
   getCustomersWithoutAccounts,
-
-  // Reports
   generateReport,
-
-  // Billing Cycles
   getAllBillingCycles,
-
-  // Dashboard Data
   fetchDashboardData,
-
-  // Cache Management
   clearBillingCache,
   clearAdminCache,
 };
